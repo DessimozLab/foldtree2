@@ -1,0 +1,3 @@
+[submodule "protein_comparison_tool"]
+	path = protein_comparison_tool
+	url = git@github.com:DessimozLab/protein_comparison_tool.git
