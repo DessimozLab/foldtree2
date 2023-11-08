@@ -1,3 +1,6 @@
 [submodule "protein_comparison_tool"]
 	path = protein_comparison_tool
 	url = git@github.com:DessimozLab/protein_comparison_tool.git
+[submodule "praline"]
+	path = praline
+	url = git@github.com:ibivu/PRALINE.git
