@@ -4,3 +4,6 @@
 [submodule "praline"]
 	path = praline
 	url = git@github.com:ibivu/PRALINE.git
+[submodule "pastml"]
+	path = pastml
+	url = git@github.com:evolbioinfo/pastml.git

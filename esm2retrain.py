@@ -8,8 +8,8 @@ from lora import LoRALayer
 # Load the pre-trained ESM-2 model
 model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
 
-# Define your new alphabet
-new_alphabet = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
+# Define your new alphabet, raxml multi-state alphabet in this case
+new_alphabet = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~""".split() 
 
 # Modify the tokenizer to use the new alphabet
 # You will need to create a new Tokenizer class or modify the existing one
