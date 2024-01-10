@@ -7,3 +7,6 @@
 [submodule "pastml"]
 	path = pastml
 	url = git@github.com:evolbioinfo/pastml.git
+[submodule "esm"]
+	path = esm
+	url = git@github.com:facebookresearch/esm.git
