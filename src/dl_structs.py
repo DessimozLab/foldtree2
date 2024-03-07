@@ -11,8 +11,6 @@ it also filters the structures based on the plddt score
 
 '''
 
-
-
 infolder = snakemake.input[0].split('/')[:-1]
 infolder = ''.join( [i + '/' for i in infolder])
 structfolder = infolder+'structs/'
