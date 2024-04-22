@@ -1,0 +1,22 @@
+decoder_cls: !!python/name:__main__.decoder ''
+encoder_cls: !!python/name:__main__.encoder ''
+hidden_channels: 100
+in_channels: 1134
+learning_rate: 0.001
+metadata:
+  edge_types:
+  - !!python/tuple
+    - res
+    - backbone
+    - res
+  - !!python/tuple
+    - res
+    - contactPoints
+    - res
+  - !!python/tuple
+    - res
+    - springMat
+    - res
+model_name: autoencoder
+nlayers: 2
+out_channels: 10
