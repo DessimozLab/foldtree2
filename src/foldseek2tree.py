@@ -86,9 +86,9 @@ def runFoldseek_allvall( structfolder , outfolder , foldseekpath = '../foldseek/
 	
 	foldseekpath + " easy-search " + structfolder + " "+ structfolder +" "+ outfolder+"/allvall.csv " +  structfolder+"/tmp --format-output 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,lddt,lddtfull,alntmscore' --exhaustive-search --alignment-type 2" 
 
-	return outfolder +'aln_score.tsv'
+	return outfolder +'allvall.csv'
 
-def runFoldseek_allvall_EZsearch(infolder , outpath , foldseekpath = '../foldseek/bin/foldseek'):
+def runFoldseek_allvall_EZsearch(infolder , outpath , foldseekpath = 'foldseek'):
 	'''
 	run foldseek easy-search
 	
@@ -102,8 +102,8 @@ def runFoldseek_allvall_EZsearch(infolder , outpath , foldseekpath = '../foldsee
 		path to foldseek binary
 
 		'''
-	
-	args = foldseekpath + ' easy-search ' + infolder + ' ' + infolder +' '+ outpath + " tmp --format-output 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,lddt,lddtfull,alntmscore' --exhaustive-search "
+
+	args = foldseekpath + ' easy-search ' + infolder + ' ' + infolder +' '+ outpath + " tmp --format-output 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln' --exhaustive-search "
 	p = runargs(args)
 	return outpath
 

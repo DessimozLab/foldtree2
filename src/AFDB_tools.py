@@ -10,6 +10,8 @@ from Bio.SeqUtils import seq1
 
 import time
 import numpy as np
+import os
+import sys
 
 
 
@@ -93,16 +95,28 @@ def grab_struct(uniID, structfolder, rejected = None, overwrite=False):
 		os.mkdir(structfolder)
 	except:
 		pass
-	try:
-		prefix = 'https://alphafold.ebi.ac.uk/files/AF-'
-		post = '-F1-model_v4.pdb'
-		url = prefix+uniID.upper()+post
-		if not os.path.isfile(structfolder + uniID +'.pdb'):
-			if rejected is None or (rejected and not os.path.isfile(structfolder + uniID +'.pdb')):
-				wget.download(url, structfolder + uniID +'.pdb')
-	except:
-		print('structure not found', uniID)
-		return uniID
+	#try:
+	prefix = 'https://alphafold.ebi.ac.uk/files/AF-'
+	post = '-F1-model_v4.pdb'
+	url = prefix+uniID.upper()+post
+
+
+	if not os.path.isfile(structfolder + uniID +'.pdb'):
+			
+		# Redirect stdout to suppress printed output
+		original_stdout = sys.stdout
+		sys.stdout = open(os.devnull, 'w')
+
+		if rejected is None or (rejected and not os.path.isfile(structfolder + uniID +'.pdb')):
+			wget.download(url, structfolder + uniID +'.pdb'  )	
+
+		# Restore stdout to original state
+		sys.stdout.close()
+		sys.stdout = original_stdout
+
+	#except:
+	#	print('structure not found', uniID)
+	#	return uniID
 	return None
 
 
