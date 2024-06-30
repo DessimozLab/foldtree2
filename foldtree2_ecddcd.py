@@ -7,6 +7,7 @@ EPS = 1e-10
 
 
 import wget
+import importlib
 import warnings 
 import torch_geometric
 import glob
@@ -157,6 +158,17 @@ class PDB2PyG:
                             contact_mat[i,j] =  r1['CA'] - r2['CA']
         contact_mat = contact_mat + contact_mat.T
         return contact_mat
+
+    @staticmethod
+    def get_contact_points_complex(chain1, chain2, distance=25):
+        contact_mat = np.zeros((len(chain1), len(chain2)))
+        for i,r1 in enumerate(chain1):
+            for j,r2 in enumerate(chain2):
+                if 'CA' in r1 and 'CA' in r2:
+                    if r1['CA'] - r2['CA'] < distance:
+                        contact_mat[i,j] =  r1['CA'] - r2['CA']
+        return contact_mat
+
 
     @staticmethod
     def get_closest(chain):
@@ -334,6 +346,18 @@ class PDB2PyG:
         sparsemat = scipy.sparse.find(sparsemat)
         return np.vstack([sparsemat[0],sparsemat[1]])
 
+
+    def complex2pyg(self , pdbchain1, pdbchain2  , identifier=None,  verbose = False):
+        #should be called with two biopython chains
+        data = HeteroData()
+        contact_points = get_contacts_complex(pdbchain1, pdbchain2, distance = 10 )
+        contact_points = sparse.csr_matrix(contact_points)
+        data.identifier = identifier
+        contacts = self.sparse2pairs(contacts)
+        data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
+        data['res','contactPointsComplex', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
+        return data
+        
     def struct2pyg(self , pdbchain  , identifier=None,  verbose = False):
         data = HeteroData()
         #transform a structure chain into a pytorch geometric graph
@@ -456,93 +480,6 @@ class PDB2PyG:
                         #todo. store some other data. sequence. uniprot info etc.
                 else:
                     print('err' , pdbfile )
-    
-    def complex_pyg(self, pdbfiles, filename, verbose = True ):
-        #todo adapt to complex data
-        with h5py.File(filename , mode = 'w') as f:
-            for pdbfile in  tqdm.tqdm( pdbfiles ):                    
-                if verbose:
-                    print(pdbfile)
-                hetero_data = self.struct2pyg(pdbfile)
-                if hetero_data:
-                    f.create_group(identifier)
-                    for node_type in hetero_data.node_types:
-                        if hetero_data[node_type].x is not None:
-                            node_group = f.create_group(f'{identifier}/node/{node_type}')
-                            node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-                    # Iterate over edge types and their connections
-                    for edge_type in hetero_data.edge_types:
-                        # edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-                        edge_group = f.create_group(f'{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-                        if hetero_data[edge_type].edge_index is not None:
-                            edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-                        
-                        # If there are edge features, save them too
-                        if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-                            edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-                        #todo. store some other data. sequence. uniprot info etc.
-                else:
-                    print('err' , pdbfile )
-            
-    """
-    #create the structural graph dataset
-    def store_pyg(pdbfiles, aaproperties, filename, verbose = True , complex_distmat = False):
-        with h5py.File(filename , mode = 'w') as f:
-            #create structs list
-            for pdbfile in tqdm.tqdm(pdbfiles):
-                if verbose:
-                    print(pdbfile)
-                accession = pdbfile.split('/')[-1].split('.')[0]
-                
-                f.create_group(accession)
-                chains = read_pdb(pdbfile)
-                for i,chain in enumerate(chains):
-                    hetero_data = self.struct2pyg(chain, self.aaproperties)
-                    i = str(i)
-                    if hetero_data:
-                        for node_type in hetero_data.node_types:
-                            if hetero_data[node_type].x is not None:
-                                node_group = f.create_group(f'{accession}/{i}/node/{node_type}')
-                                node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-                        # Iterate over edge types and their connections
-                        for edge_type in hetero_data.edge_types:
-                            # edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-                            edge_group = f.create_group(f'{accession}/{i}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-                            if hetero_data[edge_type].edge_index is not None:
-                                edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-                            # If there are edge features, save them too
-                            if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-                                edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-                    if complex_distmat == True and len(chains)>1:
-                        #all vs all between chains
-                        for j,c1 in enumerate(chains):
-                            for k,c2 in enumerate(chains):
-                                if j<k:
-                                    k = str(k)
-                                    j = str(j)
-                                    #generate the contact graph...
-                                    hetero_data = self.complex2pyg(chain, self.aaproperties)
-                                    if hetero_data:
-                                        for node_type in hetero_data.node_types:
-                                            if hetero_data[node_type].x is not None:
-                                                node_group = f.create_group(f'{accession}/contacts/{j}_{k}/node/{node_type}')
-                                                node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-                                        # Iterate over edge types and their connections
-                                        for edge_type in hetero_data.edge_types:
-                                            # edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-                                            edge_group = f.create_group(f'{accession}/{j}_{k}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-                                            if hetero_data[edge_type].edge_index is not None:
-                                                edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-                                            # If there are edge features, save them too
-                                            if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-                                                edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-                        
-                    #todo. store some other data. sequence. uniprot info etc.
-                        
-                else:
-                    print('err' , pdbfile )
-    """
-
 
 
 class StructureDataset(Dataset):
@@ -556,9 +493,9 @@ class StructureDataset(Dataset):
         if type(h5dataset) == str:
             self.h5dataset = h5py.File(h5dataset, 'r')
         self.structlist = list(self.h5dataset['structs'].keys())
+    
     def __len__(self):
         return len(self.structlist)
-
 
     def __getitem__(self, idx):
         if type(idx) == str:
@@ -569,6 +506,12 @@ class StructureDataset(Dataset):
             raise 'use a structure filename or integer'
         data = {}
         hetero_data = HeteroData()
+        
+        if type (idx) == int:
+            hetero_data.identifier = self.structlist[idx]
+        else:
+            hetero_data.identifier = idx
+
         if 'node' in f.keys():
             for node_type in f['node'].keys():
                 node_group = f['node'][node_type]
@@ -591,63 +534,8 @@ class StructureDataset(Dataset):
         #return pytorch geometric heterograph
         return hetero_data
     
-class ComplexDataset(Dataset):
-    def __init__(self, h5dataset_monomers, h5dataset_complexes , structlist ):
-        super().__init__()
-        #keys should be the structures
-
-        self.h5dataset = h5dataset_monomers
-        self.h5dataset_complexes = h5dataset_complexes
-
-        self.structlist = structlist
-        paths = { s.split('/')[-1] : s for s in structlist }
-        reps = {s:s.split('/')[2] for s in structlist }
-        self.reps = reps
-        self.paths = paths
-        self.structs =  [ s.split('/')[-1] for s in structlist  ]
-        
-    def __len__(self):
-        return len(self.structlist)
-
-    def __getitem__(self, idx):    
-        if type(idx) == str:
-            pass
-        elif type(idx) == int:
-            idx = self.structlist[idx]            
-        else:
-            raise 'use a structure filename or integer'
-        f = self.h5dataset[idx]
-        
-        hetero_data = HeteroData()
-        
-        if 'node' in f.keys():
-            for node_type in f['node'].keys():
-                node_group = f['node'][node_type]
-                # Assuming 'x' exists
-                if 'x' in node_group.keys():
-                    hetero_data[node_type].x = torch.tensor(node_group['x'][:])
-        # Edge data
-        if 'edge' in f.keys():
-            for edge_name in f['edge'].keys():
-                edge_group = f['edge'][edge_name]
-                src_type, link_type, dst_type = edge_name.split('_')
-                edge_type = (src_type, link_type, dst_type)
-                # Assuming 'edge_index' exists
-                if 'edge_index' in edge_group.keys():
-                    hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
-                
-                # If there are edge attributes, load them too
-                if 'edge_attr' in edge_group.keys():
-                    hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
-        #return pytorch geometric heterograph
-
-
-
-
-        return hetero_data_1 , hetero_data_2 , hetero_data_complex
-
 class VectorQuantizerEMA(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100):
+    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100, reset = True):
         super(VectorQuantizerEMA, self).__init__()
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
@@ -655,7 +543,7 @@ class VectorQuantizerEMA(nn.Module):
         self.decay = decay
         self.epsilon = epsilon
         self.reset_threshold = reset_threshold
-
+        self.reset = reset
         # Initialize the codebook with uniform distribution
         self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
         self.embeddings.weight.data.uniform_(-1 / self.num_embeddings, 1 / self.num_embeddings)
@@ -689,6 +577,14 @@ class VectorQuantizerEMA(nn.Module):
         q_latent_loss = F.mse_loss(quantized, x.detach())
         loss = q_latent_loss + self.commitment_cost * e_latent_loss
 
+        # Regularization
+        entropy_reg = entropy_regularization(encodings)
+        diversity_reg = diversity_regularization(encodings)
+        kl_div_reg = kl_divergence_regularization(encodings)
+
+        # Combine all losses
+        total_loss = loss - entropy_reg + diversity_reg + kl_div_reg
+
         # EMA updates
         if self.training:
             encodings_sum = encodings.sum(0)
@@ -704,14 +600,15 @@ class VectorQuantizerEMA(nn.Module):
 
             # Update usage count
             self.embedding_usage_count += encodings_sum.long()
-
-            # Reset unused embeddings
-            self.reset_unused_embeddings()
+            
+            if self.reset== True:
+                # Reset unused embeddings
+                self.reset_unused_embeddings()
 
         # Straight-through estimator for the backward pass
         quantized = x + (quantized - x).detach()
 
-        return quantized, loss
+        return quantized, total_loss
 
     def reset_unused_embeddings(self):
         """
@@ -725,10 +622,61 @@ class VectorQuantizerEMA(nn.Module):
             # Reset usage counts for the reset embeddings
             self.embedding_usage_count[unused_embeddings] = 0
 
+    def discretize_z(self, x):
+        # Flatten input
+        flat_x = x.view(-1, self.embedding_dim)
+        # Compute distances between input and codebook embeddings
+        distances = (torch.sum(flat_x**2, dim=1, keepdim=True)
+                     + torch.sum(self.embeddings.weight**2, dim=1)
+                     - 2 * torch.matmul(flat_x, self.embeddings.weight.t()))
+        # Get the encoding that has the minimum distance
+        closest_indices = torch.argmin(distances, dim=1)
+        
+        # Convert indices to characters
+        char_list = [chr(idx.item()) for idx in closest_indices]
+        return closest_indices, char_list
+
+    def string_to_hex(self, s):
+        # if string is ascii, convert to hex
+        if all(ord(c) < 248 for c in s):
+            return s.encode().hex()
+        else:
+            #throw an error
+            raise ValueError('String contains non-ASCII characters')
+        
+    def string_to_embedding(self, s):
+        
+        # Convert characters back to indices
+        indices = torch.tensor([ord(c) for c in s], dtype=torch.long, device=self.embeddings.weight.device)
+        
+        # Retrieve embeddings from the codebook
+        embeddings = self.embeddings(indices)
+        
+        return embeddings
+
+
+# Define the regularization functions outside the class
+
+def entropy_regularization(encodings):
+    probabilities = encodings.mean(dim=0)
+    entropy = -torch.sum(probabilities * torch.log(probabilities + 1e-10))
+    return entropy
+
+def diversity_regularization(encodings):
+    probabilities = encodings.mean(dim=0)
+    diversity_loss = torch.sum((probabilities - 1 / probabilities.size(0)) ** 2)
+    return diversity_loss
+
+def kl_divergence_regularization(encodings):
+    probabilities = encodings.mean(dim=0)
+    kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
+    return kl_divergence
 
 class VectorQuantizer(nn.Module):
     def __init__(self, num_embeddings, embedding_dim, commitment_cost):
         super(VectorQuantizer, self).__init__()
+
+
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
@@ -796,9 +744,12 @@ class VectorQuantizer(nn.Module):
 
 
 class HeteroGAE_Encoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.05 , EMA = False):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , reset_codes = True ):
         super(HeteroGAE_Encoder, self).__init__()
 
+        #save all arguments to constructor
+        self.args = locals()
+        self.args.pop('self')
 
         # Setting the seed
         L.seed_everything(42)
@@ -836,7 +787,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
         if EMA == False:
             self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
         else:
-            self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost)
+            self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
         
     def forward(self, x, xaa, edge_index_dict):
         x = self.bn(x)
@@ -889,10 +840,12 @@ class HeteroGAE_Encoder(torch.nn.Module):
                 identifier = data.identifier
                 f.write(f'>{identifier}\n')
                 outstr = ''
-                for char in strdata[1]:
+                for char in strdata[0]:
+                    #start at 0x01
+                    char = chr(char+1)
                     if char in replace_dict:
                         char = replace_dict[char]
-                        outstr += char
+                    outstr += char
                     f.write(char)
 
                 f.write('\n')
@@ -917,14 +870,6 @@ class HeteroGAE_Encoder(torch.nn.Module):
                     f.write(str(num)+ ',')
                 f.write('\n')
         return filename
-    
-    def encode_structlist_fasta(self, structlist, outfile ):
-        def dataloader( structlist):
-            for struct in structlist:
-                yield converter.struct2pyg(struct, verbose = False)
-        loader = dataloader(pdbfiles_structalign)
-        return self.encode_structures_fasta(loader)
-    
 
     def load(self, modelfile):
         self.load_state_dict(torch.load(modelfile))
@@ -953,6 +898,10 @@ class HeteroGAE_Encoder(torch.nn.Module):
 class HeteroGAE_VariationalQuantizedEncoder(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={}):
         super(HeteroGAE_VariationalQuantizedEncoder, self).__init__()
+        #save all arguments to constructor
+        self.args = locals()
+        self.args.pop('self')
+        
         self.convs = torch.nn.ModuleList()
         self.metadata = metadata
         self.hidden_channels = hidden_channels
@@ -1150,3 +1099,57 @@ def gaussian_loss(mu , logvar , beta= 1.5):
     return beta*kl_loss
 
 
+
+
+def save_model(model, optimizer, epoch, file_path):
+    """
+    Save the model's state dictionary, optimizer's state dictionary, and other metadata to a file.
+
+    Args:
+        model (torch.nn.Module): The model to save.
+        optimizer (torch.optim.Optimizer): The optimizer used for training.
+        epoch (int): The current epoch number.
+        file_path (str): The file path to save the model to.
+    """
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'model_class': model.__class__.__name__,
+        'model_args': model.args,
+        'model_kwargs': model.kwargs,
+    }, file_path)
+
+
+
+def load_model(file_path):
+    """
+    Load the model's state dictionary, optimizer's state dictionary, and other metadata from a file.
+
+    Args:
+        file_path (str): The file path to load the model from.
+
+    Returns:
+        model (torch.nn.Module): The loaded model.
+        optimizer (torch.optim.Optimizer): The loaded optimizer.
+        epoch (int): The epoch number to resume training from.
+    """
+    checkpoint = torch.load(file_path)
+
+    # Dynamically import the module containing the model class
+    model_module = importlib.import_module(__name__)
+
+    # Instantiate the model with the saved arguments
+    model_class = getattr(model_module, checkpoint['model_class'])
+    model = model_class(*checkpoint['model_args'], **checkpoint['model_kwargs'])
+
+    # Load the saved state dictionary into the model
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    # Assuming the optimizer is Adam, you can modify this to match your optimizer
+    optimizer = torch.optim.Adam(model.parameters())
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    epoch = checkpoint['epoch']
+
+    return model, optimizer, epoch
