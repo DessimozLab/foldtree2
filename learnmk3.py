@@ -73,6 +73,8 @@ if train_loop == True:
     edgeweight = 1
     xweight = 2
     vqweight = 1
+
+    
     plddtweight = 1
 
     for epoch in range(1000):
