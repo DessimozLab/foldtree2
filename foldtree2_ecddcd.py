@@ -535,7 +535,7 @@ class StructureDataset(Dataset):
         return hetero_data
     
 class VectorQuantizerEMA(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100, reset = True):
+    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset = True):
         super(VectorQuantizerEMA, self).__init__()
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
@@ -823,6 +823,10 @@ class HeteroGAE_Encoder(torch.nn.Module):
                 f.write(f'\n//////endprot//////\n')
                 f.write('\n')
         return filename
+
+
+
+
 
     def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False):
         #write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248

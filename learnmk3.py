@@ -12,9 +12,9 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk3_aa_EMA_64_reset'
-decoder_save = 'decoder_mk3_aa_EMA_64_reset'
-overwrite = False
+encoder_save = 'encoder_mk3_aa_EMA_64_lowcost'
+decoder_save = 'decoder_mk3_aa_EMA_64_lowcost'
+overwrite = True
 train_loop = True
 
 
@@ -34,7 +34,7 @@ print( struct_dat[0] )
 
 #load model if it exists
 #add positional encoder channels to input
-encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=72, commitment_cost=1 , encoder_hidden=500 , EMA = True , reset_codes= True )
+encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=72, commitment_cost=.5 , encoder_hidden=500 , EMA = True , reset_codes= True )
 #encoder = HeteroGAE_VariationalQuantizedEncoder(in_channels=ndim, hidden_channels=[100]*3 , out_channels=25, metadata=metadata , num_embeddings=256  , commitment_cost= 1.5 )
 
 decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
@@ -61,7 +61,7 @@ decoder = decoder.to(device)
 
 if train_loop == True:
     train_loader = DataLoader(struct_dat, batch_size=40, shuffle=True)
-    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001)
+    optimizer = torch.optim.NAdam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001)
     encoder.train()
     decoder.train()
     
@@ -74,7 +74,6 @@ if train_loop == True:
     xweight = 2
     vqweight = 1
 
-    
     plddtweight = 1
 
     for epoch in range(1000):
