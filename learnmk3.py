@@ -12,9 +12,9 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk2_aa_EMA_248reset'
-decoder_save = 'decoder_mk2_aa_EMA_248reset'
-overwrite = True
+encoder_save = 'encoder_mk3_aa_EMA_64_reset'
+decoder_save = 'decoder_mk3_aa_EMA_64_reset'
+overwrite = False
 train_loop = True
 
 
@@ -34,7 +34,7 @@ print( struct_dat[0] )
 
 #load model if it exists
 #add positional encoder channels to input
-encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=248, commitment_cost=1 , encoder_hidden=500 , EMA = True , reset_codes= False )
+encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=72, commitment_cost=1 , encoder_hidden=500 , EMA = True , reset_codes= True )
 #encoder = HeteroGAE_VariationalQuantizedEncoder(in_channels=ndim, hidden_channels=[100]*3 , out_channels=25, metadata=metadata , num_embeddings=256  , commitment_cost= 1.5 )
 
 decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
@@ -70,7 +70,7 @@ if train_loop == True:
     vqlosses = []
     plddtlosses = []
 
-    edgeweight = 2
+    edgeweight = 1
     xweight = 2
     vqweight = 1
     plddtweight = 1
@@ -101,7 +101,7 @@ if train_loop == True:
             #save model
             torch.save(encoder.state_dict(), encoder_save)
             torch.save(decoder.state_dict(), decoder_save)
-            with open('model.pkl' , 'wb') as f:
+            with open(encoder_save + '_model.pkl' , 'wb') as f:
                 pickle.dump([encoder, decoder], f)
 
         """
