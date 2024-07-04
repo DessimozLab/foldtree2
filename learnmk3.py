@@ -14,7 +14,7 @@ converter = ft2.PDB2PyG()
 
 encoder_save = 'encoder_mk3_aa_EMA_64_lowcost'
 decoder_save = 'decoder_mk3_aa_EMA_64_lowcost'
-overwrite = True
+overwrite = False
 train_loop = True
 
 
@@ -33,13 +33,16 @@ ndim = struct_dat[0]['res'].x.shape[1]
 print( struct_dat[0] )
 
 #load model if it exists
+
 #add positional encoder channels to input
-encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=72, commitment_cost=.5 , encoder_hidden=500 , EMA = True , reset_codes= True )
+encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=64, commitment_cost=.9 , encoder_hidden=500 , EMA = True , reset_codes= False )
 #encoder = HeteroGAE_VariationalQuantizedEncoder(in_channels=ndim, hidden_channels=[100]*3 , out_channels=25, metadata=metadata , num_embeddings=256  , commitment_cost= 1.5 )
 
 decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
                             hidden_channels={ ( 'res','backbone','res'):[ 500 ] * 5  } , 
                             out_channels_hidden= 150 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
+
+
 
 
 if os.path.exists(encoder_save) and overwrite == False:
@@ -61,7 +64,7 @@ decoder = decoder.to(device)
 
 if train_loop == True:
     train_loader = DataLoader(struct_dat, batch_size=40, shuffle=True)
-    optimizer = torch.optim.NAdam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001)
+    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.0001)
     encoder.train()
     decoder.train()
     
@@ -71,7 +74,7 @@ if train_loop == True:
     plddtlosses = []
 
     edgeweight = 1
-    xweight = 2
+    xweight = 4
     vqweight = 1
 
     plddtweight = 1
@@ -98,7 +101,7 @@ if train_loop == True:
             total_vq += vqloss.item()
             #total_plddt += plddtloss.item()
         
-        if epoch % 25 == 0 :
+        if epoch % 5 == 0 :
             #save model
             torch.save(encoder.state_dict(), encoder_save)
             torch.save(decoder.state_dict(), decoder_save)
