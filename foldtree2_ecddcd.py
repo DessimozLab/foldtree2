@@ -45,6 +45,7 @@ import os
 from Bio import PDB
 import warnings
 import pydssp
+import polars as pl 
 from Bio.PDB import PDBParser   
 
 #create a class for transforming pdb files to pyg 
@@ -63,7 +64,7 @@ class PDB2PyG:
         
         self.onehot = onehot
         self.colmap = colmap
-        self.aaproperties = aaproperties
+        #self.aaproperties =  pl.from_pandas(aaproperties)
         self.metadata = { 'edge_types': [ ('res','backbone','res') , ('res','backbonerev','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
         self.aaindex = aaindex
 
@@ -216,6 +217,17 @@ class PDB2PyG:
             print(self.aaproperties , angles )
         nodeprops = angles.merge(self.aaproperties, left_on='single_letter_code', right_index=True, how='left')
         nodeprops = nodeprops.dropna()
+        # Merge operation in Polars using join
+        """nodeprops = angles.join(
+            self.aaproperties,
+            left_on="single_letter_code",
+            right_on=self.aaproperties.index,  # This assumes the index of aaproperties is set as a column; if not, adjust accordingly
+            how="left"
+        )
+        
+        # Dropping rows with missing values
+        nodeprops = nodeprops.drop_nulls()
+        nodeprops = nodeprops.to_pandas()"""
         return nodeprops
 
     @staticmethod
@@ -341,21 +353,26 @@ class PDB2PyG:
             
         return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa
 
+
     @staticmethod
     def sparse2pairs(sparsemat):
         sparsemat = scipy.sparse.find(sparsemat)
         return np.vstack([sparsemat[0],sparsemat[1]])
 
-
     def complex2pyg(self , pdbchain1, pdbchain2  , identifier=None,  verbose = False):
         #should be called with two biopython chains
         data = HeteroData()
-        contact_points = get_contacts_complex(pdbchain1, pdbchain2, distance = 10 )
-        contact_points = sparse.csr_matrix(contact_points)
+        chains = self.read_pdb(pdbfile)
         data.identifier = identifier
-        contacts = self.sparse2pairs(contacts)
-        data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
-        data['res','contactPointsComplex', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
+        #get chain letter
+        for i,pdbchain1 in enumerate(chains):
+            for j,pdbchain2 in enumerate(chains):
+                if i>j and pdbchain1.get_id() != pdbchain2.get_id():                 
+                    contact_points = get_contacts_complex(pdbchain1, pdbchain2, distance = 10 )
+                    contact_points = sparse.csr_matrix(contact_points)
+                    contacts = self.sparse2pairs(contacts)
+                    data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
+                    data['res','contactPointsComplex', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
         return data
         
     def struct2pyg(self , pdbchain  , identifier=None,  verbose = False):
@@ -480,8 +497,111 @@ class PDB2PyG:
                         #todo. store some other data. sequence. uniprot info etc.
                 else:
                     print('err' , pdbfile )
+    
+
+    def store_pyg_complexdata(self, pdbfiles, filename, verbose = True ):
+        with h5py.File(filename , mode = 'w') as f:
+            for pdbfile in  tqdm.tqdm( pdbfiles ):                    
+                if verbose:
+                    print(pdbfile)
+                #load the pdb and get chains
+                chains = self.read_pdb(pdbfile)
+                if len(chains) > 1:
+                    for i,c in enumerate(chains):
+                        hetero_data = self.struct2pyg(c)
+                        if hetero_data:
+                            identifier = hetero_data.identifier
+                            f.create_group(identifier)
+                            for node_type in hetero_data.node_types:
+                                if hetero_data[node_type].x is not None:
+                                    node_group = f.create_group(f'structs/{identifier}/chains/{i}/node/{node_type}')
+                                    node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+                            # Iterate over edge types and their connections
+                            for edge_type in hetero_data.edge_types:
+                                # edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
+                                edge_group = f.create_group(f'structs/{identifier}/chains/{i}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
+                                if hetero_data[edge_type].edge_index is not None:
+                                    edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+                                # If there are edge features, save them too
+                                if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+                                    edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+                        for i,c1 in enumerate(chains):
+                            for j,c2 in enumerate(chains):
+                                hetero_data = self.complex2pyg(c1, c2)
+                                if hetero_data:
+                                    identifier = hetero_data.identifier
+                                    f.create_group(identifier)
+                                    for node_type in hetero_data.node_types:
+                                        if hetero_data[node_type].x is not None:
+                                            node_group = f.create_group(f'structs/{identifier}/complex/{i}_{j}/node/{node_type}')
+                                            node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+                                    # Iterate over edge types and their connections
+                                    for edge_type in hetero_data.edge_types:
+                                        # edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
+                                        edge_group = f.create_group(f'structs/{identifier}/complex/{i}_{j}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
+                                        if hetero_data[edge_type].edge_index is not None:
+                                            edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+                                        
+                                        # If there are edge features, save them too
+                                        if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+                                            edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+                                        #todo. store some other data. sequence. uniprot info etc.
+                                else:
+                                    print('err' , pdbfile )
+                else:
+                    print('err' , pdbfile , 'not multichain')
+
+class ComplexDataset(Dataset):
+    def __init__(self, h5dataset  ):
+        super().__init__()
+        #keys should be the structures
 
 
+        self.h5dataset = h5dataset
+
+        if type(h5dataset) == str:
+            self.h5dataset = h5py.File(h5dataset, 'r')
+        self.structlist = list(self.h5dataset['structs'].keys())
+    
+    def __len__(self):
+        return len(self.structlist)
+
+    def __getitem__(self, idx):
+        if type(idx) == str:
+            f = self.h5dataset['structs'][idx]
+        elif type(idx) == int:
+            f = self.h5dataset['structs'][self.structlist[idx]]
+        else:
+            raise 'use a structure filename or integer'
+        data = {}
+        hetero_data = HeteroData()
+        
+        if type (idx) == int:
+            hetero_data.identifier = self.structlist[idx]
+        else:
+            hetero_data.identifier = idx
+
+        if 'node' in f.keys():
+            for node_type in f['node'].keys():
+                node_group = f['node'][node_type]
+                # Assuming 'x' exists
+                if 'x' in node_group.keys():
+                    hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+        # Edge data
+        if 'edge' in f.keys():
+            for edge_name in f['edge'].keys():
+                edge_group = f['edge'][edge_name]
+                src_type, link_type, dst_type = edge_name.split('_')
+                edge_type = (src_type, link_type, dst_type)
+                # Assuming 'edge_index' exists
+                if 'edge_index' in edge_group.keys():
+                    hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+                
+                # If there are edge attributes, load them too
+                if 'edge_attr' in edge_group.keys():
+                    hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+        #return pytorch geometric heterograph
+        return hetero_data
 class StructureDataset(Dataset):
     def __init__(self, h5dataset  ):
         super().__init__()
