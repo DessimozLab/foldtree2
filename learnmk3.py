@@ -12,70 +12,73 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk3_aa_EMA_64_lowcost'
-decoder_save = 'decoder_mk3_aa_EMA_64_lowcost'
-overwrite = False
+encoder_save = 'encoder_mk3_aa_EMA_64_lowcost_big_transformer'
+decoder_save = 'decoder_mk3_aa_EMA_64_lowcost_big_transformer'
+overwrite =  False
 train_loop = True
-
+variational = False
+betafactor = 2
 
 struct_dat = ft2.StructureDataset('structs_training.h5')
 
 # Create a DataLoader for training
 total_loss_x = 0
 total_loss_edge = 0
-total_vq=0
+total_vqe=0
+total_vqq=0
+total_vq = 0
 total_kl = 0
 total_plddt=0
+
+
 # Training loop
-
-
 ndim = struct_dat[0]['res'].x.shape[1]
 print( struct_dat[0] )
 
 #load model if it exists
+if variational == True:
+    encoder = ft2.HeteroGAE_variational_Encoder(in_channels=ndim, hidden_channels=[ 250 ]*4 , out_channels=50, metadata=converter.metadata , num_embeddings=64, 
+                                commitment_cost=.8 , encoder_hidden=100 , EMA = True , reset_codes= False )
 
-#add positional encoder channels to input
-encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 400 ]*3 , out_channels=250, metadata=converter.metadata , num_embeddings=64, commitment_cost=.9 , encoder_hidden=500 , EMA = True , reset_codes= False )
-#encoder = HeteroGAE_VariationalQuantizedEncoder(in_channels=ndim, hidden_channels=[100]*3 , out_channels=25, metadata=metadata , num_embeddings=256  , commitment_cost= 1.5 )
+else:
+    #add positional encoder channels to input
+    encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*4 , out_channels=50, metadata=converter.metadata , num_embeddings=64, 
+                                commitment_cost=.8 , encoder_hidden=100 , EMA = True , reset_codes= False )
 
-decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
-                            hidden_channels={ ( 'res','backbone','res'):[ 500 ] * 5  } , 
-                            out_channels_hidden= 150 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
-
-
+decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels + 256  , 
+                            hidden_channels={ ( 'res','backbone','res'):[ 250 ] * 5  } , 
+                            out_channels_hidden= 100 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
 
 
 if os.path.exists(encoder_save) and overwrite == False:
     encoder.load_state_dict(torch.load(encoder_save ))
+    print('Loaded encoder')
 if os.path.exists(decoder_save) and overwrite == False:
     decoder.load_state_dict(torch.load(decoder_save  ))
+    print('Loaded decoder')
+
 
 #create a training loop for the GAE model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
 print(device)
 
-
-betafactor = 2
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-
+sharpen = False
 
 if train_loop == True:
     train_loader = DataLoader(struct_dat, batch_size=40, shuffle=True)
-    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.0001)
+    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001)
     encoder.train()
     decoder.train()
     
-    xlosses = []
-    edgelosses = []
-    vqlosses = []
-    plddtlosses = []
+    all_losses = []
 
     edgeweight = 1
-    xweight = 4
-    vqweight = 1
+    xweight = 1
+    vqweight = 2
 
     plddtweight = 1
 
@@ -83,51 +86,70 @@ if train_loop == True:
         for data in tqdm.tqdm(train_loader):
             data = data.to(device)
             optimizer.zero_grad()
-            z,vqloss = encoder.forward(data['res'].x, data['AA'].x , data.edge_index_dict)
-            
+            if variational == True:
+                z, mu, logvar, vqloss , eloss, qloss = encoder.forward(data['res'].x, data['AA'].x , data.edge_index_dict)
+            else:
+                z,vqloss,eloss,qloss = encoder.forward(data['res'].x, data['AA'].x , data.edge_index_dict)
+            z = torch.cat([z, data['positions'].x], dim=1)
             #add positional encoding to give to the decoder
             edgeloss = ft2.recon_loss(z , data.edge_index_dict[( 'res','contactPoints','res')]
                                   , data.edge_index_dict[( 'res','backbone','res')], decoder)
             
-            recon_x , edge_probs = decoder(z, data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict )        
-    
+            recon_x , edge_probs = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict )        
             xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
             #plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
+
+            if sharpen == True:
+                vqloss = eloss + qloss
+                vqweight = 2
+                edgeweight = .5
+                xweight = .5
+            
             loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss #+ plddtloss
+        
+            if variational == True:
+                # KL Divergence loss
+                kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+                loss += kl_loss * betafactor
+        
             loss.backward()
             optimizer.step()
             total_loss_edge += edgeloss.item()
             total_loss_x += xloss.item()
+            total_vqe += eloss.item()
+            total_vqq += qloss.item()
             total_vq += vqloss.item()
-            #total_plddt += plddtloss.item()
         
-        if epoch % 5 == 0 :
+        if edgeloss.item() < 77:
+            sharpen = True
+            print('Sharpening quantization')
+
+        all_loss = total_loss_x + total_loss_edge + total_vq
+        all_losses.append(all_loss)
+        if len(all_losses) > 10:    
+            #remove first loss
+            all_losses.pop(0)
+            #if loss isnt decreasing, lower the learning rate
+            #compute average delta of loss between epoch over the last 10 epochs
+            delta = np.mean([ all_losses[i] - all_losses[i+1] for i in range( len(all_losses) - 1 ) ] )
+            if delta < 0:
+                for g in optimizer.param_groups:
+                    g['lr'] = g['lr'] * 0.9
+                    print(f'Lowering learning rate to {g["lr"]}')    
+                    all_losses = [] 
+        if epoch % 5 == 0:
             #save model
             torch.save(encoder.state_dict(), encoder_save)
             torch.save(decoder.state_dict(), decoder_save)
             with open(encoder_save + '_model.pkl' , 'wb') as f:
                 pickle.dump([encoder, decoder], f)
 
-        """
-        for loss in [( total_loss_x , xlosses , xweight ), (total_loss_edge, edgelosses, edgeweight), ( total_vq, vqlosses, vqweight ) ]:
-            loss[1].append(loss[0])
-            #calculate the mean delta loss for past 10 epochs
-            if len(loss[1]) > 10:
-                loss[1].pop(0)
-                mean_loss = np.mean(loss[0:5])
-                #calculate the delta loss for the last 5 epochs
-                delta_loss = np.mean(loss[1][-5:])
-                delta_loss = delta_loss- mean_loss
-                if delta_loss > 0:
-                    loss[2] = loss[2]*2
-                else:
-                    loss[2] = loss[2]/1.5
-                loss[2] = np.clip(loss[2], 1e-5, 1e5)
-        """    
-        print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f}') #, plddt Loss: {total_plddt:.4f}')
+        print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq e Loss: {total_vqe:.4f}, vq q Loss: {total_vqq:.4f} , vq Loss: {total_vq:.4f}')
         total_loss_x = 0
         total_loss_edge = 0
         total_vq = 0
+        total_vqe = 0
+        total_vqq = 0
         #total_plddt = 0
     torch.save(encoder.state_dict(), encoder_save)
     torch.save(decoder.state_dict(), decoder_save)
