@@ -12,9 +12,9 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk3_aa_EMA_64_lowcost_big_transformer'
-decoder_save = 'decoder_mk3_aa_EMA_64_lowcost_big_transformer'
-overwrite =  False
+encoder_save = 'encoder_mk3_aa_EMA_64_lowcost_small10_transformer'
+decoder_save = 'decoder_mk3_aa_EMA_64_lowcost_small10_transformer'
+overwrite =  True
 train_loop = True
 variational = False
 betafactor = 2
@@ -45,9 +45,9 @@ else:
     encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*4 , out_channels=50, metadata=converter.metadata , num_embeddings=64, 
                                 commitment_cost=.8 , encoder_hidden=100 , EMA = True , reset_codes= False )
 
-decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels + 256  , 
-                            hidden_channels={ ( 'res','backbone','res'):[ 250 ] * 5  } , 
-                            out_channels_hidden= 100 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
+decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels + 256 , 
+                            hidden_channels={ ( 'res','backbone','res'):[ 500 ] * 5  } , 
+                            out_channels_hidden= 250 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
 
 
 if os.path.exists(encoder_save) and overwrite == False:
@@ -120,9 +120,11 @@ if train_loop == True:
             total_vqq += qloss.item()
             total_vq += vqloss.item()
         
-        if edgeloss.item() < 77:
+        if total_loss_edge <  77:
             sharpen = True
             print('Sharpening quantization')
+        else:
+            sharpen = False
 
         all_loss = total_loss_x + total_loss_edge + total_vq
         all_losses.append(all_loss)

@@ -1238,8 +1238,6 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         return HeteroGAE_Encoder(**config)
     
 
-
-
 class HeteroGAE_Decoder(torch.nn.Module):
     def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 1 , Xdecoder_hidden=30, metadata={}, amino_mapper= None):
         super(HeteroGAE_Decoder, self).__init__()
@@ -1257,6 +1255,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
         self.out_channels_hidden = out_channels_hidden
         self.in_channels = encoder_out_channels
         self.amino_acid_indices = amino_mapper
+
         self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 
         for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
