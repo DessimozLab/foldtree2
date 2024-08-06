@@ -12,8 +12,8 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk3_aa_EMA_64_lowcost_small10_transformer'
-decoder_save = 'decoder_mk3_aa_EMA_64_lowcost_small10_transformer'
+encoder_save = 'encoder_mk3_aa_EMA_40_lowcost_small10_transformer'
+decoder_save = 'decoder_mk3_aa_EMA_40_lowcost_small10_transformer'
 overwrite =  True
 train_loop = True
 variational = False
@@ -31,23 +31,28 @@ total_kl = 0
 total_plddt=0
 
 
+contact_ratio = 0.1
+calc_ratio = False
+
 # Training loop
 ndim = struct_dat[0]['res'].x.shape[1]
 print( struct_dat[0] )
 
 #load model if it exists
 if variational == True:
-    encoder = ft2.HeteroGAE_variational_Encoder(in_channels=ndim, hidden_channels=[ 250 ]*4 , out_channels=50, metadata=converter.metadata , num_embeddings=64, 
-                                commitment_cost=.8 , encoder_hidden=100 , EMA = True , reset_codes= False )
+    encoder = ft2.HeteroGAE_variational_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*4 , out_channels=20, metadata=converter.metadata , num_embeddings=50, 
+                                commitment_cost=.8 , encoder_hidden=10 , EMA = True , reset_codes= False )
 
 else:
     #add positional encoder channels to input
-    encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*4 , out_channels=50, metadata=converter.metadata , num_embeddings=64, 
+    encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*4 , out_channels=20, metadata=converter.metadata , num_embeddings=50, 
                                 commitment_cost=.8 , encoder_hidden=100 , EMA = True , reset_codes= False )
 
-decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels + 256 , 
-                            hidden_channels={ ( 'res','backbone','res'):[ 500 ] * 5  } , 
-                            out_channels_hidden= 250 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=100 )
+
+
+decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
+                            hidden_channels={ ( 'res','backbone','res'):[ 1500 ] * 5  } , 
+                            out_channels_hidden= 100 , metadata=converter.metadata , amino_mapper = converter.aaindex , Xdecoder_hidden=50 )
 
 
 if os.path.exists(encoder_save) and overwrite == False:
@@ -75,14 +80,13 @@ if train_loop == True:
     decoder.train()
     
     all_losses = []
-
     edgeweight = 1
     xweight = 1
-    vqweight = 2
-
+    vqweight = 1
     plddtweight = 1
 
     for epoch in range(1000):
+        count = 0
         for data in tqdm.tqdm(train_loader):
             data = data.to(device)
             optimizer.zero_grad()
@@ -90,12 +94,17 @@ if train_loop == True:
                 z, mu, logvar, vqloss , eloss, qloss = encoder.forward(data['res'].x, data['AA'].x , data.edge_index_dict)
             else:
                 z,vqloss,eloss,qloss = encoder.forward(data['res'].x, data['AA'].x , data.edge_index_dict)
-            z = torch.cat([z, data['positions'].x], dim=1)
+            #z = torch.cat([z, data['positions'].x], dim=1)
             #add positional encoding to give to the decoder
             edgeloss = ft2.recon_loss(z , data.edge_index_dict[( 'res','contactPoints','res')]
                                   , data.edge_index_dict[( 'res','backbone','res')], decoder)
             
-            recon_x , edge_probs = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict )        
+            if calc_ratio == True:
+                contact_ratio = data.edge_index_dict[( 'res','contactPoints','res')].shape[1] / data.edge_index_dict[( 'res','backbone','res')].shape[1]**2
+            else:
+                contact_ratio = contact_ratio
+            
+            recon_x , edge_probs = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = -np.log(contact_ratio) , neglossmod= -np.log(1-contact_ratio) )        
             xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
             #plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
 
@@ -119,14 +128,15 @@ if train_loop == True:
             total_vqe += eloss.item()
             total_vqq += qloss.item()
             total_vq += vqloss.item()
+            count += 1
         
-        if total_loss_edge <  77:
+        if total_loss_edge/count <  1:
             sharpen = True
             print('Sharpening quantization')
         else:
             sharpen = False
 
-        all_loss = total_loss_x + total_loss_edge + total_vq
+        all_loss = total_loss_x + total_loss_edge + total_vq 
         all_losses.append(all_loss)
         if len(all_losses) > 10:    
             #remove first loss
@@ -136,7 +146,7 @@ if train_loop == True:
             delta = np.mean([ all_losses[i] - all_losses[i+1] for i in range( len(all_losses) - 1 ) ] )
             if delta < 0:
                 for g in optimizer.param_groups:
-                    g['lr'] = g['lr'] * 0.9
+                    g['lr'] = g['lr'] * 0.1
                     print(f'Lowering learning rate to {g["lr"]}')    
                     all_losses = [] 
         if epoch % 5 == 0:
@@ -146,7 +156,7 @@ if train_loop == True:
             with open(encoder_save + '_model.pkl' , 'wb') as f:
                 pickle.dump([encoder, decoder], f)
 
-        print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq e Loss: {total_vqe:.4f}, vq q Loss: {total_vqq:.4f} , vq Loss: {total_vq:.4f}')
+        print(f'Epoch {epoch}, AALoss: {total_loss_x/count:.4f}, Edge Loss: {total_loss_edge/count:.4f}, vq e Loss: {total_vqe/count:.4f}, vq q Loss: {total_vqq/count:.4f} , vq Loss: {total_vq/count:.4f}')
         total_loss_x = 0
         total_loss_edge = 0
         total_vq = 0

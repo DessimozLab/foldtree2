@@ -1249,7 +1249,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
         torch.backends.cudnn.benchmark = False
 
         self.convs = torch.nn.ModuleList()
-        self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
+        #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
         self.metadata = metadata
         self.hidden_channels = hidden_channels
         self.out_channels_hidden = out_channels_hidden
@@ -1258,6 +1258,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
         self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 
+        """
         for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
             self.convs.append(
                 torch.nn.ModuleDict({
@@ -1265,7 +1266,14 @@ class HeteroGAE_Decoder(torch.nn.Module):
                     for edge_type in [('res', 'backbone', 'res')]
                 })
             )
-
+        """
+        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+            self.convs.append(
+                torch.nn.ModuleDict({
+                    '_'.join(edge_type): SAGEConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  )
+                    for edge_type in [('res', 'backbone', 'res')]
+                })
+            )   
         self.lin = Linear(hidden_channels[('res', 'backbone', 'res')][-1], self.out_channels_hidden)
         
         self.sigmoid = nn.Sigmoid()
@@ -1284,7 +1292,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
         
 
     def forward(self, z , edge_index, backbones, **kwargs):
-        z = self.bn(z)
+        #z = self.bn(z)
 
         #copy z for later concatenation
         inz = z
