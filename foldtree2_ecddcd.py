@@ -276,6 +276,9 @@ class PDB2PyG:
         if len(chain) ==0:
             return None
         angles = self.get_angles(chain)
+
+        bondangles = np.array(angles[['Phi_Angle', 'Psi_Angle']])
+
         if len(angles) ==0:
             return None
         angles = self.add_aaproperties(angles , verbose = verbose)
@@ -351,7 +354,7 @@ class PDB2PyG:
             plt.ylim([0,1])
             plt.show()
             
-        return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa
+        return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles
 
 
     @staticmethod
@@ -378,7 +381,7 @@ class PDB2PyG:
             return None
         
         if xdata is not None:
-            angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa = xdata
+            angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles = xdata
         else:
             return None
         if len(angles) ==0:
@@ -398,6 +401,7 @@ class PDB2PyG:
         #just keep the amino acid 1 hot encoding
         #add the amino acid 1 hot to dataset. use for training
         data['AA'].x = torch.tensor(aa, dtype=torch.float32)
+        data['bondangles'].x = torch.tensor(bondangles, dtype=torch.float32)
         data['plddt'].x = torch.tensor(plddt, dtype=torch.float32)
         data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
         #use the amino acid properties as the node features
@@ -645,9 +649,6 @@ class ComplexDataset(Dataset):
                         hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
             pairdata[pair] = hetero_data
         return chaindata, pairdata
-    
-
-
 class StructureDataset(Dataset):
     def __init__(self, h5dataset  ):
         super().__init__()
@@ -1072,7 +1073,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
 
 
 class HeteroGAE_variational_Encoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True ):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True  ):
         super(HeteroGAE_Encoder, self).__init__()
 
         #save all arguments to constructor
@@ -1085,7 +1086,6 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-        
         self.convs = torch.nn.ModuleList()
         self.metadata = metadata
         self.hidden_channels = hidden_channels
@@ -1239,7 +1239,7 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
     
 
 class HeteroGAE_Decoder(torch.nn.Module):
-    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 1 , Xdecoder_hidden=30, metadata={}, amino_mapper= None):
+    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 1 , Xdecoder_hidden=30, metadata={}, amino_mapper= None , predangles = False , predplddt= False):
         super(HeteroGAE_Decoder, self).__init__()
         
         # Setting the seed
@@ -1247,6 +1247,9 @@ class HeteroGAE_Decoder(torch.nn.Module):
         # Ensure that all operations are deterministic on GPU (if used) for reproducibility
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+        self.predangles = predangles
+        self.predplddt = predplddt
 
         self.convs = torch.nn.ModuleList()
         #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
@@ -1258,7 +1261,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
         self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 
-        """
+    
         for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
             self.convs.append(
                 torch.nn.ModuleDict({
@@ -1266,14 +1269,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
                     for edge_type in [('res', 'backbone', 'res')]
                 })
             )
-        """
-        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): SAGEConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  )
-                    for edge_type in [('res', 'backbone', 'res')]
-                })
-            )   
+        
         self.lin = Linear(hidden_channels[('res', 'backbone', 'res')][-1], self.out_channels_hidden)
         
         self.sigmoid = nn.Sigmoid()
@@ -1288,8 +1284,27 @@ class HeteroGAE_Decoder(torch.nn.Module):
             torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
             torch.nn.ReLU(),
             torch.nn.Linear(Xdecoder_hidden, xdim),
-            torch.nn.LogSoftmax(dim=1)         )
+            torch.nn.LogSoftmax(dim=1) )
+        if self.predplddt:
+            self.plddt_decoder = torch.nn.Sequential(
+                torch.nn.Linear( self.in_channels + self.out_channels_hidden , Xdecoder_hidden),
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, 1),
+                torch.nn.Sigmoid() )
         
+        if self.predangles:
+            self.angledecoder = torch.nn.Sequential( 
+            torch.nn.Linear( self.in_channels + self.out_channels_hidden , Xdecoder_hidden),
+            torch.nn.ReLU(),
+            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+            torch.nn.ReLU(),
+            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+            torch.nn.ReLU(),
+            torch.nn.Linear(Xdecoder_hidden, 2),
+            )
+
 
     def forward(self, z , edge_index, backbones, **kwargs):
         #z = self.bn(z)
@@ -1302,13 +1317,20 @@ class HeteroGAE_Decoder(torch.nn.Module):
                 z = F.relu(z)
         z = self.lin(z)
         x_r = self.decoder(  torch.cat( [inz,  z] , axis = 1) )
+
+        if self.predangles:
+            angles_r = self.angledecoder(  torch.cat( [inz,  z] , axis = 1) )
+        if self.predplddt:
+            plddt_r = self.plddt_decoder(  torch.cat( [inz,  z] , axis = 1) )
+
         sim_matrix = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
         edge_probs = self.sigmoid(sim_matrix)
 
-        #plddt_r = self.plddt_decoder(z)
+        if self.predangles == False and self.predplddt == False:
+            return x_r,  edge_probs
+        if self.predangles == True and self.predplddt == False:
+            return x_r,  edge_probs, angles_r
         
-        #return x_r, plddt_r,  edge_probs
-        return x_r,  edge_probs
 
     def x_to_amino_acid_sequence(self, x_r):
         """
