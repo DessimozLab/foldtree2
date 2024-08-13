@@ -920,8 +920,28 @@ class VectorQuantizer(nn.Module):
         return embeddings
 
 
+# residual block feed forward
+class ResidualBlockFF(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels , outchannels , nlayers = 2):
+        super(ResidualBlockFF, self).__init__()
+        self.ff_stack1 = torch.nn.Sequential( 
+            Linear(in_channels, hidden_channels),
+            torch.nn.ReLU(),
+            #add nlayers
+            *[torch.nn.Sequential(Linear(hidden_channels, hidden_channels), torch.nn.ReLU()) for i in range(nlayers)]
+            , Linear(hidden_channels, in_channels) , torch.nn.ReLU()
+            )
+        self.final = torch.nn.Linear(in_channels, outchannels)
+
+    def forward(self, x):
+        xcopy = x
+        x = self.ff_stack1(x)
+        x = x+xcopy
+        x = self.final(x)
+        return F.relu(x)
+
 class HeteroGAE_Encoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True ):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True , nheads = 3 ):
         super(HeteroGAE_Encoder, self).__init__()
 
         #save all arguments to constructor
@@ -945,22 +965,24 @@ class HeteroGAE_Encoder(torch.nn.Module):
         #batch norm
         self.bn = torch.nn.BatchNorm1d(in_channels)
         self.dropout = torch.nn.Dropout(p=dropout_p)
+
         for i in range(len(hidden_channels)):
             self.convs.append(
                 torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i])
+                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i], heads = nheads , concat= False)
                     for edge_type in metadata['edge_types']
                 })
             )
-        #self.lin = Linear(hidden_channels[-1], out_channels)
-        self.out_dense= torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
+        #output dense layer
+        self.out_dense = self.out_dense= torch.nn.Sequential(
+            Linear(hidden_channels[-1] +20, out_channels),
             torch.nn.ReLU(),
-            torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
+            Linear(out_channels, out_channels),
             torch.nn.ReLU(),
-            torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
+            Linear(out_channels, out_channels),
             torch.nn.Tanh()
             )
+
         if EMA == False:
             self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
         else:
@@ -968,12 +990,13 @@ class HeteroGAE_Encoder(torch.nn.Module):
         
     def forward(self, x, xaa, edge_index_dict):
         x = self.bn(x)
+        x = self.dropout(x)
         for i, convs in enumerate(self.convs):
             # Apply the graph convolutions and average over all edge types
             x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
             x = torch.stack(x, dim=0).mean(dim=0)
             x = F.relu(x) if i < len(self.hidden_channels) - 1 else x
-        
+    
         x = self.out_dense( torch.cat([x,xaa], dim=1) )
         z_quantized, vq_loss , eloss, qloss = self.vector_quantizer(x)
         return z_quantized, vq_loss , eloss, qloss
@@ -1069,9 +1092,6 @@ class HeteroGAE_Encoder(torch.nn.Module):
         return HeteroGAE_Encoder(**config)
     
 
-
-
-
 class HeteroGAE_variational_Encoder(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True  ):
         super(HeteroGAE_Encoder, self).__init__()
@@ -1093,13 +1113,14 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         self.in_channels = in_channels
         self.encoder_hidden = encoder_hidden
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         #batch norm
         self.bn = torch.nn.BatchNorm1d(in_channels)
         self.dropout = torch.nn.Dropout(p=dropout_p)
         for i in range(len(hidden_channels)):
             self.convs.append(
                 torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i])
+                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , heads = nheads , concat= False )
                     for edge_type in metadata['edge_types']
                 })
             )
@@ -1110,7 +1131,7 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
             torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
             torch.nn.ReLU(),
             torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
-            torch.nn.Tanh()
+            torch.nn.Sigmoid()
             )
         
         self.fc_mu = Linear(hidden_channels[-1], latent_dim)
@@ -1237,9 +1258,10 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
     def load_from_config(config):
         return HeteroGAE_Encoder(**config)
     
+    
 
 class HeteroGAE_Decoder(torch.nn.Module):
-    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 1 , Xdecoder_hidden=30, metadata={}, amino_mapper= None , predangles = False , predplddt= False):
+    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , dropout= .1):
         super(HeteroGAE_Decoder, self).__init__()
         
         # Setting the seed
@@ -1247,10 +1269,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
         # Ensure that all operations are deterministic on GPU (if used) for reproducibility
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-
-        self.predangles = predangles
-        self.predplddt = predplddt
-
         self.convs = torch.nn.ModuleList()
         #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
         self.metadata = metadata
@@ -1259,52 +1277,53 @@ class HeteroGAE_Decoder(torch.nn.Module):
         self.in_channels = encoder_out_channels
         self.amino_acid_indices = amino_mapper
 
+
+        self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
+
         self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 
-    
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        """
         for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
             self.convs.append(
                 torch.nn.ModuleDict({
                     '_'.join(edge_type): TransformerConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  , heads = nheads , concat= False )
                     for edge_type in [('res', 'backbone', 'res')]
                 })
+            )"""
+        
+        
+        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+            self.convs.append(
+                torch.nn.ModuleDict({
+                    '_'.join(edge_type): FiLMConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i] , 
+                                                                       
+                nn = 
+                torch.nn.Sequential(
+                torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
+                torch.nn.ReLU(),
+                torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
+                torch.nn.ReLU() ) 
+                )
+                    for edge_type in [('res', 'backbone', 'res')]
+                })
             )
         
-        self.lin = Linear(hidden_channels[('res', 'backbone', 'res')][-1], self.out_channels_hidden)
-        
-        self.sigmoid = nn.Sigmoid()
+        self.sigmoid = nn.Sigmoid()        
+        self.lin = Linear(self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
 
-        self.decoder = torch.nn.Sequential(
-            torch.nn.Linear( self.in_channels + self.out_channels_hidden , Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, xdim),
-            torch.nn.LogSoftmax(dim=1) )
-        if self.predplddt:
-            self.plddt_decoder = torch.nn.Sequential(
-                torch.nn.Linear( self.in_channels + self.out_channels_hidden , Xdecoder_hidden),
-                torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-                torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, 1),
-                torch.nn.Sigmoid() )
+        #self.decoder = ResidualBlockFF( self.in_channels + hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden, Xdecoder_hidden , nlayers = 3)
         
-        if self.predangles:
-            self.angledecoder = torch.nn.Sequential( 
-            torch.nn.Linear( self.in_channels + self.out_channels_hidden , Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(Xdecoder_hidden, 2),
-            )
-
+        self.aadecoder = torch.nn.Sequential(
+                torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, xdim),
+                torch.nn.LogSoftmax(dim=1) )
 
     def forward(self, z , edge_index, backbones, **kwargs):
         #z = self.bn(z)
@@ -1315,21 +1334,18 @@ class HeteroGAE_Decoder(torch.nn.Module):
             for edge_type, conv in layer.items():
                 z = conv(z, backbones[tuple(edge_type.split('_'))])
                 z = F.relu(z)
-        z = self.lin(z)
-        x_r = self.decoder(  torch.cat( [inz,  z] , axis = 1) )
-
-        if self.predangles:
-            angles_r = self.angledecoder(  torch.cat( [inz,  z] , axis = 1) )
-        if self.predplddt:
-            plddt_r = self.plddt_decoder(  torch.cat( [inz,  z] , axis = 1) )
-
-        sim_matrix = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
+        #pass through resnet decoder first
+        #decoder_in = self.dropout( torch.cat( [inz,  z] , axis = 1) )
+        #z_decoder = self.decoder( decoder_in ) 
+        z_decoder = self.lin( z )
+        
+        #decode aa
+        aa = self.aadecoder( torch.cat( [ inz,  z_decoder ] , axis = 1 ) )
+        
+        sim_matrix = (z_decoder[edge_index[0]] * z_decoder[edge_index[1]]).sum(dim=1)
+        #find contacts
         edge_probs = self.sigmoid(sim_matrix)
-
-        if self.predangles == False and self.predplddt == False:
-            return x_r,  edge_probs
-        if self.predangles == True and self.predplddt == False:
-            return x_r,  edge_probs, angles_r
+        return aa,  edge_probs
         
 
     def x_to_amino_acid_sequence(self, x_r):
