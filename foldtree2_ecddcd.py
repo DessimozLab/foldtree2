@@ -649,6 +649,7 @@ class ComplexDataset(Dataset):
                         hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
             pairdata[pair] = hetero_data
         return chaindata, pairdata
+    
 class StructureDataset(Dataset):
     def __init__(self, h5dataset  ):
         super().__init__()
@@ -974,7 +975,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
                 })
             )
         #output dense layer
-        self.out_dense = self.out_dense= torch.nn.Sequential(
+        """self.out_dense = self.out_dense= torch.nn.Sequential(
             Linear(hidden_channels[-1] +20, out_channels),
             torch.nn.ReLU(),
             Linear(out_channels, out_channels),
@@ -982,6 +983,11 @@ class HeteroGAE_Encoder(torch.nn.Module):
             Linear(out_channels, out_channels),
             torch.nn.Tanh()
             )
+        """
+        self.out_dense = torch.nn.Sequential(
+            Linear(hidden_channels[-1], out_channels),
+            torch.nn.Tanh() )
+        
 
         if EMA == False:
             self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
@@ -997,8 +1003,11 @@ class HeteroGAE_Encoder(torch.nn.Module):
             x = torch.stack(x, dim=0).mean(dim=0)
             x = F.relu(x) if i < len(self.hidden_channels) - 1 else x
     
-        x = self.out_dense( torch.cat([x,xaa], dim=1) )
+        #x = self.out_dense( torch.cat([x,xaa], dim=1) )
+        x = self.out_dense( x)
+
         z_quantized, vq_loss , eloss, qloss = self.vector_quantizer(x)
+        
         return z_quantized, vq_loss , eloss, qloss
 
     def encode_structures( dataloader, encoder, filename = 'structalign.strct' ):
@@ -1124,8 +1133,9 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
                     for edge_type in metadata['edge_types']
                 })
             )
-        #self.lin = Linear(hidden_channels[-1], out_channels)
-        self.out_dense= torch.nn.Sequential(
+        
+        self.lin = Linear(hidden_channels[-1], out_channels)
+        """self.out_dense= torch.nn.Sequential(
             torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
             torch.nn.ReLU(),
             torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
@@ -1134,6 +1144,7 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
             torch.nn.Sigmoid()
             )
         
+        """
         self.fc_mu = Linear(hidden_channels[-1], latent_dim)
         self.fc_logvar = Linear(hidden_channels[-1], latent_dim)
 
@@ -1303,8 +1314,10 @@ class HeteroGAE_Decoder(torch.nn.Module):
                 torch.nn.Sequential(
                 torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
                 torch.nn.ReLU(),
+                torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
+                torch.nn.ReLU(),
                 torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
-                torch.nn.ReLU() ) 
+                torch.nn.Tanh() ) 
                 )
                     for edge_type in [('res', 'backbone', 'res')]
                 })
@@ -1313,7 +1326,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
         self.sigmoid = nn.Sigmoid()        
         self.lin = Linear(self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
 
-        #self.decoder = ResidualBlockFF( self.in_channels + hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden, Xdecoder_hidden , nlayers = 3)
+        self.decoder = ResidualBlockFF( self.in_channels + hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden, Xdecoder_hidden , nlayers = 3)
         
         self.aadecoder = torch.nn.Sequential(
                 torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),
@@ -1335,9 +1348,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
                 z = conv(z, backbones[tuple(edge_type.split('_'))])
                 z = F.relu(z)
         #pass through resnet decoder first
-        #decoder_in = self.dropout( torch.cat( [inz,  z] , axis = 1) )
+        #decoder_in =  torch.cat( [inz,  z] , axis = 1)
         #z_decoder = self.decoder( decoder_in ) 
+        
         z_decoder = self.lin( z )
+
         
         #decode aa
         aa = self.aadecoder( torch.cat( [ inz,  z_decoder ] , axis = 1 ) )

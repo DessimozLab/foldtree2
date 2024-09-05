@@ -12,14 +12,14 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_mk3_aa_EMA_40_lowcost_small10_transformer'
-decoder_save = 'decoder_mk3_aa_EMA_40_lowcost_small10_transformer'
+encoder_save = 'encoder_lowcost_small10head_transformer'
+decoder_save = 'decoder_lowcost_small10head_transformer'
 
 model_dir = 'models/'
 if not os.path.exists(model_dir):
     os.makedirs(model_dir)
 
-overwrite =  True
+overwrite =  False
 train_loop = True
 variational = False
 betafactor = 2
@@ -47,14 +47,14 @@ print( struct_dat[0] )
 #load model if it exists
 encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 200 ] * 4 , 
                         out_channels=100, metadata=converter.metadata , num_embeddings=64, 
-                        commitment_cost=.8 , encoder_hidden= 200 , EMA = True , nheads = 3
+                        commitment_cost=.8 , encoder_hidden= 150 , EMA = True , nheads = 10
                         , reset_codes= False , dropout_p=0.001)
 
 decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
-                            hidden_channels={ ( 'res','backbone','res'):[ 150 ] * 5  } , 
-                            out_channels_hidden= 200 , metadata=converter.metadata , 
+                            hidden_channels={ ( 'res','backbone','res'):[ 200 ] * 5  } , 
+                            out_channels_hidden= 100 , metadata=converter.metadata , 
                             amino_mapper = converter.aaindex 
-                            , Xdecoder_hidden=200 , nheads = 2 , dropout = 0.001 ) 
+                            , Xdecoder_hidden=150 , nheads = 2 , dropout = 0.001 ) 
 
 
 if os.path.exists(model_dir+encoder_save) and overwrite == False:
@@ -77,13 +77,13 @@ decoder = decoder.to(device)
 sharpen = False
 
 if train_loop == True:
-    train_loader = DataLoader(struct_dat, batch_size=100, shuffle=True)
-    optimizer = torch.optim.Adagrad( list(encoder.parameters()) + list(decoder.parameters()) , lr = .001 )
+    train_loader = DataLoader(struct_dat, batch_size=20, shuffle=True)
+    optimizer = torch.optim.Adagrad( list(encoder.parameters()) + list(decoder.parameters()) , lr = 0.001)
     encoder.train()
     decoder.train()
     
     all_losses = []
-    edgeweight = 2
+    edgeweight = 1
     xweight = 1
     vqweight = 1
     plddtweight = 1
