@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 from torch_geometric.utils import to_networkx
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import SAGEConv , Linear , FiLMConv , TransformerConv , FeaStConv , GATConv , GINConv , GatedGraphConv
+from torch_geometric.nn import MemPooling
 from torch.nn import ModuleDict, ModuleList , L1Loss
 from torch_geometric.nn import global_mean_pool
 from torch_geometric.utils import negative_sampling
@@ -1269,7 +1270,146 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
     def load_from_config(config):
         return HeteroGAE_Encoder(**config)
     
+
+
+
+class HeteroGAE_Decoder_pooling(torch.nn.Module):
+    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 3 , Xdecoder_hidden=30, clustering_hidden= 30 ,metadata={}, amino_mapper= None  , dropout= .001):
+        super(HeteroGAE_Decoder_pooling, self).__init__()
+        # Setting the seed
+        L.seed_everything(42)
+        # Ensure that all operations are deterministic on GPU (if used) for reproducibility
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        self.convs = torch.nn.ModuleList()
+        #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
+        self.metadata = metadata
+        self.hidden_channels = hidden_channels
+        self.out_channels_hidden = out_channels_hidden
+        self.in_channels = encoder_out_channels
+        self.amino_acid_indices = amino_mapper
+
+
+        self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
+
+        self.revmap_aa = { v:k for k,v in amino_mapper.items() }
+
+        self.dropout = torch.nn.Dropout(p=dropout)
+        
+        """
+        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+            self.convs.append(
+                torch.nn.ModuleDict({
+                    '_'.join(edge_type): TransformerConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  , heads = nheads , concat= False )
+                    for edge_type in [('res', 'backbone', 'res')]
+                })
+            )"""
+        
+        
+        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+            self.convs.append(
+                torch.nn.ModuleDict({
+                    '_'.join(edge_type): FiLMConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i] , 
+                                                                       
+                nn = 
+                torch.nn.Sequential(
+                torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
+                torch.nn.ReLU(),
+                torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
+                torch.nn.ReLU(),
+                torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
+                torch.nn.Tanh() ) 
+                )
+                    for edge_type in [('res', 'backbone', 'res')]
+                })
+            )
+        
+        #use memory pooling to divide the graph into nheads*10 clusters
+        self.pool = MemPooling( self.hidden_channels[('res', 'backbone', 'res')][-1] , clustering_hidden , heads = nheads , num_clusters = 10   )
+        self.sigmoid = nn.Sigmoid()
+        self.lin = Linear(clustering_hidden + self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
+        self.aadecoder = torch.nn.Sequential(
+                torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.ReLU(),
+                torch.nn.Linear(Xdecoder_hidden, xdim),
+                torch.nn.LogSoftmax(dim=1) )
+
+    def forward(self, z , edge_index, backbones, **kwargs):
+        #z = self.bn(z)
+        #copy z for later concatenation
+        inz = z
+        nconvs = len(self.convs)
+        for i,layer in enumerate(self.convs):
+            if i == nconvs - 1:
+                for edge_type, conv in layer.items():
+                    z = conv(z, backbones[tuple(edge_type.split('_'))])
+                    z = F.relu(z)                
+                z_decoder_pooled , S = self.pool(z)
+                #concatenate the pooled z to the z of the original nodes
+                cluster_assignments = S.argmax(dim=2)[0,:]
+                z_cluster_features = z_decoder_pooled[0,cluster_assignments]  # shape: [num_nodes, in_channels]
+                #take mean on dim 1 to compile avg features of the cluster assigment
+                # Concatenate the original node features with the corresponding cluster-level features
+                z = torch.cat([z, z_cluster_features], dim=1)
+                z = F.relu(z)
+            else:
+                for edge_type, conv in layer.items():
+                    z = conv(z, backbones[tuple(edge_type.split('_'))])
+                    z = F.relu(z)
+        z_decoder = self.lin( z )
+        #pool
+        #decode aa
+        aa = self.aadecoder( torch.cat( [ inz,  z_decoder ] , axis = 1 ) )
+        sim_matrix = (z_decoder[edge_index[0]] * z_decoder[edge_index[1]]).sum(dim=1)
+        #find contacts
+        edge_probs = self.sigmoid(sim_matrix)
+        
+        return aa,  edge_probs
+        
+
+    def x_to_amino_acid_sequence(self, x_r):
+        """
+        Converts the reconstructed 20-dimensional matrix to a sequence of amino acids.
+
+        Args:
+            x_r (Tensor): Reconstructed 20-dimensional tensor.
+
+        Returns:
+            str: A string representing the sequence of amino acids.
+        """
+        # Find the index of the maximum value in each row to get the predicted amino acid
+        indices = torch.argmax(x_r, dim=1)
+        
+        # Convert indices to amino acids
+        amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
+        
+        return amino_acid_sequence
+
+    def load(self, modelfile):
+        self.load_state_dict(torch.load(modelfile))
+        self.eval()
+        return self
+
+    def save(self, modelfile):
+        torch.save(self.state_dict(), modelfile)
+        return modelfile
     
+    def ret_config(self):
+        return { 'encoder_out_channels': self.in_channels, 'xdim': 20, 'hidden_channels': self.hidden_channels, 'out_channels_hidden': self.out_channels_hidden, 'metadata': self.metadata, 'amino_mapper': self.amino_acid_indices }
+
+    def save_config(self, configfile):
+        with open(configfile , 'w') as f:
+            json.dump(self.ret_config(), f)
+        return configfile
+
+    def load_from_config(config):
+        return HeteroGAE_Encoder(**config)
+    
+
 
 class HeteroGAE_Decoder(torch.nn.Module):
     def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , dropout= .1):
@@ -1325,8 +1465,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
         
         self.sigmoid = nn.Sigmoid()        
         self.lin = Linear(self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
-
-        self.decoder = ResidualBlockFF( self.in_channels + hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden, Xdecoder_hidden , nlayers = 3)
         
         self.aadecoder = torch.nn.Sequential(
                 torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),

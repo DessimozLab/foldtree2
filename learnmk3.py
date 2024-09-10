@@ -12,14 +12,14 @@ import foldtree2_ecddcd as ft2
 
 converter = ft2.PDB2PyG()
 
-encoder_save = 'encoder_lowcost_small10head_transformer'
-decoder_save = 'decoder_lowcost_small10head_transformer'
+encoder_save = 'encoder_lowcost_small10head_transformer_pool'
+decoder_save = 'decoder_lowcost_small10head_transformer_pool'
 
 model_dir = 'models/'
 if not os.path.exists(model_dir):
     os.makedirs(model_dir)
 
-overwrite =  False
+overwrite =  True
 train_loop = True
 variational = False
 betafactor = 2
@@ -37,7 +37,7 @@ total_angle = 0
 total_plddt=0
 
 
-contact_ratio = 0.1
+contact_ratio = 1
 calc_ratio = False
 
 # Training loop
@@ -50,12 +50,18 @@ encoder = ft2.HeteroGAE_Encoder(in_channels=ndim, hidden_channels=[ 200 ] * 4 ,
                         commitment_cost=.8 , encoder_hidden= 150 , EMA = True , nheads = 10
                         , reset_codes= False , dropout_p=0.001)
 
-decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
+"""decoder = ft2.HeteroGAE_Decoder(encoder_out_channels = encoder.out_channels , 
                             hidden_channels={ ( 'res','backbone','res'):[ 200 ] * 5  } , 
                             out_channels_hidden= 100 , metadata=converter.metadata , 
                             amino_mapper = converter.aaindex 
                             , Xdecoder_hidden=150 , nheads = 2 , dropout = 0.001 ) 
 
+"""
+decoder = ft2.HeteroGAE_Decoder_pooling(encoder_out_channels = encoder.out_channels , 
+                            hidden_channels={ ( 'res','backbone','res'):[ 100 ] * 5  } , 
+                            out_channels_hidden= 100 , metadata=converter.metadata , 
+                            amino_mapper = converter.aaindex 
+                            , Xdecoder_hidden=100 , clustering_hidden = 10 ,  nheads = 3 , dropout = 0.001 ) 
 
 if os.path.exists(model_dir+encoder_save) and overwrite == False:
     encoder.load_state_dict(torch.load(model_dir+encoder_save ))
@@ -69,6 +75,7 @@ if os.path.exists(model_dir+decoder_save) and overwrite == False:
 #device = torch.device( 'cpu')
 
 device = torch.device("cuda:1")
+#device = torch.device("cpu")
 print(device)
 
 #put encoder and decoder on the device
@@ -78,7 +85,8 @@ sharpen = False
 
 if train_loop == True:
     train_loader = DataLoader(struct_dat, batch_size=20, shuffle=True)
-    optimizer = torch.optim.Adagrad( list(encoder.parameters()) + list(decoder.parameters()) , lr = 0.001)
+    #optimizer = torch.optim.Adagrad( list(encoder.parameters()) + list(decoder.parameters()) , lr = 0.01)
+    optimizer = torch.optim.Adam( list(encoder.parameters()) + list(decoder.parameters()) , lr = 0.001)
     encoder.train()
     decoder.train()
     
@@ -90,6 +98,7 @@ if train_loop == True:
 
     for epoch in range(1000):
         count = 0
+
         for data in tqdm.tqdm(train_loader):
             data = data.to(device)
             optimizer.zero_grad()
@@ -102,15 +111,14 @@ if train_loop == True:
             edgeloss = ft2.recon_loss(z , data.edge_index_dict[( 'res','contactPoints','res')]
                                   , data.edge_index_dict[( 'res','backbone','res')], decoder)
             
+
             if calc_ratio == True:
                 contact_ratio = data.edge_index_dict[( 'res','contactPoints','res')].shape[1] / data.edge_index_dict[( 'res','backbone','res')].shape[1]**2
             else:
                 contact_ratio = contact_ratio
             
-            decode_out= decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
-            xloss = ft2.aa_reconstruction_loss(data['AA'].x, decode_out[0])
-            
-           
+            decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
+            xloss = ft2.aa_reconstruction_loss(data['AA'].x, decode_out[0])           
             if sharpen == True:
                 vqloss = eloss + qloss
                 vqweight = 2
