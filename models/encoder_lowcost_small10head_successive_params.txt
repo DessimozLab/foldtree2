@@ -1,0 +1,72 @@
+Time: 2024-10-04 21:03:37.727639Encoder: HeteroGAE_Encoder(
+  (convs): ModuleList(
+    (0): ModuleDict(
+      (res_backbone_res): MFConv(844, 400)
+      (res_backbonerev_res): MFConv(400, 400)
+      (res_contactPoints_res): MFConv(400, 400)
+      (res_hbond_res): MFConv(400, 400)
+    )
+    (1-2): 2 x ModuleDict(
+      (res_backbone_res): MFConv(400, 400)
+      (res_backbonerev_res): MFConv(400, 400)
+      (res_contactPoints_res): MFConv(400, 400)
+      (res_hbond_res): MFConv(400, 400)
+    )
+  )
+  (bn): BatchNorm1d(844, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (dropout): Dropout(p=0.001, inplace=False)
+  (out_dense): Sequential(
+    (0): Linear(420, 200, bias=True)
+    (1): SiLU()
+    (2): Linear(200, 200, bias=True)
+    (3): SiLU()
+    (4): Linear(200, 200, bias=True)
+    (5): SiLU()
+    (6): Linear(200, 200, bias=True)
+    (7): SiLU()
+    (8): Linear(200, 200, bias=True)
+    (9): SiLU()
+    (10): Linear(200, 200, bias=True)
+    (11): SiLU()
+    (12): Linear(200, 200, bias=True)
+    (13): SiLU()
+    (14): Linear(200, 10, bias=True)
+    (15): SiLU()
+  )
+  (vector_quantizer): VectorQuantizerEMA(
+    (embeddings): Embedding(64, 10)
+  )
+)
+Decoder: HeteroGAE_Decoder(
+  (convs): ModuleList(
+    (0): ModuleDict(
+      (res_backbone_res): SAGEConv(10, 400, aggr=mean)
+    )
+    (1-4): 4 x ModuleDict(
+      (res_backbone_res): SAGEConv(400, 400, aggr=mean)
+    )
+  )
+  (bn): BatchNorm1d(10, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (dropout): Dropout(p=0.001, inplace=False)
+  (sigmoid): Sigmoid()
+  (lin): Sequential(
+    (0): Linear(in_features=400, out_features=500, bias=True)
+  )
+  (aadecoder): Sequential(
+    (0): Linear(in_features=510, out_features=400, bias=True)
+    (1): ReLU()
+    (2): Linear(in_features=400, out_features=400, bias=True)
+    (3): ReLU()
+    (4): Linear(in_features=400, out_features=400, bias=True)
+    (5): ReLU()
+    (6): Linear(in_features=400, out_features=20, bias=True)
+    (7): LogSoftmax(dim=1)
+  )
+)
+Batch size: 40
+Variational: False
+Beta factor: 2
+Contact ratio: 1
+Calculate ratio: False
+Separated: True
+Overwrite: True

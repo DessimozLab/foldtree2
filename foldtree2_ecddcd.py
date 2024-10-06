@@ -20,8 +20,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from torch_geometric.utils import to_networkx
 from torch_geometric.data import HeteroData
-from torch_geometric.nn import SAGEConv , Linear , FiLMConv , TransformerConv , FeaStConv , GATConv , GINConv , GatedGraphConv
-from torch_geometric.nn import MemPooling
+from torch_geometric.nn import  Linear , FiLMConv , TransformerConv , HGTConv , GINConv , GATConv , GCNConv , SAGEConv , MFConv
+from torch_geometric.nn.dense import dense_diff_pool as DiffPool
 from torch.nn import ModuleDict, ModuleList , L1Loss
 from torch_geometric.nn import global_mean_pool
 from torch_geometric.utils import negative_sampling
@@ -46,10 +46,13 @@ import pydssp
 import polars as pl 
 from Bio.PDB import PDBParser   
 
+
+
+
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
-    def __init__(self , aapropcsv= './aaindex1.csv'):
-        aaproperties = pd.read_csv('./aaindex1.csv', header=0)
+    def __init__(self , aapropcsv = './aaindex1.csv'):
+        aaproperties = pd.read_csv(aapropcsv, header=0)
         colmap = {aaproperties.columns[i]:i for i in range(len(aaproperties.columns))}
         aaproperties.drop( [ 'description' , 'reference'  ], axis=1, inplace=True)
         onehot = pd.get_dummies(aaproperties.columns.unique())
@@ -63,7 +66,7 @@ class PDB2PyG:
         self.onehot = onehot
         self.colmap = colmap
         #self.aaproperties =  pl.from_pandas(aaproperties)
-        self.metadata = { 'edge_types': [ ('res','backbone','res') , ('res','backbonerev','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+        self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
         self.aaindex = aaindex
         self.revmap_aa = {v:k for k,v in aaindex.items()}
 
@@ -79,6 +82,29 @@ class PDB2PyG:
 
     #return the phi, psi, and omega angles for each residue in a chain
     def get_angles(self,chain):
+        aa_dict = {
+        'ALA': 'A',
+        'ARG': 'R',
+        'ASN': 'N',
+        'ASP': 'D',
+        'CYS': 'C',
+        'GLN': 'Q',
+        'GLU': 'E',
+        'GLY': 'G',
+        'HIS': 'H',
+        'ILE': 'I',
+        'LEU': 'L',
+        'LYS': 'K',
+        'MET': 'M',
+        'PHE': 'F',
+        'PRO': 'P',
+        'SER': 'S',
+        'THR': 'T',
+        'TRP': 'W',
+        'TYR': 'Y',
+        'VAL': 'V'
+        }
+
         phi_psi_angles = []
         chain = [ r for r in chain if PDB.is_aa(r)]
         #sliding window of 3 residues
@@ -91,7 +117,7 @@ class PDB2PyG:
                 "Residue_Number": residue_id[3][1],
                 "Residue_Name": residue.get_resname(),
                 #translate 3 letter to 1 letter code
-                "single_letter_code": PDB.Polypeptide.three_to_one(residue.get_resname()),
+                "single_letter_code": aa_dict[residue.get_resname()],
                 "Phi_Angle": 0,
                 "Psi_Angle": 0
             })
@@ -124,7 +150,7 @@ class PDB2PyG:
                 "Residue_Number": residue_id[3][1],
                 "Residue_Name": residue.get_resname(),
                 #translate 3 letter to 1 letter code
-                "single_letter_code": PDB.Polypeptide.three_to_one(residue.get_resname()),
+                "single_letter_code": aa_dict[residue.get_resname()],
                 "Phi_Angle": phi,
                 "Psi_Angle": psi
             })
@@ -137,7 +163,7 @@ class PDB2PyG:
                 "Residue_Number": residue_id[3][1],
                 "Residue_Name": residue.get_resname(),
                 #translate 3 letter to 1 letter code
-                "single_letter_code": PDB.Polypeptide.three_to_one(residue.get_resname()),
+                "single_letter_code": aa_dict[residue.get_resname()],
                 "Phi_Angle": 0,
                 "Psi_Angle": 0
             })
@@ -408,6 +434,9 @@ class PDB2PyG:
         #use the amino acid properties as the node features
         angles = torch.tensor(angles.values, dtype=torch.float32)
         data['res'].x = angles
+        data['godnode'].x = torch.tensor(np.ones((1,1)), dtype=torch.float32)
+        data['godnode_decoder'].x = torch.tensor(np.ones((1,1)), dtype=torch.float32)
+
 
         #get the edge features
         data['res','backbone','res'].edge_attr = torch.tensor(backbone.data, dtype=torch.float32)
@@ -415,23 +444,51 @@ class PDB2PyG:
         data['res','contactPoints', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
         data['res','hbond', 'res'].edge_attr = torch.tensor(hbond_mat.data, dtype=torch.float)
         #data['res','springMat', 'res'].edge_attr = torch.tensor(springmat.data, dtype=torch.float32)
+        
+        
+        
+        #all residue nodes are connected to the god node
 
+        sparse_godnode = self.sparse2pairs( sparse.csr_matrix(np.ones((1, len(angles)))) )
         backbone = self.sparse2pairs(backbone)
         backbone_rev = self.sparse2pairs(backbone_rev)
         contact_points = self.sparse2pairs(contact_points)
         hbond_mat = self.sparse2pairs(hbond_mat)
-        springmat = self.sparse2pairs(springmat)
+        #springmat = self.sparse2pairs(springmat)
+
         #get the adjacency matrices into tensors
         data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
         data['res','backbonerev','res'].edge_index = torch.tensor(backbone_rev,  dtype=torch.long )
         data['res','contactPoints', 'res'].edge_index = torch.tensor(contact_points,  dtype=torch.long )    
         data['res','hbond', 'res'].edge_index = torch.tensor(hbond_mat,  dtype=torch.long )
+
         #data['res','springMat', 'res'].edge_index = torch.tensor(springmat,  dtype=torch.long )
         data['res','contactPoints', 'res'].edge_index ,  data['res','contactPoints', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','contactPoints', 'res'].edge_index , data['res','contactPoints', 'res'].edge_attr )
+        data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )       
+        
+        data['res','informs','godnode'].edge_index = torch.tensor(sparse_godnode ,  dtype=torch.long )
+        data['res','informs','godnode_decoder'].edge_index = torch.tensor(sparse_godnode ,  dtype=torch.long )
+        
+        #to undirected
+        data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )
+        data['res','backbone', 'res'].edge_index =torch_geometric.utils.to_undirected(  data['res','backbone', 'res'].edge_index )
+
+        data['res','informs','godnode'].edge_index  = torch_geometric.utils.to_undirected( data['res','informs','godnode'].edge_index  )
+        data['res','informs','godnode_decoder'].edge_index  = torch_geometric.utils.to_undirected( data['res','informs','godnode_decoder'].edge_index  )
+        
+        data[ 'godnode','informs','godnode'].edge_index = torch.tensor(np.array([[0,0]]), dtype=torch.long)
+        data[ 'godnode_decoder','informs','godnode_decoder'].edge_index = torch.tensor(np.array([[0,0]]), dtype=torch.long)
+        
+        data['godnode','informs','godnode'].edge_attr = torch.tensor(np.ones((1,1)), dtype=torch.float32)
+        data['godnode_decoder','informs','godnode_decoder'].edge_attr = torch.tensor(np.ones((1,1)), dtype=torch.float32)
+
         #add self loops
         data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
         data['res','backbonerev','res'].edge_index  = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
-        data['res','backbone', 'res'].edge_index =torch_geometric.utils.to_undirected(  data['res','backbone', 'res'].edge_index )
+        
+        data['res','informs','godnode'].edge_index  = torch_geometric.utils.add_self_loops( data['res','informs','godnode'].edge_index  )[0]
+        data['res','informs','godnode_decoder'].edge_index  = torch_geometric.utils.add_self_loops( data['res','informs','godnode_decoder'].edge_index  )[0]
+        
         return data
 
     
@@ -704,7 +761,7 @@ class StructureDataset(Dataset):
         return hetero_data
     
 class VectorQuantizerEMA(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight= 1 , entropyweight = 1):
+    def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight= 1 , entropyweight = 1 ):
         super(VectorQuantizerEMA, self).__init__()
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
@@ -784,7 +841,7 @@ class VectorQuantizerEMA(nn.Module):
         # Straight-through estimator for the backward pass
         quantized = x + (quantized - x).detach()
 
-        return quantized, total_loss , e_latent_loss , q_latent_loss
+        return quantized, total_loss
 
     def reset_unused_embeddings(self):
         """
@@ -854,73 +911,6 @@ def kl_divergence_regularization(encodings):
     kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
     return kl_divergence
 
-class VectorQuantizer(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, commitment_cost):
-        super(VectorQuantizer, self).__init__()
-        self.embedding_dim = embedding_dim
-        self.num_embeddings = num_embeddings
-        self.commitment_cost = commitment_cost
-        self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
-        self.embeddings.weight.data.uniform_(-1 / self.num_embeddings, 1 / self.num_embeddings)
-
-    def forward(self, x):
-        # Flatten input
-        flat_x = x.view(-1, self.embedding_dim)
-
-        # Calculate distances
-        distances = (torch.sum(flat_x**2, dim=1, keepdim=True)
-                     + torch.sum(self.embeddings.weight**2, dim=1)
-                     - 2 * torch.matmul(flat_x, self.embeddings.weight.t()))
-
-        # Get the encoding that has the min distance
-        encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
-        encodings = torch.zeros(encoding_indices.shape[0], self.num_embeddings, device=x.device)
-        encodings.scatter_(1, encoding_indices, 1)
-
-        # Quantize the latents
-        quantized = torch.matmul(encodings, self.embeddings.weight).view_as(x)
-
-        # Loss
-        e_latent_loss = F.mse_loss(quantized.detach(), x)
-        q_latent_loss = F.mse_loss(quantized, x.detach())
-        loss = q_latent_loss + self.commitment_cost * e_latent_loss
-
-        # Straight-through estimator
-        quantized = x + (quantized - x).detach()
-        return quantized, loss 
-
-    def discretize_z(self, x):
-        # Flatten input
-        flat_x = x.view(-1, self.embedding_dim)
-        # Compute distances between input and codebook embeddings
-        distances = (torch.sum(flat_x**2, dim=1, keepdim=True)
-                     + torch.sum(self.embeddings.weight**2, dim=1)
-                     - 2 * torch.matmul(flat_x, self.embeddings.weight.t()))
-        # Get the encoding that has the minimum distance
-        closest_indices = torch.argmin(distances, dim=1)
-        
-        # Convert indices to characters
-        char_list = [chr(idx.item()) for idx in closest_indices]
-        return closest_indices, char_list
-
-    def string_to_hex(self, s):
-        # if string is ascii, convert to hex
-        if all(ord(c) < 248 for c in s):
-            return s.encode().hex()
-        else:
-            #throw an error
-            raise ValueError('String contains non-ASCII characters')
-        
-    def string_to_embedding(self, s):
-        
-        # Convert characters back to indices
-        indices = torch.tensor([ord(c) for c in s], dtype=torch.long, device=self.embeddings.weight.device)
-        
-        # Retrieve embeddings from the codebook
-        embeddings = self.embeddings(indices)
-        
-        return embeddings
-
 
 # residual block feed forward
 class ResidualBlockFF(torch.nn.Module):
@@ -943,7 +933,7 @@ class ResidualBlockFF(torch.nn.Module):
         return F.relu(x)
 
 class HeteroGAE_Encoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True , nheads = 3 ):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , average = False, reset_codes = True , nheads = 3 , separated = False , flavor = 'transformer'):
         super(HeteroGAE_Encoder, self).__init__()
 
         #save all arguments to constructor
@@ -965,58 +955,112 @@ class HeteroGAE_Encoder(torch.nn.Module):
         self.encoder_hidden = encoder_hidden
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         #batch norm
-        self.bn = torch.nn.BatchNorm1d(in_channels)
+        self.bn = torch.nn.BatchNorm1d(in_channels['res'])
         self.dropout = torch.nn.Dropout(p=dropout_p)
+        self.separated = separated
+        self.average = average
 
-        for i in range(len(hidden_channels)):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i], heads = nheads , concat= False)
-                    for edge_type in metadata['edge_types']
-                })
-            )
-        #output dense layer
-        """self.out_dense = self.out_dense= torch.nn.Sequential(
-            Linear(hidden_channels[-1] +20, out_channels),
-            torch.nn.ReLU(),
-            Linear(out_channels, out_channels),
-            torch.nn.ReLU(),
-            Linear(out_channels, out_channels),
-            torch.nn.Tanh()
-            )
-        """
-        self.out_dense = torch.nn.Sequential(
-            Linear(hidden_channels[-1], out_channels),
-            torch.nn.Tanh() )
-        
-
-        if EMA == False:
-            self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
+        if separated == True:
+            in_channels = in_channels['res']
+            for i in range(len(hidden_channels)):
+                layer = {}            
+                for k,edge_type in enumerate( [ ( 'res','backbone','res') , ('res','backbonerev','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res')    ] ):
+                    edgestr = '_'.join(edge_type)
+                    if k == 0 and i > 0:
+                        in_channels = hidden_channels[i-1]
+                    if k > 0 and i > 0:
+                        in_channels = hidden_channels[i]
+                    if k > 0 and i == 0:
+                        in_channels = hidden_channels[i]
+                    print(in_channels)
+                    if flavor == 'transformer':
+                        layer[edgestr] = TransformerConv( in_channels , hidden_channels[i], heads = nheads , concat= False)
+                    if flavor == 'gat':
+                        layer[edgestr] = GATConv( in_channels , hidden_channels[i], heads = nheads )
+                    if flavor == 'gcn':
+                        layer[edgestr] = GCNConv( in_channels , hidden_channels[i])
+                    if flavor == 'sage':
+                        layer[edgestr] = SAGEConv( in_channels , hidden_channels[i])
+                    if flavor == 'mfconv':
+                        layer[edgestr] = MFConv( in_channels , hidden_channels[i])        
+                mod = torch.nn.ModuleDict( layer ) 
+                self.convs.append( mod ) 
         else:
-            self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
-        
-    def forward(self, x, xaa, edge_index_dict):
-        x = self.bn(x)
-        x = self.dropout(x)
-        for i, convs in enumerate(self.convs):
-            # Apply the graph convolutions and average over all edge types
-            x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
-            x = torch.stack(x, dim=0).mean(dim=0)
-            x = F.relu(x) if i < len(self.hidden_channels) - 1 else x
+            #use HGTConv
+            for i in range(len(hidden_channels)):
+                layer = {}
+                meta = [ ['res'] ,  [('res','backbone','res') ,  ('res','contactPoints', 'res') ] ]
+                if i == 0:
+                    in_channels = -1
+                else:
+                    in_channels = hidden_channels[i-1]
+                print(in_channels)
+                conv = HGTConv( in_channels = in_channels , out_channels = hidden_channels[i], heads = nheads , metadata = meta )
+                self.convs.append( conv )
+            print(self.convs)
     
-        #x = self.out_dense( torch.cat([x,xaa], dim=1) )
-        x = self.out_dense( x)
 
-        z_quantized, vq_loss , eloss, qloss = self.vector_quantizer(x)
+    
+        #output dense layer
+        self.out_dense = self.out_dense= torch.nn.Sequential(
+            Linear(hidden_channels[-1] + 20 , encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, encoder_hidden),
+            torch.nn.SiLU(),
+            Linear(encoder_hidden, out_channels),
+            torch.nn.SiLU()
+            )
         
-        return z_quantized, vq_loss , eloss, qloss
+        #initialize the vector quantizer
+        self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
+    
+    def forward(self, xdata, edge_index_dict):
+
+        #xdata = {key: xdata[key] for key in ['res']}
+        #edge_index_dict = {key: edge_index_dict[key] for key in [ ('res','backbone','res') ,  ('res','contactPoints', 'res') ] }
+        xdata['res'] = self.bn(xdata['res'])
+        xdata['res'] = self.dropout(xdata['res'])
+        x = xdata['res']
+
+
+        for i,layer in enumerate(self.convs):
+            if self.separated == True:
+                if self.average == True:
+                    # Apply the graph convolutions and average over all edge types
+                    
+                    x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in layer.items()]
+                    x = torch.stack(x, dim=0).mean(dim=0)
+                    x = F.relu(x) if i < len(self.hidden_channels) - 1 else x                   
+                else:
+                    for edge_type, conv in layer.items():
+                        # Apply the graph convolutions and average over all edge types
+                        x = conv(x , edge_index_dict[tuple(edge_type.split('_'))])   
+                        x = F.relu(x) if i < len(self.hidden_channels) - 1 else x
+            else:
+                xdata = layer(xdata , edge_index_dict)
+        xaa = xdata['AA']
+        x = self.out_dense( torch.cat([x,xaa], dim=1) )
+        #x = self.out_dense( x )
+        z_quantized,  qloss = self.vector_quantizer(x)
+        
+        return z_quantized, qloss
 
     def encode_structures( dataloader, encoder, filename = 'structalign.strct' ):
         #write with contacts 
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict , data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = structlist[i]
                 f.write(f'\n//////startprot//////{identifier}//////\n')
@@ -1035,9 +1079,11 @@ class HeteroGAE_Encoder(torch.nn.Module):
         return filename
 
     def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False):
-        #write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
+        #write an encoded fasta for use with mafft and raxml. only doable with alphabet size of less that 248
         #0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
-        replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
+        replace_dict = {chr(0):chr(246) , '"':chr(248) , '#':chr(247), '>' : chr(249), '=' : chr(250),
+         '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
+        
         #check encoding size
         if self.vector_quantizer.num_embeddings > 248:
             raise ValueError('Encoding size too large for fasta encoding')
@@ -1045,7 +1091,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict, data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = data.identifier
                 f.write(f'>{identifier}\n')
@@ -1056,9 +1102,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
                         char = replace_dict[char]
                     outstr += char
                     f.write(char)
-
                 f.write('\n')
-
                 if verbose == True:
                     print(identifier, outstr)
         return filename
@@ -1071,7 +1115,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict, data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = data.identifier
                 f.write(f'\n>{identifier}\n')
@@ -1102,89 +1146,13 @@ class HeteroGAE_Encoder(torch.nn.Module):
         return HeteroGAE_Encoder(**config)
     
 
-class HeteroGAE_variational_Encoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , reset_codes = True  ):
-        super(HeteroGAE_Encoder, self).__init__()
-
-        #save all arguments to constructor
-        self.args = locals()
-        self.args.pop('self')
-
-        # Setting the seed
-        L.seed_everything(42)
-        # Ensure that all operations are deterministic on GPU (if used) for reproducibility
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-        self.convs = torch.nn.ModuleList()
-        self.metadata = metadata
-        self.hidden_channels = hidden_channels
-        self.out_channels = out_channels
-        self.in_channels = in_channels
-        self.encoder_hidden = encoder_hidden
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
-        #batch norm
-        self.bn = torch.nn.BatchNorm1d(in_channels)
-        self.dropout = torch.nn.Dropout(p=dropout_p)
-        for i in range(len(hidden_channels)):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , heads = nheads , concat= False )
-                    for edge_type in metadata['edge_types']
-                })
-            )
-        
-        self.lin = Linear(hidden_channels[-1], out_channels)
-        """self.out_dense= torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
-            torch.nn.Sigmoid()
-            )
-        
-        """
-        self.fc_mu = Linear(hidden_channels[-1], latent_dim)
-        self.fc_logvar = Linear(hidden_channels[-1], latent_dim)
-
-        if EMA == False:
-            self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
-        else:
-            self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
-        
-    def forward(self, x, xaa, edge_index_dict):
-        x = self.bn(x)
-        for i, convs in enumerate(self.convs):
-            # Apply the graph convolutions and average over all edge types
-            x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
-            x = torch.stack(x, dim=0).mean(dim=0)
-            x = F.relu(x) if i < len(self.hidden_channels) - 1 else x
-        
-        x = self.out_dense( torch.cat([x,xaa], dim=1) )
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        # Reparameterization trick
-        z = self.reparameterize(mu, logvar)
-        z_quantized, vq_loss , eloss, qloss = self.vector_quantizer(z)
-        return z_quantized, mu, logvar, vq_loss , eloss, qloss
-
-    def reparameterize(self, mu, logvar):
-        if self.training:
-            std = torch.exp(0.5 * logvar)
-            eps = torch.randn_like(std)
-            return mu + eps * std
-        else:
-            return mu
-
 
     def encode_structures( dataloader, encoder, filename = 'structalign.strct' ):
         #write with contacts 
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict , data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = structlist[i]
                 f.write(f'\n//////startprot//////{identifier}//////\n')
@@ -1202,7 +1170,7 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
                 f.write('\n')
         return filename
 
-    def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False):
+    def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False):
         #write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
         #0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
         replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
@@ -1210,18 +1178,26 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         if self.vector_quantizer.num_embeddings > 248:
             raise ValueError('Encoding size too large for fasta encoding')
         
+        if alphabet is not None:
+            print('using alphabet')
+            print(alphabet)
+        
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict , data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = data.identifier
                 f.write(f'>{identifier}\n')
                 outstr = ''
                 for char in strdata[0]:
                     #start at 0x01
-                    char = chr(char+1)
-                    if char in replace_dict:
+                    if alphabet is not None:
+                        char = alphabet[char]
+                    else:
+                        char = chr(char+1)
+                    
+                    if replace and char in replace_dict:
                         char = replace_dict[char]
                     outstr += char
                     f.write(char)
@@ -1240,7 +1216,7 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         with open( filename , 'w') as f:
             for i,data in tqdm.tqdm(enumerate(dataloader)):
                 data = data.to(self.device)
-                z,loss,eloss,qloss = self.forward(data['res'].x , data['AA'].x , data.edge_index_dict)
+                z,qloss = self.forward(data.x_dict, data.edge_index_dict)
                 strdata = self.vector_quantizer.discretize_z(z)
                 identifier = data.identifier
                 f.write(f'\n>{identifier}\n')
@@ -1271,160 +1247,19 @@ class HeteroGAE_variational_Encoder(torch.nn.Module):
         return HeteroGAE_Encoder(**config)
     
 
-
-
-class HeteroGAE_Decoder_pooling(torch.nn.Module):
-    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 3 , Xdecoder_hidden=30, clustering_hidden= 30 ,metadata={}, amino_mapper= None  , dropout= .001):
-        super(HeteroGAE_Decoder_pooling, self).__init__()
-        # Setting the seed
-        L.seed_everything(42)
-        # Ensure that all operations are deterministic on GPU (if used) for reproducibility
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        self.convs = torch.nn.ModuleList()
-        #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
-        self.metadata = metadata
-        self.hidden_channels = hidden_channels
-        self.out_channels_hidden = out_channels_hidden
-        self.in_channels = encoder_out_channels
-        self.amino_acid_indices = amino_mapper
-
-
-        self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
-
-        self.revmap_aa = { v:k for k,v in amino_mapper.items() }
-
-        self.dropout = torch.nn.Dropout(p=dropout)
-        
-        """
-        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  , heads = nheads , concat= False )
-                    for edge_type in [('res', 'backbone', 'res')]
-                })
-            )"""
-        
-        
-        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): FiLMConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i] , 
-                                                                       
-                nn = 
-                torch.nn.Sequential(
-                torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
-                torch.nn.ReLU(),
-                torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
-                torch.nn.ReLU(),
-                torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
-                torch.nn.Tanh() ) 
-                )
-                    for edge_type in [('res', 'backbone', 'res')]
-                })
-            )
-        
-        #use memory pooling to divide the graph into nheads*10 clusters
-        self.pool = MemPooling( self.hidden_channels[('res', 'backbone', 'res')][-1] , clustering_hidden , heads = nheads , num_clusters = 10   )
-        self.sigmoid = nn.Sigmoid()
-        self.lin = Linear(clustering_hidden + self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
-        self.aadecoder = torch.nn.Sequential(
-                torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),
-                torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
-                torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
-                torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, xdim),
-                torch.nn.LogSoftmax(dim=1) )
-
-    def forward(self, z , edge_index, backbones, **kwargs):
-        #z = self.bn(z)
-        #copy z for later concatenation
-        inz = z
-        nconvs = len(self.convs)
-        for i,layer in enumerate(self.convs):
-            if i == nconvs - 1:
-                for edge_type, conv in layer.items():
-                    z = conv(z, backbones[tuple(edge_type.split('_'))])
-                    z = F.relu(z)                
-                z_decoder_pooled , S = self.pool(z)
-                #concatenate the pooled z to the z of the original nodes
-                cluster_assignments = S.argmax(dim=2)[0,:]
-                z_cluster_features = z_decoder_pooled[0,cluster_assignments]  # shape: [num_nodes, in_channels]
-                #take mean on dim 1 to compile avg features of the cluster assigment
-                # Concatenate the original node features with the corresponding cluster-level features
-                z = torch.cat([z, z_cluster_features], dim=1)
-                z = F.relu(z)
-            else:
-                for edge_type, conv in layer.items():
-                    z = conv(z, backbones[tuple(edge_type.split('_'))])
-                    z = F.relu(z)
-        z_decoder = self.lin( z )
-        #pool
-        #decode aa
-        aa = self.aadecoder( torch.cat( [ inz,  z_decoder ] , axis = 1 ) )
-        sim_matrix = (z_decoder[edge_index[0]] * z_decoder[edge_index[1]]).sum(dim=1)
-        #find contacts
-        edge_probs = self.sigmoid(sim_matrix)
-        
-        return aa,  edge_probs
-        
-
-    def x_to_amino_acid_sequence(self, x_r):
-        """
-        Converts the reconstructed 20-dimensional matrix to a sequence of amino acids.
-
-        Args:
-            x_r (Tensor): Reconstructed 20-dimensional tensor.
-
-        Returns:
-            str: A string representing the sequence of amino acids.
-        """
-        # Find the index of the maximum value in each row to get the predicted amino acid
-        indices = torch.argmax(x_r, dim=1)
-        
-        # Convert indices to amino acids
-        amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
-        
-        return amino_acid_sequence
-
-    def load(self, modelfile):
-        self.load_state_dict(torch.load(modelfile))
-        self.eval()
-        return self
-
-    def save(self, modelfile):
-        torch.save(self.state_dict(), modelfile)
-        return modelfile
-    
-    def ret_config(self):
-        return { 'encoder_out_channels': self.in_channels, 'xdim': 20, 'hidden_channels': self.hidden_channels, 'out_channels_hidden': self.out_channels_hidden, 'metadata': self.metadata, 'amino_mapper': self.amino_acid_indices }
-
-    def save_config(self, configfile):
-        with open(configfile , 'w') as f:
-            json.dump(self.ret_config(), f)
-        return configfile
-
-    def load_from_config(config):
-        return HeteroGAE_Encoder(**config)
-    
-
-
 class HeteroGAE_Decoder(torch.nn.Module):
-    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, out_channels_hidden=20, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , dropout= .1):
+    def __init__(self, encoder_out_channels, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, AAdecoder_hidden = 20 , nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1):
         super(HeteroGAE_Decoder, self).__init__()
-        
         # Setting the seed
         L.seed_everything(42)
         # Ensure that all operations are deterministic on GPU (if used) for reproducibility
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         self.convs = torch.nn.ModuleList()
+
         #self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
         self.metadata = metadata
         self.hidden_channels = hidden_channels
-        self.out_channels_hidden = out_channels_hidden
         self.in_channels = encoder_out_channels
         self.amino_acid_indices = amino_mapper
 
@@ -1435,49 +1270,88 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
         self.dropout = torch.nn.Dropout(p=dropout)
         
-        """
-        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): TransformerConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  , heads = nheads , concat= False )
-                    for edge_type in [('res', 'backbone', 'res')]
-                })
-            )"""
         
-        
-        for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
-            self.convs.append(
-                torch.nn.ModuleDict({
-                    '_'.join(edge_type): FiLMConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i] , 
-                                                                       
-                nn = 
-                torch.nn.Sequential(
-                torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
-                torch.nn.ReLU(),
-                torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
-                torch.nn.ReLU(),
-                torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
-                torch.nn.Tanh() ) 
+        if flavor == 'Transformer':
+            for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+                self.convs.append(
+                    torch.nn.ModuleDict({
+                        '_'.join(edge_type): TransformerConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]  , heads = nheads , concat= False )
+                        for edge_type in [('res', 'backbone', 'res')]
+                    })
                 )
-                    for edge_type in [('res', 'backbone', 'res')]
-                })
-            )
+        if flavor == 'SAGE':
+            for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+                self.convs.append(
+                    torch.nn.ModuleDict({
+                        '_'.join(edge_type): SAGEConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]   )
+                        for edge_type in [('res', 'backbone', 'res')]
+                    })
+                )
+
+        if flavor == 'mfconv':
+            for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+                self.convs.append(
+                    torch.nn.ModuleDict({
+                        '_'.join(edge_type): MFConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]   )
+                        for edge_type in [('res', 'backbone', 'res')]
+                    })
+                )
+        if flavor == 'FiLM':            
+            for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+                self.convs.append(
+                    torch.nn.ModuleDict({
+                        '_'.join(edge_type): FiLMConv(self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i] , 
+                                                                        
+                    nn = 
+                    torch.nn.Sequential(
+                    torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(self.hidden_channels[edge_type][i] , 2 * self.hidden_channels[edge_type][i] ) , 
+                    torch.nn.ReLU() ) 
+                    )
+                        for edge_type in [('res', 'backbone', 'res')]
+                    })
+                )
+            
+        if flavor == 'GIN':
+            for i in range(len(self.hidden_channels[('res', 'backbone', 'res')])):
+                self.convs.append(
+                    torch.nn.ModuleDict({
+                        '_'.join(edge_type): GINConv( 
+                                                                        
+                    nn = 
+                    torch.nn.Sequential(
+                    torch.nn.Linear( self.in_channels if i == 0 else self.hidden_channels[edge_type][i-1], self.hidden_channels[edge_type][i]),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(self.hidden_channels[edge_type][i] , self.hidden_channels[edge_type][i] ) , 
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(self.hidden_channels[edge_type][i] ,  self.hidden_channels[edge_type][i] ) , 
+                    torch.nn.ReLU() ) 
+                    )
+                        for edge_type in [('res', 'backbone', 'res')]
+                    })
+                )
         
-        self.sigmoid = nn.Sigmoid()        
-        self.lin = Linear(self.hidden_channels[('res', 'backbone', 'res')][-1], Xdecoder_hidden)
+        self.sigmoid = nn.Sigmoid()
+
+        self.lin = torch.nn.Sequential(
+                torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden),
+        )
         
         self.aadecoder = torch.nn.Sequential(
-                torch.nn.Linear(self.in_channels + Xdecoder_hidden, Xdecoder_hidden),
+                torch.nn.Linear(self.in_channels + Xdecoder_hidden , AAdecoder_hidden[0]),
                 torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
                 torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ) ,
+                torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2] ) ,
                 torch.nn.ReLU(),
-                torch.nn.Linear(Xdecoder_hidden, xdim),
+                torch.nn.Linear(AAdecoder_hidden[2], xdim),
                 torch.nn.LogSoftmax(dim=1) )
 
     def forward(self, z , edge_index, backbones, **kwargs):
-        #z = self.bn(z)
+        z = self.bn(z)
 
         #copy z for later concatenation
         inz = z
@@ -1487,15 +1361,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
                 z = F.relu(z)
         #pass through resnet decoder first
         #decoder_in =  torch.cat( [inz,  z] , axis = 1)
-        #z_decoder = self.decoder( decoder_in ) 
-        
-        z_decoder = self.lin( z )
-
-        
+        #z_decoder = self.decoder( decoder_in )
+        z = self.lin( z )
         #decode aa
-        aa = self.aadecoder( torch.cat( [ inz,  z_decoder ] , axis = 1 ) )
-        
-        sim_matrix = (z_decoder[edge_index[0]] * z_decoder[edge_index[1]]).sum(dim=1)
+        aa = self.aadecoder( torch.cat( [ inz,  z ] , axis = 1 ) )
+        sim_matrix = (z[edge_index[0]] * z[edge_index[1]]).sum(dim=1)
         #find contacts
         edge_probs = self.sigmoid(sim_matrix)
         return aa,  edge_probs

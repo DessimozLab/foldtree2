@@ -2,6 +2,7 @@ structs/**
 struct_align/**
 afdbclusters/**
 saved_models/**
+models/**
 tmp/**
 **.h5
 **.hdf5
