@@ -50,6 +50,7 @@ batch_size = 40
 print( struct_dat[0] )
 #load model if it exists
 
+encoder_layers = 3 
 encoder = ft2.HeteroGAE_Encoder(in_channels={'res':ndim}, hidden_channels=[400, 400, 400 ] , 
                         out_channels=10, metadata=converter.metadata , num_embeddings=64, 
                         commitment_cost= .8 , encoder_hidden= 200  , nheads = 4 , average = False
