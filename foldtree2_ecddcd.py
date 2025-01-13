@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+from utils import *
+
+
+"""
 datadir = '../../datasets/foldtree2/'
 EPS = 1e-10
 
@@ -46,8 +50,7 @@ import warnings
 import pydssp
 import polars as pl 
 from Bio.PDB import PDBParser   
-
-
+"""
 
 
 #create a class for transforming pdb files to pyg 
@@ -1007,25 +1010,56 @@ class HeteroGAE_Encoder(torch.nn.Module):
 				datain = edge_type[0]
 				dataout = edge_type[2]
 
-				if k == 0 and i > 0:
-					in_channels[dataout] = hidden_channels[edge_type][i-1]
-				if k > 0 and i > 0:
-					in_channels[dataout] = hidden_channels[edge_type][i]
-				if k > 0 and i == 0:
-					in_channels[dataout] = hidden_channels[edge_type][i]
-				if flavor == 'transformer':
-					layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
+				#if ( 'res','informs','godnode4decoder') == edge_type:
+				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
+				#else:
+				if flavor == 'transformer' or edge_type == ('res','informs','godnode'):
+					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				if flavor == 'gat':
-					layer[edgestr] = GATConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads )
+					layer[edge_type] = GATConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads )
 				if flavor == 'gcn':
-					layer[edgestr] = GCNConv( in_channels[datain] , hidden_channels[edge_type][i])
+					layer[edge_type] = GCNConv( (-1, -1) , hidden_channels[edge_type][i])
 				if flavor == 'sage':
-					layer[edgestr] = SAGEConv( in_channels[datain] , hidden_channels[edge_type][i])
+					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i])
 				if flavor == 'mfconv':
-					layer[edgestr] = MFConv( in_channels[datain] , hidden_channels[edge_type][i])   
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i])  
+				if flavor == 'FiLM':
+					layer[edge_type] = FiLMConv( in_channels[datain] , hidden_channels[edge_type][i],                                               
+					nn = 
+					torch.nn.Sequential(
+					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
+					torch.nn.ReLU(),
+					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
+					torch.nn.ReLU(),
+					torch.nn.Linear(hidden_channels[edge_type][i] , 2 * hidden_channels[edge_type][i] ) , 
+					torch.nn.ReLU() )
+					)
 
-			mod = torch.nn.ModuleDict( layer ) 
-			self.convs.append( mod ) 
+				if flavor == 'GIN':
+					layer[edge_type] = GINConv(                              
+					nn = 
+					torch.nn.Sequential(
+					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
+					torch.nn.ReLU(),
+					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
+					torch.nn.ReLU(),
+					torch.nn.Linear(hidden_channels[edge_type][i] ,  hidden_channels[edge_type][i] ) , 
+					torch.nn.ReLU() )
+					)
+				if ( 'res','backbone','res') == edge_type and i > 0:
+					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode']
+				else:
+					if k == 0 and i == 0:
+						in_channels[dataout] = hidden_channels[edge_type][i]
+					if k == 0 and i > 0:
+						in_channels[dataout] = hidden_channels[edge_type][i-1]
+					if k > 0 and i > 0:                    
+						in_channels[dataout] = hidden_channels[edge_type][i]
+					if k > 0 and i == 0:
+						in_channels[dataout] = hidden_channels[edge_type][i]
+			
+			conv = HeteroConv( layer  , aggr='mean')
+			self.convs.append( conv )
 		
 		print('encoder convolutions')
 		print(self.convs)
@@ -1053,22 +1087,20 @@ class HeteroGAE_Encoder(torch.nn.Module):
 		#initialize the vector quantizer
 		self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
 	
-	def forward(self, xdata, edge_index_dict):
+	def forward(self, xdata, edge_index):
 
 		#xdata = {key: xdata[key] for key in ['res']}
 		#edge_index_dict = {key: edge_index_dict[key] for key in [ ('res','backbone','res') ,  ('res','contactPoints', 'res') ] }
 		xdata['res'] = self.bn(xdata['res'])
 		xdata['res'] = self.dropout(xdata['res'])
-		
-		for i,layer in enumerate(self.convs):
-				for edge_type, conv in layer.items():
-					datain = edge_type.split('_')[0]
-					dataout = edge_type.split('_')[2]
-					# Apply the graph convolutions and average over all edge types
-					xdata[dataout] = conv(xdata[datain] , edge_index_dict[tuple(edge_type.split('_'))])   
-					xdata[dataout] = F.relu(xdata[dataout]) if i < self.nlayers - 1 else xdata[dataout]
-		xres = xdata['res']         
 		xaa = xdata['AA']
+		for i,layer in enumerate(self.convs):
+			xdata = layer(xdata, edge_index)
+			#add relu to all convolutions in this layer
+			for key in layer.convs.keys():
+				key = key[2]
+				xdata[key] = F.relu(xdata[key])
+		xres = xdata['res']
 		x = self.out_dense( torch.cat([xres,xaa], dim=1) )
 		#x = self.out_dense( x )
 		z_quantized,  qloss = self.vector_quantizer(x)
@@ -1324,10 +1356,10 @@ class TransformerDecoder(nn.Module):
 
 		return sequence_logits, contact_map
 
-	''
 
 class HeteroGAE_Decoder(torch.nn.Module):
-	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 ,PINNdecoder_hidden = 10,  nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1):
+	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
+			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1360,7 +1392,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				#if ( 'res','informs','godnode4decoder') == edge_type:
 				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				#else:
-				if flavor == 'transformer':
+				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				if flavor == 'gat':
 					layer[edge_type] = GATConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads )
@@ -1435,9 +1467,22 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.ReLU(),
 				torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2] ) ,
 				torch.nn.ReLU(),
+
 				torch.nn.Linear(AAdecoder_hidden[2], xdim),
 				torch.nn.LogSoftmax(dim=1) )
 		
+		self.contactdecoder = torch.nn.Sequential(
+				torch.nn.Linear( Xdecoder_hidden , contactdecoder_hidden[0]),
+				torch.nn.ReLU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.ReLU(),
+				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
+				torch.nn.ReLU(),
+
+				torch.nn.Linear(contactdecoder_hidden[2], Xdecoder_hidden),
+				)
+		
+
 		self.godnodedecoder = torch.nn.Sequential(
 				torch.nn.Linear(in_channels['godnode4decoder'] , PINNdecoder_hidden[0]),
 				torch.nn.ReLU(),
@@ -1458,11 +1503,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		xdata['res'] = z
 		for i,layer in enumerate(self.convs):
 			xdata = layer(xdata, edge_index)
-			
+			for key in layer.convs.keys():
+				key = key[2]
+				xdata[key] = F.relu(xdata[key])
 			#context = xdata['godnode4decoder'].repeat(xdata['res'].shape[],1)
 			#xdata['res'] = torch.cat( [xdata['res'], xdata['godnode4decoder'] ] , axis = 1)
-			
-		
 		z = xdata['res']
 		zgodnode = xdata['godnode4decoder']
 		#pass through resnet decoder first
@@ -1472,14 +1517,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		#decode aa
 		aa = self.aadecoder( torch.cat( [inz,  z ], axis = 1 ) )
 		foldx_pred = self.godnodedecoder( xdata['godnode4decoder'] )
-		
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred
-
 		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
 		#find contacts
 		edge_probs = self.sigmoid(sim_matrix)
-
 		return aa,  edge_probs , zgodnode , foldx_pred
 		
 

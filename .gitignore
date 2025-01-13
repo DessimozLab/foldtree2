@@ -16,3 +16,8 @@ src/__pycache__/**
 BU_all_renum/**
 .ipynb_checkpoints/**
 BU_all_renum/**
+**.fxout
+**.zip
+**.tar.gz
+**.tar
+**.txt
