@@ -121,30 +121,34 @@ encoder = ft2.HeteroGAE_Encoder(in_channels={'res':ndim , 'godnode':ndim_godnode
 
 """
 
-#metadata = converter.metadata
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 1000 ]*3 , out_channels=25, metadata=converter.metadata , 
+
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 500 ]*3 , out_channels=25, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=100 , EMA = True , reset_codes= False )
 
 
+'''
+encoder = ft2.mk1_Encoder_egn(in_channels=ndim, hidden_channels=[ 100 ]*3 , out_channels=25, metadata=converter.metadata , 
+						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=100 , EMA = True , reset_codes= False )
+
+                          '''
 
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode , 'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  1000 ] * decoder_layers ,
-											#('godnode4decoder' ,'informs','res' ):[  200 ] * decoder_layers ,
-											( 'res','backbone','res'):[  1000 ] * decoder_layers , 
-											('res', 'backbonerev', 'res'): [1000] * decoder_layers ,
+											('res' ,'informs','godnode4decoder' ):[  300 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  300 ] * decoder_layers ,
+											( 'res','backbone','res'):[  300 ] * decoder_layers , 
 											},
 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'mfconv' ,
+							flavor = 'gen' ,
 							output_foldx = True ,
-							Xdecoder_hidden= 500 ,
-							PINNdecoder_hidden = [40 , 25,10] ,
-							contactdecoder_hidden = [40 , 25,10] ,
+							Xdecoder_hidden= 100 ,
+							PINNdecoder_hidden = [100 , 25,10] ,
+							contactdecoder_hidden = [100 , 25,10] ,
 							nheads = 8 , dropout = 0.001  ,
-							AAdecoder_hidden = [40 , 25, 20]  )    
+							AAdecoder_hidden = [100 , 25, 20]  )    
 
 encoder_save = 'godnodemk5scPos'
 decoder_save = 'godnodemk5scPos'
@@ -220,12 +224,10 @@ if train_loop == True:
 			#add positional encoding to y
 			z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 			data['res'].x = z
-			
 			edgeloss = ft2.recon_loss(  data.x_dict, data.edge_index_dict , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
 			recon_x , edge_probs , zgodnode , foldxout = decoder(  data.x_dict, data.edge_index_dict , None ) 
 			xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 			
-
 			if decoder.output_foldx == True:
 				data['Foldx'].x = data['Foldx'].x.view(-1, 23)
 				data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
