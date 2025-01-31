@@ -7,8 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import HeteroConv, MessagePassing
 
-
-
 class EGNNLayer(MessagePassing):
     def __init__(self, in_dim, edge_dim, hidden_dim , node_mlp=None, coord_mlp=None):
         super(EGNNLayer, self).__init__(aggr='mean')  # Mean aggregation
@@ -153,9 +151,6 @@ class EGNNLayer_nodes_xdata(MessagePassing):
         return x, pos
 
 
-
-
-
 class SENEGNNLayer(MessagePassing):
     """ SE(N)-Equivariant Graph Neural Network Layer for N-Dimensional Coordinates """
     def __init__(self, in_dim, hidden_dim, coord_dim):
@@ -238,13 +233,6 @@ class StackedSENEGNN(nn.Module):
 
         z = self.fc(x)  # Final latent representation
         return z, pos, R, t  # Final outputs
-
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import HeteroConv, MessagePassing
 
 class SENEGNNLayer_heterograph(MessagePassing):
     """ SE(N)-Equivariant Graph Neural Network Layer for Heterogeneous Graphs. """
@@ -340,7 +328,6 @@ class StackedSENEGNN_hetero(nn.Module):
         return z_dict, pos_dict, R_dict, t_dict  # Final outputs
 
 
-
 class GaussianDiffusion:
     """ Implements the forward (noise addition) and reverse (denoising) process. """
     def __init__(self, num_timesteps=1000, beta_start=0.0001, beta_end=0.02):
@@ -355,10 +342,6 @@ class GaussianDiffusion:
             noise = torch.randn_like(X_0)
         alpha_t = self.alpha_cumprod[t].view(-1, 1, 1)  # Shape (B, 1, 1)
         return torch.sqrt(alpha_t) * X_0 + torch.sqrt(1 - alpha_t) * noise, noise
-
-
-
-
 
 
 class SENEGNNLayer(MessagePassing):
@@ -421,3 +404,60 @@ class SE_N_Diffusion(nn.Module):
         return pos_dict, R_dict, t_dict
 
 
+def fape_loss_n_dim(X_pred, X_true, R_pred, t_pred, R_true, t_true, mask=None):
+    """ Compute FAPE Loss for N-dimensional embeddings. """
+    X_pred_transformed = torch.einsum('bndd,bnd->bnd', R_pred, X_pred) + t_pred
+    X_true_transformed = torch.einsum('bndd,bnd->bnd', R_true, X_true) + t_true
+
+    loss = F.mse_loss(X_pred_transformed, X_true_transformed, reduction='none')
+
+    if mask is not None:
+        loss = loss * mask.unsqueeze(-1)
+
+    return loss.mean()
+
+
+
+class SoftFAPELoss(nn.Module):
+    """
+    Implements Frame Aligned Point Error (FAPE) with Soft Alignments for two point clouds.
+    This version replaces hard nearest-neighbor matching with a probability-weighted alignment.
+    """
+    def __init__(self, temperature=0.1):
+        """
+        Args:
+            temperature: Controls the sharpness of the soft alignment (lower = harder matching).
+        """
+        super().__init__()
+        self.temperature = nn.Parameter(torch.tensor(temperature, dtype=torch.float32))
+
+    def forward(self, X_pred, X_true, R_pred, t_pred, R_true, t_true):
+        """
+        Args:
+            X_pred: Predicted point cloud (B, N, D)
+            X_true: Ground truth point cloud (B, M, D)
+            R_pred: Predicted rotation matrices (B, D, D)
+            t_pred: Predicted translation vectors (B, D)
+            R_true: Ground truth rotation matrices (B, D, D)
+            t_true: Ground truth translation vectors (B, D)
+        Returns:
+            fape_loss: Soft alignment FAPE loss (scalar)
+        """
+        B, N, D = X_pred.shape
+        M = X_true.shape[1]
+
+        # Apply rigid transformations
+        X_pred_transformed = torch.einsum('bij,bnj->bni', R_pred, X_pred) + t_pred.unsqueeze(1)  # (B, N, D)
+        X_true_transformed = torch.einsum('bij,bmj->bmi', R_true, X_true) + t_true.unsqueeze(1)  # (B, M, D)
+
+        # Compute pairwise squared Euclidean distances
+        dist_sq = torch.cdist(X_pred_transformed, X_true_transformed, p=2).pow(2)  # (B, N, M)
+
+        # Compute soft alignment using Gaussian kernel with learnable temperature
+        soft_alignment = F.softmax(-dist_sq / self.temperature, dim=-1)  # (B, N, M)
+
+        # Compute soft FAPE loss
+        weighted_distances = (soft_alignment * dist_sq).sum(dim=-1)  # (B, N)
+        fape_loss = weighted_distances.mean()  # Scalar loss
+
+        return fape_loss

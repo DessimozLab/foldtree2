@@ -29,8 +29,7 @@ datadir = '../../datasets/foldtree2/'
 filename = './1eei.pdb'
 res  = converter.create_features(filename, distance = 10, verbose = False )
 print(len(res))
-angles, contact_points, springmat , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldxvals, coords = res
-
+angles, contact_points, springmat , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldxvals, coords ,window , windowrev = res
 
 import torch
 import os
@@ -101,7 +100,7 @@ total_foldx=0
 #add positional encoder channels to input
 
 encoder_layers = 3
-decoder_layers = 5
+decoder_layers = 3
 
 
 """
@@ -122,8 +121,8 @@ encoder = ft2.HeteroGAE_Encoder(in_channels={'res':ndim , 'godnode':ndim_godnode
 """
 
 
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 500 ]*3 , out_channels=25, metadata=converter.metadata , 
-						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=100 , EMA = True , reset_codes= False )
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*3 , out_channels=25, metadata=converter.metadata , 
+						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=300 , EMA = True , reset_codes= False )
 
 
 '''
@@ -132,27 +131,31 @@ encoder = ft2.mk1_Encoder_egn(in_channels=ndim, hidden_channels=[ 100 ]*3 , out_
 
                           '''
 
+
+
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode , 'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  300 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  300 ] * decoder_layers ,
-											( 'res','backbone','res'):[  300 ] * decoder_layers , 
+											('res' ,'informs','godnode4decoder' ):[  100 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
+											( 'res','backbone','res'):[  100 ] * decoder_layers , 
+											#('res' , 'window' , 'res'): [300] * decoder_layers ,
 											},
 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'gen' ,
+							flavor = 'sage' ,
 							output_foldx = True ,
+							contact_mlp = True ,
 							Xdecoder_hidden= 100 ,
-							PINNdecoder_hidden = [100 , 25,10] ,
-							contactdecoder_hidden = [100 , 25,10] ,
+							PINNdecoder_hidden = [100 , 50, 10] ,
+							contactdecoder_hidden = [500 , 500 , 500 ] ,
 							nheads = 8 , dropout = 0.001  ,
-							AAdecoder_hidden = [100 , 25, 20]  )    
+							AAdecoder_hidden = [100 , 50 , 20]  )    
 
-encoder_save = 'godnodemk5scPos'
-decoder_save = 'godnodemk5scPos'
-modelname = 'godnodemk5scPos'
+encoder_save = 'godnodemk5scPos_contactmlp'
+decoder_save = 'godnodemk5scPos_contactmlp'
+modelname = 'godnodemk5scPos_contactmlp'
 
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
@@ -200,7 +203,7 @@ if train_loop == True:
 	vqlosses = []
 	foldxlosses = []
 	
-	edgeweight = 1
+	edgeweight = .1
 	xweight = 1
 	vqweight = 1
 	foldxweight = .01

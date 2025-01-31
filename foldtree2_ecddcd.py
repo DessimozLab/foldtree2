@@ -267,6 +267,21 @@ class PDB2PyG:
 		return positional_encoding
 	
 	@staticmethod
+	def get_sliding_window(seq_len, window = 2):
+		"""
+		Generates a sliding window matrix.
+
+		"""
+		adjacent = np.zeros((seq_len, seq_len))	
+		for i in range(seq_len):
+			for j in range(window):
+				if i+j < seq_len:
+					adjacent[i , i-j:i+j] = 1
+		return adjacent
+		
+	
+
+	@staticmethod
 	def read_foldx_file(file = None , foldxdir = None , pdb = None):
 		if not file and (not foldxdir or not pdb):
 			raise 'provide a file, foldxdir or pdb'
@@ -325,6 +340,12 @@ class PDB2PyG:
 		#return the angles, amino acid properties, contact points, and hydrogen bonds
 		#backbone is just the amino acid chain
 		backbone , backbone_rev = self.get_backbone(chain)
+
+		window = self.get_sliding_window(len(chain), window = 2)
+		window_rev = backbone.T
+
+
+
 		positional_encoding = self.get_positional_encoding( len(chain) , 256)
 
 		if verbose:
@@ -359,10 +380,18 @@ class PDB2PyG:
 		#change the contac matrices to sparse matrices
 		contact_points = sparse.csr_matrix(contact_points)
 		#springmat = sparse.csr_matrix(springmat)
+		
 		backbone = sparse.csr_matrix(backbone)
 		backbone_rev = sparse.csr_matrix(backbone)
+
+		window = sparse.csr_matrix(window)
+		window_rev = sparse.csr_matrix(window_rev)
+
+
 		hbond_mat = sparse.csr_matrix(hbond_mat)
 		plddt = self.get_plddt(chain)/100
+
+
 
 		if verbose:
 			print('plddt' , plddt.shape)
@@ -380,7 +409,7 @@ class PDB2PyG:
 		else:
 			foldx_vals = None
 
-		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords
+		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev
 
 
 	@staticmethod
@@ -406,7 +435,7 @@ class PDB2PyG:
 		#except:
 		#	return None
 		if xdata is not None:
-			angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords = xdata
+			angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords , window , window_rev = xdata
 		else:
 			return None
 		if len(angles) ==0:
@@ -444,6 +473,8 @@ class PDB2PyG:
 		data['res','backbonerev','res'].edge_attr = torch.tensor(backbone_rev.data, dtype=torch.float32)
 		data['res','contactPoints', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
 		data['res','hbond', 'res'].edge_attr = torch.tensor(hbond_mat.data, dtype=torch.float)
+		data['res','window', 'res'].edge_attr = torch.tensor(window.data, dtype=torch.float32)
+		data['res','windowrev', 'res'].edge_attr = torch.tensor(window_rev.data, dtype=torch.float32)
 
 		#fully_connected = sparse.csr_matrix(np.ones((len(angles), len(angles))))
 		#data['res','fullyconnected','res'].edge_index = torch.tensor(self.sparse2pairs(fully_connected), dtype=torch.long)
@@ -453,6 +484,8 @@ class PDB2PyG:
 		backbone_rev = self.sparse2pairs(backbone_rev)
 		contact_points = self.sparse2pairs(contact_points)
 		hbond_mat = self.sparse2pairs(hbond_mat)
+		window = self.sparse2pairs(window)
+		window_rev = self.sparse2pairs(window_rev)
 		#springmat = self.sparse2pairs(springmat)
 
 		#get the adjacency matrices into tensors
@@ -460,7 +493,8 @@ class PDB2PyG:
 		data['res','backbonerev','res'].edge_index = torch.tensor(backbone_rev,  dtype=torch.long )
 		data['res','contactPoints', 'res'].edge_index = torch.tensor(contact_points,  dtype=torch.long )    
 		data['res','hbond', 'res'].edge_index = torch.tensor(hbond_mat,  dtype=torch.long )
-
+		data['res','window', 'res'].edge_index = torch.tensor(window,  dtype=torch.long )
+		data['res','windowrev', 'res'].edge_index = torch.tensor(window_rev,  dtype=torch.long )
 		
 		# Create edges from godnode to residues
 		sparse_godnode = np.vstack([[ i for i in range(len(angles))], np.zeros(len(angles))])
@@ -476,19 +510,12 @@ class PDB2PyG:
 		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(sparse_godnode2res, dtype=torch.long)
 		#to undirected
 		#add self loops
-		
 		data['res','contactPoints', 'res'].edge_index ,  data['res','contactPoints', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','contactPoints', 'res'].edge_index , data['res','contactPoints', 'res'].edge_attr )
-		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )       
-		
-
-
+		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )
 		data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
 		data['res','backbonerev','res'].edge_index  = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
-		
-		data['res' , 'backbone' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbone' , 'res'].edge_index)
-		data['res' , 'backbonerev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
-
-
+		data['res' , 'window' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbone' , 'res'].edge_index)
+		data['res' , 'windowrev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
 		return data
 
 	
@@ -535,26 +562,28 @@ class PDB2PyG:
 			for pdbfile in  tqdm.tqdm( pdbfiles ):                    
 				if verbose:
 					print(pdbfile)
-				hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain )
-				if hetero_data:
-					identifier = hetero_data.identifier
-					f.create_group(identifier)
-					for node_type in hetero_data.node_types:
-						if hetero_data[node_type].x is not None:
-							node_group = f.create_group(f'structs/{identifier}/node/{node_type}')
-							node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-					# Iterate over edge types and their connections
-					for edge_type in hetero_data.edge_types:
-						# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-						edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-						if hetero_data[edge_type].edge_index is not None:
-							edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-						
-						# If there are edge features, save them too
-						if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-							edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-						#todo. store some other data. sequence. uniprot info etc.
-				else:
+				hetero_data = None
+				try:
+					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain )
+					if hetero_data:
+						identifier = hetero_data.identifier
+						f.create_group(identifier)
+						for node_type in hetero_data.node_types:
+							if hetero_data[node_type].x is not None:
+								node_group = f.create_group(f'structs/{identifier}/node/{node_type}')
+								node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+						# Iterate over edge types and their connections
+						for edge_type in hetero_data.edge_types:
+							# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
+							edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
+							if hetero_data[edge_type].edge_index is not None:
+								edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+							
+							# If there are edge features, save them too
+							if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+							#todo. store some other data. sequence. uniprot info etc.
+				except:
 					print('err' , pdbfile )
 	
 	def store_pyg_complexdata(self, pdbfiles, filename, verbose = True ):
@@ -1644,7 +1673,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
 
 class HeteroGAE_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
-			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False):
+			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False , contact_mlp = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1733,6 +1762,18 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
+		if contact_mlp:
+			self.contact_decoder = torch.nn.Sequential(	
+				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) 
+				
+				)
+		else:
+			self.contact_decoder = None
+
 		print('aadecoder', self.aadecoder)
 		print('lin' ,  self.lin)
 		print( 'sigmoid' ,  self.sigmoid)
@@ -1747,12 +1788,9 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				key = key[2]
 				xdata[key] = F.gelu(xdata[key])
 		z = xdata['res']
-		#z = self.lin( z )
-		#pass through resnet decoder first
-		z = self.lin( z )
+		z = self.lin(z)
+
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
-		#learn the diff
-		#z = inz - z 
 		#decode aa
 		aa = self.aadecoder(decoder_in)
 		if self.output_foldx == True:
@@ -1764,6 +1802,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred
+		
+		#decode contacts
+		if self.contact_decoder is not None:
+			z = self.contact_decoder( decoder_in )
+		
 		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
 		#find contacts
 		edge_probs = self.sigmoid(sim_matrix)
@@ -1810,7 +1853,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
 class EGN_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
-			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False):
+			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False , contact_mlp = False):
 		super(EGN_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1886,6 +1929,18 @@ class EGN_Decoder(torch.nn.Module):
 					torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
+		if contact_mlp:
+			self.contact_decoder = torch.nn.Sequential(	
+				torch.nn.Linear( 2*self.hidden_channels[('res', 'backbone', 'res')][-1] , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], 1),
+				torch.nn.Sigmoid()
+					)
+		else:
+			self.contact_decoder = None
+
 		print('aadecoder', self.aadecoder)
 		print('lin' ,  self.lin)
 		print( 'sigmoid' ,  self.sigmoid)
@@ -1938,7 +1993,12 @@ class EGN_Decoder(torch.nn.Module):
 		
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred
-		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
+		
+		#use mlp to predict contacts
+		if self.contact_decoder:
+			sim_matrix = self.contact_decoder(torch.concat( [ z[contact_pred_index[0]] ,  z[contact_pred_index[1]] ]  , axis = 1)) 
+		else:
+			sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
 		#find contacts
 		edge_probs = self.sigmoid(sim_matrix)
 		return aa,  edge_probs , zgodnode , foldx_pred
@@ -2257,19 +2317,6 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 	return beta*kl_loss
 
-
-
-def fape_loss_n_dim(X_pred, X_true, R_pred, t_pred, R_true, t_true, mask=None):
-    """ Compute FAPE Loss for N-dimensional embeddings. """
-    X_pred_transformed = torch.einsum('bndd,bnd->bnd', R_pred, X_pred) + t_pred
-    X_true_transformed = torch.einsum('bndd,bnd->bnd', R_true, X_true) + t_true
-
-    loss = F.mse_loss(X_pred_transformed, X_true_transformed, reduction='none')
-
-    if mask is not None:
-        loss = loss * mask.unsqueeze(-1)
-
-    return loss.mean()
 
 
 def save_model(model, optimizer, epoch, file_path):
