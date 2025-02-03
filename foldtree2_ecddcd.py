@@ -21,7 +21,9 @@ class PDB2PyG:
 		self.onehot = onehot
 		self.colmap = colmap
 		#self.aaproperties =  pl.from_pandas(aaproperties)
-		self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		#self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
+		
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
 
@@ -387,12 +389,8 @@ class PDB2PyG:
 		window = sparse.csr_matrix(window)
 		window_rev = sparse.csr_matrix(window_rev)
 
-
 		hbond_mat = sparse.csr_matrix(hbond_mat)
 		plddt = self.get_plddt(chain)/100
-
-
-
 		if verbose:
 			print('plddt' , plddt.shape)
 			plt.plot(plddt)
@@ -410,6 +408,87 @@ class PDB2PyG:
 			foldx_vals = None
 
 		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev
+
+	def extract_pdb_coordinates(self, pdb_file, atom_type="CA"):
+		"""
+		Extract atomic coordinates from a PDB file for a given atom type (default: CA for proteins).
+
+		Args:
+			pdb_file: Path to the PDB file.
+			atom_type: Atom to extract (e.g., "CA" for alpha-carbons, "C" for carbons).
+
+		Returns:
+			coordinates: Tensor of shape (N, 3), where N is the number of residues.
+		"""
+
+		aa_dict = {
+		'ALA': 'A',
+		'ARG': 'R',
+		'ASN': 'N',
+		'ASP': 'D',
+		'CYS': 'C',
+		'GLN': 'Q',
+		'GLU': 'E',
+		'GLY': 'G',
+		'HIS': 'H',
+		'ILE': 'I',
+		'LEU': 'L',
+		'LYS': 'K',
+		'MET': 'M',
+		'PHE': 'F',
+		'PRO': 'P',
+		'SER': 'S',
+		'THR': 'T',
+		'TRP': 'W',
+		'TYR': 'Y',
+		'VAL': 'V'
+		}
+
+		if type(pdb_file) == str:    
+			chain = self.read_pdb(pdb_file)[0]
+		else:
+			chain = pdb_file
+		
+		chain = [ r for r in chain if PDB.is_aa(r)]
+		coords = []
+		for residue in chain: 
+			if residue.get_resname() in aa_dict and atom_type in residue:
+				coords.append(residue[atom_type].coord)
+		coords = torch.tensor(np.array(coords), dtype=torch.float32)  # (N, 3)
+		return coords
+
+	@staticmethod
+	def compute_local_frame(coords):
+		"""
+		Compute rotation matrices and translation vectors for each residue.
+
+		Args:
+			coords: (N, 3, 3) Tensor, where each residue has three atoms defining a frame.
+
+		Returns:
+			R_true: (N, 3, 3) Tensor of rotation matrices.
+			t_true: (N, 3) Tensor of translation vectors.
+		"""
+
+		N = coords.shape[0]
+		
+		# Translation: Use Cα as the reference point
+		t_true = coords[:, 1, :]  # (N, 3) - Alpha Carbon (CA) positions
+
+		# Define local axes using N, Cα, and C atoms
+		x_axis = coords[:, 2, :] - coords[:, 1, :]  # C - Cα
+		x_axis = x_axis / torch.norm(x_axis, dim=-1, keepdim=True)  # Normalize
+
+		y_axis = coords[:, 0, :] - coords[:, 1, :]  # N - Cα
+		y_axis = y_axis - (torch.sum(y_axis * x_axis, dim=-1, keepdim=True) * x_axis)  # Make orthogonal to x
+		y_axis = y_axis / torch.norm(y_axis, dim=-1, keepdim=True)  # Normalize
+
+		z_axis = torch.cross(x_axis, y_axis, dim=-1)  # Ensure right-handed system
+
+		# Construct rotation matrix
+		R_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)  # (N, 3, 3)
+
+		return R_true, t_true
 
 
 	@staticmethod
@@ -460,6 +539,17 @@ class PDB2PyG:
 			#add the foldx values to the dataset
 			data['Foldx'].x = torch.tensor(foldx_vals, dtype=torch.float32)
 		data['coords'].x = torch.tensor(coords, dtype=torch.float32)
+
+		# Extract N, CA, C atom coordinates per residue (N, 3, 3)
+		residue_frames = torch.stack([
+			self.extract_pdb_coordinates(pdbchain, atom_type="N"),
+			self.extract_pdb_coordinates(pdbchain, atom_type="CA"),
+			self.extract_pdb_coordinates(pdbchain, atom_type="C"),
+		], dim=1)
+
+		# Compute ground truth transformations
+		data['R_true'].x , data['t_true'].x= self.compute_local_frame(residue_frames)
+
 		data['bondangles'].x = torch.tensor(bondangles, dtype=torch.float32)
 		data['plddt'].x = torch.tensor(plddt, dtype=torch.float32)
 		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
@@ -518,7 +608,6 @@ class PDB2PyG:
 		data['res' , 'windowrev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
 		return data
 
-	
 	#create a function to store the pytorch geometric data in a hdf5 file
 	def store_pyg_mp(self, pdbfiles, filename, verbose = True , ncpu = 4):
 		#working but crashes after a while. cant figure out why
@@ -1120,8 +1209,7 @@ class mk1_Encoder(torch.nn.Module):
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
-
-		
+		self.num_embeddings = num_embeddings
 		self.convs = torch.nn.ModuleList()
 		self.metadata = metadata
 		self.hidden_channels = hidden_channels
@@ -1131,15 +1219,30 @@ class mk1_Encoder(torch.nn.Module):
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		#batch norm
 		self.bn = torch.nn.BatchNorm1d(in_channels)
+		self.bn_coord = torch.nn.BatchNorm1d(3)
+		
 		self.dropout = torch.nn.Dropout(p=dropout_p)
+		self.jk = JumpingKnowledge(mode='cat')
 		for i in range(len(hidden_channels)):
+
+			'''
 			self.convs.append(
 				torch.nn.ModuleDict({
-					'_'.join(edge_type): GENConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i])
+					'_'.join(edge_type): GENConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , 
+								  learn_t = True , aggr='softmax' , msg_norm = True  , learn_msg_scale = True , num_layers = 3 )
 					for edge_type in metadata['edge_types']
 				})
 			)
-		#self.lin = Linear(hidden_channels[-1], out_channels)
+			'''
+			self.convs.append(
+				torch.nn.ModuleDict({
+					'_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , heads = 3 , dropout = 0.01  , concat = False )
+					for edge_type in metadata['edge_types']
+				})
+			)
+			
+		
+		self.lin = Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] )
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
 			torch.nn.GELU(),
@@ -1155,12 +1258,17 @@ class mk1_Encoder(torch.nn.Module):
 		
 	def forward(self, x_dict, edge_index_dict):
 		x_dict['res'] = self.bn(x_dict['res'])
+		x_dict['coords'] = self.bn_coord(x_dict['coords'])
 		x = self.dropout(x_dict['res'])
+		x_save= []
 		for i, convs in enumerate(self.convs):
 			# Apply the graph convolutions and average over all edge types
 			x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
 			x = torch.stack(x, dim=0).mean(dim=0)
 			x = F.gelu(x) if i < len(self.hidden_channels) - 1 else x
+			x_save.append(x)
+		x = self.jk(x_save)
+		x = self.lin(x)
 		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
 		z_quantized, vq_loss = self.vector_quantizer(x)
 		return z_quantized, vq_loss
@@ -1202,165 +1310,7 @@ class mk1_Encoder(torch.nn.Module):
 				if verbose == True:
 					print(identifier, outstr)
 		return filename
-
-
-class mk1_Encoder_egn(torch.nn.Module):
-	def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , reset_codes = True ):
-		super(mk1_Encoder_egn, self).__init__()
-		#save all arguments to constructor
-		self.args = locals()
-		self.args.pop('self')
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False		
-		self.convs = torch.nn.ModuleList()
-		self.metadata = metadata
-		self.hidden_channels = hidden_channels
-		self.out_channels = out_channels
-		self.in_channels = in_channels
-		self.encoder_hidden = encoder_hidden
-		#batch norm
-		self.bn = torch.nn.BatchNorm1d(in_channels)
-		self.dropout = torch.nn.Dropout(p=dropout_p)
-		for i in range(len(hidden_channels)):
-			self.convs.append(
-				torch.nn.ModuleDict({
-					'_'.join(edge_type): egnlayer.EGNNLayer_nodes(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i])
-					for edge_type in metadata['edge_types']
-				})
-			)
-		#self.lin = Linear(hidden_channels[-1], out_channels)
-		self.out_dense= torch.nn.Sequential(
-			torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
-			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
-			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
-			torch.nn.Tanh()
-			)
-		if EMA == False:
-			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
-		else:
-			self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
-		
-	def forward(self, x_dict, edge_index_dict):
-		x_dict['res'] = self.bn(x_dict['res'])
-		x = self.dropout(x_dict['res'])
-		for i, convs in enumerate(self.convs):
-			# Apply the graph convolutions and average over all edge types
-			res = [conv(x, edge_index_dict[tuple(edge_type.split('_'))] , x_dict['coords']) for edge_type, conv in convs.items()]
-			x = [ r[0]	for r in res]
-			pos = [ r[1]	for r in res]
-			x = torch.stack(x, dim=0).mean(dim=0)
-			pos = torch.stack(pos, dim=0).mean(dim=0)
-			x_dict['coords'] = pos
-			x = F.gelu(x) if i < len(self.hidden_channels) - 1 else x
-		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
-		z_quantized, vq_loss = self.vector_quantizer(x)
-		return z_quantized, vq_loss
-
-
-class HeteroGAE_Encoder_egn(torch.nn.Module):
-	def __init__(self, in_channels, hidden_channels, layers ,  out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , average = False, reset_codes = True , nheads = 3 , separated = False , flavor = 'transformer'):
-		super(HeteroGAE_Encoder, self).__init__()
-
-		#save all arguments to constructor
-		self.args = locals()
-		self.args.pop('self')
-
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False        
-		self.convs = torch.nn.ModuleList()
-
-		self.metadata = metadata
-		self.hidden_channels = hidden_channels
-		self.out_channels = out_channels
-		self.in_channels = in_channels
-		self.encoder_hidden = encoder_hidden
-		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-		#batch norm
-		self.nlayers = layers
-		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
-		self.dropout = torch.nn.Dropout(p=dropout_p)
-		self.separated = separated
-		self.average = average
-		
-		for i in range(layers):
-			layer = {}          
-			for k,edge_type in enumerate( hidden_channels.keys() ):
-				edgestr = '_'.join(edge_type)
-
-				datain = edge_type[0]
-				dataout = edge_type[2]
-
-				#if ( 'res','informs','godnode4decoder') == edge_type:
-				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
-				#else:
-				if flavor == 'transformer' or edge_type == ('res','informs','godnode'):
-					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
-				else:
-					layer[edge_type] = egnlayer.EGNNLayer_nodes_xdata( (-1, -1) , hidden_channels[edge_type][i])
-				self.convs.append( layer )
-
-				if ( 'res','backbone','res') == edge_type and i > 0:
-					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode']
-				else:
-					if k == 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k == 0 and i > 0:
-						in_channels[dataout] = hidden_channels[edge_type][i-1]
-					if k > 0 and i > 0:                    
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k > 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-			
-			conv = HeteroConv( layer  , aggr='mean')
-			self.convs.append( conv )
-		
-		print('encoder convolutions')
-		print(self.convs)
 	
-		#output dense layer
-		self.out_dense = self.out_dense= torch.nn.Sequential(
-			Linear(hidden_channels[('res', 'contactPoints', 'res')][-1] + 20 , encoder_hidden),
-			torch.nn.GELU(),
-			Linear(encoder_hidden, encoder_hidden),
-			torch.nn.GELU(),
-			Linear(encoder_hidden, out_channels),
-			torch.nn.Tanh(),
-			)
-		
-		if EMA == True:
-			self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
-		else:
-			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
-	
-	
-	def forward(self, xdata, edge_index):
-		#xdata = {key: xdata[key] for key in ['res']}
-		#edge_index_dict = {key: edge_index_dict[key] for key in [ ('res','backbone','res') ,  ('res','contactPoints', 'res') ] }
-		
-		xdata['res'] = self.bn(xdata['res'])
-
-		xdata['res'] = self.dropout(xdata['res'])
-		xaa = xdata['AA']
-		for i,layer in enumerate(self.convs):
-			xdata = layer(xdata, edge_index)
-			#add relu to all convolutions in this layer
-			for key in layer.convs.keys():
-				key = key[2]
-				xdata[key] = F.gelu(xdata[key])
-		xres = xdata['res']
-		x = self.out_dense( torch.cat([xres,xaa], dim=1) )
-		#x = self.out_dense( x )
-		z_quantized,  qloss = self.vector_quantizer(x)
-		return z_quantized, qloss
-
 
 class HeteroGAE_Encoder(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, layers ,  out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , average = False, reset_codes = True , nheads = 3 , separated = False , flavor = 'transformer'):
@@ -1673,7 +1623,7 @@ class HeteroGAE_Encoder(torch.nn.Module):
 
 class HeteroGAE_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
-			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False , contact_mlp = False):
+			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False , coord_mlp = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1695,15 +1645,13 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		self.bn_foldx = torch.nn.BatchNorm1d(in_channels['foldx'])
 		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 		self.dropout = torch.nn.Dropout(p=dropout)
-		
+		self.jk = JumpingKnowledge(mode='cat')# , channels =100 , num_layers = layers) 
 		for i in range(layers):
 			layer = {}          
 			for k,edge_type in enumerate( hidden_channels.keys() ):
 				edgestr = '_'.join(edge_type)
-
 				datain = edge_type[0]
 				dataout = edge_type[2]
-
 				#if ( 'res','informs','godnode4decoder') == edge_type:
 				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				#else:
@@ -1733,19 +1681,16 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
 
-		print('decoder convs')
-		print( self.convs)
-
-		print( 'batchnorm' , self.bn)
-		print( 'dropout' , self.dropout)
-		
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
-				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden),
-		)
-		self.lin2original = torch.nn.Sequential(
-				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] , in_channels_orig['res']),
-		)
+				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers , Xdecoder_hidden),
+				torch.nn.GELU(),
+				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ),
+				torch.nn.GELU(),
+				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+				torch.nn.Tanh()
+				)
+	
 		self.aadecoder = torch.nn.Sequential(
 				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
 				torch.nn.GELU(),
@@ -1762,34 +1707,49 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
-		if contact_mlp:
-			self.contact_decoder = torch.nn.Sequential(	
+		if coord_mlp == True:
+			self.t_decoder = torch.nn.Sequential(	
 				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] , contactdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) 
-				
+				torch.nn.Linear(contactdecoder_hidden[1], 3 ) ,
+				)
+			self.r_decoder = torch.nn.Sequential(	
+				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], 9 ) ,
 				)
 		else:
-			self.contact_decoder = None
-
+			self.t_decoder = None
+			self.r_decoder = None
+		
+	def print_config(self):
+		print('decoder convs' ,  self.convs)
+		print( 'batchnorm' , self.bn)
+		print( 'dropout' , self.dropout)
 		print('aadecoder', self.aadecoder)
 		print('lin' ,  self.lin)
 		print( 'sigmoid' ,  self.sigmoid)
-
+		print('godnodedecoder' , self.godnodedecoder)
+		print('t_decoder' , self.t_decoder)
+		print('r_decoder' , self.r_decoder)
+	
 	def forward(self, xdata, edge_index, contact_pred_index, **kwargs):
 		xdata['res'] = self.bn(xdata['res'])
 		#copy z for later concatenation
 		inz = xdata['res']		
+		x_dict_list = []
 		for i,layer in enumerate(self.convs):
 			xdata = layer(xdata, edge_index)
-			for key in layer.convs.keys():
-				key = key[2]
+			for key in xdata.keys():
 				xdata[key] = F.gelu(xdata[key])
+			x_dict_list.append(xdata['res'])
+		xdata['res'] = self.jk(x_dict_list)
 		z = xdata['res']
 		z = self.lin(z)
-
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
@@ -1799,20 +1759,23 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		else:
 			foldx_pred = None
 			zgodnode = None
-		
-		if contact_pred_index is None:
-			return aa, None, zgodnode , foldx_pred
-		
 		#decode contacts
-		if self.contact_decoder is not None:
-			z = self.contact_decoder( decoder_in )
-		
+		if self.t_decoder and self.r_decoder:
+			t = self.t_decoder( decoder_in )
+			r = self.r_decoder( decoder_in )
+			# stack r in B , N , 3	
+			r = r.view(-1, 3 , 3)
+		else:
+			r = None
+			t = None
+		if contact_pred_index is None:
+			return aa, None, zgodnode , foldx_pred , r , t
 		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
 		#find contacts
 		edge_probs = self.sigmoid(sim_matrix)
-		return aa,  edge_probs , zgodnode , foldx_pred
+		return aa,  edge_probs , zgodnode , foldx_pred , r , t
 		
-
+	
 	def x_to_amino_acid_sequence(self, x_r):
 		"""
 		Converts the reconstructed 20-dimensional matrix to a sequence of amino acids.
@@ -2269,6 +2232,10 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 		return HeteroGAE_Encoder(**config)
 
 
+
+
+
+
 def recon_loss(xdata,edge_index, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
@@ -2283,19 +2250,87 @@ def recon_loss(xdata,edge_index, pos_edge_index, decoder , poslossmod=1, negloss
 	"""
 	
 	pos = decoder( xdata, edge_index, pos_edge_index )[1]
+	if torch.any(pos) < 0:
+		#set to 1 if any value is less than 0
+		pos[pos < 0] = 0
 	pos_loss = -torch.log(pos + EPS).mean()
 	neg_edge_index = negative_sampling( pos_edge_index, xdata['res'].size(0))
 	neg = decoder( xdata, edge_index , neg_edge_index)[1]
+	if torch.any(1- neg) < 0:
+		neg[neg>1] = 1
 	neg_loss = -torch.log((1 - neg) + EPS).mean()
 	
 	return poslossmod * pos_loss + neglossmod * neg_loss
+
+
+class FAPELoss(nn.Module):
+    """Frame Aligned Point Error (FAPE) Loss using only rotation and translation.
+
+    Args:
+        Z (float, optional): Normalization factor. Defaults to 10.0.
+        clamp (float, optional): Max clamping distance. Defaults to 10.0.
+        epsion (float, optional): Small numerical stability constant. Defaults to -1e4.
+    """
+    def __init__(self, Z=10.0, clamp=10.0, epsion=-1e4):
+        super().__init__()
+        self.z = Z
+        self.epsion = epsion
+        self.clamp = clamp
+
+    def forward(self, predict_T, transformation, pdb_mask=None, padding_mask=None):
+        """
+        Args:
+            predict_T (tuple[tensor, tensor]): ([batch, N_seq, 3, 3], [batch, N_seq, 3])
+                - Rotation matrix (B, N, 3, 3)
+                - Translation vector (B, N, 3)
+            transformation (tuple[tensor, tensor]): ([batch, N_seq, 3, 3], [batch, N_seq, 3])
+                - Ground truth rotation matrix (B, N, 3, 3)
+                - Ground truth translation vector (B, N, 3)
+            pdb_mask (tensor, optional): Binary mask for valid PDB residues. Shape: (B, N, N). Defaults to None.
+            padding_mask (tensor, optional): Binary mask for sequence padding. Shape: (B, N, N). Defaults to None.
+        Returns:
+            torch.Tensor: Computed FAPE loss.
+        """
+        predict_R, predict_Trans = predict_T  # (B, N, 3, 3), (B, N, 3)
+        RotaionMatrix, translation = transformation  # (B, N, 3, 3), (B, N, 3)
+
+        # Compute pairwise translations (relative transformations)
+        delta_predict_Trans = rearrange(predict_Trans, 'b j d -> b j () d') - rearrange(predict_Trans, 'b i d -> b () i d')
+        delta_Trans = rearrange(translation, 'b j d -> b j () d') - rearrange(translation, 'b i d -> b () i d')
+
+        # Ensure rotation matrices are correctly shaped for einsum
+        predict_R = rearrange(predict_R, 'b j d1 d2 -> b j () d1 d2')  # (B, N, N, 3, 3)
+        RotaionMatrix = rearrange(RotaionMatrix, 'b j d1 d2 -> b j () d1 d2')  # (B, N, N, 3, 3)
+
+        # Apply frame alignment transformations
+        X_hat = torch.einsum('bijnm, bijm -> bijn', predict_R, delta_predict_Trans)  # (B, N, N, 3)
+        X = torch.einsum('bijnm, bijm -> bijn', RotaionMatrix, delta_Trans)  # (B, N, N, 3)
+
+        # Compute distance error
+        distance = torch.norm(X_hat - X, dim=-1)  # (B, N, N)
+
+        # Clamp distance to avoid explosion and normalize
+        distance = torch.clamp(distance, max=self.clamp) * (1 / self.z)
+
+        # Apply masks if provided
+        if pdb_mask is not None:
+            distance = distance * pdb_mask
+        if padding_mask is not None:
+            distance = distance * padding_mask
+
+        # Compute final FAPE loss
+        FAPE_loss = torch.mean(distance)
+
+        return FAPE_loss
+
+
 
 #define loss for x reconstruction   
 def x_reconstruction_loss(x, recon_x):
 	"""
 	compute the loss over the node feature reconstruction.
 	"""
-	return F.l1_loss(recon_x, x)
+	return F.smooth_l1_loss(recon_x, x)
 
 
 #amino acid onehot loss for x reconstruction

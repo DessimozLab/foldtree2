@@ -14,7 +14,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from torch_geometric.utils import to_networkx
 from torch_geometric.data import HeteroData
-from torch_geometric.nn import Linear, FiLMConv, TransformerConv, HGTConv, GINConv, GATConv, GCNConv, SAGEConv, MFConv , SGConv , GENConv
+from torch_geometric.nn import Linear, FiLMConv, TransformerConv, HGTConv, GINConv, GATConv, GCNConv, SAGEConv, MFConv , SGConv , GENConv , JumpingKnowledge
+from einops import rearrange
 from torch_geometric.nn.dense import dense_diff_pool as DiffPool
 from torch.nn import ModuleDict, ModuleList, L1Loss
 from torch_geometric.nn import global_mean_pool

@@ -104,52 +104,6 @@ class EGNNLayer_nodes(MessagePassing):
 
         return x, pos
 
-class EGNNLayer_nodes_xdata(MessagePassing):
-    def __init__(self, in_dim, hidden_dim , node_mlp=None , coord_mlp=None , edge_mlp=None , aggr = 'mean'):
-        super(EGNNLayer_nodes, self).__init__(aggr=aggr)  # Mean aggregation
-
-        if edge_mlp == None:
-            self.edge_mlp = nn.Sequential(
-                nn.Linear(in_dim * 2 + 1, hidden_dim),  # Only use distance as edge feature
-                nn.GELU(),
-                nn.Linear(hidden_dim, hidden_dim)
-                )
-        else:
-            self.edge_mlp = edge_mlp
-        if node_mlp == None:
-            self.node_mlp = nn.Sequential(
-                nn.Linear(in_dim + hidden_dim, hidden_dim),
-                nn.GELU(),
-                nn.Linear(hidden_dim, hidden_dim)
-                )
-        else:
-            self.node_mlp = node_mlp
-        if coord_mlp == None:
-            self.coord_mlp = nn.Sequential(
-                nn.Linear(hidden_dim, 1),
-                nn.Sigmoid()
-            )
-        else:
-            self.coord_mlp = coord_mlp
-
-    def forward(self, x_data, edge_index):
-        row, col = edge_index
-        pos = x_data['positions']
-        x = x_data['res']
-
-        d_ij = torch.norm(pos[row] - pos[col], dim=1, keepdim=True)  # Compute Euclidean distance
-        edge_features = torch.cat([x[row], x[col], d_ij], dim=-1)  # Use only distances
-        edge_messages = self.edge_mlp(edge_features)
-
-        agg_messages = self.propagate(edge_index, x=edge_messages, size=None)
-        x = self.node_mlp(torch.cat([x, agg_messages], dim=-1))
-
-        coord_diff = pos[col] - pos[row]
-        coord_updates = self.coord_mlp(edge_messages) * coord_diff
-        pos = pos + self.propagate(edge_index, x=coord_updates, size=None)
-
-        return x, pos
-
 
 class SENEGNNLayer(MessagePassing):
     """ SE(N)-Equivariant Graph Neural Network Layer for N-Dimensional Coordinates """

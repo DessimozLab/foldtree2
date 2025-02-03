@@ -1,49 +1,30 @@
-import wget
 
 import foldtree2_ecddcd as ft2
 converter = ft2.PDB2PyG()
-
-from Bio import PDB
-import warnings
 from matplotlib import pyplot as plt
 import numpy as np
-import pydssp
 import tqdm
-from Bio.PDB import PDBParser   
 import numpy as np
-
-
-import multiprocessing as mp
-import tqdm
-import os
-import numpy as np
-import wget 
+import glob
+import torch
+import torch.nn.functional as F
+from torch.optim import Adam
+from torch_geometric.data import DataLoader
+import pickle
 import pandas as pd
+import os
+import tqdm
+import numpy as np
+AVAIL_GPUS = min(1, torch.cuda.device_count())
 
 #download an example pdb file
 filename = './1eei (1).pdb'
 url = 'https://files.rcsb.org/download/1EEI.pdb'
 #filename = wget.download(url)
 datadir = '../../datasets/foldtree2/'
-
 filename = './1eei.pdb'
 res  = converter.create_features(filename, distance = 10, verbose = False )
-print(len(res))
 angles, contact_points, springmat , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldxvals, coords ,window , windowrev = res
-
-import torch
-import os
-import numpy as np
-
-AVAIL_GPUS = min(1, torch.cuda.device_count())
-BATCH_SIZE = 256 if AVAIL_GPUS else 64
-# Path to the folder where the datasets are/should be downloaded
-DATASET_PATH = os.environ.get("PATH_DATASETS", "data/")
-# Path to the folder where the pretrained models are saved
-CHECKPOINT_PATH = os.environ.get("PATH_CHECKPOINT", "saved_models/GNNs/")
-#create the h5 dataset from the pdb files
-import glob
-import h5py
 
 # Setting the seed for everything
 torch.manual_seed(0)
@@ -51,105 +32,47 @@ np.random.seed(0)
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-
-
-import  foldtree2_ecddcd as ft2
-#reload ft2
-import importlib
-importlib.reload(ft2)
 converter = ft2.PDB2PyG()
-
 data_sample =converter.struct2pyg( filename, verbose=False)
 print(data_sample)
 ndim = data_sample['res'].x.shape[1]
 ndim_godnode = data_sample['godnode'].x.shape[1]
-
-import glob
 datadir = '../../datasets/'
-
 pdbfiles = glob.glob(datadir+'structs/*.pdb')
 data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=False)
 
-print(data_sample)
-print( data_sample.edge_index_dict[('res' ,'informs','godnode4decoder' )].shape)
-print( data_sample.edge_index_dict[('godnode4decoder' ,'informs','res' )].shape ) 
-print( data_sample.edge_index_dict[('res' ,'informs','godnode4decoder' )].numpy().tolist()[0])
-print( data_sample.edge_index_dict[('res' ,'informs','godnode4decoder' )].numpy().tolist()[1])
-
-
-import torch
-import torch.nn.functional as F
-from torch_geometric.nn import VGAE
-from torch.optim import Adam
-from torch_geometric.data import DataLoader
-import pickle
-import pandas as pd
-import os
-import tqdm
-
-# Create a DataLoader for training
-total_loss_x= 0
-total_loss_edge = 0
-total_vq=0
-total_kl = 0
-total_foldx=0
-
 # Training loop
-
 #load model if it exists
-#add positional encoder channels to input
-
-encoder_layers = 3
+encoder_layers = 1
 decoder_layers = 3
 
 
-"""
-encoder = ft2.HeteroGAE_Encoder(in_channels={'res':ndim , 'godnode':ndim_godnode}
-								, hidden_channels= {
-											( 'res','backbone','res'):[ 200 ] * encoder_layers, 
-											#('res', 'backbonerev', 'res'): [200] * encoder_layers ,
-											('res', 'contactPoints', 'res'): [200] * encoder_layers ,
-											('res','hbond', 'res'): [200] * encoder_layers ,
-											#('res' ,'informs','godnode' ):[  300 ] * encoder_layers ,
-											#('godnode' ,'informs','res' ):[  300 ] * encoder_layers 
-											 }  , 
-						layers = encoder_layers , 
-						out_channels=100 , metadata=converter.metadata , num_embeddings=50, 
-						commitment_cost= .9 , encoder_hidden= 300  , nheads = 1 , average = False
-						, reset_codes= False , dropout_p=0.01 , separated = True , flavor = 'sage' )
-
-"""
+print( converter.metadata)
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+						   out_channels=25, metadata=converter.metadata , 
+						  num_embeddings=40, commitment_cost=.9 ,
+						  encoder_hidden=300 , EMA = False ,
+						    reset_codes= False )
 
 
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*3 , out_channels=25, metadata=converter.metadata , 
-						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=300 , EMA = True , reset_codes= False )
-
-
-'''
-encoder = ft2.mk1_Encoder_egn(in_channels=ndim, hidden_channels=[ 100 ]*3 , out_channels=25, metadata=converter.metadata , 
-						  num_embeddings=40, commitment_cost=.9 , encoder_hidden=100 , EMA = True , reset_codes= False )
-
-                          '''
-
-
-
-decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode , 'foldx':23 } , 
+decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
+											    'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  100 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
-											( 'res','backbone','res'):[  100 ] * decoder_layers , 
-											#('res' , 'window' , 'res'): [300] * decoder_layers ,
+											('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  50 ] * decoder_layers ,
+											( 'res','backbone','res'):[ 50] * decoder_layers , 
+											('res' , 'window' , 'res'): [50] * decoder_layers ,
 											},
 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'sage' ,
+							flavor = 'transformer' ,
 							output_foldx = True ,
-							contact_mlp = True ,
-							Xdecoder_hidden= 100 ,
+							coord_mlp = True ,
+							Xdecoder_hidden= 50 ,
 							PINNdecoder_hidden = [100 , 50, 10] ,
-							contactdecoder_hidden = [500 , 500 , 500 ] ,
+							contactdecoder_hidden = [50 , 50 , 50 ] ,
 							nheads = 8 , dropout = 0.001  ,
 							AAdecoder_hidden = [100 , 50 , 20]  )    
 
@@ -158,11 +81,12 @@ decoder_save = 'godnodemk5scPos_contactmlp'
 modelname = 'godnodemk5scPos_contactmlp'
 
 def init_weights(m):
+
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
         torch.nn.init.xavier_uniform_(m.weight)
 
-encoder.apply(init_weights)
-decoder.apply(init_weights)
+#encoder.apply(init_weights)
+#decoder.apply(init_weights)
 
 overwrite = True 
 
@@ -175,104 +99,156 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 
+fapeloss = ft2.FAPELoss()
+
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
-
 print(device)
-train_loop = True
 
 batch_size = 40
-betafactor = 2
 
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
+fapeloss = fapeloss.to(device)
 
-#use autoreload
 struct_dat = ft2.StructureDataset('structs_training_godnodemk3.h5')
+err_eps = 1e-2
 
-if train_loop == True:
-	train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=4)
-	optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
-	scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
+# Create a DataLoader for training
 
-	encoder.train()
-	decoder.train()
-	xlosses = []
-	edgelosses = []
-	vqlosses = []
-	foldxlosses = []
+train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=4)
+optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
+
+encoder.train()
+decoder.train()
+xlosses = []
+edgelosses = []
+vqlosses = []
+foldxlosses = []
+fapelosses = []
+
+edgeweight = 1
+xweight = .1
+vqweight = 0
+foldxweight = .01
+fapeweight = 1
+
+total_loss_x= 0
+total_loss_edge = 0
+total_vq=0
+total_kl = 0
+total_foldx=0
+total_fapeloss = 0
+
+
+init = False
+for epoch in range(800):
+	if epoch > 500:
+		vqweight = 1
+	for data in tqdm.tqdm(train_loader):
+		data = data.to(device)
+		if init == False:
+			with torch.no_grad():  # Initialize lazy modules.
+				z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
+				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+				data['res'].x = z
+				recon_x , edge_probs , zgodnode , foldxout, zcoords = decoder(  data.x_dict, data.edge_index_dict , None ) 
+				init = True
+				continue
+		
+		optimizer.zero_grad()
+		#normalize the foldx values
+		#elementwise normalization
+		z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
+		#add positional encoding to y
+		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+		data['res'].x = z
+		edgeloss = ft2.recon_loss(  data.x_dict, data.edge_index_dict , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
+		recon_x , edge_probs , zgodnode , foldxout , zcoords = decoder(  data.x_dict, data.edge_index_dict , None ) 
+		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+		
+		if decoder.output_foldx == True:
+			data['Foldx'].x = data['Foldx'].x.view(-1, 23)
+			data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
+			foldxout = foldxout.view(data['Foldx'].x.shape)
+			foldxloss = F.smooth_l1_loss( foldxout , data['Foldx'].x )
+		else:
+			foldxloss = 0
+
+		if fapeloss:
+			B = data['res'].x.shape[0]
+			D = 3
+			
+			R_true = torch.eye(D).expand(B, D, D).to(device)  # Identity rotation (GT)
+			t_true = torch.zeros(B, D).to(device)  # Zero translation (GT)
+
+			R_pred = torch.eye(D).expand(B, D, D).to(device)  # Identity rotation (Pred)
+			t_pred = torch.zeros(B, D).to(device)  # Zero translation (Pred)
+			# Move everything to the device
+			
+			# Compute the FAPE loss
+			fploss = fapeloss(zcoords, data['coords'].x, R_pred, t_pred, R_true, t_true)
+		else:
+			fploss = 0
+
+		
+		for l in [ xloss , edgeloss , vqloss , foldxloss ]:
+			if torch.isnan(l).any():
+				l = 0
+
+		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
+		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight + fapeweight*fploss
+		loss.backward()
+		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=10.0)
+		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=10.0)
+		optimizer.step()
+		total_loss_edge += edgeloss.item()
+		total_loss_x += xloss.item()
+		total_vq += vqloss.item()
+		if decoder.output_foldx == True:
+			total_foldx += foldxloss.item()
+		else:
+			total_foldx = 0
+		if fapeloss:
+			total_fapeloss += fploss.item()
+		else:
+			total_fapeloss = 0
+		#total_plddt += plddtloss.item()
 	
-	edgeweight = .1
-	xweight = 1
-	vqweight = 1
-	foldxweight = .01
-	init = False
+	scheduler.step(total_loss_x)
+	if total_loss_x < err_eps:
+		xweight = 0 
+	else:
+		xweight = 1
+	if total_foldx < err_eps:
+		foldxweight = 0
+	else:
+		foldxweight = .01
 	
-	for epoch in range(800):
-		for data in tqdm.tqdm(train_loader):
-			data = data.to(device)
-			if init == False:
-				with torch.no_grad():  # Initialize lazy modules.
-					z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
-					z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
-					data['res'].x = z
-					recon_x , edge_probs , zgodnode , foldxout = decoder(  data.x_dict, data.edge_index_dict , None ) 
-					init = True
-					continue
-			optimizer.zero_grad()
-			#normalize the foldx values
-			#elementwise normalization
-			z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
-			#add positional encoding to y
-			z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
-			data['res'].x = z
-			edgeloss = ft2.recon_loss(  data.x_dict, data.edge_index_dict , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
-			recon_x , edge_probs , zgodnode , foldxout = decoder(  data.x_dict, data.edge_index_dict , None ) 
-			xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
-			
-			if decoder.output_foldx == True:
-				data['Foldx'].x = data['Foldx'].x.view(-1, 23)
-				data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
-				foldxout = foldxout.view(data['Foldx'].x.shape)
-				foldxloss = F.smooth_l1_loss( foldxout , data['Foldx'].x )
-			else:
-				foldxloss = 0
-			
-			#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
-			loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight
-			loss.backward()
-			
-			torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=10.0)
-			torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=10.0)
+	if total_vq < -300:
+		vqweight = 0
+	else:
+		vqweight = 1
 
-			optimizer.step()
-			total_loss_edge += edgeloss.item()
-			total_loss_x += xloss.item()
-			total_vq += vqloss.item()
-			if decoder.output_foldx == True:
-				total_foldx += foldxloss.item()
-			else:
-				total_foldx = 0
-			#total_plddt += plddtloss.item()
-		scheduler.step(total_loss_x)
-		#save the best model
-		if epoch % 10 == 0 :
+	#save the best model
+	if epoch % 10 == 0 :
+		#save model
+		print( 'saving model')
+		torch.save(encoder.state_dict(), encoder_save)
+		torch.save(decoder.state_dict(), decoder_save)
+		with open( modelname + '.pkl', 'wb') as f:
+			pickle.dump( (encoder, decoder) , f)
+	
+	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f}' )
+	total_loss_x = 0
+	total_loss_edge = 0
+	total_vq = 0
+	total_foldx = 0
+	total_fapeloss = 0
+torch.save(encoder.state_dict(), encoder_save)
+torch.save(decoder.state_dict(), decoder_save)
+with open( modelname+'.pkl', 'wb') as f:
+	pickle.dump( (encoder, decoder) , f)
 
-			#save model
-			print( 'saving model')
-			torch.save(encoder.state_dict(), encoder_save)
-			torch.save(decoder.state_dict(), decoder_save)
-			
-			with open( modelname + '.pkl', 'wb') as f:
-				pickle.dump( (encoder, decoder) , f)
-		print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f}')
-		total_loss_x = 0
-		total_loss_edge = 0
-		total_vq = 0
-		total_foldx = 0
-	torch.save(encoder.state_dict(), encoder_save)
-	torch.save(decoder.state_dict(), decoder_save)
-	with open( modelname+'.pkl', 'wb') as f:
-		pickle.dump( (encoder, decoder) , f)
-    
