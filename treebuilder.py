@@ -5,6 +5,8 @@ import subprocess
 import Bio.PDB as PDB
 #import torch_geometric hetero data
 import torch_geometric
+import multiprocessing as mp
+import pebble
 
 import foldtree2_ecddcd as ft2
 
@@ -15,10 +17,13 @@ class treebuilder:
 		#replace 0x22 or " which is necesary for nexus files and 0x23 or # which is also necesary
 		self.replace_dict = {chr(0):chr(246) , '"':chr(248) , '#':chr(247), '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
 		self.rev_replace_dict = { v:k for k,v in replace_dict.items() }
-
 		self.replace_dict_ord = { ord(k):ord(v) for k,v in replace_dict.items() }
 		self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in replace_dict.items() }
-
+		
+		#raxml alphabet
+		self.raxmlchars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~"""
+		self.raxmlchars = self.raxmlchars.split()
+		self.raxml_indices = {i:s for i,s in enumerate( raxmlchars.split() ) }
 
 		#load pickled model
 		self.model = model
@@ -33,14 +38,25 @@ class treebuilder:
 		self.encoder.eval()
 		self.decoder.eval()
 
-		self.alphabet = [ chr(c+1) if chr(c+1) not in replace_dict else replace_dict[chr(c+1] for c in range(encoder.num_embeddings) ]		   
-		#load the mafftmat and submat
+		self.alphabet = [ chr(c+1) if chr(c+1) not in replace_dict else replace_dict[chr(c+1] for c in range(self.encoder.num_embeddings) ]
+		self.nchars = len(self.alphabet)
+		self.map = { c:i for i,c in enumerate(self.alphabet)}
+		self.revmap = { i:c for i,c in enumerate(self.alphabet)}
+
+
+		#load the mafftmat and submat npy matrices
+		if mafftmat == None or submat == None:
+			raise ValueError('Need to provide mafftmat and submat')
 		self.mafftmat = mafftmat
 		self.submat = submat
 		if 'maffttext2hex' in kwargs:
 			self.maffttext2hex = kwargs['maffttext2hex']
 		else:
 			self.maffttext2hex = '/usr/local/libexec/mafft/maffttext2hex'
+		if 'ncores' in kwargs:
+			self.ncores = kwargs['ncores']
+		else:
+			self.ncores = mp.cpu_count()
 
 	@staticmethod
 	def formathex(hexnum):
@@ -49,69 +65,17 @@ class treebuilder:
 			else:
 				return hexnum
 
-	def raxml_matrix( self , matrix, background_frequencies, outpath = None):
-		# Create the substitution matrix file
-		#lower triangular matrix
-		if outpath == None:
-			outpath = self.model.replace('.pkl' , '_mafft_submat.mtx'  )
-		with open(outpath, "w") as f:
-			for i in range(matrix.shape[0]):
-				for j in range(matrix.shape[0]):
-					if j < i:
-						#format to 6 decimal places
-						f.write(f" {matrix[i,j]:.6f}")
-				f.write("\n")
-			# Add the frequencies
-			for i, freq in enumerate(background_frequencies):
-				f.write(f"{freq:.6f} ")
-			f.write("\n")
-		return outpath
-	
-	def output_mafft_matrix( self , char_set ,  outpath= None , replace_dict = {} ):
-		#output the mafft matrix
-		"""
-		0x01 0x01 2   # (comment)
-		0x1e 0x1e 2
-		0x1f 0x1f 2
-		0x21 0x21 2   # ! × !
-		0x41 0x41 2   # A × A
-		0x42 0x42 2   # B × B
-		0x43 0x43 2   # C × C
-		"""
-		print( 'building mafft matrix' )
-		if outpath == None:
-			outpath = self.model.replace('.pkl' , '_mafft_submat.mtx'  )
-		self.mafftmat = outpath
-		print( submat.shape , len( char_set ) )
-		with open(outpath, 'w') as f:
-			for i in range(len(char_set)):
-				for j in range(len(char_set)):
-					if i <= j:
-						stringi = char_set[i]
-						stringj = char_set[j]
-						
-						if stringi in replace_dict.keys():
-							stringi = replace_dict[stringi]
-						if stringj in replace_dict.keys():
-							stringj = replace_dict[stringj]
-					
-						hexi = formathex(hex(ord(stringi)))
-						hexj = formathex(hex( ord(stringj)))
-						
-						f.write( f'{hexi} {hexj} {submat[i,j]} \n ')# '+ stringi + 'x' + stringj + ' \n' )
-		return outpath
-
-
-	def run_mafft_textaln( infasta , outaln , matrix='mafft_submat.mtx' ):
-		cmd = f'mafft --text --localpair --maxiterate 1000 --textmatrix {matrix} {infasta}  > {outaln}'
+	@staticmethod
+	def run_mafft_textaln( infasta , outaln , matrix='mafft_submat.mtx' , mafft_path = 'mafft' ):
+		cmd = f'{mafft_path} --text --localpair --maxiterate 1000 --textmatrix {matrix} {infasta}  > {outaln}'
 		print(cmd)
 		subprocess.run(cmd, shell=True)
 		return outaln
 
-	
-	def mafft_hex2fasta( intext , outfasta ):
+	@staticmethod
+	def mafft_hex2fasta( intext , outfasta , hex2text_path = '/usr/lib/mafft/lib/mafft/hex2maffttext' ):
 		#% /usr/local/libexec/mafft/hex2maffttext input.hex > input.ASCII
-		cmd = f'/usr/lib/mafft/lib/mafft/hex2maffttext {intext} > {outfasta}'
+		cmd = f'{hex2text_path} {intext} > {outfasta}'
 		print(cmd)
 		subprocess.run(cmd, shell=True)
 		return outfasta    
@@ -119,7 +83,7 @@ class treebuilder:
 	@staticmethod
 	def fasta2hex( intext , outfasta  , maffttext2hex = '/usr/local/libexec/mafft/maffttext2hex' ):
 		#% /usr/local/libexec/mafft/maffttext2hex input.hex > input.ASCII
-		cmd = f'/usr/lib/mafft/lib/mafft/maffttext2hex {intext} > {outfasta}'
+		cmd = f'{maffttext2hex} {intext} > {outfasta}'
 		print(cmd)
 		subprocess.run(cmd, shell=True)
 		return outfasta    
@@ -165,6 +129,36 @@ class treebuilder:
 		loader = self.struct_loader( structs , self.converter )
 		self.encoder.encode_structures_fasta( loader , outfile)
 
+	def replace_sp_chars( encoded_fasta, outfile = None  , verbose = False):
+		if outfile == None:
+			outfile = encoded_fasta.replace('.fasta' , '_replaced.fasta')
+		#load the encoded fasta
+		with open(encoded_fasta) as encoded:
+			seqstr = '' 
+			ID = ''
+			seqdict = {}
+			for line in encoded:
+				if line[0] == '>' and line[-1] == '\n':
+					seqdict[ID] = seqstr
+					ID = line[1:].strip()
+					seqstr = ''
+				else:
+					seqstr += line.strip()
+			del seqdict['']
+			encoded_df = pd.DataFrame( seqdict.items() , columns=['protid', 'seq'] )
+		
+		#replace the characters that aren't allowed
+		
+		encoded_df.seq = encoded_df.seq.map(lambda x : ''.join([ c if c not in replace_dict else replace_dict[c] for c in x]))
+		encoded_df['ord'] = encoded_df.seq.map( lambda x: [ ord(c) for c in x] )
+		if verbose:
+			print(encoded_df.head())
+		#write output to fasta
+		with open( outfile, 'w') as f:
+			for idx, row in encoded_df.iterrows():
+				f.write('>' + row.protid + '\n' + row.seq + '\n')
+		return outfile
+	
 	def encodedfasta2hex(self , encoded_fasta , outfile = None ):
 		with open(encoded_fasta, 'r') as f:
 			if outfile == None:
@@ -183,7 +177,7 @@ class treebuilder:
 						g.write(hexstr + '\n')
 		return outfile
 
-	def read_textaln(self, aln_hexfile):
+	def read_textaln(self, aln_hexfile , outfile = None):
 		with open( aln_hexfile , 'r') as f:
 			seqdict = {}
 			seqstr = ''
@@ -203,8 +197,16 @@ class treebuilder:
 		alndf.drop( ''  , inplace = True)
 		alndf['ord_aln'] = alndf.hex_aln.map( lambda x: [ int(c,16) if c!='--' else '-' for c in x.split() ] )
 		alndf['seq_aln'] = alndf.ord_aln.map( lambda x: ''.join([ chr(c) if c !='-' else '-' for c in x ]) )	
-		return alndf
-	
+		alndf['remap_int'] = alndf.seq_aln.map(lambda x : [ self.map[c] if c in self.map else '-' for c in x ] )
+		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.raxml_indices[c] if c in self.raxml_indices else '-' for c in x ]) )
+		if outfile is None:
+			outfile = aln_hexfile.replace('.hex' , '.raxml_aln.fasta')
+		with open(outfile, 'w') as f:
+			for i in alndf.index:
+				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
+		return outfile
+
+
 	@staticmethod
 	def run_raxml_ng(fasta_file, matrix_file, nsymbols, output_prefix , iterations = 20 , raxmlng_path = './raxml-ng'):
 		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
@@ -301,3 +303,24 @@ class treebuilder:
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
 		return aastr ,edge_probs , zgodnode , foldxout
 
+	def structs2tree(self, structs , outdir = None):
+		#encode the structures
+		encoded_fasta = encode_structblob( structs , outfile = None ,  iterations = 20 )	
+		#replace special characters
+		encoded_fasta = replace_sp_chars( encoded_fasta , outfile = None  , verbose = False)
+		#convert to hex
+		hexfasta = encodedfasta2hex( encoded_fasta , outfile = None )
+		# conver to ascii
+		asciifile = mafft_hex2fasta( hexfasta , outfile = None )
+		#run mafft text aln with custom submat
+		mafftaln = run_mafft_textaln( asciifile , outaln , matrix=self. , mafft_path = 'mafft' )
+		#read the mafft aln
+		alnfasta = read_textaln( mafftaln )
+		#run raxml-ng
+		run_raxml_ng( alnfasta , matrix_file= self.submat 
+			   , nsymbols = self.nchars , 
+			   output_prefix = alnfasta.replace('.raxml_aln.fasta' , '') ,
+			   iterations = iterations , 
+			   raxmlng_path = './raxml-ng')
+
+		
