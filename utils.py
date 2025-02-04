@@ -45,7 +45,7 @@ import polars as pl
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
 from titans_pytorch import NeuralMemory
-
+import fafe 
 EPS = 1e-15
 
 datadir = '../../datasets/foldtree2/'

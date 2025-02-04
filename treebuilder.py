@@ -212,26 +212,15 @@ class treebuilder:
 		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
-		return None
-
-	@staticmethod
-	def run_raxml_ng_normal(fasta_file, output_prefix, iterations = 20 , raxmlng_path = './raxml-ng'):
-		raxml_cmd = raxmlng_path + '  --model LG+I+G  --redo --all --bs-trees ' +str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
-		print(raxml_cmd)
-		subprocess.run(raxml_cmd, shell=True)
-		return None
+		return output_prefix + '.raxml.bestTree'
 
 	#ancestral reconstruction
 	#raxml-ng --ancestral --msa ali.fa --tree best.tre --model HKY --prefix ASR
+
+	@staticmethod
 	def run_raxml_ng_ancestral_struct(fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G'
 		raxml_cmd ='./raxml-ng  --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix 
-		print(raxml_cmd)
-		subprocess.run(raxml_cmd, shell=True)
-		return None
-
-	def run_raxml_ng_ancestral_normal(fasta_file, tree_file, model = 'LG+I+G', output_prefix='ASR'):
-		raxml_cmd ='./raxml-ng  --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
 		return None
@@ -279,7 +268,6 @@ class treebuilder:
 		backbone = self.converter.sparse2pairs(backbone)
 		backbone_rev = self.converter.sparse2pairs(backbone_rev)
 		positional_encoding = self.converter.get_positional_encoding( z.shape[0] , 256 )
-		
 		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
 		data['res'].x = torch.cat([data['res'].x, data['positions'].x], dim=1)
 		data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
@@ -303,7 +291,7 @@ class treebuilder:
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
 		return aastr ,edge_probs , zgodnode , foldxout
 
-	def structs2tree(self, structs , outdir = None):
+	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20):
 		#encode the structures
 		encoded_fasta = encode_structblob( structs , outfile = None ,  iterations = 20 )	
 		#replace special characters
@@ -317,10 +305,30 @@ class treebuilder:
 		#read the mafft aln
 		alnfasta = read_textaln( mafftaln )
 		#run raxml-ng
-		run_raxml_ng( alnfasta , matrix_file= self.submat 
+		treefile = run_raxml_ng( alnfasta , matrix_file= self.submat 
 			   , nsymbols = self.nchars , 
 			   output_prefix = alnfasta.replace('.raxml_aln.fasta' , '') ,
-			   iterations = iterations , 
+			   iterations = raxml_iterations , 
 			   raxmlng_path = './raxml-ng')
+		if ancestral == True:
+			ancestral_file = run_raxml_ng_ancestral_struct( alnfasta , treefile , self.submat , self.nchars , alnfasta.replace('.raxml_aln.fasta' , '') )
+			ancestral_fasta = ancestral2fasta( ancestral_file , outfasta )
+			ancestral_df = ancestralfasta2df( outfasta )
+			#decode the ancestral sequence
+			ords = ancestral_df.ord.values
+			for l in ords.shape[0]:
+				aastr ,edge_probs , zgodnode , foldxout = decoder_reconstruction( ords[l] , verbose = False)	
+				ancestral_df.loc[l , 'aastr'] = aastr
+				ancestral_df.loc[l , 'edge_probs'] = edge_probs
+				ancestral_df.loc[l , 'zgodnode'] = zgodnode
+				ancestral_df.loc[l , 'foldxout'] = foldxout
+			
+			#write the ancestral dataframe to a file
+			ancestral_df.to_csv( outfasta.replace('.fasta' , '.csv') )
+			#write out aastr to a fasta
+			with open( outfasta.replace('.fasta' , '.aastr.fasta') , 'w') as f:
+				for i in ancestral_df.index:
+					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
+			
 
 		

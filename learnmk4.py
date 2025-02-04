@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch_geometric.data import DataLoader
 import pickle
+import fafe
 import pandas as pd
 import os
 import tqdm
@@ -46,12 +47,14 @@ data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=Fa
 encoder_layers = 1
 decoder_layers = 3
 
+overwrite = True 
+fapeloss = True
 
 print( converter.metadata)
 encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
 						   out_channels=25, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 ,
-						  encoder_hidden=300 , EMA = False ,
+						  encoder_hidden=300 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
 						    reset_codes= False )
 
 
@@ -69,12 +72,14 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 							amino_mapper = converter.aaindex ,
 							flavor = 'transformer' ,
 							output_foldx = True ,
-							coord_mlp = True ,
+							coord_mlp = fapeloss ,
 							Xdecoder_hidden= 50 ,
 							PINNdecoder_hidden = [100 , 50, 10] ,
 							contactdecoder_hidden = [50 , 50 , 50 ] ,
 							nheads = 8 , dropout = 0.001  ,
 							AAdecoder_hidden = [100 , 50 , 20]  )    
+
+
 
 encoder_save = 'godnodemk5scPos_contactmlp'
 decoder_save = 'godnodemk5scPos_contactmlp'
@@ -88,7 +93,6 @@ def init_weights(m):
 #encoder.apply(init_weights)
 #decoder.apply(init_weights)
 
-overwrite = True 
 
 #load mean and variance	and turn them into tensors	
 mean = pd.read_csv('foldxmean.csv', index_col = 0)
@@ -99,7 +103,6 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 
-fapeloss = ft2.FAPELoss()
 
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
@@ -110,7 +113,6 @@ batch_size = 40
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-fapeloss = fapeloss.to(device)
 
 struct_dat = ft2.StructureDataset('structs_training_godnodemk3.h5')
 err_eps = 1e-2
@@ -154,7 +156,7 @@ for epoch in range(800):
 				z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
 				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
-				recon_x , edge_probs , zgodnode , foldxout, zcoords = decoder(  data.x_dict, data.edge_index_dict , None ) 
+				recon_x , edge_probs , zgodnode , foldxout, r , t = decoder(  data.x_dict, data.edge_index_dict , None ) 
 				init = True
 				continue
 		
@@ -166,7 +168,7 @@ for epoch in range(800):
 		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		edgeloss = ft2.recon_loss(  data.x_dict, data.edge_index_dict , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
-		recon_x , edge_probs , zgodnode , foldxout , zcoords = decoder(  data.x_dict, data.edge_index_dict , None ) 
+		recon_x , edge_probs , zgodnode , foldxout , r , t = decoder(  data.x_dict, data.edge_index_dict , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 		
 		if decoder.output_foldx == True:
@@ -178,23 +180,22 @@ for epoch in range(800):
 			foldxloss = 0
 
 		if fapeloss:
-			B = data['res'].x.shape[0]
-			D = 3
-			
-			R_true = torch.eye(D).expand(B, D, D).to(device)  # Identity rotation (GT)
-			t_true = torch.zeros(B, D).to(device)  # Zero translation (GT)
-
-			R_pred = torch.eye(D).expand(B, D, D).to(device)  # Identity rotation (Pred)
-			t_pred = torch.zeros(B, D).to(device)  # Zero translation (Pred)
-			# Move everything to the device
-			
-			# Compute the FAPE loss
-			fploss = fapeloss(zcoords, data['coords'].x, R_pred, t_pred, R_true, t_true)
+			#reshape the data into batched form
+			batch = data['t_true'].batch
+			t_true = data['t_true'].x
+			R_true = data['R_true'].x
+			#Compute the FAPE loss
+			fploss = ft2.fape_loss(true_R = R_true,
+					 true_t = t_true, 
+					 pred_R = r, 
+					 pred_t = t, 
+					 batch = batch, 
+					 d_clamp=10.0, eps=1e-8 )
+			fploss += F.smooth_l1_loss( t , t_true ) + F.smooth_l1_loss( r , R_true )
 		else:
 			fploss = 0
 
-		
-		for l in [ xloss , edgeloss , vqloss , foldxloss ]:
+		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss]:
 			if torch.isnan(l).any():
 				l = 0
 
