@@ -44,8 +44,8 @@ data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=Fa
 
 # Training loop
 #load model if it exists
-encoder_layers = 2
-decoder_layers = 3
+encoder_layers = 1
+decoder_layers = 4
 
 overwrite = True 
 fapeloss = True
@@ -54,7 +54,7 @@ print( converter.metadata)
 encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
 						   out_channels=25, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 ,
-						  encoder_hidden=300 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
+						  encoder_hidden=300 , EMA = False , nheads = 4 , dropout_p = 0.001 ,
 						    reset_codes= False )
 
 
@@ -135,7 +135,7 @@ edgeweight = 1
 xweight = .1
 vqweight = 0
 foldxweight = .01
-fapeweight = .01
+fapeweight = .1
 angleweight = .1
 
 total_loss_x= 0
@@ -193,11 +193,11 @@ for epoch in range(800):
 					 pred_t = t, 
 					 batch = batch, 
 					 d_clamp=10.0, eps=1e-8 )
-			fploss += F.smooth_l1_loss( t , t_true ) + F.smooth_l1_loss( r , R_true )
+			#fploss += F.smooth_l1_loss( t , t_true ) + F.smooth_l1_loss( r , R_true )
 		else:
 			fploss = 0
 
-		angleloss = F.mse_loss( angles , data.x_dict['bondangles'] )
+		angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
 		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0
@@ -205,8 +205,8 @@ for epoch in range(800):
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
 		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss
 		loss.backward()
-		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=10.0)
-		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=10.0)
+		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
+		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
 		total_loss_x += xloss.item()
