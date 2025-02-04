@@ -1703,6 +1703,14 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[1],xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
+	
+		self.angledecoder = torch.nn.Sequential(
+				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[1],2)
+				)
 		
 		if output_foldx == True:
 			self.godnodedecoder = torch.nn.Sequential(
@@ -1758,6 +1766,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
+		angles = self.angledecoder(decoder_in)
+
 		if self.output_foldx == True:
 			zgodnode = xdata['godnode4decoder']
 			foldx_pred = self.godnodedecoder( xdata['godnode4decoder'] )
@@ -1774,12 +1784,13 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		else:
 			r = None
 			t = None
+		
 		if contact_pred_index is None:
-			return aa, None, zgodnode , foldx_pred , r , t
+			return aa, None, zgodnode , foldx_pred , r , t , angles
 		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
 		#find contacts
 		edge_probs = self.sigmoid(sim_matrix)
-		return aa,  edge_probs , zgodnode , foldx_pred , r , t
+		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		
 	
 	def x_to_amino_acid_sequence(self, x_r):

@@ -44,14 +44,14 @@ data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=Fa
 
 # Training loop
 #load model if it exists
-encoder_layers = 1
+encoder_layers = 2
 decoder_layers = 3
 
 overwrite = True 
 fapeloss = True
 
 print( converter.metadata)
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
 						   out_channels=25, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 ,
 						  encoder_hidden=300 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
@@ -61,10 +61,10 @@ encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_laye
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 											    'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  50 ] * decoder_layers ,
-											( 'res','backbone','res'):[ 50] * decoder_layers , 
-											('res' , 'window' , 'res'): [50] * decoder_layers ,
+											('res' ,'informs','godnode4decoder' ):[  100 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
+											( 'res','backbone','res'):[ 100] * decoder_layers , 
+											#('res' , 'window' , 'res'): [50] * decoder_layers ,
 											},
 
 							layers = decoder_layers ,
@@ -135,7 +135,8 @@ edgeweight = 1
 xweight = .1
 vqweight = 0
 foldxweight = .01
-fapeweight = 1
+fapeweight = .01
+angleweight = .1
 
 total_loss_x= 0
 total_loss_edge = 0
@@ -143,6 +144,7 @@ total_vq=0
 total_kl = 0
 total_foldx=0
 total_fapeloss = 0
+total_angleloss = 0
 
 
 init = False
@@ -156,7 +158,7 @@ for epoch in range(800):
 				z,vqloss = encoder.forward(data.x_dict , data.edge_index_dict)
 				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
-				recon_x , edge_probs , zgodnode , foldxout, r , t = decoder(  data.x_dict, data.edge_index_dict , None ) 
+				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data.x_dict, data.edge_index_dict , None ) 
 				init = True
 				continue
 		
@@ -168,7 +170,7 @@ for epoch in range(800):
 		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		edgeloss = ft2.recon_loss(  data.x_dict, data.edge_index_dict , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
-		recon_x , edge_probs , zgodnode , foldxout , r , t = decoder(  data.x_dict, data.edge_index_dict , None ) 
+		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data.x_dict, data.edge_index_dict , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 		
 		if decoder.output_foldx == True:
@@ -195,19 +197,22 @@ for epoch in range(800):
 		else:
 			fploss = 0
 
-		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss]:
+		angleloss = F.mse_loss( angles , data.x_dict['bondangles'] )
+		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0
-
+		
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
-		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight + fapeweight*fploss
+		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss
 		loss.backward()
 		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=10.0)
 		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=10.0)
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
 		total_loss_x += xloss.item()
-		total_vq += vqloss.item()
+		total_vq += vqloss.item()		
+		total_angleloss += angleloss.item()
+
 		if decoder.output_foldx == True:
 			total_foldx += foldxloss.item()
 		else:
@@ -216,8 +221,7 @@ for epoch in range(800):
 			total_fapeloss += fploss.item()
 		else:
 			total_fapeloss = 0
-		#total_plddt += plddtloss.item()
-	
+
 	scheduler.step(total_loss_x)
 	if total_loss_x < err_eps:
 		xweight = 0 
@@ -242,12 +246,13 @@ for epoch in range(800):
 		with open( modelname + '.pkl', 'wb') as f:
 			pickle.dump( (encoder, decoder) , f)
 	
-	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f}' )
+	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f}' )
 	total_loss_x = 0
 	total_loss_edge = 0
 	total_vq = 0
 	total_foldx = 0
 	total_fapeloss = 0
+	total_angleloss = 0
 torch.save(encoder.state_dict(), encoder_save)
 torch.save(decoder.state_dict(), decoder_save)
 with open( modelname+'.pkl', 'wb') as f:
