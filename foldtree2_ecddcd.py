@@ -551,9 +551,6 @@ class PDB2PyG:
 		# Compute ground truth transformations
 		data['R_true'].x , data['t_true'].x= self.compute_local_frame(residue_frames)
 
-
-
-
 		data['bondangles'].x = torch.tensor(bondangles, dtype=torch.float32)
 		data['plddt'].x = torch.tensor(plddt, dtype=torch.float32)
 		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
@@ -612,8 +609,8 @@ class PDB2PyG:
 		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )
 		data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
 		data['res','backbonerev','res'].edge_index  = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
-		data['res' , 'window' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbone' , 'res'].edge_index)
-		data['res' , 'windowrev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
+		#data['res' , 'window' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbone' , 'res'].edge_index)
+		#data['res' , 'windowrev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
 		return data
 
 	#create a function to store the pytorch geometric data in a hdf5 file

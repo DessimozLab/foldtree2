@@ -15,6 +15,11 @@ import fafe
 import pandas as pd
 import os
 import tqdm
+
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter()
+
+
 import numpy as np
 AVAIL_GPUS = min(1, torch.cuda.device_count())
 
@@ -61,16 +66,17 @@ encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_laye
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 											    'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  100 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
-											( 'res','backbone','res'):[ 100] * decoder_layers , 
+											('res' ,'informs','godnode4decoder' ):[  150 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  150 ] * decoder_layers ,
+											( 'res','backbone','res'):[ 150] * decoder_layers , 
+											('res' , 'backbonerev' , 'res'): [150] * decoder_layers ,
 											#('res' , 'window' , 'res'): [50] * decoder_layers ,
 											},
 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'transformer' ,
+							flavor = 'sage' ,
 							output_foldx = True ,
 							coord_mlp = fapeloss ,
 							Xdecoder_hidden= 50 ,
@@ -132,11 +138,11 @@ foldxlosses = []
 fapelosses = []
 
 edgeweight = 1
-xweight = .1
+xweight = 1
 vqweight = 0
 foldxweight = .01
-fapeweight = .1
-angleweight = .1
+fapeweight = 1
+angleweight = 1
 
 total_loss_x= 0
 total_loss_edge = 0
@@ -160,6 +166,10 @@ for epoch in range(800):
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data.x_dict, data.edge_index_dict , None ) 
 				init = True
+
+				#writer.add_graph(encoder, (data.x_dict , data.edge_index_dict))
+				#writer.add_graph(decoder, (data.x_dict , data.edge_index_dict))
+				#writer.close()
 				continue
 		
 		optimizer.zero_grad()
@@ -247,6 +257,17 @@ for epoch in range(800):
 			pickle.dump( (encoder, decoder) , f)
 	
 	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f}' )
+	writer.add_scalar('Loss/AA', total_loss_x, epoch)
+	writer.add_scalar('Loss/Edge', total_loss_edge, epoch)
+	writer.add_scalar('Loss/VQ', total_vq, epoch)
+	writer.add_scalar('Loss/Foldx', total_foldx, epoch)
+	writer.add_scalar('Loss/Fape', total_fapeloss, epoch)
+	writer.add_scalar('Loss/Angle', total_angleloss, epoch)
+
+	#log learning rate
+	writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
+
+
 	total_loss_x = 0
 	total_loss_edge = 0
 	total_vq = 0

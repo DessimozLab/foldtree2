@@ -7,7 +7,6 @@ import Bio.PDB as PDB
 import torch_geometric
 import multiprocessing as mp
 import pebble
-
 import foldtree2_ecddcd as ft2
 
 class treebuilder:
@@ -279,17 +278,17 @@ class treebuilder:
 		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_index, dtype=torch.long)
 		# Repeat for godnode4decoder
 		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
-		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)	
+		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
 		edge_index = edge_index.to( device )
 		data = data.to( self.device )
 		#decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
 		allpairs = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T.to( self.device )
-		recon_x , edge_probs , zgodnode , foldxout  = decoder( data.x_dict, data.edge_index_dict , allpairs ) 
+		recon_x , edge_probs , zgodnode , foldxout , r , t , angles  = decoder( data.x_dict, data.edge_index_dict , allpairs ) 
 		amino_map = self.decoder.amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
-		return aastr ,edge_probs , zgodnode , foldxout
+		return aastr ,edge_probs , zgodnode , foldxout , r , t , angles
 
 	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20):
 		#encode the structures
@@ -317,12 +316,15 @@ class treebuilder:
 			#decode the ancestral sequence
 			ords = ancestral_df.ord.values
 			for l in ords.shape[0]:
-				aastr ,edge_probs , zgodnode , foldxout = decoder_reconstruction( ords[l] , verbose = False)	
+				aastr ,edge_probs , zgodnode , foldxout , r , t , angles = decoder_reconstruction( ords[l] , verbose = False)	
 				ancestral_df.loc[l , 'aastr'] = aastr
 				ancestral_df.loc[l , 'edge_probs'] = edge_probs
 				ancestral_df.loc[l , 'zgodnode'] = zgodnode
 				ancestral_df.loc[l , 'foldxout'] = foldxout
-			
+				ancestral_df.loc[l , 'r'] = r
+				ancestral_df.loc[l , 't'] = t
+				ancestral_df.loc[l , 'angles'] = angles
+
 			#write the ancestral dataframe to a file
 			ancestral_df.to_csv( outfasta.replace('.fasta' , '.csv') )
 			#write out aastr to a fasta
