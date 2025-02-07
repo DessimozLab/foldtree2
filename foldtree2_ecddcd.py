@@ -2404,7 +2404,7 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, 
 		# Compute the L2 error per residue pair and clamp it.
 		if soft == False:
 			error = torch.norm(local_pred - local_true + eps, dim=-1)
-			if plddt:
+			if plddt is not None:
 				error = error*plddt[idx]
 			error = torch.clamp(error, max=d_clamp)
 			losses.append(error.mean())
@@ -2417,7 +2417,7 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, 
 			# Compute soft FAPE loss
 			weighted_distances = (soft_alignment * dist_sq).sum(dim=-1)  # (B, N)
 			fape_loss = weighted_distances.mean() if reduction == 'mean' else weighted_distances.sum()
-			if plddt:
+			if plddt is not None:
 				fape_loss = fape_loss * plddt[idx]
 			losses.append(fape_loss)
 	if losses:

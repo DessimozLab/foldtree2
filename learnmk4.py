@@ -201,6 +201,7 @@ for epoch in range(800):
 					 batch = batch, 
 					 d_clamp = 10.0,
 					 eps=1e-8,
+					 plddt = data['plddt'].x,
 					 soft = False )
 			
 			"""
