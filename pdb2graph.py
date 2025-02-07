@@ -1,6 +1,5 @@
-
 import utils
-import constants
+
 
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
@@ -19,7 +18,9 @@ class PDB2PyG:
 		self.onehot = onehot
 		self.colmap = colmap
 		#self.aaproperties =  pl.from_pandas(aaproperties)
-		self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		#self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
+		
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
 
@@ -65,15 +66,17 @@ class PDB2PyG:
 		#translate to single letter code
 		residue = chain[0]
 		residue_id = residue.get_full_id()
-		phi_psi_angles.append({
-				"Chain": residue_id[2],
-				"Residue_Number": residue_id[3][1],
-				"Residue_Name": residue.get_resname(),
-				#translate 3 letter to 1 letter code
-				"single_letter_code": aa_dict[residue.get_resname()],
-				"Phi_Angle": 0,
-				"Psi_Angle": 0
-			})
+
+		if residue.get_resname() in aa_dict:
+			phi_psi_angles.append({
+					"Chain": residue_id[2],
+					"Residue_Number": residue_id[3][1],
+					"Residue_Name": residue.get_resname(),
+					#translate 3 letter to 1 letter code
+					"single_letter_code": aa_dict[residue.get_resname()],
+					"Phi_Angle": 0,
+					"Psi_Angle": 0
+				})
 
 
 		for poly_index, poly in enumerate(polypeptides):
@@ -95,31 +98,37 @@ class PDB2PyG:
 
 				# Calculate psi angle
 				psi = PDB.calc_dihedral(n, ca, c, n_plus_1)
+				#omega = PDB.calc_dihedral(ca, c, n_plus_1, poly[len(poly) - 1]["CA"].get_vector())
+
 			residue = poly[0]
 			residue_id = residue.get_full_id()
+			if residue.get_resname() in aa_dict:
+				phi_psi_angles.append({
+					"Chain": residue_id[2],
+					"Residue_Number": residue_id[3][1],
+					"Residue_Name": residue.get_resname(),
+					#translate 3 letter to 1 letter code
+					"single_letter_code": aa_dict[residue.get_resname()],
+					"Phi_Angle": phi,
+					"Psi_Angle": psi,
+					#"Omega_Angle": omega
+				})
 
-			phi_psi_angles.append({
-				"Chain": residue_id[2],
-				"Residue_Number": residue_id[3][1],
-				"Residue_Name": residue.get_resname(),
-				#translate 3 letter to 1 letter code
-				"single_letter_code": aa_dict[residue.get_resname()],
-				"Phi_Angle": phi,
-				"Psi_Angle": psi
-			})
-
+			
+		
 		residue = chain[-1]
 		residue_id = residue.get_full_id()
-
-		phi_psi_angles.append({
-				"Chain": residue_id[2],
-				"Residue_Number": residue_id[3][1],
-				"Residue_Name": residue.get_resname(),
-				#translate 3 letter to 1 letter code
-				"single_letter_code": aa_dict[residue.get_resname()],
-				"Phi_Angle": 0,
-				"Psi_Angle": 0
-			})
+		if residue.get_resname() in aa_dict:
+			phi_psi_angles.append({
+					"Chain": residue_id[2],
+					"Residue_Number": residue_id[3][1],
+					"Residue_Name": residue.get_resname(),
+					#translate 3 letter to 1 letter code
+					"single_letter_code": aa_dict[residue.get_resname()],
+					"Phi_Angle": 0,
+					"Psi_Angle": 0,
+					#"Omega_Angle": 0
+				})
 		
 		#transform phi and psi angles into a dataframe
 		phi_psi_angles = pd.DataFrame(phi_psi_angles)
@@ -152,9 +161,14 @@ class PDB2PyG:
 	@staticmethod
 	def get_closest(chain):
 		contact_mat = np.zeros((len(chain), len(chain)))
-		for i,r1 in enumerate(chain):
-			for j,r2 in enumerate(chain):
-				contact_mat[i,j] =  r1['CB'] - r2['CB']
+		try:
+			for i,r1 in enumerate(chain):
+				for j,r2 in enumerate(chain):
+					contact_mat[i,j] =  r1['CB'] - r2['CB']
+		except:
+			print('error')
+			print( chain)
+			raise 'pdb error'
 		#go through each row and select min
 		for r in contact_mat.shape[0]:
 			contact_mat[r, :][ contact_mat[r, :] != np.amin(contact_mat)] =  0
@@ -258,6 +272,21 @@ class PDB2PyG:
 		return positional_encoding
 	
 	@staticmethod
+	def get_sliding_window(seq_len, window = 2):
+		"""
+		Generates a sliding window matrix.
+
+		"""
+		adjacent = np.zeros((seq_len, seq_len))	
+		for i in range(seq_len):
+			for j in range(window):
+				if i+j < seq_len:
+					adjacent[i , i-j:i+j] = 1
+		return adjacent
+		
+	
+
+	@staticmethod
 	def read_foldx_file(file = None , foldxdir = None , pdb = None):
 		if not file and (not foldxdir or not pdb):
 			raise 'provide a file, foldxdir or pdb'
@@ -280,6 +309,9 @@ class PDB2PyG:
 		if len(chain) ==0:
 			return None
 		angles = self.get_angles(chain)
+		
+		coords = np.array([r['CA'].get_coord() for r in chain])
+
 
 		bondangles = np.array(angles[['Phi_Angle', 'Psi_Angle']])
 
@@ -313,6 +345,12 @@ class PDB2PyG:
 		#return the angles, amino acid properties, contact points, and hydrogen bonds
 		#backbone is just the amino acid chain
 		backbone , backbone_rev = self.get_backbone(chain)
+
+		window = self.get_sliding_window(len(chain), window = 2)
+		window_rev = backbone.T
+
+
+
 		positional_encoding = self.get_positional_encoding( len(chain) , 256)
 
 		if verbose:
@@ -347,11 +385,15 @@ class PDB2PyG:
 		#change the contac matrices to sparse matrices
 		contact_points = sparse.csr_matrix(contact_points)
 		#springmat = sparse.csr_matrix(springmat)
+		
 		backbone = sparse.csr_matrix(backbone)
 		backbone_rev = sparse.csr_matrix(backbone)
+
+		window = sparse.csr_matrix(window)
+		window_rev = sparse.csr_matrix(window_rev)
+
 		hbond_mat = sparse.csr_matrix(hbond_mat)
 		plddt = self.get_plddt(chain)/100
-
 		if verbose:
 			print('plddt' , plddt.shape)
 			plt.plot(plddt)
@@ -368,7 +410,88 @@ class PDB2PyG:
 		else:
 			foldx_vals = None
 
-		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals
+		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev
+
+	def extract_pdb_coordinates(self, pdb_file, atom_type="CA"):
+		"""
+		Extract atomic coordinates from a PDB file for a given atom type (default: CA for proteins).
+
+		Args:
+			pdb_file: Path to the PDB file.
+			atom_type: Atom to extract (e.g., "CA" for alpha-carbons, "C" for carbons).
+
+		Returns:
+			coordinates: Tensor of shape (N, 3), where N is the number of residues.
+		"""
+
+		aa_dict = {
+		'ALA': 'A',
+		'ARG': 'R',
+		'ASN': 'N',
+		'ASP': 'D',
+		'CYS': 'C',
+		'GLN': 'Q',
+		'GLU': 'E',
+		'GLY': 'G',
+		'HIS': 'H',
+		'ILE': 'I',
+		'LEU': 'L',
+		'LYS': 'K',
+		'MET': 'M',
+		'PHE': 'F',
+		'PRO': 'P',
+		'SER': 'S',
+		'THR': 'T',
+		'TRP': 'W',
+		'TYR': 'Y',
+		'VAL': 'V'
+		}
+
+		if type(pdb_file) == str:    
+			chain = self.read_pdb(pdb_file)[0]
+		else:
+			chain = pdb_file
+		
+		chain = [ r for r in chain if PDB.is_aa(r)]
+		coords = []
+		for residue in chain: 
+			if residue.get_resname() in aa_dict and atom_type in residue:
+				coords.append(residue[atom_type].coord)
+		coords = torch.tensor(np.array(coords), dtype=torch.float32)  # (N, 3)
+		return coords
+
+	@staticmethod
+	def compute_local_frame(coords):
+		"""
+		Compute rotation matrices and translation vectors for each residue.
+
+		Args:
+			coords: (N, 3, 3) Tensor, where each residue has three atoms defining a frame.
+
+		Returns:
+			R_true: (N, 3, 3) Tensor of rotation matrices.
+			t_true: (N, 3) Tensor of translation vectors.
+		"""
+
+		N = coords.shape[0]
+		
+		# Translation: Use Cα as the reference point
+		t_true = coords[:, 1, :]  # (N, 3) - Alpha Carbon (CA) positions
+
+		# Define local axes using N, Cα, and C atoms
+		x_axis = coords[:, 2, :] - coords[:, 1, :]  # C - Cα
+		x_axis = x_axis / torch.norm(x_axis, dim=-1, keepdim=True)  # Normalize
+
+		y_axis = coords[:, 0, :] - coords[:, 1, :]  # N - Cα
+		y_axis = y_axis - (torch.sum(y_axis * x_axis, dim=-1, keepdim=True) * x_axis)  # Make orthogonal to x
+		y_axis = y_axis / torch.norm(y_axis, dim=-1, keepdim=True)  # Normalize
+
+		z_axis = torch.cross(x_axis, y_axis, dim=-1)  # Ensure right-handed system
+
+		# Construct rotation matrix
+		R_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)  # (N, 3, 3)
+
+		return R_true, t_true
 
 
 	@staticmethod
@@ -385,7 +508,7 @@ class PDB2PyG:
 		data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
 		return data
 		
-	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False):
+	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False):
 		data = HeteroData()
 		#transform a structure chain into a pytorch geometric graph
 		#get the adjacency matrices
@@ -393,47 +516,63 @@ class PDB2PyG:
 		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir)
 		#except:
 		#	return None
-		
 		if xdata is not None:
-			angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals = xdata
+			angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords , window , window_rev = xdata
 		else:
 			return None
 		if len(angles) ==0:
 			return None
-		
 		if type(pdbchain) == str:
 			identifier = pdbchain.split('/')[-1].split('.')[0]
+			if include_chain:
+				chain = self.read_pdb(pdbchain)[0]
+				identifier = identifier + chain.get_id()
 		#if the chain is a bio.pdb chain object
 		elif type(pdbchain) == PDB.Chain.Chain:
 			identifier = pdbchain.get_id()
 		else:
 			raise 'chain must be a string of a file or a Bio.PDB.Chain.Chain object'
 		data.identifier = identifier
-
 		angles = angles.drop(['single_letter_code'], axis=1)
 		angles.fillna(0, inplace=True)
 		#just keep the amino acid 1 hot encoding
 		#add the amino acid 1 hot to dataset. use for training
 		data['AA'].x = torch.tensor(aa, dtype=torch.float32)
-
 		if foldx_vals is not None:
 			#add the foldx values to the dataset
 			data['Foldx'].x = torch.tensor(foldx_vals, dtype=torch.float32)
+		data['coords'].x = torch.tensor(coords, dtype=torch.float32)
+
+		# Extract N, CA, C atom coordinates per residue (N, 3, 3)
+		residue_frames = torch.stack([
+			self.extract_pdb_coordinates(pdbchain, atom_type="N"),
+			self.extract_pdb_coordinates(pdbchain, atom_type="CA"),
+			self.extract_pdb_coordinates(pdbchain, atom_type="C"),
+		], dim=1)
+
+
+		# Compute ground truth transformations
+		data['R_true'].x , data['t_true'].x= self.compute_local_frame(residue_frames)
 
 		data['bondangles'].x = torch.tensor(bondangles, dtype=torch.float32)
 		data['plddt'].x = torch.tensor(plddt, dtype=torch.float32)
 		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
 		#use the amino acid properties as the node features
 		angles = torch.tensor(angles.values, dtype=torch.float32)
-		data['res'].x = angles
+		#data['res'].x = angles
+		#add the angles and props df w the frames to residues 
+		data['res'].x = torch.cat( [angles, data['R_true'].x.view(-1,9) , data['t_true'].x], dim = 1)
+
+
 		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
-
 		#get the edge features
 		data['res','backbone','res'].edge_attr = torch.tensor(backbone.data, dtype=torch.float32)
 		data['res','backbonerev','res'].edge_attr = torch.tensor(backbone_rev.data, dtype=torch.float32)
 		data['res','contactPoints', 'res'].edge_attr = torch.tensor(contact_points.data, dtype=torch.float32)
 		data['res','hbond', 'res'].edge_attr = torch.tensor(hbond_mat.data, dtype=torch.float)
+		data['res','window', 'res'].edge_attr = torch.tensor(window.data, dtype=torch.float32)
+		data['res','windowrev', 'res'].edge_attr = torch.tensor(window_rev.data, dtype=torch.float32)
 
 		#fully_connected = sparse.csr_matrix(np.ones((len(angles), len(angles))))
 		#data['res','fullyconnected','res'].edge_index = torch.tensor(self.sparse2pairs(fully_connected), dtype=torch.long)
@@ -443,6 +582,8 @@ class PDB2PyG:
 		backbone_rev = self.sparse2pairs(backbone_rev)
 		contact_points = self.sparse2pairs(contact_points)
 		hbond_mat = self.sparse2pairs(hbond_mat)
+		window = self.sparse2pairs(window)
+		window_rev = self.sparse2pairs(window_rev)
 		#springmat = self.sparse2pairs(springmat)
 
 		#get the adjacency matrices into tensors
@@ -450,18 +591,14 @@ class PDB2PyG:
 		data['res','backbonerev','res'].edge_index = torch.tensor(backbone_rev,  dtype=torch.long )
 		data['res','contactPoints', 'res'].edge_index = torch.tensor(contact_points,  dtype=torch.long )    
 		data['res','hbond', 'res'].edge_index = torch.tensor(hbond_mat,  dtype=torch.long )
-
-		#data['res','springMat', 'res'].edge_index = torch.tensor(springmat,  dtype=torch.long )
-		data['res','contactPoints', 'res'].edge_index ,  data['res','contactPoints', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','contactPoints', 'res'].edge_index , data['res','contactPoints', 'res'].edge_attr )
-		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )       
+		data['res','window', 'res'].edge_index = torch.tensor(window,  dtype=torch.long )
+		data['res','windowrev', 'res'].edge_index = torch.tensor(window_rev,  dtype=torch.long )
 		
 		# Create edges from godnode to residues
 		sparse_godnode = np.vstack([[ i for i in range(len(angles))], np.zeros(len(angles))])
 		#copy and flip rows
 		sparse_godnode2res = np.vstack([np.zeros(len(angles)), [ i for i in range(len(angles)) ] ])
-
-
-
+		
 		# Assign edges
 		data['res', 'informs', 'godnode'].edge_index = torch.tensor(sparse_godnode, dtype=torch.long)
 		data['godnode', 'informs', 'res'].edge_index = torch.tensor(sparse_godnode2res, dtype=torch.long)
@@ -469,19 +606,16 @@ class PDB2PyG:
 		# Repeat for godnode4decoder
 		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(sparse_godnode, dtype=torch.long)
 		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(sparse_godnode2res, dtype=torch.long)
-		#data['godnode4decoder', 'informs', 'res'].edge_index = torch_geometric.utils.add_self_loops(data['godnode4decoder', 'informs', 'res'].edge_index)[0]
-
 		#to undirected
-		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )
-		data['res','backbone', 'res'].edge_index =torch_geometric.utils.to_undirected(  data['res','backbone', 'res'].edge_index )
-
 		#add self loops
+		data['res','contactPoints', 'res'].edge_index ,  data['res','contactPoints', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','contactPoints', 'res'].edge_index , data['res','contactPoints', 'res'].edge_attr )
+		data['res','hbond', 'res'].edge_index ,  data['res','hbond', 'res'].edge_attr =torch_geometric.utils.to_undirected(  data['res','hbond', 'res'].edge_index , data['res','hbond', 'res'].edge_attr )
 		data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
 		data['res','backbonerev','res'].edge_index  = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
-		
+		#data['res' , 'window' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbone' , 'res'].edge_index)
+		#data['res' , 'windowrev' , 'res'].edge_index = torch_geometric.utils.to_undirected(data['res' , 'backbonerev' , 'res'].edge_index)
 		return data
 
-	
 	#create a function to store the pytorch geometric data in a hdf5 file
 	def store_pyg_mp(self, pdbfiles, filename, verbose = True , ncpu = 4):
 		#working but crashes after a while. cant figure out why
@@ -520,31 +654,33 @@ class PDB2PyG:
 						print('err' , pdbfile )
 	
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg(self, pdbfiles, filename, foldxdir = None, verbose = True ):
+	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, verbose = True ):
 		with h5py.File(filename , mode = 'w') as f:
 			for pdbfile in  tqdm.tqdm( pdbfiles ):                    
 				if verbose:
 					print(pdbfile)
-				hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir)
-				if hetero_data:
-					identifier = hetero_data.identifier
-					f.create_group(identifier)
-					for node_type in hetero_data.node_types:
-						if hetero_data[node_type].x is not None:
-							node_group = f.create_group(f'structs/{identifier}/node/{node_type}')
-							node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-					# Iterate over edge types and their connections
-					for edge_type in hetero_data.edge_types:
-						# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-						edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-						if hetero_data[edge_type].edge_index is not None:
-							edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-						
-						# If there are edge features, save them too
-						if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-							edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-						#todo. store some other data. sequence. uniprot info etc.
-				else:
+				hetero_data = None
+				try:
+					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain )
+					if hetero_data:
+						identifier = hetero_data.identifier
+						f.create_group(identifier)
+						for node_type in hetero_data.node_types:
+							if hetero_data[node_type].x is not None:
+								node_group = f.create_group(f'structs/{identifier}/node/{node_type}')
+								node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+						# Iterate over edge types and their connections
+						for edge_type in hetero_data.edge_types:
+							# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
+							edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
+							if hetero_data[edge_type].edge_index is not None:
+								edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+							
+							# If there are edge features, save them too
+							if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+							#todo. store some other data. sequence. uniprot info etc.
+				except:
 					print('err' , pdbfile )
 	
 	def store_pyg_complexdata(self, pdbfiles, filename, verbose = True ):
@@ -613,3 +749,140 @@ class PDB2PyG:
 								
 				else:
 					print('err' , pdbfile , 'not multichain')
+
+class ComplexDataset(Dataset):
+	def __init__(self, h5dataset  ):
+		super().__init__()
+		#keys should be the structures
+
+
+		self.h5dataset = h5dataset
+
+		if type(h5dataset) == str:
+			self.h5dataset = h5py.File(h5dataset, 'r')
+		self.structlist = list(self.h5dataset['structs'].keys())
+	
+	def __len__(self):
+		return len(self.structlist)
+
+	def __getitem__(self, idx):
+		if type(idx) == str:
+			f = self.h5dataset['structs'][idx]
+		elif type(idx) == int:
+			f = self.h5dataset['structs'][self.structlist[idx]]
+		else:
+			raise 'use a structure filename or integer'
+		chaindata = {}
+
+		chains = [ c for c in f['chains'].keys()]
+		for chain in chains:
+			hetero_data = HeteroData()        
+			if type (idx) == int:
+				hetero_data.identifier = self.structlist[idx]
+			else:
+				hetero_data.identifier = idx
+
+
+			if 'node' in f['chains'][chain].keys():
+				for node_type in f['chains'][chain]['node'].keys():
+					node_group = f['chains'][chain]['node'][node_type]
+					# Assuming 'x' exists
+					if 'x' in node_group.keys():
+						hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+			# Edge data
+			if 'edge' in f['chains'][chain].keys():
+				for edge_name in f['chains'][chain]['edge'].keys():
+					edge_group = f['chains'][chain]['edge'][edge_name]
+					src_type, link_type, dst_type = edge_name.split('_')
+					edge_type = (src_type, link_type, dst_type)
+					# Assuming 'edge_index' exists
+					if 'edge_index' in edge_group.keys():
+						hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+					
+					# If there are edge attributes, load them too
+					if 'edge_attr' in edge_group.keys():
+						hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+			chaindata[chain] = hetero_data
+		
+		pairdata = {}
+		pairs = [ c for c in f['complex'].keys()]
+		for pair in pairs:
+			hetero_data = HeteroData()        
+			if type (idx) == int:
+				hetero_data.identifier = self.structlist[idx]
+			else:
+				hetero_data.identifier = idx
+			if 'node' in f['complex'][pair].keys():
+				for node_type in f['complex'][pair]['node'].keys():
+					node_group = f['complex'][pair]['node'][node_type]
+					# Assuming 'x' exists
+					if 'x' in node_group.keys():
+						hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+			# Edge data
+			if 'edge' in f['complex'][pair].keys():
+				for edge_name in f['complex'][pair]['edge'].keys():
+					edge_group = f['complex'][pair]['edge'][edge_name]
+					src_type, link_type, dst_type = edge_name.split('_')
+					edge_type = (src_type, link_type, dst_type)
+					# Assuming 'edge_index' exists
+					if 'edge_index' in edge_group.keys():
+						hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+					
+					# If there are edge attributes, load them too
+					if 'edge_attr' in edge_group.keys():
+						hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+			pairdata[pair] = hetero_data
+		return chaindata, pairdata
+	
+class StructureDataset(Dataset):
+	def __init__(self, h5dataset  ):
+		super().__init__()
+		#keys should be the structures
+
+
+		self.h5dataset = h5dataset
+
+		if type(h5dataset) == str:
+			self.h5dataset = h5py.File(h5dataset, 'r')
+		self.structlist = list(self.h5dataset['structs'].keys())
+	
+	def __len__(self):
+		return len(self.structlist)
+
+	def __getitem__(self, idx):
+		if type(idx) == str:
+			f = self.h5dataset['structs'][idx]
+		elif type(idx) == int:
+			f = self.h5dataset['structs'][self.structlist[idx]]
+		else:
+			raise 'use a structure filename or integer'
+		data = {}
+		hetero_data = HeteroData()
+		
+		if type (idx) == int:
+			hetero_data.identifier = self.structlist[idx]
+		else:
+			hetero_data.identifier = idx
+
+		if 'node' in f.keys():
+			for node_type in f['node'].keys():
+				node_group = f['node'][node_type]
+				# Assuming 'x' exists
+				if 'x' in node_group.keys():
+					hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+		# Edge data
+		if 'edge' in f.keys():
+			for edge_name in f['edge'].keys():
+				edge_group = f['edge'][edge_name]
+				src_type, link_type, dst_type = edge_name.split('_')
+				edge_type = (src_type, link_type, dst_type)
+				# Assuming 'edge_index' exists
+				if 'edge_index' in edge_group.keys():
+					hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+				
+				# If there are edge attributes, load them too
+				if 'edge_attr' in edge_group.keys():
+					hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+		#return pytorch geometric heterograph
+		return hetero_data
+	

@@ -26,7 +26,7 @@ from urllib.error import HTTPError
 import pytorch_lightning as L
 import scipy.sparse
 import tqdm
-import egnlayer
+import src.egnlayer as egnlayer
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data, Dataset
@@ -45,7 +45,7 @@ import polars as pl
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
 from titans_pytorch import NeuralMemory
-import fafe 
+import src.losses.fafe as fafe 
 EPS = 1e-15
 
 datadir = '../../datasets/foldtree2/'

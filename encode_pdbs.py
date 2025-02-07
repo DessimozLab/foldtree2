@@ -1,7 +1,8 @@
 import foldtree_ecddcd as ft
 import glob
 import os
-import torch 
+import torch
+
 # command line arguments are an input directory with pdbs, a model file and an output directory
 
 def init_model(model_file):

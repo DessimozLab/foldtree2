@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch_geometric.data import DataLoader
 import pickle
-import fafe
+import src.losses.fafe as fafe
 import pandas as pd
 import os
 import tqdm
