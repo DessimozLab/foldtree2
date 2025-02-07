@@ -101,6 +101,8 @@ class PDB2PyG:
 
 				# Calculate psi angle
 				psi = PDB.calc_dihedral(n, ca, c, n_plus_1)
+				#omega = PDB.calc_dihedral(ca, c, n_plus_1, poly[len(poly) - 1]["CA"].get_vector())
+
 			residue = poly[0]
 			residue_id = residue.get_full_id()
 			if residue.get_resname() in aa_dict:
@@ -111,8 +113,11 @@ class PDB2PyG:
 					#translate 3 letter to 1 letter code
 					"single_letter_code": aa_dict[residue.get_resname()],
 					"Phi_Angle": phi,
-					"Psi_Angle": psi
+					"Psi_Angle": psi,
+					#"Omega_Angle": omega
 				})
+
+			
 		
 		residue = chain[-1]
 		residue_id = residue.get_full_id()
@@ -124,7 +129,8 @@ class PDB2PyG:
 					#translate 3 letter to 1 letter code
 					"single_letter_code": aa_dict[residue.get_resname()],
 					"Phi_Angle": 0,
-					"Psi_Angle": 0
+					"Psi_Angle": 0,
+					#"Omega_Angle": 0
 				})
 		
 		#transform phi and psi angles into a dataframe
@@ -1202,7 +1208,10 @@ class Decoder(torch.nn.Module):
 	
 
 class mk1_Encoder(torch.nn.Module):
-	def __init__(self, in_channels, hidden_channels, out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , reset_codes = True  , nheads = 3):
+	def __init__(self, in_channels, hidden_channels, out_channels, 
+	num_embeddings, commitment_cost, metadata={} , edge_dim = 1,
+	 encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , 
+	 reset_codes = True  , nheads = 3):
 		super(mk1_Encoder, self).__init__()
 
 		#save all arguments to constructor
@@ -1224,7 +1233,6 @@ class mk1_Encoder(torch.nn.Module):
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		#batch norm
 		self.bn = torch.nn.BatchNorm1d(in_channels)
-		self.bn_coord = torch.nn.BatchNorm1d(3)
 		
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
@@ -1241,7 +1249,9 @@ class mk1_Encoder(torch.nn.Module):
 			'''
 			self.convs.append(
 				torch.nn.ModuleDict({
-					'_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , heads = nheads , dropout = dropout_p , concat = False )
+					'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
+					hidden_channels[i] , heads = nheads , dropout = dropout_p , edge_dim =  edge_dim , 
+					 concat = False )
 					for edge_type in metadata['edge_types']
 				})
 			)
@@ -1260,14 +1270,17 @@ class mk1_Encoder(torch.nn.Module):
 		else:
 			self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
 		
-	def forward(self, x_dict, edge_index_dict):
+	def forward(self, data , edge_attr_dict = None):
+		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		x_dict['res'] = self.bn(x_dict['res'])
-		x_dict['coords'] = self.bn_coord(x_dict['coords'])
 		x = self.dropout(x_dict['res'])
 		x_save= []
 		for i, convs in enumerate(self.convs):
 			# Apply the graph convolutions and average over all edge types
-			x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
+			if edge_attr_dict is not None:
+				x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))], edge_attr_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
+			else:
+				x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
 			x = torch.stack(x, dim=0).mean(dim=0)
 			x = F.gelu(x) if i < len(self.hidden_channels) - 1 else x
 			x_save.append(x)
@@ -1625,9 +1638,159 @@ class HeteroGAE_Encoder(torch.nn.Module):
 
 
 
+
+'''
+class DenoisingTransformer(nn.Module):
+	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2):
+		super(DenoisingTransformer, self).__init__()
+		# Linear projection from 12 (9 for rotation + 3 for translation) to d_model
+		self.input_proj = nn.Linear(input_dim, d_model)
+		
+		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
+		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=0.1)
+		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+		
+		# Project back to the 12-dimensional output space
+		self.output_proj = nn.Linear(d_model, input_dim-256)
+
+	def forward(self, r, t , angles , positions):
+		"""
+		Args:
+		  r: Tensor of shape ( N, 3, 3) containing input rotation matrices.
+		  t: Tensor of shape ( N, 3) containing input translation vectors.
+		  angles: Tensor of shape ( N, 2) containing angles.
+		  positions: Tensor of shape ( N, M) containing positional encoding.
+
+		Returns:
+		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
+		  t_refined: Tensor of shape ( N, 3) with denoised translations.
+		"""
+
+		N, _ = r.shape
+		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
+		r_flat = r#.reshape( N, 9)
+		# Concatenate with translation to form (N, 12)
+		x = torch.cat([r_flat, t , angles, positions], dim=-1)
+		x_orig = torch.cat([r_flat, t , angles ] , dim=-1).clone()  # Save original features for a residual connection
+
+		# Project to the transformer dimension: (N, d_model)
+		x = self.input_proj(x)
+
+		# PyTorch's transformer expects shape (seq_len, batch, d_model)
+		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
+
+		# Project back to the 12-dim space
+		delta = self.output_proj(x)  # ( N, 12)
+		refined_features = x_orig + delta  # Apply a residual correction
+
+		# Split the features back into rotation and translation parts
+		r_refined_flat = refined_features[..., :9]  # ( N, 9)
+		t_refined = refined_features[..., 9:12]         # ( N, 3)
+		angles_refined = refined_features[..., 12:]         # ( N, 3)
+		
+		# Reshape the rotation back to ( N, 3, 3)
+		#r_refined = r_refined_flat.reshape( N, 3, 3)
+		# Re-orthogonalize each rotation matrix using SVD
+		r_refined = self.orthogonalize(r_refined_flat)
+		
+		return r_refined, t_refined , angles_refined
+
+	@staticmethod
+	def orthogonalize(r):
+		"""
+		Re-orthogonalizes each 3x3 matrix in the batch so that it is a valid rotation matrix.
+		
+		Args:
+		  r: Tensor of shape ( N, 9)
+		
+		Returns:
+		  r_ortho: Tensor of shape ( N, 3, 3) where each matrix is orthogonal.
+		"""
+		N, _ = r.shape
+		# Flatten sequence dimensions: (N, 3, 3)
+		r_flat = r.reshape(-1, 3, 3)
+		U, S, Vh = torch.linalg.svd(r, full_matrices=False)
+		r_ortho = torch.matmul(U, Vh)
+		# Reshape back to ( N, 3, 3)
+		r_ortho = r_ortho.reshape( N, 3, 3)
+		return r_ortho
+
+'''
+
+class DenoisingTransformer(nn.Module):
+	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2):
+		super(DenoisingTransformer, self).__init__()
+		# Linear projection from 12 (9 for rotation + 3 for translation) to d_model
+		self.input_proj = nn.Linear(input_dim, d_model)
+		
+		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
+		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=0.1)
+		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+		
+		# Project back to the 12-dimensional output space
+		self.output_proj = nn.Linear(d_model, 14 )
+
+	def forward(self, embeddings , positions):
+		"""
+		Args:
+		  r: Tensor of shape ( N, 3, 3) containing input rotation matrices.
+		  t: Tensor of shape ( N, 3) containing input translation vectors.
+		  angles: Tensor of shape ( N, 2) containing angles.
+		  positions: Tensor of shape ( N, M) containing positional encoding.
+
+		Returns:
+		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
+		  t_refined: Tensor of shape ( N, 3) with denoised translations.
+		"""
+
+		N, _ = embeddings.shape
+		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
+		x = torch.cat([embeddings , positions], dim=-1)
+		# Project to the transformer dimension: (N, d_model)
+		x = self.input_proj(x)
+		# PyTorch's transformer expects shape (seq_len, batch, d_model)
+		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
+		# Project back to the 12-dim space
+		refined_features = self.output_proj(x)  # ( N, 12)
+		# Split the features back into rotation and translation parts
+		r_refined_flat = refined_features[..., :9]  # ( N, 9)
+		t_refined = refined_features[..., 9:12]         # ( N, 3)
+		angles_refined = refined_features[..., 12:]         # ( N, 3)
+		angles_refined = torch.nn.Tanh()(angles_refined)
+		# Reshape the rotation back to ( N, 3, 3)
+		#r_refined = r_refined_flat.reshape( N, 3, 3)
+		# Re-orthogonalize each rotation matrix using SVD
+		r_refined = self.orthogonalize(r_refined_flat)
+		
+		return r_refined, t_refined , angles_refined
+
+	@staticmethod
+	def orthogonalize(r):
+		"""
+		Re-orthogonalizes each 3x3 matrix in the batch so that it is a valid rotation matrix.
+		
+		Args:
+		  r: Tensor of shape ( N, 9)
+		
+		Returns:
+		  r_ortho: Tensor of shape ( N, 3, 3) where each matrix is orthogonal.
+		"""
+		N, _ = r.shape
+		# Flatten sequence dimensions: (N, 3, 3)
+		r_flat = r.reshape(-1, 3, 3)
+		U, S, Vh = torch.linalg.svd(r, full_matrices=False)
+		r_ortho = torch.matmul(U, Vh)
+		# Reshape back to ( N, 3, 3)
+		r_ortho = r_ortho.reshape( N, 3, 3)
+		return r_ortho
+
+
 class HeteroGAE_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
-			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, nheads = 3 , Xdecoder_hidden=30, metadata={}, amino_mapper= None  , flavor = None, dropout= .1 , output_foldx = False , coord_mlp = False):
+			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
+			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
+			  amino_mapper= None  , flavor = None, dropout= .1 ,
+				output_foldx = False , coord_mlp = False , denoise = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1680,17 +1843,16 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					if k > 0 and i == 0:
 						in_channels[dataout] = hidden_channels[edge_type][i]
 
-			conv = HeteroConv( layer  , aggr='mean')
+			conv = HeteroConv( layer  , aggr='max')
 			self.convs.append( conv )
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
 				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers , Xdecoder_hidden),
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden ),
+				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden), 
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
-				torch.nn.Tanh()
+				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden)
 				)
 	
 		self.aadecoder = torch.nn.Sequential(
@@ -1698,16 +1860,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[1],xdim) ,
+				torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[2],xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
 	
-		self.angledecoder = torch.nn.Sequential(
-				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[1],2)
-				)
 		
 		if output_foldx == True:
 			self.godnodedecoder = torch.nn.Sequential(
@@ -1717,24 +1874,44 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
-		if coord_mlp == True:
+		if denoise == False:
+
+			self.angledecoder = torch.nn.Sequential(
+				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[2],2),
+				torch.nn.Tanh()
+				)
+		
+
 			self.t_decoder = torch.nn.Sequential(	
 				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] , contactdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[1], 3 ) ,
+				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[2], 3 ) ,
 				)
 			self.r_decoder = torch.nn.Sequential(	
 				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] , contactdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[1], 9 ) ,
+				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[2], 9 ) ,
 				)
+			self.denoiser = None
 		else:
 			self.t_decoder = None
 			self.r_decoder = None
+			self.angledecoder = None
+			self.denoiser = DenoisingTransformer(input_dim=256+Xdecoder_hidden + in_channels_orig['res'] , d_model=128, nhead=8, num_layers=2)
 		
 	def print_config(self):
 		print('decoder convs' ,  self.convs)
@@ -1746,11 +1923,14 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		print('godnodedecoder' , self.godnodedecoder)
 		print('t_decoder' , self.t_decoder)
 		print('r_decoder' , self.r_decoder)
+		print( 'angledecoder' , self.angledecoder)
+		print('denoiser' , self.denoiser)
 	
-	def forward(self, xdata, edge_index, contact_pred_index, **kwargs):
-		xdata['res'] = self.bn(xdata['res'])
+	def forward(self, data , contact_pred_index, **kwargs):
+		xdata, edge_index = data.x_dict, data.edge_index_dict
+		#xdata['res'] = self.bn(xdata['res'])
 		#copy z for later concatenation
-		inz = xdata['res']		
+		inz = xdata['res'].clone()	
 		x_dict_list = []
 		for i,layer in enumerate(self.convs):
 			xdata = layer(xdata, edge_index)
@@ -1763,7 +1943,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
-		angles = self.angledecoder(decoder_in)
 
 		if self.output_foldx == True:
 			zgodnode = xdata['godnode4decoder']
@@ -1772,16 +1951,39 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			foldx_pred = None
 			zgodnode = None
 		#decode contacts
-		if self.t_decoder and self.r_decoder:
+		if self.t_decoder and self.r_decoder and self.angledecoder:
 			t = self.t_decoder( decoder_in )
 			r = self.r_decoder( decoder_in )
-			# stack r in B , N , 3	
-			r = r.view(-1, 3 , 3)
+			angles = self.angledecoder(decoder_in)
+		# stack r in B , N , 3	
+		elif self.denoiser:
+			unique_batches = torch.unique(data['res'].batch)	
+			rs = []
+			ts = []
+			angles_list = []
+			for b in unique_batches:
+				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
+				if idx.numel() > 2:
+					ri,ti, anglesi = self.denoiser(decoder_in[idx] ,  data['positions'].x[idx])
+					ri = ri.view(-1, 3 , 3)
+					ti = ti.view(-1, 3)
+					rs.append(ri)
+					ts.append(ti)
+					angles_list.append(anglesi)
+				else:
+					rs.append(r[idx])
+					ts.append(t[idx])			
+					angles_list.append(angles[idx])
+			angles = torch.cat(angles_list, dim=0)	
+			t = torch.cat(ts, dim=0)
+			r = torch.cat(rs, dim=0)
+			r = r.view(-1, 3, 3)
 			t = t.view(-1, 3)
 		else:
 			r = None
 			t = None
-		
+			angles = None
+				
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred , r , t , angles
 		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
@@ -1955,7 +2157,6 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				torch.nn.ReLU(),
 				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
 				torch.nn.ReLU(),
-
 				torch.nn.Linear(contactdecoder_hidden[2], Xdecoder_hidden),
 				)
 		
@@ -2053,45 +2254,40 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 		return HeteroGAE_Encoder(**config)
 
 
-
-
-
-
-def recon_loss(xdata,edge_index, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Tensor:
+def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
 	sampled edges.
 
 	Args:
-		xdata (HeteroData): The input data containing node features and edge indices.
+		data (HeteroData): The input data containing node features and edge indices.
 		pos_edge_index (torch.Tensor): The positive edges to train against.
 		decoder (torch.nn.Module, optional): The decoder model. (default: :obj:`None`)
 		poslossmod (float, optional): The positive loss modifier. (default: :obj:`1`)
 		neglossmod (float, optional): The negative loss modifier. (default: :obj:`1`)
 	"""
+
+	pos = decoder( data, pos_edge_index )[1]
 	
-	pos = decoder( xdata, edge_index, pos_edge_index )[1]
 	if torch.any(pos) < 0:
 		#set to 1 if any value is less than 0
 		pos[pos < 0] = 0
-	pos_loss = -torch.log(pos + EPS).mean()
-	neg_edge_index = negative_sampling( pos_edge_index, xdata['res'].size(0))
-	neg = decoder( xdata, edge_index , neg_edge_index)[1]
+	
+	pos_loss = -torch.log(pos + EPS)
+	
+	#weigh the loss with plddt values using elementwise multiplication
+	pos_loss = pos_loss.view(-1,1) * data['plddt'].x[pos_edge_index[0]].view(-1,1) * data['plddt'].x[pos_edge_index[1]].view(-1,1)
+	pos_loss = pos_loss.mean()
+	neg_edge_index = negative_sampling( pos_edge_index, data['res'].x.size(0))
+	neg = decoder( data , neg_edge_index)[1]
+
 	if torch.any(1- neg) < 0:
 		neg[neg>1] = 1
-	neg_loss = -torch.log((1 - neg) + EPS).mean()
-	
+	neg_loss = -torch.log((1 - neg) + EPS)
+	neg_loss = neg_loss.view(-1,1) * data['plddt'].x[neg_edge_index[0]].view(-1,1) * data['plddt'].x[neg_edge_index[1]].view(-1 ,1)
+	neg_loss = neg_loss.mean()
+
 	return poslossmod * pos_loss + neglossmod * neg_loss
-
-
-
-#define loss for x reconstruction   
-def x_reconstruction_loss(x, recon_x):
-	"""
-	compute the loss over the node feature reconstruction.
-	"""
-	return F.smooth_l1_loss(recon_x, x)
-
 
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):
@@ -2112,8 +2308,6 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 	return beta*kl_loss
 
-
-
 def save_model(model, optimizer, epoch, file_path):
 	"""
 	Save the model's state dictionary, optimizer's state dictionary, and other metadata to a file.
@@ -2132,7 +2326,6 @@ def save_model(model, optimizer, epoch, file_path):
 		'model_args': model.args,
 		'model_kwargs': model.kwargs,
 	}, file_path)
-
 
 
 def load_model(file_path):
@@ -2168,7 +2361,8 @@ def load_model(file_path):
 	return model, optimizer, epoch
 
 
-def fape_loss(true_R, true_t, pred_R, pred_t, batch, d_clamp=10.0, eps=1e-8):
+
+def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , temperature = .25 , reduction = 'mean' , soft = False):
 	"""
 	Computes the Frame Aligned Point Error (FAPE) loss.
 	
@@ -2208,12 +2402,26 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, d_clamp=10.0, eps=1e-8):
 		local_true = torch.einsum("mij,mnj->mni", true_R[idx].transpose(1,2), diff_true)
 		
 		# Compute the L2 error per residue pair and clamp it.
-		error = torch.norm(local_pred - local_true + eps, dim=-1)
-		error = torch.clamp(error, max=d_clamp)
-		
-		losses.append(error.mean())
-	
+		if soft == False:
+			error = torch.norm(local_pred - local_true + eps, dim=-1)
+			if plddt:
+				error = error*plddt[idx]
+			error = torch.clamp(error, max=d_clamp)
+			losses.append(error.mean())
+		else:				
+			# Compute pairwise squared Euclidean distances
+			dist_sq = torch.cdist(local_pred, local_true, p=2).pow(2)
+			dist_sq = torch.clamp(dist_sq, max=d_clamp**2)
+			# Compute soft alignment probabilities using a Gaussian kernel
+			soft_alignment = F.softmax(-dist_sq / temperature, dim=-1)
+			# Compute soft FAPE loss
+			weighted_distances = (soft_alignment * dist_sq).sum(dim=-1)  # (B, N)
+			fape_loss = weighted_distances.mean() if reduction == 'mean' else weighted_distances.sum()
+			if plddt:
+				fape_loss = fape_loss * plddt[idx]
+			losses.append(fape_loss)
 	if losses:
 		return torch.stack(losses).mean()
 	else:
 		return torch.tensor(0.0, device=true_R.device)
+

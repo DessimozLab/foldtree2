@@ -270,17 +270,24 @@ class treebuilder:
 		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
 		data['res'].x = torch.cat([data['res'].x, data['positions'].x], dim=1)
 		data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
+		data['res','backbonerev','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
+
 		data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
-		data['res','backbone', 'res'].edge_index =torch_geometric.utils.to_undirected(  data['res','backbone', 'res'].edge_index )
+		data['res','backbonerev','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
+
 		#add the godnode
 		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_index, dtype=torch.long)
+
+
 		# Repeat for godnode4decoder
 		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
 		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
+		
 		edge_index = edge_index.to( device )
 		data = data.to( self.device )
+		
 		#decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
 		allpairs = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T.to( self.device )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles  = decoder( data.x_dict, data.edge_index_dict , allpairs ) 
