@@ -43,9 +43,6 @@ data_sample =converter.struct2pyg( filename, verbose=False)
 print(data_sample)
 ndim = data_sample['res'].x.shape[1]
 ndim_godnode = data_sample['godnode'].x.shape[1]
-datadir = '../../datasets/'
-pdbfiles = glob.glob(datadir+'structs/*.pdb')
-data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=False)
 
 # Training loop
 #load model if it exists
@@ -56,10 +53,10 @@ overwrite = True
 fapeloss = True
 
 print( converter.metadata)
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
-						   out_channels=25, metadata=converter.metadata , 
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
+						   out_channels=100, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-						  encoder_hidden=100 , EMA = True , nheads = 4 , dropout_p = 0.001 ,
+						  encoder_hidden=300 , EMA = True , nheads = 4 , dropout_p = 0.001 ,
 						    reset_codes= False )
 
 
@@ -76,7 +73,7 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'sage' ,
+							flavor = 'mfconv' ,
 							output_foldx = True ,
 							coord_mlp = fapeloss ,
 							denoise = True ,
@@ -88,9 +85,9 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 
 
 
-encoder_save = 'godnodemk5scPos_contactmlp'
-decoder_save = 'godnodemk5scPos_contactmlp'
-modelname = 'godnodemk5scPos_contactmlp'
+encoder_save = 'godnodemk5scPos_max'
+decoder_save = 'godnodemk5scPos_max'
+modelname = 'godnodemk5scPos_max'
 
 def init_weights(m):
 
@@ -221,7 +218,7 @@ for epoch in range(800):
 			"""
 		else:
 			fploss = torch.tensor(0)
-		angleloss = F.smooth_l1_loss( angles*data['plddt'].x , torch.cos(data.x_dict['bondangles'])*data['plddt'].x )
+		angleloss = F.smooth_l1_loss( torch.cos(angles)*data['plddt'].x , torch.cos(data.x_dict['bondangles'])*data['plddt'].x )
 		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0
@@ -247,10 +244,12 @@ for epoch in range(800):
 			total_fapeloss = 0
 
 	scheduler.step(total_loss_x)
+	
 	if total_loss_x < err_eps:
 		xweight = 0 
 	else:
 		xweight = 1
+	
 	if total_foldx < err_eps:
 		foldxweight = 0
 	else:

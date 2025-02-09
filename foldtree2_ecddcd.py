@@ -493,7 +493,6 @@ class PDB2PyG:
 
 		# Construct rotation matrix
 		R_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)  # (N, 3, 3)
-
 		return R_true, t_true
 
 
@@ -1237,25 +1236,14 @@ class mk1_Encoder(torch.nn.Module):
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
 		for i in range(len(hidden_channels)):
-
-			'''
-			self.convs.append(
-				torch.nn.ModuleDict({
-					'_'.join(edge_type): GENConv(in_channels if i == 0 else hidden_channels[i-1], hidden_channels[i] , 
-								  learn_t = True , aggr='softmax' , msg_norm = True  , learn_msg_scale = True , num_layers = 3 )
-					for edge_type in metadata['edge_types']
-				})
-			)
-			'''
 			self.convs.append(
 				torch.nn.ModuleDict({
 					'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
-					hidden_channels[i] , heads = nheads , dropout = dropout_p , edge_dim =  edge_dim , 
+					hidden_channels[i] , heads = nheads , dropout = dropout_p,  aggr=SoftmaxAggregation(learn=True),
 					 concat = False )
 					for edge_type in metadata['edge_types']
 				})
-			)
-			
+			)			
 		self.lin = Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] )
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
@@ -1305,7 +1293,7 @@ class mk1_Encoder(torch.nn.Module):
 		with open( filename , 'w') as f:
 			for i,data in tqdm.tqdm(enumerate(dataloader)):
 				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict , data.edge_index_dict)
+				z,qloss = self.forward(data)
 				strdata = self.vector_quantizer.discretize_z(z)
 				identifier = data.identifier
 				f.write(f'>{identifier}\n')
@@ -1328,394 +1316,6 @@ class mk1_Encoder(torch.nn.Module):
 					print(identifier, outstr)
 		return filename
 	
-
-class HeteroGAE_Encoder(torch.nn.Module):
-	def __init__(self, in_channels, hidden_channels, layers ,  out_channels, num_embeddings, commitment_cost, metadata={} , encoder_hidden = 100 , dropout_p = 0.01 , EMA = False , average = False, reset_codes = True , nheads = 3 , separated = False , flavor = 'transformer'):
-		super(HeteroGAE_Encoder, self).__init__()
-
-		#save all arguments to constructor
-		self.args = locals()
-		self.args.pop('self')
-
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False        
-		self.convs = torch.nn.ModuleList()
-
-		self.metadata = metadata
-		self.hidden_channels = hidden_channels
-		self.out_channels = out_channels
-		self.in_channels = in_channels
-		self.encoder_hidden = encoder_hidden
-		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-		#batch norm
-		self.nlayers = layers
-		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
-		self.dropout = torch.nn.Dropout(p=dropout_p)
-		self.separated = separated
-		self.average = average
-		
-		for i in range(layers):
-			layer = {}          
-			for k,edge_type in enumerate( hidden_channels.keys() ):
-				edgestr = '_'.join(edge_type)
-
-				datain = edge_type[0]
-				dataout = edge_type[2]
-
-				#if ( 'res','informs','godnode4decoder') == edge_type:
-				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
-				#else:
-				if flavor == 'transformer' or edge_type == ('res','informs','godnode'):
-					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
-				if flavor == 'gat':
-					layer[edge_type] = GATConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads )
-				if flavor == 'gcn':
-					layer[edge_type] = GCNConv( (-1, -1) , hidden_channels[edge_type][i])
-				if flavor == 'sage':
-					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i])
-				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i])  
-				if flavor == 'sgc':
-					layer[edge_type] = SGConv( -1,  hidden_channels[edge_type][i] , K=2 )   
-				if flavor == 'gen':
-					layer[edge_type] = GENConv( (-1, -1) , hidden_channels[edge_type][i] , learn_t = True , learn_p = True , learn_msg_scale = True )
-
-				if flavor == 'FiLM':
-					layer[edge_type] = FiLMConv( in_channels[datain] , hidden_channels[edge_type][i],                                               
-					nn = 
-					torch.nn.Sequential(
-					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
-					torch.nn.GELU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
-					torch.nn.GELU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , 2 * hidden_channels[edge_type][i] ) , 
-					torch.nn.GELU() )
-					)
-
-				if flavor == 'GIN':
-					layer[edge_type] = GINConv(                              
-					nn = 
-					torch.nn.Sequential(
-					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
-					torch.nn.GELU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
-					torch.nn.GELU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] ,  hidden_channels[edge_type][i] ) , 
-					torch.nn.GELU() )
-					)
-				if ( 'res','backbone','res') == edge_type and i > 0:
-					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode']
-				else:
-					if k == 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k == 0 and i > 0:
-						in_channels[dataout] = hidden_channels[edge_type][i-1]
-					if k > 0 and i > 0:                    
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k > 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-			
-			conv = HeteroConv( layer  , aggr='mean')
-			self.convs.append( conv )
-		
-		print('encoder convolutions')
-		print(self.convs)
-	
-		#output dense layer
-		self.out_dense = self.out_dense= torch.nn.Sequential(
-			Linear(hidden_channels[('res', 'contactPoints', 'res')][-1] + 20 , encoder_hidden),
-			torch.nn.GELU(),
-			Linear(encoder_hidden, encoder_hidden),
-			torch.nn.GELU(),
-			Linear(encoder_hidden, out_channels),
-			torch.nn.Tanh(),
-			)
-		
-		if EMA == True:
-			self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
-		else:
-			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
-	
-	
-	def forward(self, xdata, edge_index):
-		#xdata = {key: xdata[key] for key in ['res']}
-		#edge_index_dict = {key: edge_index_dict[key] for key in [ ('res','backbone','res') ,  ('res','contactPoints', 'res') ] }
-		
-		xdata['res'] = self.bn(xdata['res'])
-
-		xdata['res'] = self.dropout(xdata['res'])
-		xaa = xdata['AA']
-		for i,layer in enumerate(self.convs):
-			xdata = layer(xdata, edge_index)
-			#add relu to all convolutions in this layer
-			for key in layer.convs.keys():
-				key = key[2]
-				xdata[key] = F.gelu(xdata[key])
-		xres = xdata['res']
-		x = self.out_dense( torch.cat([xres,xaa], dim=1) )
-		#x = self.out_dense( x )
-		z_quantized,  qloss = self.vector_quantizer(x)
-		return z_quantized, qloss
-
-	def encode_structures( dataloader, encoder, filename = 'structalign.strct' ):
-		#write with contacts 
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict , data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = structlist[i]
-				f.write(f'\n//////startprot//////{identifier}//////\n')
-				for char in strdata[1]:
-					f.write(char)
-				f.write(f'\n//////contacts//////{identifier}//////\n')
-				#write the contacts stored in the data object
-				contacts = data.edge_index_dict[( 'res','contactPoints','res')]
-				#write a json object with the contacts
-				contacts = contacts.detach().cpu().numpy()
-				#convert edge index to a json object
-				contacts = contacts.tolist()
-				f.write(json.dumps(contacts))
-				f.write(f'\n//////endprot//////\n')
-				f.write('\n')
-		return filename
-
-	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False):
-		#write an encoded fasta for use with mafft and raxml. only doable with alphabet size of less that 248
-		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
-		replace_dict = {chr(0):chr(246) , '"':chr(248) , '#':chr(247), '>' : chr(249), '=' : chr(250),
-		 '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
-		
-		#check encoding size
-		if self.vector_quantizer.num_embeddings > 248:
-			raise ValueError('Encoding size too large for fasta encoding')
-		
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict, data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = data.identifier
-				f.write(f'>{identifier}\n')
-				outstr = ''
-				for char in strdata[0]:
-					char = chr(char)
-					if char in replace_dict:
-						char = replace_dict[char]
-					outstr += char
-					f.write(char)
-				f.write('\n')
-				if verbose == True:
-					print(identifier, outstr)
-		return filename
-	
-	def encode_structures_numbers(self, dataloader, filename = 'structalign.strct.fasta' ):
-		#write an encoded fasta with just numbers of the discrete characters
-		#check encoding size
-		if self.vector_quantizer.num_embeddings > 248:
-			raise ValueError('Encoding size too large for fasta encoding')
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict, data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = data.identifier
-				f.write(f'\n>{identifier}\n')
-				for num in strdata[0]:
-					f.write(str(num)+ ',')
-				f.write('\n')
-		return filename
-
-	def ret_config(self):
-		return {'in_channels': self.in_channels, 'hidden_channels': self.hidden_channels, 'out_channels': self.out_channels, 'num_embeddings': self.vector_quantizer.num_embeddings, 'commitment_cost': self.vector_quantizer.commitment_cost, 'metadata': self.metadata}
-
-	def save_config(self, configfile):
-		with open(configfile , 'w') as f:
-			json.dump(self.ret_config(), f)
-		return configfile
-	
-	def encode_structures( dataloader, encoder, filename = 'structalign.strct' ):
-		#write with contacts 
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict , data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = structlist[i]
-				f.write(f'\n//////startprot//////{identifier}//////\n')
-				for char in strdata[1]:
-					f.write(char)
-				f.write(f'\n//////contacts//////{identifier}//////\n')
-				#write the contacts stored in the data object
-				contacts = data.edge_index_dict[( 'res','contactPoints','res')]
-				#write a json object with the contacts
-				contacts = contacts.detach().cpu().numpy()
-				#convert edge index to a json object
-				contacts = contacts.tolist()
-				f.write(json.dumps(contacts))
-				f.write(f'\n//////endprot//////\n')
-				f.write('\n')
-		return filename
-
-	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False):
-		#write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
-		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
-		replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
-		#check encoding size
-		if self.vector_quantizer.num_embeddings > 248:
-			raise ValueError('Encoding size too large for fasta encoding')
-		
-		if alphabet is not None:
-			print('using alphabet')
-			print(alphabet)
-		
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict , data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = data.identifier
-				f.write(f'>{identifier}\n')
-				outstr = ''
-				for char in strdata[0]:
-					#start at 0x01
-					if alphabet is not None:
-						char = alphabet[char]
-					else:
-						char = chr(char+1)
-					
-					if replace and char in replace_dict:
-						char = replace_dict[char]
-					outstr += char
-					f.write(char)
-
-				f.write('\n')
-
-				if verbose == True:
-					print(identifier, outstr)
-		return filename
-	
-	def encode_structures_numbers(self, dataloader, filename = 'structalign.strct.fasta' ):
-		#write an encoded fasta with just numbers of the discrete characters
-		#check encoding size
-		if self.vector_quantizer.num_embeddings > 248:
-			raise ValueError('Encoding size too large for fasta encoding')
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict, data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = data.identifier
-				f.write(f'\n>{identifier}\n')
-				for num in strdata[0]:
-					f.write(str(num)+ ',')
-				f.write('\n')
-		return filename
-
-
-	def load(self, modelfile):
-		self.load_state_dict(torch.load(modelfile))
-		self.eval()
-		return self
-
-	def save(self, modelfile):
-		torch.save(self.state_dict(), modelfile)
-		return modelfile
-	
-	def ret_config(self):
-		return {'in_channels': self.in_channels, 'hidden_channels': self.hidden_channels, 'out_channels': self.out_channels, 'num_embeddings': self.vector_quantizer.num_embeddings, 'commitment_cost': self.vector_quantizer.commitment_cost, 'metadata': self.metadata}
-
-	def save_config(self, configfile):
-		with open(configfile , 'w') as f:
-			json.dump(self.ret_config(), f)
-		return configfile
-
-	def load_from_config(config):
-		return HeteroGAE_Encoder(**config)
-
-
-
-
-'''
-class DenoisingTransformer(nn.Module):
-	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2):
-		super(DenoisingTransformer, self).__init__()
-		# Linear projection from 12 (9 for rotation + 3 for translation) to d_model
-		self.input_proj = nn.Linear(input_dim, d_model)
-		
-		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
-		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=0.1)
-		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-		
-		# Project back to the 12-dimensional output space
-		self.output_proj = nn.Linear(d_model, input_dim-256)
-
-	def forward(self, r, t , angles , positions):
-		"""
-		Args:
-		  r: Tensor of shape ( N, 3, 3) containing input rotation matrices.
-		  t: Tensor of shape ( N, 3) containing input translation vectors.
-		  angles: Tensor of shape ( N, 2) containing angles.
-		  positions: Tensor of shape ( N, M) containing positional encoding.
-
-		Returns:
-		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
-		  t_refined: Tensor of shape ( N, 3) with denoised translations.
-		"""
-
-		N, _ = r.shape
-		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
-		r_flat = r#.reshape( N, 9)
-		# Concatenate with translation to form (N, 12)
-		x = torch.cat([r_flat, t , angles, positions], dim=-1)
-		x_orig = torch.cat([r_flat, t , angles ] , dim=-1).clone()  # Save original features for a residual connection
-
-		# Project to the transformer dimension: (N, d_model)
-		x = self.input_proj(x)
-
-		# PyTorch's transformer expects shape (seq_len, batch, d_model)
-		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
-
-		# Project back to the 12-dim space
-		delta = self.output_proj(x)  # ( N, 12)
-		refined_features = x_orig + delta  # Apply a residual correction
-
-		# Split the features back into rotation and translation parts
-		r_refined_flat = refined_features[..., :9]  # ( N, 9)
-		t_refined = refined_features[..., 9:12]         # ( N, 3)
-		angles_refined = refined_features[..., 12:]         # ( N, 3)
-		
-		# Reshape the rotation back to ( N, 3, 3)
-		#r_refined = r_refined_flat.reshape( N, 3, 3)
-		# Re-orthogonalize each rotation matrix using SVD
-		r_refined = self.orthogonalize(r_refined_flat)
-		
-		return r_refined, t_refined , angles_refined
-
-	@staticmethod
-	def orthogonalize(r):
-		"""
-		Re-orthogonalizes each 3x3 matrix in the batch so that it is a valid rotation matrix.
-		
-		Args:
-		  r: Tensor of shape ( N, 9)
-		
-		Returns:
-		  r_ortho: Tensor of shape ( N, 3, 3) where each matrix is orthogonal.
-		"""
-		N, _ = r.shape
-		# Flatten sequence dimensions: (N, 3, 3)
-		r_flat = r.reshape(-1, 3, 3)
-		U, S, Vh = torch.linalg.svd(r, full_matrices=False)
-		r_ortho = torch.matmul(U, Vh)
-		# Reshape back to ( N, 3, 3)
-		r_ortho = r_ortho.reshape( N, 3, 3)
-		return r_ortho
-
-'''
 
 class DenoisingTransformer(nn.Module):
 	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2):
@@ -1756,7 +1356,6 @@ class DenoisingTransformer(nn.Module):
 		r_refined_flat = refined_features[..., :9]  # ( N, 9)
 		t_refined = refined_features[..., 9:12]         # ( N, 3)
 		angles_refined = refined_features[..., 12:]         # ( N, 3)
-		angles_refined = torch.nn.Tanh()(angles_refined)
 		# Reshape the rotation back to ( N, 3, 3)
 		#r_refined = r_refined_flat.reshape( N, 3, 3)
 		# Re-orthogonalize each rotation matrix using SVD
@@ -1790,7 +1389,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
 			  amino_mapper= None  , flavor = None, dropout= .1 ,
-				output_foldx = False , coord_mlp = False , denoise = False):
+				output_foldx = False , contact_mlp = False , denoise = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -1821,11 +1420,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				#else:
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
+					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  )
 				if flavor == 'gcn':
 					layer[edge_type] = GCNConv( (-1, -1) , hidden_channels[edge_type][i])
 				if flavor == 'sage':
-					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i])
+					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i] )
 				if flavor == 'mfconv':
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 )  
 				if flavor == 'gen':
@@ -1852,7 +1451,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden), 
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden)
 				)
 	
 		self.aadecoder = torch.nn.Sequential(
@@ -1860,9 +1458,9 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2] ) ,
+				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[2],xdim) ,
+				torch.nn.Linear(AAdecoder_hidden[2] , xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
 	
 		
@@ -1911,8 +1509,22 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			self.t_decoder = None
 			self.r_decoder = None
 			self.angledecoder = None
-			self.denoiser = DenoisingTransformer(input_dim=256+Xdecoder_hidden + in_channels_orig['res'] , d_model=128, nhead=8, num_layers=2)
+			self.denoiser = DenoisingTransformer(input_dim=256+Xdecoder_hidden + in_channels_orig['res'] , d_model=128, nhead=8, num_layers=3)
 		
+		if contact_mlp == True:
+			self.contact_decoder = torch.nn.Sequential(
+				torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[2], 1 + xdim) ,
+				torch.nn.Sigmoid()
+				)
+		else:
+			self.contact_decoder = None
+
 	def print_config(self):
 		print('decoder convs' ,  self.convs)
 		print( 'batchnorm' , self.bn)
@@ -1986,9 +1598,15 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred , r , t , angles
-		sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
-		#find contacts
-		edge_probs = self.sigmoid(sim_matrix)
+		if contact_pred_index is not None and self.contact_decoder is None:
+			#compute similarity matrix
+			sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
+			#find contacts
+			edge_probs = self.sigmoid(sim_matrix)
+			return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
+		else:
+			edge_probs = self.contact_decoder(torch.cat( ( decoder_in[contact_pred_index[0]] , decoder_in[contact_pred_index[1]] ) ,dim= 1) )
+			
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		
 	
@@ -2070,42 +1688,11 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				if flavor == 'gat':
-					layer[edge_type] = GATConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads )
+					layer[edge_type] = GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads )
 				if flavor == 'gcn':
 					layer[edge_type] = GCNConv( (-1, -1) , hidden_channels[edge_type][i])
 				if flavor == 'sage':
 					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i])
-				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i])  
-				if flavor == 'sgc':
-					layer[edge_type] = SGConv( -1,  hidden_channels[edge_type][i] , K=2 )   
-				if flavor == 'gen':
-					layer[edge_type] = GENConv( (-1, -1) , hidden_channels[edge_type][i] , learn_t = True , learn_p = True , learn_msg_scale = True )
-				
-				if flavor == 'FiLM':
-					layer[edge_type] = FiLMConv( in_channels[datain] , hidden_channels[edge_type][i],                                               
-					nn = 
-					torch.nn.Sequential(
-					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
-					torch.nn.ReLU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
-					torch.nn.ReLU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , 2 * hidden_channels[edge_type][i] ) , 
-					torch.nn.ReLU() )
-					)
-
-				if flavor == 'GIN':
-					layer[edge_type] = GINConv(                              
-					nn = 
-					torch.nn.Sequential(
-					torch.nn.Linear( in_channels[datain] , hidden_channels[edge_type][i]),
-					torch.nn.ReLU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] , hidden_channels[edge_type][i] ) , 
-					torch.nn.ReLU(),
-					torch.nn.Linear(hidden_channels[edge_type][i] ,  hidden_channels[edge_type][i] ) , 
-					torch.nn.ReLU() )
-					)
-
 				
 				if ( 'res','backbone','res') == edge_type and i > 0:
 					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
@@ -2118,19 +1705,13 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 						in_channels[dataout] = hidden_channels[edge_type][i]
 					if k > 0 and i == 0:
 						in_channels[dataout] = hidden_channels[edge_type][i]
-			
-
-			conv = HeteroConv( layer  , aggr='mean')
+			conv = HeteroConv( layer  , aggr='max')
 			self.convs.append( conv )
-		
 		print('decoder convs')
 		print( self.convs)
-
 		print( 'batchnorm' , self.bn)
 		print( 'dropout' , self.dropout)
 		
-
-
 		self.sigmoid = nn.Sigmoid()
 
 		self.lin = torch.nn.Sequential(
@@ -2160,7 +1741,6 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				torch.nn.Linear(contactdecoder_hidden[2], Xdecoder_hidden),
 				)
 		
-
 		self.godnodedecoder = torch.nn.Sequential(
 				torch.nn.Linear(in_channels['godnode4decoder'] , PINNdecoder_hidden[0]),
 				torch.nn.ReLU(),
