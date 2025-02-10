@@ -83,7 +83,7 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 							denoise = True ,
 							Xdecoder_hidden= 250 ,
 							PINNdecoder_hidden = [100 , 50, 10] ,
-							contactdecoder_hidden = [100 , 100 , 100 ] ,
+							contactdecoder_hidden = [20 , 20 , 20 ] ,
 							nheads = 8, dropout = 0.001  ,
 							AAdecoder_hidden = [100 , 100 , 20]  )    
 
@@ -112,7 +112,7 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 		encoder, decoder = pickle.load(f)
 
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
 print(device)
 
