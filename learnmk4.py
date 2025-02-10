@@ -1,6 +1,6 @@
 
 import foldtree2_ecddcd as ft2
-converter = ft2.PDB2PyG()
+from converter import pdbgraph
 from matplotlib import pyplot as plt
 import numpy as np
 import tqdm
@@ -9,36 +9,32 @@ import glob
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
+from converter import pdbgraph
 from torch_geometric.data import DataLoader
 import pickle
 import src.losses.fafe as fafe
 import pandas as pd
 import os
 import tqdm
-
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
-
-
 import numpy as np
 AVAIL_GPUS = min(1, torch.cuda.device_count())
-
 #download an example pdb file
 filename = './1eei (1).pdb'
 url = 'https://files.rcsb.org/download/1EEI.pdb'
 #filename = wget.download(url)
 datadir = '../../datasets/foldtree2/'
 filename = './1eei.pdb'
+converter = pdbgraph.PDB2PyG()
 res  = converter.create_features(filename, distance = 10, verbose = False )
 angles, contact_points, springmat , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldxvals, coords ,window , windowrev = res
-
 # Setting the seed for everything
 torch.manual_seed(0)
 np.random.seed(0)
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-converter = ft2.PDB2PyG()
 #data_sample =converter.struct2pyg( pdbfiles[0] , verbose=False)
 #print(data_sample)
 #ndim = data_sample['res'].x.shape[1]
@@ -64,7 +60,6 @@ encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_laye
 						  encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
 						    reset_codes= False )
 
-
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 											    'foldx':23 } , 
 							hidden_channels={
@@ -73,7 +68,6 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 											( 'res','backbone','res'):[ 75] * decoder_layers , 
 											('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 											},
-
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
@@ -94,13 +88,11 @@ decoder_save = 'godnodemk5_contactmlp'
 modelname = 'godnodemk5_contactmlp'
 
 def init_weights(m):
-
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
         torch.nn.init.xavier_uniform_(m.weight)
 
 #encoder.apply(init_weights)
 #decoder.apply(init_weights)
-print(decoder)
 
 #load mean and variance	and turn them into tensors	
 mean = pd.read_csv('foldxmean.csv', index_col = 0)
@@ -111,18 +103,16 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 
-
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
 print(device)
-
 batch_size = 20
 
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
 
-struct_dat = ft2.StructureDataset('structs_training_godnodemk3.h5')
+struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk4.h5')
 err_eps = 1e-2
 
 # Create a DataLoader for training
@@ -296,4 +286,3 @@ torch.save(encoder.state_dict(), encoder_save)
 torch.save(decoder.state_dict(), decoder_save)
 with open( modelname+'.pkl', 'wb') as f:
 	pickle.dump( (encoder, decoder) , f)
-
