@@ -1328,8 +1328,21 @@ class DenoisingTransformer(nn.Module):
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 		
 		# Project back to the 12-dimensional output space
-		self.output_proj = nn.Linear(d_model, 14 )
-
+		#self.output_proj = nn.Linear(d_model, 14 )
+		self.output_proj_rt = nn.Sequential(
+			nn.Linear(d_model, 50),
+			nn.GELU(),
+			nn.Linear(50, 25),
+			nn.GELU(),
+			nn.Linear(25, 12) )
+		
+		self.output_proj_angles = nn.Sequential(
+			nn.Linear(d_model, 10),
+			nn.GELU(),
+			nn.Linear(10, 5),
+			nn.GELU(),
+			nn.Linear(5, 2) )
+	
 	def forward(self, embeddings , positions):
 		"""
 		Args:
@@ -1351,17 +1364,16 @@ class DenoisingTransformer(nn.Module):
 		# PyTorch's transformer expects shape (seq_len, batch, d_model)
 		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
 		# Project back to the 12-dim space
-		refined_features = self.output_proj(x)  # ( N, 12)
+		refined_features_rt = self.output_proj_rt(x)  # ( N, 12)
+		refined_features_angles = self.output_proj_angles(x)  # ( N, 2)		
 		# Split the features back into rotation and translation parts
-		r_refined_flat = refined_features[..., :9]  # ( N, 9)
-		t_refined = refined_features[..., 9:12]         # ( N, 3)
-		angles_refined = refined_features[..., 12:]         # ( N, 3)
+		r_refined_flat = refined_features_rt[..., :9]  # ( N, 9)
+		t_refined = refined_features_rt[..., 9:]         # ( N, 3)
 		# Reshape the rotation back to ( N, 3, 3)
 		#r_refined = r_refined_flat.reshape( N, 3, 3)
 		# Re-orthogonalize each rotation matrix using SVD
 		r_refined = self.orthogonalize(r_refined_flat)
-		
-		return r_refined, t_refined , angles_refined
+		return r_refined, t_refined , refined_features_angles
 
 	@staticmethod
 	def orthogonalize(r):
@@ -1509,7 +1521,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			self.t_decoder = None
 			self.r_decoder = None
 			self.angledecoder = None
-			self.denoiser = DenoisingTransformer(input_dim=256+Xdecoder_hidden + in_channels_orig['res'] , d_model=128, nhead=8, num_layers=3)
+			dim = 256+Xdecoder_hidden + in_channels_orig['res']
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=128, nhead=8, num_layers=3)
 		
 		if contact_mlp == True:
 			self.contact_decoder = torch.nn.Sequential(
@@ -1518,8 +1531,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[2], 1 + xdim) ,
 				torch.nn.Sigmoid()
 				)
 		else:
@@ -1853,18 +1864,16 @@ def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Te
 		#set to 1 if any value is less than 0
 		pos[pos < 0] = 0
 	
-	pos_loss = -torch.log(pos + EPS)
-	
+	pos_loss = -torch.log(pos + EPS)	
 	#weigh the loss with plddt values using elementwise multiplication
-	pos_loss = pos_loss.view(-1,1) * data['plddt'].x[pos_edge_index[0]].view(-1,1) * data['plddt'].x[pos_edge_index[1]].view(-1,1)
+	pos_loss = pos_loss * data['plddt'].x[pos_edge_index[0]] * data['plddt'].x[pos_edge_index[1]]
 	pos_loss = pos_loss.mean()
 	neg_edge_index = negative_sampling( pos_edge_index, data['res'].x.size(0))
 	neg = decoder( data , neg_edge_index)[1]
-
 	if torch.any(1- neg) < 0:
 		neg[neg>1] = 1
 	neg_loss = -torch.log((1 - neg) + EPS)
-	neg_loss = neg_loss.view(-1,1) * data['plddt'].x[neg_edge_index[0]].view(-1,1) * data['plddt'].x[neg_edge_index[1]].view(-1 ,1)
+	neg_loss = neg_loss * data['plddt'].x[neg_edge_index[0]] * data['plddt'].x[neg_edge_index[1]]
 	neg_loss = neg_loss.mean()
 
 	return poslossmod * pos_loss + neglossmod * neg_loss

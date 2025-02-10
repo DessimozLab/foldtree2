@@ -39,55 +39,59 @@ np.random.seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 converter = ft2.PDB2PyG()
-data_sample =converter.struct2pyg( filename, verbose=False)
-print(data_sample)
-ndim = data_sample['res'].x.shape[1]
-ndim_godnode = data_sample['godnode'].x.shape[1]
+#data_sample =converter.struct2pyg( pdbfiles[0] , verbose=False)
+#print(data_sample)
+#ndim = data_sample['res'].x.shape[1]
+#ndim_godnode = data_sample['godnode'].x.shape[1]
+datadir = '../../datasets/'
+pdbfiles = glob.glob(datadir +'structs/*.pdb')
+data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=False)
+ndim = data_sample['res'].x.shape[1] 
+ndim_godnode = data_sample['godnode'].x.shape[1]  
 
 # Training loop
 #load model if it exists
 encoder_layers = 1
-decoder_layers = 5
+decoder_layers = 4
 
-overwrite = True 
+overwrite = True
 fapeloss = True
 
 print( converter.metadata)
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
-						   out_channels=100, metadata=converter.metadata , 
+encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+						   out_channels=20, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-						  encoder_hidden=300 , EMA = True , nheads = 4 , dropout_p = 0.001 ,
+						  encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
 						    reset_codes= False )
 
 
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 											    'foldx':23 } , 
 							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  50 ] * decoder_layers ,
-											( 'res','backbone','res'):[ 50] * decoder_layers , 
-											('res' , 'backbonerev' , 'res'): [50] * decoder_layers ,
-											#('res' , 'window' , 'res'): [50] * decoder_layers ,
+											('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
+											('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
+											( 'res','backbone','res'):[ 75] * decoder_layers , 
+											('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 											},
 
 							layers = decoder_layers ,
 							metadata=converter.metadata , 
 							amino_mapper = converter.aaindex ,
-							flavor = 'mfconv' ,
+							flavor = 'sage' ,
 							output_foldx = True ,
-							coord_mlp = fapeloss ,
+							contact_mlp = True ,
 							denoise = True ,
-							Xdecoder_hidden= 500 ,
+							Xdecoder_hidden= 250 ,
 							PINNdecoder_hidden = [100 , 50, 10] ,
 							contactdecoder_hidden = [100 , 100 , 100 ] ,
 							nheads = 8, dropout = 0.001  ,
-							AAdecoder_hidden = [100 , 50 , 20]  )    
+							AAdecoder_hidden = [100 , 100 , 20]  )    
 
 
 
-encoder_save = 'godnodemk5scPos_max'
-decoder_save = 'godnodemk5scPos_max'
-modelname = 'godnodemk5scPos_max'
+encoder_save = 'godnodemk5_contactmlp'
+decoder_save = 'godnodemk5_contactmlp'
+modelname = 'godnodemk5_contactmlp'
 
 def init_weights(m):
 
@@ -96,7 +100,7 @@ def init_weights(m):
 
 #encoder.apply(init_weights)
 #decoder.apply(init_weights)
-
+print(decoder)
 
 #load mean and variance	and turn them into tensors	
 mean = pd.read_csv('foldxmean.csv', index_col = 0)
@@ -108,11 +112,11 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 		encoder, decoder = pickle.load(f)
 
 
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
 print(device)
 
-batch_size = 40
+batch_size = 20
 
 #put encoder and decoder on the device
 encoder = encoder.to(device)
@@ -123,7 +127,7 @@ err_eps = 1e-2
 
 # Create a DataLoader for training
 
-train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=4)
+train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
 optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
@@ -137,7 +141,7 @@ fapelosses = []
 
 edgeweight = 1
 xweight = 1
-vqweight = 1
+vqweight = .1
 foldxweight = .01
 fapeweight = .1
 angleweight = .1
@@ -218,7 +222,7 @@ for epoch in range(800):
 			"""
 		else:
 			fploss = torch.tensor(0)
-		angleloss = F.smooth_l1_loss( torch.cos(angles)*data['plddt'].x , torch.cos(data.x_dict['bondangles'])*data['plddt'].x )
+		angleloss = F.smooth_l1_loss( angles*data['plddt'].x , data.x_dict['bondangles']*data['plddt'].x )
 		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0
@@ -244,7 +248,9 @@ for epoch in range(800):
 			total_fapeloss = 0
 
 	scheduler.step(total_loss_x)
-	
+
+	if total_loss_x < 1:
+		xweight = 10
 	if total_loss_x < err_eps:
 		xweight = 0 
 	else:
@@ -255,7 +261,7 @@ for epoch in range(800):
 	else:
 		foldxweight = .01
 	
-	if total_vq < -300:
+	if total_vq < 8:
 		vqweight = 0
 	else:
 		vqweight = 1
@@ -265,6 +271,7 @@ for epoch in range(800):
 		#save model
 		print( 'saving model')
 		with open( modelname + '.pkl', 'wb') as f:
+			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
 	
 	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f}' )
