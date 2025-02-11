@@ -18,8 +18,8 @@ class PDB2PyG:
 		self.onehot = onehot
 		self.colmap = colmap
 		#self.aaproperties =  pl.from_pandas(aaproperties)
-		#self.metadata = { 'edge_types': [ ('res','backbone','res') ,  ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
-		self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
+		self.metadata = { 'edge_types': [   ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		#self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
 		
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
@@ -605,8 +605,12 @@ class PDB2PyG:
 		data['bondangles'].x[torch.isnan(data['bondangles'].x)] = 0
 		data['plddt'].x[torch.isnan(data['plddt'].x)] = 0
 		data['positions'].x[torch.isnan(data['positions'].x)] = 0
-		data['Foldx'].x[torch.isnan(data['Foldx'].x)] = 0
 		data['coords'].x[torch.isnan(data['coords'].x)] = 0
+		try:
+			data['Foldx'].x[torch.isnan(data['Foldx'].x)] = 0
+		except:
+			#remove foldx
+			del data['Foldx']
 
 		return data
 
@@ -675,7 +679,10 @@ class PDB2PyG:
 								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
 							#todo. store some other data. sequence. uniprot info etc.
 				except:
+					#pring traceback
+					print(traceback.format_exc())
 					print('err' , pdbfile )
+
 	
 	def store_pyg_complexdata(self, pdbfiles, filename, verbose = True ):
 		with h5py.File(filename , mode = 'w') as f:

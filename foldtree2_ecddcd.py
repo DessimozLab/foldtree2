@@ -325,7 +325,7 @@ class mk1_Encoder(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
 	num_embeddings, commitment_cost, metadata={} , edge_dim = 1,
 	 encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , 
-	 reset_codes = True  , nheads = 3):
+	 reset_codes = True  , nheads = 3 , flavor= 'sage'):
 		super(mk1_Encoder, self).__init__()
 
 		#save all arguments to constructor
@@ -350,15 +350,26 @@ class mk1_Encoder(torch.nn.Module):
 		
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
-		for i in range(len(hidden_channels)):
-			self.convs.append(
-				torch.nn.ModuleDict({
-					'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
-					hidden_channels[i] , heads = nheads , dropout = dropout_p,  aggr=SoftmaxAggregation(learn=True),
-					 concat = False )
-					for edge_type in metadata['edge_types']
-				})
-			)			
+		if flavor == 'gat':
+			for i in range(len(hidden_channels)):
+				self.convs.append(
+					torch.nn.ModuleDict({
+						'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
+						hidden_channels[i] , heads = nheads , dropout = dropout_p,
+						concat = False )
+						for edge_type in metadata['edge_types']
+					})
+				)			
+		if flavor == 'sage':
+			for i in range(len(hidden_channels)):
+				self.convs.append(
+					torch.nn.ModuleDict({
+						'_'.join(edge_type): SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
+						hidden_channels[i] )
+						for edge_type in metadata['edge_types']
+					})
+				)
+
 		self.lin = torch.nn.Sequential(
 			torch.nn.LayerNorm(hidden_channels[-1] * len(hidden_channels)), 
 			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] ))
@@ -603,7 +614,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		
 		if denoise == True:
 			dim = 256+Xdecoder_hidden + in_channels_orig['res']
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=128, nhead=8, num_layers=3)
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=128, nhead=4, num_layers=2)
 	
 		self.contact_decoder = torch.nn.Sequential(
 			torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
@@ -935,7 +946,7 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 			pickle.dump(Forest, f)
 		return name+'_embeddings.h5', name+'_forest.pkl'
 
-def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Tensor:
+def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1 , distweight = False) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
 	sampled edges.
@@ -947,16 +958,18 @@ def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Te
 		poslossmod (float, optional): The positive loss modifier. (default: :obj:`1`)
 		neglossmod (float, optional): The negative loss modifier. (default: :obj:`1`)
 	"""
-
 	pos = decoder( data, pos_edge_index )[1]
-	
 	if torch.any(pos) < 0:
 		#set to 1 if any value is less than 0
 		pos[pos < 0] = 0
-	
 	pos_loss = -torch.log(pos + EPS)	
 	#weigh the loss with plddt values using elementwise multiplication
 	pos_loss = pos_loss * data['plddt'].x[pos_edge_index[0]] * data['plddt'].x[pos_edge_index[1]]
+	if distweight:
+		coord1 = data['coords'].x[pos_edge_index[0]]
+		coord2 = data['coords'].x[pos_edge_index[1]]
+		dist = torch.norm(coord1 - coord2, dim=1)
+		pos_loss = pos_loss * dist.view(-1,1)
 	pos_loss = pos_loss.mean()
 	neg_edge_index = negative_sampling( pos_edge_index, data['res'].x.size(0))
 	neg = decoder( data , neg_edge_index)[1]
@@ -964,8 +977,12 @@ def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1) -> Te
 		neg[neg>1] = 1
 	neg_loss = -torch.log((1 - neg) + EPS)
 	neg_loss = neg_loss * data['plddt'].x[neg_edge_index[0]] * data['plddt'].x[neg_edge_index[1]]
+	if distweight:
+		coord1 = data['coords'].x[neg_edge_index[0]]
+		coord2 = data['coords'].x[neg_edge_index[1]]
+		dist = torch.norm(coord1 - coord2, dim=1)
+		neg_loss = neg_loss * dist.view(-1,1)
 	neg_loss = neg_loss.mean()
-
 	return poslossmod * pos_loss + neglossmod * neg_loss
 
 #amino acid onehot loss for x reconstruction

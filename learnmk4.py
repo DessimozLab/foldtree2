@@ -47,7 +47,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 
 # Training loop
 #load model if it exists
-encoder_layers = 1
+encoder_layers = 2
 decoder_layers = 4
 
 overwrite = True
@@ -57,8 +57,8 @@ print( converter.metadata)
 encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
 						   out_channels=20, metadata=converter.metadata , 
 						  num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-						  encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
-						    reset_codes= False )
+						  encoder_hidden=300 , EMA = True , nheads = 4 , dropout_p = 0.001 ,
+						    reset_codes= False , flavor = 'gat' )
 
 decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 											    'foldx':23 } , 
@@ -77,15 +77,15 @@ decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 
 							denoise = True ,
 							Xdecoder_hidden= 250 ,
 							PINNdecoder_hidden = [100 , 50, 10] ,
-							contactdecoder_hidden = [20 , 20 , 20 ] ,
-							nheads = 8, dropout = 0.001  ,
+							contactdecoder_hidden = [50 , 50 ] ,
+							nheads = 4, dropout = 0.001  ,
 							AAdecoder_hidden = [100 , 100 , 20]  )    
 
 
 
-encoder_save = 'godnodemk5_contactmlp'
-decoder_save = 'godnodemk5_contactmlp'
-modelname = 'godnodemk5_contactmlp'
+encoder_save = 'godnodemk5_contactmlp_hbond'
+decoder_save = 'godnodemk5_contactmlp_hbond'
+modelname = 'godnodemk5_contactmlp_hbond'
 
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
@@ -166,7 +166,7 @@ for epoch in range(800):
 		#add positional encoding to y
 		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
-		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder)
+		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=True)
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 
@@ -184,7 +184,6 @@ for epoch in range(800):
 			t_true = data['t_true'].x
 			R_true = data['R_true'].x
 			#Compute the FAPE loss
-			
 			fploss = ft2.fape_loss(true_R = R_true,
 					 true_t = t_true, 
 					 pred_R = r, 
@@ -282,6 +281,7 @@ for epoch in range(800):
 	total_foldx = 0
 	total_fapeloss = 0
 	total_angleloss = 0
+
 torch.save(encoder.state_dict(), encoder_save)
 torch.save(decoder.state_dict(), decoder_save)
 with open( modelname+'.pkl', 'wb') as f:
