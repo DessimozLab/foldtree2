@@ -63,7 +63,7 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 200 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
 							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
 							encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
@@ -72,9 +72,9 @@ else:
 	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
-												('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
-												('godnode4decoder' ,'informs','res' ):[  50 ] * decoder_layers ,
-												( 'res','backbone','res'):[ 50 ] * decoder_layers , 
+												('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
+												('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
+												( 'res','backbone','res'):[ 75 ] * decoder_layers , 
 												#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 												},
 								layers = decoder_layers ,
