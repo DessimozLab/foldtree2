@@ -615,7 +615,9 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		if denoise == True:
 			dim = 256+Xdecoder_hidden + in_channels_orig['res']
 			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=128, nhead=4, num_layers=2)
-	
+		else:
+			self.denoiser = None
+		
 		self.contact_decoder = torch.nn.Sequential(
 			torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
 			torch.nn.GELU(),

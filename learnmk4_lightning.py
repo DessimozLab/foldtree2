@@ -2,17 +2,25 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import DataLoader
-import pickle
-import glob
-import pandas as pd
-import numpy as np
-import os
-import tqdm
-
-# foldtree2 / local imports
 import foldtree2_ecddcd as ft2
 from converter import pdbgraph
+from matplotlib import pyplot as plt
+import numpy as np
+import tqdm
+import numpy as np
+import glob
+import torch
+import torch.nn.functional as F
+from torch.optim import Adam
+from converter import pdbgraph
+from torch_geometric.data import DataLoader
+import pickle
 import src.losses.fafe as fafe
+import pandas as pd
+import os
+import tqdm
+from torch.utils.tensorboard import SummaryWriter
+# foldtree2 / local imports
 
 # Some of your original constants / device check
 AVAIL_GPUS = min(1, torch.cuda.device_count())
@@ -280,12 +288,22 @@ if __name__ == '__main__':
         angleweight=0.1,
         err_eps=1e-2
     )
-    
+
+
+    #init lazy modules 
+    with torch.no_grad():  # Initialize lazy modules.
+        data = next(iter(train_loader))
+        z,vqloss = model.encoder.forward(data)
+        z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+        data['res'].x = z
+        recon_x , edge_probs , zgodnode , foldxout, r , t , angles = model.decoder(  data , None )
+
+
     # Create a trainer
     trainer = pl.Trainer(
         max_epochs=800,
-        gpus=AVAIL_GPUS,  # or accelerator='gpu', devices=AVAIL_GPUS in newer versions
-        # You can also add callbacks=[pl.callbacks.ModelCheckpoint(...)] for auto-checkpointing
+        #save the best model
+        callbacks=[pl.callbacks.ModelCheckpoint( monitor='Loss/Train', mode='min', save_top_k=1, dirpath='.', filename='best_model')],
     )
     
     # Fit / train

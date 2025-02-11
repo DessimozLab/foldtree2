@@ -16,6 +16,8 @@ import src.losses.fafe as fafe
 import pandas as pd
 import os
 import tqdm
+from  torch_geometric.utils import to_undirected
+
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
 import numpy as np
@@ -51,41 +53,43 @@ encoder_layers = 2
 decoder_layers = 4
 
 overwrite = True
-fapeloss = True
+fapeloss = False
 
-print( converter.metadata)
-encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
-						   out_channels=20, metadata=converter.metadata , 
-						  num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-						  encoder_hidden=300 , EMA = True , nheads = 4 , dropout_p = 0.001 ,
-						    reset_codes= False , flavor = 'gat' )
+encoder_save = 'contactmlp_hbond_nogeo_noema'
+decoder_save = 'contactmlp_hbond_nogeo_noema'
+modelname = 'contactmlp_hbond_nogeo_noema'
 
-decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
-											    'foldx':23 } , 
-							hidden_channels={
-											('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
-											('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-											( 'res','backbone','res'):[ 75] * decoder_layers , 
-											('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
-											},
-							layers = decoder_layers ,
-							metadata=converter.metadata , 
-							amino_mapper = converter.aaindex ,
-							flavor = 'sage' ,
-							output_foldx = True ,
-							contact_mlp = True ,
-							denoise = True ,
-							Xdecoder_hidden= 250 ,
-							PINNdecoder_hidden = [100 , 50, 10] ,
-							contactdecoder_hidden = [50 , 50 ] ,
-							nheads = 4, dropout = 0.001  ,
-							AAdecoder_hidden = [100 , 100 , 20]  )    
+if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite == False:
+	with open( modelname + '.pkl', 'rb') as f:
+		encoder, decoder = pickle.load(f)
+else:
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+							out_channels=20, metadata=converter.metadata , 
+							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
+							encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
+								reset_codes= False , flavor = 'gat' )
 
+	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels , 'godnode4decoder':ndim_godnode ,
+													'foldx':23 } , 
+								hidden_channels={
+												('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
+												('godnode4decoder' ,'informs','res' ):[  50 ] * decoder_layers ,
+												( 'res','backbone','res'):[ 50 ] * decoder_layers , 
+												#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
+												},
+								layers = decoder_layers ,
+								metadata=converter.metadata , 
+								amino_mapper = converter.aaindex ,
+								flavor = 'sage' ,
+								output_foldx = True ,
+								contact_mlp = True ,
+								denoise = fapeloss ,
+								Xdecoder_hidden= 300 ,
+								PINNdecoder_hidden = [100 , 50, 10] ,
+								contactdecoder_hidden = [50 , 50 ] ,
+								nheads = 4, dropout = 0.001  ,
+								AAdecoder_hidden = [100 , 100 , 20]  )    
 
-
-encoder_save = 'godnodemk5_contactmlp_hbond'
-decoder_save = 'godnodemk5_contactmlp_hbond'
-modelname = 'godnodemk5_contactmlp_hbond'
 
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
@@ -99,9 +103,7 @@ mean = pd.read_csv('foldxmean.csv', index_col = 0)
 variance = pd.read_csv('foldxvariance.csv', index_col = 0)
 mean = torch.tensor(mean.values).float()
 variance = torch.tensor(variance.values).float()
-if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite == False:
-	with open( modelname + '.pkl', 'rb') as f:
-		encoder, decoder = pickle.load(f)
+
 
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
@@ -129,7 +131,7 @@ vqlosses = []
 foldxlosses = []
 fapelosses = []
 
-edgeweight = 1
+edgeweight = .1
 xweight = 1
 vqweight = .1
 foldxweight = .01
@@ -154,7 +156,7 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
-				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+				#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
 				init = True
@@ -164,8 +166,10 @@ for epoch in range(800):
 		#normalize the foldx values
 		z,vqloss = encoder.forward(data ) 
 		#add positional encoding to y
-		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+		#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
+		#change backbone to undirected
+		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
 		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=True)
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
@@ -193,25 +197,11 @@ for epoch in range(800):
 					 eps=1e-8,
 					 plddt = data['plddt'].x,
 					 soft = False )
-			
-			"""
-			fploss = fafe.frame_aligned_frame_error_loss(
-						R_pred = r,
-						t_pred = t ,
-						R_gt = R_true,
-						t_gt = t_true,
-						frame_mask = batch,
-						rotate_scale= 1.0,
-						axis_scale= 20.0,
-						eps_so3= 1e-7,
-						eps_r3= 1e-4,
-						dist_clamp = 10 ,
-						pair_mask = None,
-						)
-			"""
+			angleloss = F.smooth_l1_loss( angles*data['plddt'].x , data.x_dict['bondangles']*data['plddt'].x )
 		else:
 			fploss = torch.tensor(0)
-		angleloss = F.smooth_l1_loss( angles*data['plddt'].x , data.x_dict['bondangles']*data['plddt'].x )
+			angleloss = torch.tensor(0)
+		
 		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0

@@ -8,6 +8,8 @@ import torch_geometric
 import multiprocessing as mp
 import pebble
 import foldtree2_ecddcd as ft2
+import argparse
+from ft2treebuilder import treebuilder
 
 class treebuilder():
 	def __init__ ( self , model , mafftmat = None , submat = None , **kwargs ):
@@ -340,5 +342,28 @@ class treebuilder():
 				for i in ancestral_df.index:
 					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
 			
+if __name__ == "__main__":
 
-		
+	parser = argparse.ArgumentParser(description="CLI for running structs2tree")
+	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
+	parser.add_argument("--mafftmat", required=True, help="Path to the MAFFT substitution matrix")
+	parser.add_argument("--submat", required=True, help="Path to the substitution matrix for RAxML")
+	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
+	parser.add_argument("--outdir", default=None, help="Output directory for results")
+	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
+	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations")
+	args = parser.parse_args()
+
+	# Example usage:
+	# Run the script from the command line with:
+	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral
+	# This command will load the model (from 'path/to/model.pkl'),
+	# the MAFFT matrix, and the substitution matrix for RAxML.
+	# It will process all PDB files matching the glob pattern,
+	# perform the ancestral reconstruction, and output results accordingly.
+
+	# Create an instance of treebuilder
+	tb = treebuilder(model=args.model, mafftmat=args.mafftmat, submat=args.submat)
+	
+	# Generate tree from structures using the provided options
+	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations)
