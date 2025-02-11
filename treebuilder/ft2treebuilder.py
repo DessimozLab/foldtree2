@@ -9,8 +9,8 @@ import multiprocessing as mp
 import pebble
 import foldtree2_ecddcd as ft2
 import argparse
-from ft2treebuilder import treebuilder
-
+from .. import foldtree2_ecddcd as ft2
+from ..converter import pdbgraph
 class treebuilder():
 	def __init__ ( self , model , mafftmat = None , submat = None , **kwargs ):
 		
@@ -283,11 +283,9 @@ class treebuilder():
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_index, dtype=torch.long)
 
-
 		# Repeat for godnode4decoder
 		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
-		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
-		
+		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)		
 		edge_index = edge_index.to( device )
 		data = data.to( self.device )
 		

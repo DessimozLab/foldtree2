@@ -69,7 +69,7 @@ else:
 							encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
-	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels , 'godnode4decoder':ndim_godnode ,
+	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
 												('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
@@ -156,7 +156,7 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
-				#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
 				init = True
@@ -166,7 +166,7 @@ for epoch in range(800):
 		#normalize the foldx values
 		z,vqloss = encoder.forward(data ) 
 		#add positional encoding to y
-		#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		#change backbone to undirected
 		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
