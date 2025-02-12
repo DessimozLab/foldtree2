@@ -380,9 +380,8 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
 			torch.nn.GELU(),
-			torch.nn.LayerNorm(self.encoder_hidden),
 			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
-			torch.nn.Tanh()
+			torch.nn.LayerNorm(self.out_channels),
 			)
 		if EMA == False:
 			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)

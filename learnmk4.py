@@ -54,9 +54,9 @@ decoder_layers = 5
 overwrite = True
 fapeloss = False
 
-encoder_save = 'contactmlp_hbond_nogeo_noema'
-decoder_save = 'contactmlp_hbond_nogeo_noema'
-modelname = 'contactmlp_hbond_nogeo_noema'
+encoder_save = 'small5'
+decoder_save = 'small5'
+modelname = 'small5'
 
 if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
@@ -65,7 +65,7 @@ else:
 	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
 							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=100 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
+							encoder_hidden=100 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
 	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
@@ -83,8 +83,8 @@ else:
 								output_foldx = True ,
 								contact_mlp = False ,
 								denoise = fapeloss ,
-								Xdecoder_hidden= 100 ,
-								PINNdecoder_hidden = [100 , 50, 10] ,
+								Xdecoder_hidden= 200 ,
+								PINNdecoder_hidden = [ 100 , 50, 10] ,
 								contactdecoder_hidden = [50 , 50 ] ,
 								nheads = 4, dropout = 0.001  ,
 								AAdecoder_hidden = [100 , 100 , 20]  )    
@@ -119,7 +119,7 @@ err_eps = 1e-2
 # Create a DataLoader for training
 
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
@@ -131,7 +131,7 @@ foldxlosses = []
 fapelosses = []
 
 edgeweight = .1
-xweight = 1
+xweight = .1
 vqweight = .1
 foldxweight = .01
 fapeweight = .1
