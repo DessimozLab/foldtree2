@@ -2,6 +2,8 @@
 # coding: utf-8
 
 from utils import *
+from  torch_geometric.utils import to_undirected
+
 
 class VectorQuantizerEMA(nn.Module):
 	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight= 1 , entropyweight = 1 ):
@@ -388,6 +390,7 @@ class mk1_Encoder(torch.nn.Module):
 			self.vector_quantizer = VectorQuantizerEMA(num_embeddings, out_channels, commitment_cost , reset = reset_codes)
 		
 	def forward(self, data , edge_attr_dict = None):
+		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
 		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		x_dict['res'] = self.bn(x_dict['res'])
 		x = self.dropout(x_dict['res'])
@@ -618,15 +621,18 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		else:
 			self.denoiser = None
 		
-		self.contact_decoder = torch.nn.Sequential(
-			torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-			torch.nn.GELU(),								
-			torch.nn.LayerNorm(contactdecoder_hidden[1]),
-			torch.nn.Linear(contactdecoder_hidden[1], 1 ) ,
-			torch.nn.Sigmoid()
-			)
+		if contact_mlp == True:
+			self.contact_decoder = torch.nn.Sequential(
+				torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.GELU(),								
+				torch.nn.LayerNorm(contactdecoder_hidden[1]),
+				torch.nn.Linear(contactdecoder_hidden[1], 1 ) ,
+				torch.nn.Sigmoid()
+				)
+		else:
+			self.contact_decoder = None
 
 	def print_config(self):
 		print('decoder convs' ,  self.convs)
@@ -948,6 +954,8 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 			pickle.dump(Forest, f)
 		return name+'_embeddings.h5', name+'_forest.pkl'
 
+
+'''
 def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1 , distweight = False) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
@@ -966,8 +974,8 @@ def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1 , dist
 		pos[pos < 0] = 0
 	pos_loss = -torch.log(pos + EPS)	
 	#weigh the loss with plddt values using elementwise multiplication
-	pos_loss = pos_loss * data['plddt'].x[pos_edge_index[0]] * data['plddt'].x[pos_edge_index[1]]
-	if distweight:
+	#pos_loss = pos_loss * data['plddt'].x[pos_edge_index[0]].view(-1,1) * data['plddt'].x[pos_edge_index[1]].view(-1,1)
+	if distweight == True:
 		coord1 = data['coords'].x[pos_edge_index[0]]
 		coord2 = data['coords'].x[pos_edge_index[1]]
 		dist = torch.norm(coord1 - coord2, dim=1)
@@ -978,14 +986,40 @@ def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1 , dist
 	if torch.any(1- neg) < 0:
 		neg[neg>1] = 1
 	neg_loss = -torch.log((1 - neg) + EPS)
-	neg_loss = neg_loss * data['plddt'].x[neg_edge_index[0]] * data['plddt'].x[neg_edge_index[1]]
-	if distweight:
+	#neg_loss = neg_loss * data['plddt'].x[neg_edge_index[0]].view(-1,1) * data['plddt'].x[neg_edge_index[1]].view(-1,1)
+	if distweight == True:
 		coord1 = data['coords'].x[neg_edge_index[0]]
 		coord2 = data['coords'].x[neg_edge_index[1]]
 		dist = torch.norm(coord1 - coord2, dim=1)
 		neg_loss = neg_loss * dist.view(-1,1)
 	neg_loss = neg_loss.mean()
 	return poslossmod * pos_loss + neglossmod * neg_loss
+'''
+
+
+
+def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1, distweight = False) -> Tensor:
+    r"""Given latent variables :obj:`z`, computes the binary cross
+    entropy loss for positive edges :obj:`pos_edge_index` and negative
+    sampled edges.
+
+    Args:
+        z (torch.Tensor): The latent space :math:`\mathbf{Z}`.
+        pos_edge_index (torch.Tensor): The positive edges to train against.
+        neg_edge_index (torch.Tensor, optional): The negative edges to
+            train against. If not given, uses negative sampling to
+            calculate negative edges. (default: :obj:`None`)
+    """
+    pos =decoder(data, pos_edge_index )[1]
+    #turn pos edge index into a binary matrix
+    pos_loss = -torch.log( pos + EPS).mean()
+    neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
+    neg = decoder(data ,  neg_edge_index )[1]
+    neg_loss = -torch.log( ( 1 - neg) + EPS ).mean()
+    return poslossmod*pos_loss + neglossmod*neg_loss
+
+
+
 
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):

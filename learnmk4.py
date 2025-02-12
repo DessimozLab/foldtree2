@@ -16,7 +16,6 @@ import src.losses.fafe as fafe
 import pandas as pd
 import os
 import tqdm
-from  torch_geometric.utils import to_undirected
 
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
@@ -50,7 +49,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 # Training loop
 #load model if it exists
 encoder_layers = 2
-decoder_layers = 4
+decoder_layers = 5
 
 overwrite = True
 fapeloss = False
@@ -63,17 +62,17 @@ if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite =
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 200 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
 							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=300 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
+							encoder_hidden=100 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
 	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
 												('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
-												('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
+												#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
 												( 'res','backbone','res'):[ 75 ] * decoder_layers , 
 												#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 												},
@@ -82,9 +81,9 @@ else:
 								amino_mapper = converter.aaindex ,
 								flavor = 'sage' ,
 								output_foldx = True ,
-								contact_mlp = True ,
+								contact_mlp = False ,
 								denoise = fapeloss ,
-								Xdecoder_hidden= 300 ,
+								Xdecoder_hidden= 100 ,
 								PINNdecoder_hidden = [100 , 50, 10] ,
 								contactdecoder_hidden = [50 , 50 ] ,
 								nheads = 4, dropout = 0.001  ,
@@ -145,8 +144,6 @@ total_kl = 0
 total_foldx=0
 total_fapeloss = 0
 total_angleloss = 0
-
-
 init = False
 for epoch in range(800):
 	if epoch > 500:
@@ -169,11 +166,9 @@ for epoch in range(800):
 		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		#change backbone to undirected
-		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
-		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=True)
+		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=False)
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
-
 		if decoder.output_foldx == True:
 			data['Foldx'].x = data['Foldx'].x.view(-1, 23)
 			data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
