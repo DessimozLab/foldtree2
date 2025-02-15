@@ -52,13 +52,11 @@ encoder_layers = 2
 decoder_layers = 5
 
 overwrite = True
-fapeloss = False
+fapeloss = True
 
-encoder_save = 'small5'
-decoder_save = 'small5'
-modelname = 'small5'
+modelname = 'small5_geo'
 
-if os.path.exists(encoder_save) and os.path.exists(decoder_save) and overwrite == False:
+if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
@@ -68,7 +66,7 @@ else:
 							encoder_hidden=100 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
-	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels + 256 , 'godnode4decoder':ndim_godnode ,
+	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
 												('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
@@ -81,21 +79,23 @@ else:
 								amino_mapper = converter.aaindex ,
 								flavor = 'sage' ,
 								output_foldx = True ,
-								contact_mlp = False ,
+								contact_mlp = True ,
 								denoise = fapeloss ,
 								Xdecoder_hidden= 200 ,
 								PINNdecoder_hidden = [ 100 , 50, 10] ,
 								contactdecoder_hidden = [50 , 50 ] ,
 								nheads = 4, dropout = 0.001  ,
-								AAdecoder_hidden = [100 , 100 , 20]  )    
+								AAdecoder_hidden = [200 , 100 , 100]  )    
 
+print('encoder', encoder)
+print('decoder', decoder)
 
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
         torch.nn.init.xavier_uniform_(m.weight)
 
-#encoder.apply(init_weights)
-#decoder.apply(init_weights)
+encoder.apply(init_weights)
+decoder.apply(init_weights)
 
 #load mean and variance	and turn them into tensors	
 mean = pd.read_csv('foldxmean.csv', index_col = 0)
@@ -119,7 +119,7 @@ err_eps = 1e-2
 # Create a DataLoader for training
 
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
@@ -130,11 +130,11 @@ vqlosses = []
 foldxlosses = []
 fapelosses = []
 
-edgeweight = .1
+edgeweight = 1
 xweight = .1
-vqweight = .1
+vqweight = 1
 foldxweight = .01
-fapeweight = .1
+fapeweight = .01
 angleweight = .1
 
 total_loss_x= 0
@@ -153,7 +153,7 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
-				z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+				#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
 				init = True
@@ -163,7 +163,7 @@ for epoch in range(800):
 		#normalize the foldx values
 		z,vqloss = encoder.forward(data ) 
 		#add positional encoding to y
-		z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+		#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		#change backbone to undirected
 		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=False)
@@ -177,7 +177,7 @@ for epoch in range(800):
 		else:
 			foldxloss = 0
 
-		if fapeloss:
+		if fapeloss == True:
 			#reshape the data into batched form
 			batch = data['t_true'].batch
 			t_true = data['t_true'].x
@@ -192,7 +192,7 @@ for epoch in range(800):
 					 eps=1e-8,
 					 plddt = data['plddt'].x,
 					 soft = False )
-			angleloss = F.smooth_l1_loss( angles*data['plddt'].x , data.x_dict['bondangles']*data['plddt'].x )
+			angleloss = F.smooth_l1_loss( angles*data['plddt'].x.view(-1,1) , data.x_dict['bondangles']*data['plddt'].x.view(-1,1) )
 		else:
 			fploss = torch.tensor(0)
 			angleloss = torch.tensor(0)
@@ -258,8 +258,6 @@ for epoch in range(800):
 
 	#log learning rate
 	writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
-
-
 	total_loss_x = 0
 	total_loss_edge = 0
 	total_vq = 0
@@ -267,7 +265,5 @@ for epoch in range(800):
 	total_fapeloss = 0
 	total_angleloss = 0
 
-torch.save(encoder.state_dict(), encoder_save)
-torch.save(decoder.state_dict(), decoder_save)
 with open( modelname+'.pkl', 'wb') as f:
 	pickle.dump( (encoder, decoder) , f)

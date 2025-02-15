@@ -447,15 +447,41 @@ class mk1_Encoder(torch.nn.Module):
 					print(identifier, outstr)
 		return filename
 	
+def quaternion_to_rotation_matrix(quat):
+    """
+    Convert a batch of quaternions (x, y, z, w) into 3x3 rotation matrices.
+    
+    Parameters:
+    - quat: (batch, N, 4) Tensor of quaternions (x, y, z, w)
+
+    Returns:
+    - rot_matrices: (batch, N, 3, 3) Tensor of rotation matrices
+    """
+    assert quat.shape[-1] == 4, "Quaternions should have shape (*, 4)"
+    
+    x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+
+    # Compute rotation matrix elements
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
+
+    rot_matrices = torch.stack([
+        torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1),
+        torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1),
+        torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1),
+    ], dim=-2)
+
+    return rot_matrices  # Shape: (batch, N, 3, 3)
+
 
 class DenoisingTransformer(nn.Module):
-	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2):
+	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2 , dropout=0.001):
 		super(DenoisingTransformer, self).__init__()
 		# Linear projection from 12 (9 for rotation + 3 for translation) to d_model
 		self.input_proj = nn.Linear(input_dim, d_model)
-		
 		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
-		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=0.01)
+		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 		# Project back to the 12-dimensional output space
 		#self.output_proj = nn.Linear(d_model, 14 )
@@ -465,7 +491,7 @@ class DenoisingTransformer(nn.Module):
 			nn.Linear(50, 25),
 			nn.GELU(),
 			nn.LayerNorm(25),
-			nn.Linear(25, 12) )
+			nn.Linear(25, 7) )
 		
 		self.output_proj_angles = nn.Sequential(
 			nn.Linear(d_model, 10),
@@ -496,16 +522,17 @@ class DenoisingTransformer(nn.Module):
 		# PyTorch's transformer expects shape (seq_len, batch, d_model)
 		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
 		# Project back to the 12-dim space
-		refined_features_rt = self.output_proj_rt(x)  # ( N, 12)
+		refined_features_rt = self.output_proj_rt(x)  # ( N, 4)
 		refined_features_angles = self.output_proj_angles(x)  # ( N, 2)		
 		
 		# Split the features back into rotation and translation parts
-		r_refined_flat = refined_features_rt[..., :9]  # ( N, 9)
-		t_refined = refined_features_rt[..., 9:]         # ( N, 3)
+		r_refined_flat = refined_features_rt[..., :4]  # ( N, 4)
+		r_refined = quaternion_to_rotation_matrix(r_refined_flat)  # ( N, 3, 3)
+		t_refined = refined_features_rt[..., 4:]         # ( N, 3)
 		# Reshape the rotation back to ( N, 3, 3)
 		#r_refined = r_refined_flat.reshape( N, 3, 3)
 		# Re-orthogonalize each rotation matrix using SVD
-		r_refined = self.orthogonalize(r_refined_flat)
+		#r_refined = self.orthogonalize(r_refined_flat)
 		#r_refined = r_refined_flat.reshape( N, 3, 3)
 		return r_refined, t_refined , refined_features_angles
 
@@ -616,7 +643,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		
 		if denoise == True:
 			dim = 256+Xdecoder_hidden + in_channels_orig['res']
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=128, nhead=4, num_layers=2)
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=256, nhead=8, num_layers=2 , dropout=0.001)
 		else:
 			self.denoiser = None
 		
@@ -671,7 +698,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			foldx_pred = None
 			zgodnode = None
 		#decode contacts
-		if self.denoiser:
+		if self.denoiser is not None:
 			unique_batches = torch.unique(data['res'].batch)	
 			rs = []
 			ts = []
@@ -1121,7 +1148,6 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, 
 		idx = (batch == b).nonzero(as_tuple=True)[0]
 		if idx.numel() < 2:
 			continue
-
 		# Compute pairwise differences for the predicted translations.
 		diff_pred = pred_t[idx].unsqueeze(1) - pred_t[idx].unsqueeze(0)  # shape: (m, m, 3)
 		# Transform differences into the local predicted frames.
@@ -1156,3 +1182,57 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, 
 	else:
 		return torch.tensor(0.0, device=true_R.device)
 
+def transform_rt_to_coordinates(rotations, translations):
+    """
+    Convert R, t matrices into global 3D coordinates.
+    """
+    batch_size, num_residues, _, _ = rotations.shape
+    coords = torch.zeros((batch_size, num_residues, 3), device=rotations.device)
+
+    for b in range(batch_size):
+        transform = torch.eye(4, device=rotations.device)
+        for i in range(num_residues):
+            T = torch.eye(4, device=rotations.device)
+            T[:3, :3] = rotations[b, i]
+            T[:3, 3] = translations[b, i]
+
+            transform = transform @ T  # Apply transformation
+            coords[b, i] = transform[:3, 3]
+
+    return coords
+
+def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):
+    """
+    Compute lDDT loss for backpropagation.
+    """
+    batch_size, num_residues, _ = true_coords.shape
+    num_pairs = 0
+    num_matching_pairs = 0
+
+    for b in range(batch_size):
+        true_dists = torch.cdist(true_coords[b], true_coords[b])  # (N, N)
+        pred_dists = torch.cdist(pred_coords[b], pred_coords[b])  # (N, N)
+
+        mask = (true_dists < cutoff).float()
+        diff = torch.abs(true_dists - pred_dists)
+
+        valid_pairs = (diff < 0.5 * true_dists) * mask
+        num_pairs += torch.sum(mask)
+        num_matching_pairs += torch.sum(valid_pairs)
+
+    lddt_score = num_matching_pairs / num_pairs if num_pairs > 0 else 0
+    return 1.0 - lddt_score  # Loss formulation
+
+def lddt_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , reduction = 'mean' ):
+	losses = []
+	unique_batches = torch.unique(batch)
+	for b in unique_batches:
+		idx = (batch == b).nonzero(as_tuple=True)[0]
+		coord_true = transform_rt_to_coordinates(true_R[idx], true_t[idx])
+		coord_pred = transform_rt_to_coordinates(pred_R[idx], pred_t[idx])		
+		lddt_loss = compute_lddt_loss(coord_true, coord_pred)
+		if plddt is not None:
+			lddt_loss = lddt_loss * plddt[idx].view(-1,1)
+		losses.append(lddt_loss)
+	if losses:
+		return torch.stack(losses).mean()
