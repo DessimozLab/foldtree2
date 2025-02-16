@@ -448,31 +448,34 @@ class mk1_Encoder(torch.nn.Module):
 		return filename
 	
 def quaternion_to_rotation_matrix(quat):
-    """
-    Convert a batch of quaternions (x, y, z, w) into 3x3 rotation matrices.
-    
-    Parameters:
-    - quat: (batch, N, 4) Tensor of quaternions (x, y, z, w)
+	"""
+	Convert a batch of quaternions (x, y, z, w) into 3x3 rotation matrices.
+	
+	Parameters:
+	- quat: (batch, N, 4) Tensor of quaternions (x, y, z, w)
 
-    Returns:
-    - rot_matrices: (batch, N, 3, 3) Tensor of rotation matrices
-    """
-    assert quat.shape[-1] == 4, "Quaternions should have shape (*, 4)"
-    
-    x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+	Returns:
+	- rot_matrices: (batch, N, 3, 3) Tensor of rotation matrices
+	"""
+	assert quat.shape[-1] == 4, "Quaternions should have shape (*, 4)"
+	
+	norm = torch.norm(quat, dim=-1, keepdim=True)
+	quat = quat / norm
+	x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
 
-    # Compute rotation matrix elements
-    xx, yy, zz = x * x, y * y, z * z
-    xy, xz, yz = x * y, x * z, y * z
-    wx, wy, wz = w * x, w * y, w * z
 
-    rot_matrices = torch.stack([
-        torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1),
-        torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1),
-        torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1),
-    ], dim=-2)
+	# Compute rotation matrix elements
+	xx, yy, zz = x * x, y * y, z * z
+	xy, xz, yz = x * y, x * z, y * z
+	wx, wy, wz = w * x, w * y, w * z
 
-    return rot_matrices  # Shape: (batch, N, 3, 3)
+	rot_matrices = torch.stack([
+		torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1),
+		torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1),
+		torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1),
+	], dim=-2)
+
+	return rot_matrices  # Shape: (batch, N, 3, 3)
 
 
 class DenoisingTransformer(nn.Module):
@@ -486,12 +489,13 @@ class DenoisingTransformer(nn.Module):
 		# Project back to the 12-dimensional output space
 		#self.output_proj = nn.Linear(d_model, 14 )
 		self.output_proj_rt = nn.Sequential(
+			nn.LayerNorm(d_model),
 			nn.Linear(d_model, 50),
 			nn.GELU(),
 			nn.Linear(50, 25),
 			nn.GELU(),
-			nn.LayerNorm(25),
-			nn.Linear(25, 7) )
+			nn.Linear(25, 7) ,
+			nn.LayerNorm(7) )
 		
 		self.output_proj_angles = nn.Sequential(
 			nn.Linear(d_model, 10),
@@ -523,12 +527,12 @@ class DenoisingTransformer(nn.Module):
 		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
 		# Project back to the 12-dim space
 		refined_features_rt = self.output_proj_rt(x)  # ( N, 4)
-		refined_features_angles = self.output_proj_angles(x)  # ( N, 2)		
+		refined_features_angles = self.output_proj_angles(x)  # ( N, 3)		
 		
 		# Split the features back into rotation and translation parts
 		r_refined_flat = refined_features_rt[..., :4]  # ( N, 4)
 		r_refined = quaternion_to_rotation_matrix(r_refined_flat)  # ( N, 3, 3)
-		t_refined = refined_features_rt[..., 4:]         # ( N, 3)
+		t_refined = refined_features_rt[..., 4:]  # ( N, 3)
 		# Reshape the rotation back to ( N, 3, 3)
 		#r_refined = r_refined_flat.reshape( N, 3, 3)
 		# Re-orthogonalize each rotation matrix using SVD
@@ -779,31 +783,31 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		return HeteroGAE_Encoder(**config)
 
 def jaccard_distance_multiset(A: torch.Tensor,
-                              B: torch.Tensor,
-                              dim: int = -1,
-                              eps: float = 1e-8) -> torch.Tensor:
-    """
-    Computes the generalized (multiset) Jaccard distance between two tensors A and B.
-    Both A and B should be nonnegative and have the same shape.
-    
-    :param A: Tensor of shape (..., n_features)
-    :param B: Tensor of shape (..., n_features)
-    :param dim: Dimension along which to compute Jaccard. Default is the last dimension.
-    :param eps: Small constant to avoid division by zero.
-    :return: Tensor of Jaccard distances of shape (...).
-    """
-    # Ensure A and B have the same shape
-    if A.shape != B.shape:
-        raise ValueError("A and B must have the same shape.")
+							  B: torch.Tensor,
+							  dim: int = -1,
+							  eps: float = 1e-8) -> torch.Tensor:
+	"""
+	Computes the generalized (multiset) Jaccard distance between two tensors A and B.
+	Both A and B should be nonnegative and have the same shape.
+	
+	:param A: Tensor of shape (..., n_features)
+	:param B: Tensor of shape (..., n_features)
+	:param dim: Dimension along which to compute Jaccard. Default is the last dimension.
+	:param eps: Small constant to avoid division by zero.
+	:return: Tensor of Jaccard distances of shape (...).
+	"""
+	# Ensure A and B have the same shape
+	if A.shape != B.shape:
+		raise ValueError("A and B must have the same shape.")
 
-    # Compute sum of minima and maxima along the chosen dimension
-    min_sum = torch.minimum(A, B).sum(dim=dim)
-    max_sum = torch.maximum(A, B).sum(dim=dim)
+	# Compute sum of minima and maxima along the chosen dimension
+	min_sum = torch.minimum(A, B).sum(dim=dim)
+	max_sum = torch.maximum(A, B).sum(dim=dim)
 
-    # Compute Jaccard similarity
-    jaccard_similarity = min_sum / (max_sum + eps)
+	# Compute Jaccard similarity
+	jaccard_similarity = min_sum / (max_sum + eps)
 
-    return jaccard_similarity
+	return jaccard_similarity
 
 class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=100, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3
@@ -981,71 +985,26 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 		return name+'_embeddings.h5', name+'_forest.pkl'
 
 
-'''
-def recon_loss(data, pos_edge_index, decoder , poslossmod=1, neglossmod=1 , distweight = False) -> Tensor:
+
+def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1, distweight = False) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
 	sampled edges.
 
 	Args:
-		data (HeteroData): The input data containing node features and edge indices.
+		z (torch.Tensor): The latent space :math:`\mathbf{Z}`.
 		pos_edge_index (torch.Tensor): The positive edges to train against.
-		decoder (torch.nn.Module, optional): The decoder model. (default: :obj:`None`)
-		poslossmod (float, optional): The positive loss modifier. (default: :obj:`1`)
-		neglossmod (float, optional): The negative loss modifier. (default: :obj:`1`)
+		neg_edge_index (torch.Tensor, optional): The negative edges to
+			train against. If not given, uses negative sampling to
+			calculate negative edges. (default: :obj:`None`)
 	"""
-	pos = decoder( data, pos_edge_index )[1]
-	if torch.any(pos) < 0:
-		#set to 1 if any value is less than 0
-		pos[pos < 0] = 0
-	pos_loss = -torch.log(pos + EPS)	
-	#weigh the loss with plddt values using elementwise multiplication
-	#pos_loss = pos_loss * data['plddt'].x[pos_edge_index[0]].view(-1,1) * data['plddt'].x[pos_edge_index[1]].view(-1,1)
-	if distweight == True:
-		coord1 = data['coords'].x[pos_edge_index[0]]
-		coord2 = data['coords'].x[pos_edge_index[1]]
-		dist = torch.norm(coord1 - coord2, dim=1)
-		pos_loss = pos_loss * dist.view(-1,1)
-	pos_loss = pos_loss.mean()
-	neg_edge_index = negative_sampling( pos_edge_index, data['res'].x.size(0))
-	neg = decoder( data , neg_edge_index)[1]
-	if torch.any(1- neg) < 0:
-		neg[neg>1] = 1
-	neg_loss = -torch.log((1 - neg) + EPS)
-	#neg_loss = neg_loss * data['plddt'].x[neg_edge_index[0]].view(-1,1) * data['plddt'].x[neg_edge_index[1]].view(-1,1)
-	if distweight == True:
-		coord1 = data['coords'].x[neg_edge_index[0]]
-		coord2 = data['coords'].x[neg_edge_index[1]]
-		dist = torch.norm(coord1 - coord2, dim=1)
-		neg_loss = neg_loss * dist.view(-1,1)
-	neg_loss = neg_loss.mean()
-	return poslossmod * pos_loss + neglossmod * neg_loss
-'''
-
-
-
-def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1, distweight = False) -> Tensor:
-    r"""Given latent variables :obj:`z`, computes the binary cross
-    entropy loss for positive edges :obj:`pos_edge_index` and negative
-    sampled edges.
-
-    Args:
-        z (torch.Tensor): The latent space :math:`\mathbf{Z}`.
-        pos_edge_index (torch.Tensor): The positive edges to train against.
-        neg_edge_index (torch.Tensor, optional): The negative edges to
-            train against. If not given, uses negative sampling to
-            calculate negative edges. (default: :obj:`None`)
-    """
-    pos =decoder(data, pos_edge_index )[1]
-    #turn pos edge index into a binary matrix
-    pos_loss = -torch.log( pos + EPS).mean()
-    neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
-    neg = decoder(data ,  neg_edge_index )[1]
-    neg_loss = -torch.log( ( 1 - neg) + EPS ).mean()
-    return poslossmod*pos_loss + neglossmod*neg_loss
-
-
-
+	pos =decoder(data, pos_edge_index )[1]
+	#turn pos edge index into a binary matrix
+	pos_loss = -torch.log( pos + EPS).mean()
+	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
+	neg = decoder(data ,  neg_edge_index )[1]
+	neg_loss = -torch.log( ( 1 - neg) + EPS ).mean()
+	return poslossmod*pos_loss + neglossmod*neg_loss
 
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):
@@ -1119,7 +1078,6 @@ def load_model(file_path):
 	return model, optimizer, epoch
 
 
-
 def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , temperature = .25 , reduction = 'mean' , soft = False):
 	"""
 	Computes the Frame Aligned Point Error (FAPE) loss.
@@ -1183,45 +1141,39 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, 
 		return torch.tensor(0.0, device=true_R.device)
 
 def transform_rt_to_coordinates(rotations, translations):
-    """
-    Convert R, t matrices into global 3D coordinates.
-    """
-    batch_size, num_residues, _, _ = rotations.shape
-    coords = torch.zeros((batch_size, num_residues, 3), device=rotations.device)
-
-    for b in range(batch_size):
-        transform = torch.eye(4, device=rotations.device)
-        for i in range(num_residues):
-            T = torch.eye(4, device=rotations.device)
-            T[:3, :3] = rotations[b, i]
-            T[:3, 3] = translations[b, i]
-
-            transform = transform @ T  # Apply transformation
-            coords[b, i] = transform[:3, 3]
-
-    return coords
+	"""
+	Convert R, t matrices into global 3D coordinates.
+	"""
+	batch_size, num_residues, _ = rotations.shape
+	coords = torch.zeros((batch_size, num_residues, 3), device=rotations.device)
+	for b in range(batch_size):
+		transform = torch.eye(4, device=rotations.device)
+		for i in range(num_residues):
+			T = torch.eye(4, device=rotations.device)
+			T[:3, :3] = rotations[b, i]
+			T[:3, 3] = translations[b, i]
+			transform = transform @ T  # Apply transformation
+			coords[b, i] = transform[:3, 3]
+	return coords
 
 def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):
-    """
-    Compute lDDT loss for backpropagation.
-    """
-    batch_size, num_residues, _ = true_coords.shape
-    num_pairs = 0
-    num_matching_pairs = 0
+	"""
+	Compute lDDT loss for backpropagation.
+	"""
+	batch_size, num_residues, _ = true_coords.shape
+	num_pairs = 0
+	num_matching_pairs = 0
 
-    for b in range(batch_size):
-        true_dists = torch.cdist(true_coords[b], true_coords[b])  # (N, N)
-        pred_dists = torch.cdist(pred_coords[b], pred_coords[b])  # (N, N)
-
-        mask = (true_dists < cutoff).float()
-        diff = torch.abs(true_dists - pred_dists)
-
-        valid_pairs = (diff < 0.5 * true_dists) * mask
-        num_pairs += torch.sum(mask)
-        num_matching_pairs += torch.sum(valid_pairs)
-
-    lddt_score = num_matching_pairs / num_pairs if num_pairs > 0 else 0
-    return 1.0 - lddt_score  # Loss formulation
+	for b in range(batch_size):
+		true_dists = torch.cdist(true_coords[b], true_coords[b])  # (N, N)
+		pred_dists = torch.cdist(pred_coords[b], pred_coords[b])  # (N, N)
+		mask = (true_dists < cutoff).float()
+		diff = torch.abs(true_dists - pred_dists)
+		valid_pairs = (diff < 0.5 * true_dists) * mask
+		num_pairs += torch.sum(mask)
+		num_matching_pairs += torch.sum(valid_pairs)
+	lddt_score = num_matching_pairs / num_pairs if num_pairs > 0 else 0
+	return 1.0 - lddt_score  # Loss formulation
 
 def lddt_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , reduction = 'mean' ):
 	losses = []

@@ -19,6 +19,8 @@ import src.losses.fafe as fafe
 import pandas as pd
 import os
 import tqdm
+from torch.utils.data.distributed import DistributedSampler
+
 from torch.utils.tensorboard import SummaryWriter
 # foldtree2 / local imports
 
@@ -39,12 +41,16 @@ data_sample = converter.struct2pyg(pdbfiles[0], foldxdir='./foldx/', verbose=Fal
 ndim = data_sample['res'].x.shape[1]
 ndim_godnode = data_sample['godnode'].x.shape[1]
 
-# Example: load precomputed dataset (adjust to your h5 file as needed)
-struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk4.h5')
+def get_train_loader(batch_size=32):
+    # Example: load precomputed dataset (adjust to your h5 file as needed)
+    struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk4.h5')
+    sampler = DistributedSampler(dataset)
+    # DataLoader
+    batch_size = 20
+    train_loader = DataLoader(struct_dat, batch_size=batch_size,
+        shuffle=True, num_workers=6 , sampler = sampler)
+    return train_loader
 
-# DataLoader
-batch_size = 20
-train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True, num_workers=6)
 
 # Mean/variance for foldx (if you use them)
 mean = pd.read_csv('foldxmean.csv', index_col=0)
@@ -167,6 +173,14 @@ class LitModel(pl.LightningModule):
         recon_x, edge_probs, zgodnode, foldxout, r, t, angles = self.decoder(data, None)
         return recon_x, edge_probs, vq_loss, foldxout, r, t, angles
 
+
+    def on_train_epoch_start(self):
+        if isinstance(self.train_dataloader().sampler, DistributedSampler):
+            self.train_dataloader().sampler.set_epoch(self.current_epoch)
+
+    def train_dataloader(self):
+        return get_train_loader(batch_size=32)
+
     def training_step(self, batch, batch_idx):
         # Forward
         recon_x, edge_probs, vq_loss, foldxout, R_pred, t_pred, angles = self(batch)
@@ -176,7 +190,7 @@ class LitModel(pl.LightningModule):
             batch,
             batch.edge_index_dict[('res', 'contactPoints', 'res')],
             self.decoder,
-            distweight=True
+            distweight=False
         )
 
         # 2) AA reconstruction loss
@@ -289,7 +303,6 @@ if __name__ == '__main__':
         err_eps=1e-2
     )
 
-
     #init lazy modules 
     with torch.no_grad():  # Initialize lazy modules.
         data = next(iter(train_loader))
@@ -298,21 +311,23 @@ if __name__ == '__main__':
         data['res'].x = z
         recon_x , edge_probs , zgodnode , foldxout, r , t , angles = model.decoder(  data , None )
 
-
     # Create a trainer
     trainer = pl.Trainer(
         max_epochs=800,
         #save the best model
         callbacks=[pl.callbacks.ModelCheckpoint( monitor='Loss/Train', mode='min', save_top_k=1, dirpath='.', filename='best_model')],
+        accelerator='gpu',   # Use GPU acceleration
+        devices=2,           # Number of GPUs per node
+        num_nodes=2,         # Total number of nodes to use
+        strategy='ddp',      # Distributed Data Parallel strategy
+        max_epochs=800        # Adjust as needed
     )
-    
+
     # Fit / train
     trainer.fit(model, train_loader)
-    
     # Save final model states if you want:
     torch.save(model.encoder.state_dict(), 'encoder_final.ckpt')
-    torch.save(model.decoder.state_dict(), 'decoder_final.ckpt')
-    
+    torch.save(model.decoder.state_dict(), 'decoder_final.ckpt')    
     # If you want to pickle them together:
     with open('final_model.pkl', 'wb') as f:
         pickle.dump((model.encoder, model.decoder), f)

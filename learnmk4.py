@@ -51,8 +51,9 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 encoder_layers = 2
 decoder_layers = 5
 
-overwrite = True
+overwrite = False
 fapeloss = True
+lddtloss = False
 
 modelname = 'small5_geo'
 
@@ -136,6 +137,7 @@ vqweight = 1
 foldxweight = .01
 fapeweight = .01
 angleweight = .1
+lddt_weight = .1
 
 total_loss_x= 0
 total_loss_edge = 0
@@ -143,7 +145,9 @@ total_vq=0
 total_kl = 0
 total_foldx=0
 total_fapeloss = 0
+total_lddtloss = 0
 total_angleloss = 0
+
 init = False
 for epoch in range(800):
 	if epoch > 500:
@@ -193,33 +197,43 @@ for epoch in range(800):
 					 plddt = data['plddt'].x,
 					 soft = False )
 			angleloss = F.smooth_l1_loss( angles*data['plddt'].x.view(-1,1) , data.x_dict['bondangles']*data['plddt'].x.view(-1,1) )
+			if lddtloss == True:
+				lddt_loss = ft2.lddt_loss( true_R = R_true,
+						true_t = t_true, 
+						pred_R = r, 
+						pred_t = t, 
+						batch = batch
+						)
+			else:
+				lddt_loss = torch.tensor(0)
 		else:
 			fploss = torch.tensor(0)
 			angleloss = torch.tensor(0)
-		
+			lddt_loss = torch.tensor(0)
 		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
 			if torch.isnan(l).any():
 				l = 0
 		
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
-		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss + foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss
+		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss 
+		loss += foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss+ lddt_weight*lddt_loss 
 		loss.backward()
+		
 		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
 		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
+		
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
 		total_loss_x += xloss.item()
 		total_vq += vqloss.item()		
 		total_angleloss += angleloss.item()
+		total_lddtloss += lddt_loss.item()
+		total_fapeloss += fploss.item()
 
 		if decoder.output_foldx == True:
 			total_foldx += foldxloss.item()
 		else:
 			total_foldx = 0
-		if fapeloss:
-			total_fapeloss += fploss.item()
-		else:
-			total_fapeloss = 0
 
 	scheduler.step(total_loss_x)
 
@@ -247,15 +261,14 @@ for epoch in range(800):
 		with open( modelname + '.pkl', 'wb') as f:
 			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
-	
-	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f}' )
+	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f} , lddtloss: {total_lddtloss:4f}' )
 	writer.add_scalar('Loss/AA', total_loss_x, epoch)
 	writer.add_scalar('Loss/Edge', total_loss_edge, epoch)
 	writer.add_scalar('Loss/VQ', total_vq, epoch)
 	writer.add_scalar('Loss/Foldx', total_foldx, epoch)
 	writer.add_scalar('Loss/Fape', total_fapeloss, epoch)
 	writer.add_scalar('Loss/Angle', total_angleloss, epoch)
-
+	writer.add_scalar('Loss/LDDT', total_lddtloss, epoch)
 	#log learning rate
 	writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 	total_loss_x = 0
@@ -264,6 +277,7 @@ for epoch in range(800):
 	total_foldx = 0
 	total_fapeloss = 0
 	total_angleloss = 0
+	total_lddtloss = 0
 
 with open( modelname+'.pkl', 'wb') as f:
 	pickle.dump( (encoder, decoder) , f)
