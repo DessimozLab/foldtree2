@@ -49,13 +49,17 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 # Training loop
 #load model if it exists
 encoder_layers = 2
-decoder_layers = 5
+decoder_layers = 2
 
-overwrite = False
-fapeloss = True
+
+
+overwrite = True
+geometry = False
+fapeloss = False
 lddtloss = False
+concat_positions = True
 
-modelname = 'small5_geo'
+modelname = 'small5_geo_transformer'
 
 if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
@@ -67,6 +71,23 @@ else:
 							encoder_hidden=100 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
+	
+	decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
+													'foldx':23 } , 
+								layers = decoder_layers ,
+								metadata=converter.metadata , 
+								amino_mapper = converter.aaindex ,
+								concat_positions = concat_positions ,
+								output_foldx = True ,
+								contact_mlp = True ,
+								denoise = geometry ,
+								Xdecoder_hidden= 100 ,
+								PINNdecoder_hidden = [ 100 , 50, 10] ,
+								contactdecoder_hidden = [50 , 50 ] ,
+								nheads = 4, dropout = 0.001  ,
+								AAdecoder_hidden = [200 , 100 , 100]  )    
+	
+	"""
 	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
@@ -81,13 +102,13 @@ else:
 								flavor = 'sage' ,
 								output_foldx = True ,
 								contact_mlp = True ,
-								denoise = fapeloss ,
+								denoise = geometry ,
 								Xdecoder_hidden= 200 ,
 								PINNdecoder_hidden = [ 100 , 50, 10] ,
 								contactdecoder_hidden = [50 , 50 ] ,
 								nheads = 4, dropout = 0.001  ,
 								AAdecoder_hidden = [200 , 100 , 100]  )    
-
+	"""
 print('encoder', encoder)
 print('decoder', decoder)
 
@@ -157,7 +178,8 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
-				#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+				if concat_positions == True:
+					z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
 				init = True
@@ -167,7 +189,8 @@ for epoch in range(800):
 		#normalize the foldx values
 		z,vqloss = encoder.forward(data ) 
 		#add positional encoding to y
-		#z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
+		if concat_positions == True:
+			z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		#change backbone to undirected
 		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=False)
@@ -181,22 +204,27 @@ for epoch in range(800):
 		else:
 			foldxloss = 0
 
-		if fapeloss == True:
-			#reshape the data into batched form
-			batch = data['t_true'].batch
-			t_true = data['t_true'].x
-			R_true = data['R_true'].x
-			#Compute the FAPE loss
-			fploss = ft2.fape_loss(true_R = R_true,
-					 true_t = t_true, 
-					 pred_R = r, 
-					 pred_t = t, 
-					 batch = batch, 
-					 d_clamp = 10.0,
-					 eps=1e-8,
-					 plddt = data['plddt'].x,
-					 soft = False )
+		if geometry == True:
+			if fapeloss == True:
+				#reshape the data into batched form
+				batch = data['t_true'].batch
+				t_true = data['t_true'].x
+				R_true = data['R_true'].x
+				#Compute the FAPE loss
+				fploss = ft2.fape_loss(true_R = R_true,
+						true_t = t_true, 
+						pred_R = r, 
+						pred_t = t, 
+						batch = batch, 
+						d_clamp = 10.0,
+						eps=1e-8,
+						plddt = data['plddt'].x,
+						soft = False )
+			else:
+				fploss = torch.tensor(0)
+			
 			angleloss = F.smooth_l1_loss( angles*data['plddt'].x.view(-1,1) , data.x_dict['bondangles']*data['plddt'].x.view(-1,1) )
+			
 			if lddtloss == True:
 				lddt_loss = ft2.lddt_loss( true_R = R_true,
 						true_t = t_true, 

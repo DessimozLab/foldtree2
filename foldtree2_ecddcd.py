@@ -520,7 +520,10 @@ class DenoisingTransformer(nn.Module):
 		"""
 		N, _ = embeddings.shape
 		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
-		x = torch.cat([embeddings , positions], dim=-1)
+		if positions is not None:
+			x = torch.cat([embeddings , positions], dim=-1)
+		else:
+			x = embeddings
 		# Project to the transformer dimension: (N, d_model)
 		x = self.input_proj(x)
 		# PyTorch's transformer expects shape (seq_len, batch, d_model)
@@ -761,26 +764,287 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
 		
 		return amino_acid_sequence
-
-	def load(self, modelfile):
-		self.load_state_dict(torch.load(modelfile))
-		self.eval()
-		return self
-
-	def save(self, modelfile):
-		torch.save(self.state_dict(), modelfile)
-		return modelfile
 	
-	def ret_config(self):
-		return { 'encoder_out_channels': self.in_channels, 'xdim': 20, 'hidden_channels': self.hidden_channels, 'out_channels_hidden': self.out_channels_hidden, 'metadata': self.metadata, 'amino_mapper': self.amino_acid_indices }
 
-	def save_config(self, configfile):
-		with open(configfile , 'w') as f:
-			json.dump(self.ret_config(), f)
-		return configfile
+class FlashAttentionTransformerEncoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dropout=0.1, dim_feedforward=512, activation="gelu"):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.head_dim = d_model // nhead
+        self.scale = self.head_dim ** -0.5
+        
+        # Combined linear projection for Q, K, and V.
+        self.qkv_proj = nn.Linear(d_model, d_model * 3)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+        
+        # Feedforward layers.
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        
+        # Pre-normalization.
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        # Activation function.
+        self.activation = F.gelu if activation == "gelu" else F.relu
 
-	def load_from_config(config):
-		return HeteroGAE_Encoder(**config)
+    def forward(self, src, mask=None, src_key_padding_mask=None):
+        # Pre-normalize input.
+        src_norm = self.norm1(src)
+        batch_size, seq_length, _ = src_norm.size()
+        
+        # Compute Q, K, V.
+        qkv = self.qkv_proj(src_norm)  # (batch, seq_length, 3*d_model)
+        q, k, v = qkv.chunk(3, dim=-1)
+        
+        # Reshape to separate heads: (batch, nhead, seq_length, head_dim)
+        q = q.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
+        
+        # Scale the queries.
+        q = q * self.scale
+        
+        # Use flash attention via PyTorch's scaled_dot_product_attention.
+        attn_output = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.dropout.p if self.training else 0.0,
+            is_causal=False
+        )
+        
+        # Reshape back to (batch, seq_length, d_model).
+        attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_length, self.d_model)
+        attn_output = self.out_proj(attn_output)
+        attn_output = self.dropout(attn_output)
+        
+        # Residual connection.
+        src = src + attn_output
+        
+        # Feedforward block with pre-norm.
+        src_ff = self.norm2(src)
+        ff_output = self.linear2(self.dropout(self.activation(self.linear1(src_ff))))
+        ff_output = self.dropout(ff_output)
+        
+        output = src + ff_output
+        return output
+
+class FlashAttentionTransformerEncoder(nn.Module):
+    def __init__(self, encoder_layer, num_layers):
+        super().__init__()
+        # Create a stack of encoder layers.
+        self.layers = nn.ModuleList([encoder_layer for _ in range(num_layers)])
+        self.norm = nn.LayerNorm(encoder_layer.d_model)
+
+    def forward(self, src, mask=None, src_key_padding_mask=None):
+        output = src
+        # Sequentially pass the input through all encoder layers.
+        for layer in self.layers:
+            output = layer(output, mask, src_key_padding_mask)
+        # Apply final normalization.
+        output = self.norm(output)
+        return output
+
+
+class AttentionPooling(nn.Module):
+	def __init__(self, embedding_dim, hidden_dim):
+		super(AttentionPooling, self).__init__()
+		self.fc = nn.Linear(embedding_dim, hidden_dim)
+		self.attention = nn.Linear(hidden_dim, 1)
+
+	def forward(self, token_embeddings, mask=None):
+		scores = torch.tanh(self.fc(token_embeddings))
+		scores = self.attention(scores).squeeze(-1)
+		if mask is not None:
+			scores = scores.masked_fill(mask == 0, float('-inf'))
+		attn_weights = F.softmax(scores, dim=-1)
+		pooled_embedding = torch.sum(token_embeddings * attn_weights.unsqueeze(-1), dim=0)
+		
+		return pooled_embedding
+
+class Transformer_Decoder(torch.nn.Module):
+	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20,  layers = 3,  AAdecoder_hidden = [20] * 3 
+			  ,PINNdecoder_hidden = [10] * 3, contactdecoder_hidden = [10 ] * 2, 
+			  nheads = 3 , Xdecoder_hidden=30, metadata={}, concat_positions = True,
+			  amino_mapper= None  ,  dropout= .001 ,  
+				output_foldx = False , denoise = False , contact_mlp = False):
+		super(Transformer_Decoder, self).__init__()
+
+		#aimed at testing what removing the local nature of the grpah based decoder does.
+		#this is a transformer based decoder that takes the entire graph as input
+		if concat_positions == True:
+			input_positions = 256
+		else:
+			input_positions = 0
+
+		# Setting the seed
+		L.seed_everything(42)
+		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
+		torch.backends.cudnn.deterministic = True
+		torch.backends.cudnn.benchmark = False
+		self.convs = torch.nn.ModuleList()
+		in_channels_orig = copy.deepcopy(in_channels )
+		#self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
+		self.output_foldx = output_foldx
+		self.metadata = metadata
+		self.in_channels = in_channels
+		self.amino_acid_indices = amino_mapper
+		self.nlayers = layers
+		self.bn = torch.nn.BatchNorm1d(in_channels['res'] + input_positions)
+		self.bn_foldx = torch.nn.BatchNorm1d(in_channels['foldx'])
+		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
+		self.dropout = torch.nn.Dropout(p=dropout)
+		self.att_pooling = AttentionPooling(embedding_dim=Xdecoder_hidden + in_channels_orig['res'] + input_positions, hidden_dim=256)
+		
+		
+		self.encoder_layer = nn.TransformerEncoderLayer(d_model=Xdecoder_hidden, 
+												nhead=nheads,
+												dropout=dropout , 
+												dim_feedforward=512,
+												activation='gelu',    # Use GELU instead of ReLU
+												norm_first=True   )
+		
+		
+		self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=layers)
+		self.concat_positions = concat_positions
+		
+		self.lin = torch.nn.Sequential(
+				torch.nn.LayerNorm( in_channels['res'] + input_positions ),
+				torch.nn.Linear(in_channels['res'] + input_positions, Xdecoder_hidden),
+				torch.nn.GELU(),
+				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(Xdecoder_hidden),
+				)
+		
+		self.aadecoder = torch.nn.Sequential(
+				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] + input_positions , AAdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(AAdecoder_hidden[1]),
+				torch.nn.Linear(AAdecoder_hidden[1] , xdim) ,
+				torch.nn.LogSoftmax(dim=1) )
+		
+		if output_foldx == True:
+			self.godnodedecoder = torch.nn.Sequential(
+					torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] + input_positions , PINNdecoder_hidden[0]),
+					torch.nn.GELU(),
+					torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
+					torch.nn.GELU(),
+					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
+		
+		if denoise == True:
+			#always concat positions
+			dim = Xdecoder_hidden + in_channels_orig['res'] + 256
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=256, nhead=8, num_layers=2 , dropout=0.001)
+		else:
+			self.denoiser = None
+
+		self.contact_decoder = torch.nn.Sequential(
+			torch.nn.Linear( 2*(Xdecoder_hidden ) , contactdecoder_hidden[0]),
+			torch.nn.GELU(),
+			torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+			torch.nn.GELU(),								
+			torch.nn.LayerNorm(contactdecoder_hidden[1]),
+			torch.nn.Linear(contactdecoder_hidden[1], 1 ),
+			torch.nn.Sigmoid()
+			)
+
+	def print_config(self):
+		print( 'batchnorm' , self.bn)
+		print( 'dropout' , self.dropout)
+		print('aadecoder', self.aadecoder)
+		print('lin' ,  self.lin)
+		print( 'sigmoid' ,  self.sigmoid)
+		print('godnodedecoder' , self.godnodedecoder)
+		print('t_decoder' , self.t_decoder)
+		print('r_decoder' , self.r_decoder)
+		print( 'angledecoder' , self.angledecoder)
+		print('denoiser' , self.denoiser)
+	
+	def forward(self, data , contact_pred_index, **kwargs):
+		xdata, edge_index = data.x_dict, data.edge_index_dict
+		xdata['res'] = self.bn(xdata['res'])
+		zin = xdata['res'].clone()
+		xdata['res'] = self.dropout(xdata['res'])
+		xdata['res'] = self.lin(xdata['res'] )
+		unique_batches = torch.unique(data['res'].batch)
+		for b in unique_batches:
+			idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
+			xdata['res'][idx] = self.transformer_encoder(xdata['res'][idx])
+		decoder_in =  torch.cat( [ xdata['res'] , zin ] , axis = -1)
+		#decode aa
+		aa = self.aadecoder(decoder_in)
+		if self.output_foldx == True:
+			godnodes = []
+			for b in unique_batches:				
+				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
+				pooled = self.att_pooling(decoder_in[idx]).unsqueeze(0)
+				godnodes.append(pooled)
+			zgodnode = torch.cat(godnodes, dim=0)
+			foldx_pred = self.godnodedecoder( zgodnode )
+		else:
+			foldx_pred = None
+			zgodnode = None
+		
+		#decode geometry
+		if self.denoiser is not None:
+			unique_batches = torch.unique(data['res'].batch)
+			rs = []
+			ts = []
+			angles_list = []
+			for b in unique_batches:
+				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
+				if idx.numel() > 2:
+					ri,ti, anglesi = self.denoiser(decoder_in[idx] ,  None)
+					ri = ri.view(-1, 3 , 3)
+					ti = ti.view(-1, 3)
+					rs.append(ri)
+					ts.append(ti)
+					angles_list.append(anglesi)
+				else:
+					rs.append(r[idx])
+					ts.append(t[idx])			
+					angles_list.append(angles[idx])
+			angles = torch.cat(angles_list, dim=0)	
+			t = torch.cat(ts, dim=0)
+			r = torch.cat(rs, dim=0)
+			r = r.view(-1, 3, 3)
+			t = t.view(-1, 3)
+		else:
+			r = None
+			t = None
+			angles = None
+		
+		#decode contacts
+		if contact_pred_index is None:
+			edge_probs = None
+		if contact_pred_index is not None:
+			edge_probs = self.contact_decoder(torch.cat( ( xdata['res'][contact_pred_index[0]] , xdata['res'][contact_pred_index[1]] ) ,dim= 1) )
+		
+		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
+		
+	
+	def x_to_amino_acid_sequence(self, x_r):
+		"""
+		Converts the reconstructed 20-dimensional matrix to a sequence of amino acids.
+
+		Args:
+			x_r (Tensor): Reconstructed 20-dimensional tensor.
+
+		Returns:
+			str: A string representing the sequence of amino acids.
+		"""
+		# Find the index of the maximum value in each row to get the predicted amino acid
+		indices = torch.argmax(x_r, dim=1)
+		
+		# Convert indices to amino acids
+		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
+		
+		return amino_acid_sequence
+
 
 def jaccard_distance_multiset(A: torch.Tensor,
 							  B: torch.Tensor,
