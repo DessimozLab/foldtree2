@@ -53,7 +53,7 @@ decoder_layers = 2
 
 
 
-overwrite = True
+overwrite = False
 geometry = False
 fapeloss = False
 lddtloss = False
@@ -152,8 +152,8 @@ vqlosses = []
 foldxlosses = []
 fapelosses = []
 
-edgeweight = 1
-xweight = .1
+edgeweight = .1
+xweight = 1
 vqweight = 1
 foldxweight = .01
 fapeweight = .01
