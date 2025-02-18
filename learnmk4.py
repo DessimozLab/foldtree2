@@ -15,6 +15,7 @@ import pickle
 import src.losses.fafe as fafe
 import pandas as pd
 import os
+import time
 import tqdm
 
 from torch.utils.tensorboard import SummaryWriter
@@ -48,69 +49,79 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 
 # Training loop
 #load model if it exists
-encoder_layers = 2
-decoder_layers = 2
 
 
+#overwrite saved model
+overwrite = True
 
-overwrite = False
+#set to true to train the model with geometry
 geometry = False
+#set to true to train the model with fape loss
 fapeloss = False
+#set to true to train the model with lddt loss
 lddtloss = False
-concat_positions = True
+#set to true to train the model with positional encoding
+concat_positions = False
+#set to true to train the model with transformer
+transformer = False
 
-modelname = 'small5_geo_transformer'
+modelname = 'small5_geo_'
 
 if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+	encoder_layers = 2
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 200 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
 							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=100 , EMA = False , nheads = 8 , dropout_p = 0.001 ,
+							encoder_hidden=400 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
+	if transformer == True:
+		decoder_layers = 2
+		decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
+														'foldx':23 } , 
+									layers = decoder_layers ,
+									metadata=converter.metadata , 
+									amino_mapper = converter.aaindex ,
+									concat_positions = concat_positions ,
+									output_foldx = True ,
+									contact_mlp = True ,
+									denoise = geometry ,
+									Xdecoder_hidden= 100 ,
+									PINNdecoder_hidden = [ 100 , 50, 10] ,
+									contactdecoder_hidden = [50 , 50 ] ,
+									nheads = 4, dropout = 0.001  ,
+									AAdecoder_hidden = [200 , 100 , 100]  )    
+	else:	
+		decoder_layers = 5
+		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
+														'foldx':23 } , 
+									hidden_channels={
+													('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
+													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
+													( 'res','backbone','res'):[ 75 ] * decoder_layers , 
+													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
+													},
+									layers = decoder_layers ,
+									metadata=converter.metadata , 
+									amino_mapper = converter.aaindex ,
+									flavor = 'sage' ,
+									output_foldx = True ,
+									contact_mlp = False ,
+									denoise = geometry ,
+									Xdecoder_hidden= 400 ,
+									PINNdecoder_hidden = [ 100 , 50, 10] ,
+									contactdecoder_hidden = [50 , 50 ] ,
+									nheads = 4, dropout = 0.001  ,
+									AAdecoder_hidden = [200 , 100 , 100]  )    
 	
-	decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
-													'foldx':23 } , 
-								layers = decoder_layers ,
-								metadata=converter.metadata , 
-								amino_mapper = converter.aaindex ,
-								concat_positions = concat_positions ,
-								output_foldx = True ,
-								contact_mlp = True ,
-								denoise = geometry ,
-								Xdecoder_hidden= 100 ,
-								PINNdecoder_hidden = [ 100 , 50, 10] ,
-								contactdecoder_hidden = [50 , 50 ] ,
-								nheads = 4, dropout = 0.001  ,
-								AAdecoder_hidden = [200 , 100 , 100]  )    
-	
-	"""
-	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
-													'foldx':23 } , 
-								hidden_channels={
-												('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
-												#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-												( 'res','backbone','res'):[ 75 ] * decoder_layers , 
-												#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
-												},
-								layers = decoder_layers ,
-								metadata=converter.metadata , 
-								amino_mapper = converter.aaindex ,
-								flavor = 'sage' ,
-								output_foldx = True ,
-								contact_mlp = True ,
-								denoise = geometry ,
-								Xdecoder_hidden= 200 ,
-								PINNdecoder_hidden = [ 100 , 50, 10] ,
-								contactdecoder_hidden = [50 , 50 ] ,
-								nheads = 4, dropout = 0.001  ,
-								AAdecoder_hidden = [200 , 100 , 100]  )    
-	"""
 print('encoder', encoder)
 print('decoder', decoder)
+
+#save a file with timestamp modelname and parameters
+
 
 def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
@@ -139,7 +150,6 @@ struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk4.h5')
 err_eps = 1e-2
 
 # Create a DataLoader for training
-
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
 optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
@@ -154,11 +164,50 @@ fapelosses = []
 
 edgeweight = .1
 xweight = 1
-vqweight = 1
+vqweight = .1
 foldxweight = .01
 fapeweight = .01
 angleweight = .1
 lddt_weight = .1
+
+
+with open( modelname + 'run.txt', 'w') as f:
+	#write date and time of run
+	f.write( 'date: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
+	f.write( 'encoder: ' + str(encoder) + '\n')
+	f.write( 'decoder: ' + str(decoder) + '\n')
+	f.write( 'geometry: ' + str(geometry) + '\n')
+	f.write( 'fapeloss: ' + str(fapeloss) + '\n')
+	f.write( 'lddtloss: ' + str(lddtloss) + '\n')
+	f.write( 'concat_positions: ' + str(concat_positions) + '\n')
+	f.write( 'transformer: ' + str(transformer) + '\n')
+	f.write( 'modelname: ' + modelname + '\n')
+	#write weights for losses
+	f.write( 'edgeweight: ' + str(edgeweight) + '\n')
+	f.write( 'xweight: ' + str(xweight) + '\n')
+	f.write( 'vqweight: ' + str(vqweight) + '\n')
+	f.write( 'foldxweight: ' + str(foldxweight) + '\n')
+	f.write( 'fapeweight: ' + str(fapeweight) + '\n')
+	f.write( 'angleweight: ' + str(angleweight) + '\n')
+	f.write( 'lddt_weight: ' + str(lddt_weight) + '\n')
+
+#log parameters w tensorboard
+writer.add_text('Parameters', 'encoder: ' + str(encoder) , 0)
+writer.add_text('Parameters', 'decoder: ' + str(decoder) , 0)
+writer.add_text('Parameters', 'geometry: ' + str(geometry) , 0)
+writer.add_text('Parameters', 'fapeloss: ' + str(fapeloss) , 0)
+writer.add_text('Parameters', 'lddtloss: ' + str(lddtloss) , 0)
+writer.add_text('Parameters', 'concat_positions: ' + str(concat_positions) , 0)
+writer.add_text('Parameters', 'transformer: ' + str(transformer) , 0)
+writer.add_text('Parameters', 'modelname: ' + modelname , 0)
+writer.add_text('Parameters', 'edgeweight: ' + str(edgeweight) , 0)
+writer.add_text('Parameters', 'xweight: ' + str(xweight) , 0)
+writer.add_text('Parameters', 'vqweight: ' + str(vqweight) , 0)
+writer.add_text('Parameters', 'foldxweight: ' + str(foldxweight) , 0)
+writer.add_text('Parameters', 'fapeweight: ' + str(fapeweight) , 0)
+writer.add_text('Parameters', 'angleweight: ' + str(angleweight) , 0)
+writer.add_text('Parameters', 'lddt_weight: ' + str(lddt_weight) , 0)
+
 
 total_loss_x= 0
 total_loss_edge = 0
@@ -226,8 +275,8 @@ for epoch in range(800):
 			angleloss = F.smooth_l1_loss( angles*data['plddt'].x.view(-1,1) , data.x_dict['bondangles']*data['plddt'].x.view(-1,1) )
 			
 			if lddtloss == True:
-				lddt_loss = ft2.lddt_loss( true_R = R_true,
-						true_t = t_true, 
+				lddt_loss = ft2.lddt_loss(
+						coord_true= data['coords'],
 						pred_R = r, 
 						pred_t = t, 
 						batch = batch
@@ -264,19 +313,18 @@ for epoch in range(800):
 			total_foldx = 0
 
 	scheduler.step(total_loss_x)
-
 	if total_loss_x < 1:
 		xweight = 10
 	if total_loss_x < err_eps:
 		xweight = 0 
 	else:
 		xweight = 1
+		#log the changes in weights
 	
 	if total_foldx < err_eps:
 		foldxweight = 0
 	else:
 		foldxweight = .01
-	
 	if total_vq < 8:
 		vqweight = 0
 	else:

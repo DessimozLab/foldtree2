@@ -2,8 +2,9 @@
 # coding: utf-8
 
 from utils import *
-from  torch_geometric.utils import to_undirected
+from losses import *
 
+from  torch_geometric.utils import to_undirected
 
 class VectorQuantizerEMA(nn.Module):
 	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight= 1 , entropyweight = 1 ):
@@ -891,12 +892,12 @@ class Transformer_Decoder(torch.nn.Module):
 		self.in_channels = in_channels
 		self.amino_acid_indices = amino_mapper
 		self.nlayers = layers
+		self.sigmoid = nn.Sigmoid()
 		self.bn = torch.nn.BatchNorm1d(in_channels['res'] + input_positions)
 		self.bn_foldx = torch.nn.BatchNorm1d(in_channels['foldx'])
 		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 		self.dropout = torch.nn.Dropout(p=dropout)
 		self.att_pooling = AttentionPooling(embedding_dim=Xdecoder_hidden + in_channels_orig['res'] + input_positions, hidden_dim=256)
-		
 		
 		self.encoder_layer = nn.TransformerEncoderLayer(d_model=Xdecoder_hidden, 
 												nhead=nheads,
@@ -942,15 +943,7 @@ class Transformer_Decoder(torch.nn.Module):
 		else:
 			self.denoiser = None
 
-		self.contact_decoder = torch.nn.Sequential(
-			torch.nn.Linear( 2*(Xdecoder_hidden ) , contactdecoder_hidden[0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-			torch.nn.GELU(),								
-			torch.nn.LayerNorm(contactdecoder_hidden[1]),
-			torch.nn.Linear(contactdecoder_hidden[1], 1 ),
-			torch.nn.Sigmoid()
-			)
+		
 
 	def print_config(self):
 		print( 'batchnorm' , self.bn)
@@ -1022,7 +1015,7 @@ class Transformer_Decoder(torch.nn.Module):
 		if contact_pred_index is None:
 			edge_probs = None
 		if contact_pred_index is not None:
-			edge_probs = self.contact_decoder(torch.cat( ( xdata['res'][contact_pred_index[0]] , xdata['res'][contact_pred_index[1]] ) ,dim= 1) )
+			edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )
 		
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		
@@ -1249,46 +1242,6 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 		return name+'_embeddings.h5', name+'_forest.pkl'
 
 
-
-def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1, distweight = False) -> Tensor:
-	r"""Given latent variables :obj:`z`, computes the binary cross
-	entropy loss for positive edges :obj:`pos_edge_index` and negative
-	sampled edges.
-
-	Args:
-		z (torch.Tensor): The latent space :math:`\mathbf{Z}`.
-		pos_edge_index (torch.Tensor): The positive edges to train against.
-		neg_edge_index (torch.Tensor, optional): The negative edges to
-			train against. If not given, uses negative sampling to
-			calculate negative edges. (default: :obj:`None`)
-	"""
-	pos =decoder(data, pos_edge_index )[1]
-	#turn pos edge index into a binary matrix
-	pos_loss = -torch.log( pos + EPS).mean()
-	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
-	neg = decoder(data ,  neg_edge_index )[1]
-	neg_loss = -torch.log( ( 1 - neg) + EPS ).mean()
-	return poslossmod*pos_loss + neglossmod*neg_loss
-
-#amino acid onehot loss for x reconstruction
-def aa_reconstruction_loss(x, recon_x):
-	"""
-	compute the loss over the node feature reconstruction.
-	using categorical cross entropy
-	"""
-	x = torch.argmax(x, dim=1)
-	#recon_x = torch.argmax(recon_x, dim=1)
-	return F.cross_entropy(recon_x, x)
-
-def gaussian_loss(mu , logvar , beta= 1.5):
-	'''
-	
-	add beta to disentangle the features
-	
-	'''
-	kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-	return beta*kl_loss
-
 def save_model(model, optimizer, epoch, file_path):
 	"""
 	Save the model's state dictionary, optimizer's state dictionary, and other metadata to a file.
@@ -1341,114 +1294,3 @@ def load_model(file_path):
 
 	return model, optimizer, epoch
 
-
-def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , temperature = .25 , reduction = 'mean' , soft = False):
-	"""
-	Computes the Frame Aligned Point Error (FAPE) loss.
-	
-	For each structure in the batch, for every pair of residues (i, j),
-	the local coordinates of the difference (t[j] - t[i]) are computed
-	in the corresponding residue i frame using both true and predicted rotations.
-	The loss is then the average clamped L2 distance between
-	these local coordinates.
-	
-	Args:
-		true_R (Tensor): True rotation matrices, shape (N, 3, 3)
-		true_t (Tensor): True translation vectors, shape (N, 3)
-		pred_R (Tensor): Predicted rotation matrices, shape (N, 3, 3)
-		pred_t (Tensor): Predicted translation vectors, shape (N, 3)
-		batch (Tensor): Batch indices for each residue, shape (N,)
-		d_clamp (float, optional): Clamping threshold for error. (default: 10.0)
-		eps (float, optional): Small constant for numerical stability. (default: 1e-8)
-		
-	Returns:
-		Tensor: The scalar FAPE loss.
-	"""
-	losses = []
-	unique_batches = torch.unique(batch)
-	for b in unique_batches:
-		idx = (batch == b).nonzero(as_tuple=True)[0]
-		if idx.numel() < 2:
-			continue
-		# Compute pairwise differences for the predicted translations.
-		diff_pred = pred_t[idx].unsqueeze(1) - pred_t[idx].unsqueeze(0)  # shape: (m, m, 3)
-		# Transform differences into the local predicted frames.
-		local_pred = torch.einsum("mij,mnj->mni", pred_R[idx].transpose(1,2 ), diff_pred)
-		
-		# Compute pairwise differences for the true translations.
-		diff_true = true_t[idx].unsqueeze(1) - true_t[idx].unsqueeze(0)  # shape: (m, m, 3)
-		# Transform differences into the local true frames.
-		local_true = torch.einsum("mij,mnj->mni", true_R[idx].transpose(1,2), diff_true)
-		
-		# Compute the L2 error per residue pair and clamp it.
-		if soft == False:
-			error = torch.norm(local_pred - local_true + eps, dim=-1)
-			if plddt is not None:
-				error = error*plddt[idx]
-			error = torch.clamp(error, max=d_clamp)
-			losses.append(error.mean())
-		else:				
-			# Compute pairwise squared Euclidean distances
-			dist_sq = torch.cdist(local_pred, local_true, p=2).pow(2)
-			dist_sq = torch.clamp(dist_sq, max=d_clamp**2)
-			# Compute soft alignment probabilities using a Gaussian kernel
-			soft_alignment = F.softmax(-dist_sq / temperature, dim=-1)
-			# Compute soft FAPE loss
-			weighted_distances = (soft_alignment * dist_sq).sum(dim=-1)  # (B, N)
-			fape_loss = weighted_distances.mean() if reduction == 'mean' else weighted_distances.sum()
-			if plddt is not None:
-				fape_loss = fape_loss * plddt[idx]
-			losses.append(fape_loss)
-	if losses:
-		return torch.stack(losses).mean()
-	else:
-		return torch.tensor(0.0, device=true_R.device)
-
-def transform_rt_to_coordinates(rotations, translations):
-	"""
-	Convert R, t matrices into global 3D coordinates.
-	"""
-	batch_size, num_residues, _ = rotations.shape
-	coords = torch.zeros((batch_size, num_residues, 3), device=rotations.device)
-	for b in range(batch_size):
-		transform = torch.eye(4, device=rotations.device)
-		for i in range(num_residues):
-			T = torch.eye(4, device=rotations.device)
-			T[:3, :3] = rotations[b, i]
-			T[:3, 3] = translations[b, i]
-			transform = transform @ T  # Apply transformation
-			coords[b, i] = transform[:3, 3]
-	return coords
-
-def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):
-	"""
-	Compute lDDT loss for backpropagation.
-	"""
-	batch_size, num_residues, _ = true_coords.shape
-	num_pairs = 0
-	num_matching_pairs = 0
-
-	for b in range(batch_size):
-		true_dists = torch.cdist(true_coords[b], true_coords[b])  # (N, N)
-		pred_dists = torch.cdist(pred_coords[b], pred_coords[b])  # (N, N)
-		mask = (true_dists < cutoff).float()
-		diff = torch.abs(true_dists - pred_dists)
-		valid_pairs = (diff < 0.5 * true_dists) * mask
-		num_pairs += torch.sum(mask)
-		num_matching_pairs += torch.sum(valid_pairs)
-	lddt_score = num_matching_pairs / num_pairs if num_pairs > 0 else 0
-	return 1.0 - lddt_score  # Loss formulation
-
-def lddt_loss(true_R, true_t, pred_R, pred_t, batch, plddt= None, d_clamp=10.0, eps=1e-8 , reduction = 'mean' ):
-	losses = []
-	unique_batches = torch.unique(batch)
-	for b in unique_batches:
-		idx = (batch == b).nonzero(as_tuple=True)[0]
-		coord_true = transform_rt_to_coordinates(true_R[idx], true_t[idx])
-		coord_pred = transform_rt_to_coordinates(pred_R[idx], pred_t[idx])		
-		lddt_loss = compute_lddt_loss(coord_true, coord_pred)
-		if plddt is not None:
-			lddt_loss = lddt_loss * plddt[idx].view(-1,1)
-		losses.append(lddt_loss)
-	if losses:
-		return torch.stack(losses).mean()
