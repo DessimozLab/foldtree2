@@ -53,7 +53,8 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 
 #overwrite saved model
 overwrite = True
-
+#set to true to train the model with distance weight for reconstruction loss
+distweight = True
 #set to true to train the model with geometry
 geometry = False
 #set to true to train the model with fape loss
@@ -61,9 +62,9 @@ fapeloss = False
 #set to true to train the model with lddt loss
 lddtloss = False
 #set to true to train the model with positional encoding
-concat_positions = False
+concat_positions = True
 #set to true to train the model with transformer
-transformer = False
+transformer = True
 
 modelname = 'small5_geo_'
 
@@ -72,7 +73,7 @@ if os.path.exists(modelname+'.pkl') and  overwrite == False:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 200 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
 							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
 							encoder_hidden=400 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
@@ -99,9 +100,9 @@ else:
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  75 ] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  150 ] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 75 ] * decoder_layers , 
+													( 'res','backbone','res'):[ 150 ] * decoder_layers , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
@@ -163,7 +164,7 @@ foldxlosses = []
 fapelosses = []
 
 edgeweight = .1
-xweight = 1
+xweight = .1
 vqweight = .1
 foldxweight = .01
 fapeweight = .01
@@ -242,7 +243,7 @@ for epoch in range(800):
 			z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
 		#change backbone to undirected
-		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=False)
+		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=distweight)
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 		if decoder.output_foldx == True:
@@ -325,10 +326,7 @@ for epoch in range(800):
 		foldxweight = 0
 	else:
 		foldxweight = .01
-	if total_vq < 8:
-		vqweight = 0
-	else:
-		vqweight = 1
+	
 
 	#save the best model
 	if epoch % 10 == 0 :

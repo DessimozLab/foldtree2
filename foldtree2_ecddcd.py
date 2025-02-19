@@ -357,9 +357,9 @@ class mk1_Encoder(torch.nn.Module):
 			for i in range(len(hidden_channels)):
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
+						'_'.join(edge_type): torch.nn.Sequential( GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,
-						concat = False )
+						concat = False ) , torch.nn.LayerNorm(hidden_channels[i]) )
 						for edge_type in metadata['edge_types']
 					})
 				)			
@@ -367,8 +367,8 @@ class mk1_Encoder(torch.nn.Module):
 			for i in range(len(hidden_channels)):
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
-						hidden_channels[i] )
+						'_'.join(edge_type): torch.nn.Sequential( SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
+						hidden_channels[i] ) , torch.nn.LayerNorm(hidden_channels[i]) )
 						for edge_type in metadata['edge_types']
 					})
 				)
@@ -376,6 +376,7 @@ class mk1_Encoder(torch.nn.Module):
 		self.lin = torch.nn.Sequential(
 			torch.nn.LayerNorm(hidden_channels[-1] * len(hidden_channels)), 
 			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] ))
+		
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
 			torch.nn.GELU(),
@@ -383,7 +384,9 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
 			torch.nn.LayerNorm(self.out_channels),
+			torch.nn.Tanh()
 			)
+		
 		if EMA == False:
 			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
 		else:
@@ -600,11 +603,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
 				#else:
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  )
+					layer[edge_type] = torch.nn.Sequential( TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
 				if flavor == 'sage':
-					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i] )
+					layer[edge_type] = torch.nn.Sequential( SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 )  
+					layer[edge_type] = torch.nn.Sequential( MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 )  , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
 				if ( 'res','backbone','res') == edge_type and i > 0:
 					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
 				else:
@@ -616,8 +619,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 						in_channels[dataout] = hidden_channels[edge_type][i]
 					if k > 0 and i == 0:
 						in_channels[dataout] = hidden_channels[edge_type][i]
-
-			conv = HeteroConv( layer  , aggr='max')
+			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
 
 		self.sigmoid = nn.Sigmoid()
@@ -655,18 +657,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		else:
 			self.denoiser = None
 		
-		if contact_mlp == True:
-			self.contact_decoder = torch.nn.Sequential(
-				torch.nn.Linear( 2*(Xdecoder_hidden + in_channels_orig['res']) , contactdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-				torch.nn.GELU(),								
-				torch.nn.LayerNorm(contactdecoder_hidden[1]),
-				torch.nn.Linear(contactdecoder_hidden[1], 1 ) ,
-				torch.nn.Sigmoid()
-				)
-		else:
-			self.contact_decoder = None
+		self.contact_decoder = None
 
 	def print_config(self):
 		print('decoder convs' ,  self.convs)
@@ -736,15 +727,9 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred , r , t , angles
-		if contact_pred_index is not None and self.contact_decoder is None:
-			#compute similarity matrix
-			sim_matrix = (z[contact_pred_index[0]] * z[contact_pred_index[1]]).sum(dim=1)
-			#find contacts
-			edge_probs = self.sigmoid(sim_matrix)
-			return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
-		else:
-			edge_probs = self.contact_decoder(torch.cat( ( decoder_in[contact_pred_index[0]] , decoder_in[contact_pred_index[1]] ) ,dim= 1) )
-			
+		if contact_pred_index is not None:
+			edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )
+
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		
 	
@@ -1101,9 +1086,9 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				datain = edge_type[0]
 				dataout = edge_type[2]
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False)
+					layer[edge_type] = torch.nn.Sequential( TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
 				if flavor == 'sage':
-					layer[edge_type] = SAGEConv( (-1, -1) , hidden_channels[edge_type][i])
+					layer[edge_type] = torch.nn.Sequential( SAGEConv( (-1, -1) , hidden_channels[edge_type][i]) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
 				if ( 'res','backbone','res') == edge_type and i > 0:
 					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
 				else:
