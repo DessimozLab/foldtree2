@@ -342,6 +342,7 @@ class mk1_Encoder(torch.nn.Module):
 		torch.backends.cudnn.benchmark = False
 		self.num_embeddings = num_embeddings
 		self.convs = torch.nn.ModuleList()
+		self.norms = torch.nn.ModuleList()
 		self.metadata = metadata
 		self.hidden_channels = hidden_channels
 		self.out_channels = out_channels
@@ -353,26 +354,29 @@ class mk1_Encoder(torch.nn.Module):
 		
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
-		if flavor == 'gat':
-			for i in range(len(hidden_channels)):
+		for i in range(len(hidden_channels)):
+			if flavor == 'gat':
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): torch.nn.Sequential( GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
+						'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,
-						concat = False ) , torch.nn.LayerNorm(hidden_channels[i]) )
-						for edge_type in metadata['edge_types']
-					})
-				)			
-		if flavor == 'sage':
-			for i in range(len(hidden_channels)):
-				self.convs.append(
-					torch.nn.ModuleDict({
-						'_'.join(edge_type): torch.nn.Sequential( SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
-						hidden_channels[i] ) , torch.nn.LayerNorm(hidden_channels[i]) )
+						concat = False )
 						for edge_type in metadata['edge_types']
 					})
 				)
-
+			if flavor == 'sage':
+				self.convs.append(
+					torch.nn.ModuleDict({
+						'_'.join(edge_type): SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
+						hidden_channels[i] )
+						for edge_type in metadata['edge_types']
+					})
+				)
+				
+			self.norms.append( 
+				torch.nn.LayerNorm(hidden_channels[i])
+				)
+		
 		self.lin = torch.nn.Sequential(
 			torch.nn.LayerNorm(hidden_channels[-1] * len(hidden_channels)), 
 			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] ))
@@ -405,6 +409,7 @@ class mk1_Encoder(torch.nn.Module):
 			else:
 				x = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) for edge_type, conv in convs.items()]
 			x = torch.stack(x, dim=0).mean(dim=0)
+			x = self.norms[i](x)
 			x = F.gelu(x) if i < len(self.hidden_channels) - 1 else x
 			x_save.append(x)
 		x = self.jk(x_save)
@@ -580,6 +585,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
 		self.convs = torch.nn.ModuleList()
+		self.norms = torch.nn.ModuleList()
 		in_channels_orig = copy.deepcopy(in_channels )
 		#self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
 		self.output_foldx = output_foldx
@@ -621,6 +627,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 						in_channels[dataout] = hidden_channels[edge_type][i]
 			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
+			self.norms.append( torch.nn.LayerNorm(hidden_channels[('res','backbone','res')][i]) )
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
@@ -682,6 +689,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			xdata = layer(xdata, edge_index)
 			for key in xdata.keys():
 				xdata[key] = F.gelu(xdata[key])
+			xdata['res'] = self.norms[i](xdata['res'])
 			x_dict_list.append(xdata['res'])
 		xdata['res'] = self.jk(x_dict_list)
 		z = xdata['res']

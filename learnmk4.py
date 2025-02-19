@@ -54,7 +54,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 #overwrite saved model
 overwrite = True
 #set to true to train the model with distance weight for reconstruction loss
-distweight = True
+distweight = False
 #set to true to train the model with geometry
 geometry = False
 #set to true to train the model with fape loss
@@ -80,7 +80,7 @@ else:
 								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
-		decoder_layers = 2
+		decoder_layers = 3
 		decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									layers = decoder_layers ,
@@ -90,7 +90,7 @@ else:
 									output_foldx = True ,
 									contact_mlp = True ,
 									denoise = geometry ,
-									Xdecoder_hidden= 100 ,
+									Xdecoder_hidden= 300 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
 									contactdecoder_hidden = [50 , 50 ] ,
 									nheads = 4, dropout = 0.001  ,
