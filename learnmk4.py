@@ -62,11 +62,13 @@ fapeloss = False
 #set to true to train the model with lddt loss
 lddtloss = False
 #set to true to train the model with positional encoding
-concat_positions = True
+concat_positions = False
 #set to true to train the model with transformer
-transformer = True
-
-modelname = 'small5_geo_'
+transformer = False
+#use contact mlp
+contact_mlp = False
+#model name
+modelname = 'small5_geo_graph'
 
 if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
@@ -80,7 +82,7 @@ else:
 								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
-		decoder_layers = 3
+		decoder_layers = 2
 		decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									layers = decoder_layers ,
@@ -88,29 +90,30 @@ else:
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
 									output_foldx = True ,
-									contact_mlp = True ,
+									contact_mlp = contact_mlp ,
 									denoise = geometry ,
-									Xdecoder_hidden= 300 ,
+									Xdecoder_hidden= 100 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
 									contactdecoder_hidden = [50 , 50 ] ,
-									nheads = 4, dropout = 0.001  ,
+									nheads = 10, dropout = 0.001  ,
 									AAdecoder_hidden = [200 , 100 , 100]  )    
 	else:	
 		decoder_layers = 5
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  150 ] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 150 ] * decoder_layers , 
+													( 'res','backbone','res'):[ 50 ] * decoder_layers , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
+									concat_positions = concat_positions ,
 									flavor = 'sage' ,
 									output_foldx = True ,
-									contact_mlp = False ,
+									contact_mlp = contact_mlp ,
 									denoise = geometry ,
 									Xdecoder_hidden= 400 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
@@ -171,7 +174,6 @@ fapeweight = .01
 angleweight = .1
 lddt_weight = .1
 
-
 with open( modelname + 'run.txt', 'w') as f:
 	#write date and time of run
 	f.write( 'date: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
@@ -228,21 +230,14 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
-				if concat_positions == True:
-					z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
 				init = True
 				continue
 		
 		optimizer.zero_grad()
-		#normalize the foldx values
 		z,vqloss = encoder.forward(data ) 
-		#add positional encoding to y
-		if concat_positions == True:
-			z = torch.cat( (z, data.x_dict['positions'] ) , dim = 1)
 		data['res'].x = z
-		#change backbone to undirected
 		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=distweight)
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)

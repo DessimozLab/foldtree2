@@ -454,7 +454,7 @@ class mk1_Encoder(torch.nn.Module):
 
 				if verbose == True:
 					print(identifier, outstr)
-		return filename
+		return filename 
 	
 def quaternion_to_rotation_matrix(quat):
 	"""
@@ -573,7 +573,7 @@ class DenoisingTransformer(nn.Module):
 		return r_ortho
 
 class HeteroGAE_Decoder(torch.nn.Module):
-	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
+	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, concat_positions = False, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
 			  amino_mapper= None  , flavor = None, dropout= .1 ,
@@ -586,8 +586,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		torch.backends.cudnn.benchmark = False
 		self.convs = torch.nn.ModuleList()
 		self.norms = torch.nn.ModuleList()
+		self.concat_positions = concat_positions
 		in_channels_orig = copy.deepcopy(in_channels )
-		#self.bn = torch.nn.BatchNorm1d(encoder_out_channels)
 		self.output_foldx = output_foldx
 		self.metadata = metadata
 		self.hidden_channels = hidden_channels
@@ -605,26 +605,25 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				edgestr = '_'.join(edge_type)
 				datain = edge_type[0]
 				dataout = edge_type[2]
-				#if ( 'res','informs','godnode4decoder') == edge_type:
-				#	layer[edgestr] = TransformerConv( in_channels[datain] , hidden_channels[edge_type][i], heads = nheads , concat= False)
-				#else:
+				if flavor == 'gat':
+					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = torch.nn.Sequential( TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
+					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage':
-					layer[edge_type] = torch.nn.Sequential( SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
+					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if flavor == 'mfconv':
-					layer[edge_type] = torch.nn.Sequential( MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 )  , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
-				if ( 'res','backbone','res') == edge_type and i > 0:
-					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
-				else:
-					if k == 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k == 0 and i > 0:
-						in_channels[dataout] = hidden_channels[edge_type][i-1]
-					if k > 0 and i > 0:                    
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k > 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 ) 
+				
+			
+				if k == 0 and i == 0:
+					in_channels[dataout] = hidden_channels[edge_type][i]
+				if k == 0 and i > 0:
+					in_channels[dataout] = hidden_channels[edge_type][i-1]
+				if k > 0 and i > 0:                    
+					in_channels[dataout] = hidden_channels[edge_type][i]
+				if k > 0 and i == 0:
+					in_channels[dataout] = hidden_channels[edge_type][i]
+					
 			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
 			self.norms.append( torch.nn.LayerNorm(hidden_channels[('res','backbone','res')][i]) )
@@ -638,7 +637,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.LayerNorm(Xdecoder_hidden),
 				)
-	
 		self.aadecoder = torch.nn.Sequential(
 				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
 				torch.nn.GELU(),
@@ -680,8 +678,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		print('denoiser' , self.denoiser)
 	
 	def forward(self, data , contact_pred_index, **kwargs):
+		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
 		xdata, edge_index = data.x_dict, data.edge_index_dict
-		#xdata['res'] = self.bn(xdata['res'])
+		xdata['res'] = self.bn(xdata['res'])
+		if self.concat_positions == True:
+			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
+		xdata['res'] = self.dropout(xdata['res'])
 		#copy z for later concatenation
 		inz = xdata['res'].clone()	
 		x_dict_list = []
@@ -871,7 +873,6 @@ class Transformer_Decoder(torch.nn.Module):
 			input_positions = 256
 		else:
 			input_positions = 0
-
 		# Setting the seed
 		L.seed_everything(42)
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
@@ -928,7 +929,18 @@ class Transformer_Decoder(torch.nn.Module):
 					torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
-		
+		if contact_mlp == True:
+			self.contact_decoder = torch.nn.Sequential(
+					torch.nn.Linear( 2*(Xdecoder_hidden ) , contactdecoder_hidden[0]),
+					torch.nn.GELU(),
+					torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+					torch.nn.GELU(),
+					torch.nn.Linear(contactdecoder_hidden[1], 1), 
+					torch.nn.Sigmoid() )
+		else:
+			self.contact_decoder = None
+
+
 		if denoise == True:
 			#always concat positions
 			dim = Xdecoder_hidden + in_channels_orig['res'] + 256
@@ -953,6 +965,9 @@ class Transformer_Decoder(torch.nn.Module):
 	def forward(self, data , contact_pred_index, **kwargs):
 		xdata, edge_index = data.x_dict, data.edge_index_dict
 		xdata['res'] = self.bn(xdata['res'])
+		if self.concat_positions == True:
+			xdata['res'] = torch.cat([xdata['res'], xdata['positions']], dim=-1)
+
 		zin = xdata['res'].clone()
 		xdata['res'] = self.dropout(xdata['res'])
 		xdata['res'] = self.lin(xdata['res'] )
@@ -1007,9 +1022,12 @@ class Transformer_Decoder(torch.nn.Module):
 		#decode contacts
 		if contact_pred_index is None:
 			edge_probs = None
-		if contact_pred_index is not None:
-			edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )
 		
+		if contact_pred_index is not None:
+			#if self.contact_decoder is not None:
+			#	edge_probs = self.contact_decoder(torch.cat( [  xdata['res'][contact_pred_index[0]] ,  xdata['res'][contact_pred_index[1]] ] , axis = 1 ) )
+			#else:
+			edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )	
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		
 	
