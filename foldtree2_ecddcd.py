@@ -576,7 +576,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, concat_positions = False, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
-			  amino_mapper= None  , flavor = None, dropout= .1 ,
+			  amino_mapper= None  , flavor = None, dropout= .001 ,
 				output_foldx = False , contact_mlp = False , denoise = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
@@ -614,7 +614,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'mfconv':
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 ) 
 				
-			
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -623,15 +622,15 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-					
+
 			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
 			self.norms.append( torch.nn.LayerNorm(hidden_channels[('res','backbone','res')][i]) )
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm(self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers),
-				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers , Xdecoder_hidden),
+				torch.nn.LayerNorm( sum( self.hidden_channels[('res', 'backbone', 'res')])) , 
+				torch.nn.Linear( sum( self.hidden_channels[('res', 'backbone', 'res')])  , Xdecoder_hidden),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
 				torch.nn.GELU(),
@@ -662,6 +661,14 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		else:
 			self.denoiser = None
 		
+		if contact_mlp == True:
+			self.contact_decoder = torch.nn.Sequential( 
+				torch.nn.Linear( 2* Xdecoder_hidden  , contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], 1),
+				torch.nn.Sigmoid() )
 		self.contact_decoder = None
 
 	def print_config(self):
@@ -737,8 +744,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				
 		if contact_pred_index is None:
 			return aa, None, zgodnode , foldx_pred , r , t , angles
+		
 		if contact_pred_index is not None:
-			edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )
+			if self.contact_decoder:
+				edge_probs = self.contact_decoder( torch.cat( [ xdata['res'][contact_pred_index[0]] , xdata['res'][contact_pred_index[1]] ]  , axis = -1) )
+			else:				
+				edge_probs = self.sigmoid( torch.sum( xdata['res'][contact_pred_index[0]] * xdata['res'][contact_pred_index[1]] , axis =1 ) )
 
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles
 		

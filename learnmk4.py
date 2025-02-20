@@ -95,16 +95,18 @@ else:
 									Xdecoder_hidden= 100 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
 									contactdecoder_hidden = [50 , 50 ] ,
-									nheads = 10, dropout = 0.001  ,
-									AAdecoder_hidden = [200 , 100 , 100]  )    
+									nheads = 10, 
+									dropout = 0.001  ,
+									AAdecoder_hidden = [200 , 100 , 100]  ,
+									)    
 	else:	
 		decoder_layers = 5
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  50 ] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  50, 100 , 150 , 100 , 50  ] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 50 ] * decoder_layers , 
+													( 'res','backbone','res'):[ 50 , 100 , 150 , 100 , 50   ] * decoder_layers , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
@@ -118,8 +120,10 @@ else:
 									Xdecoder_hidden= 400 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
 									contactdecoder_hidden = [50 , 50 ] ,
-									nheads = 4, dropout = 0.001  ,
-									AAdecoder_hidden = [200 , 100 , 100]  )    
+									nheads = 4, 
+									dropout = 0.001  ,
+									AAdecoder_hidden = [200 , 100 , 100]  ,
+									)    
 	
 print('encoder', encoder)
 print('decoder', decoder)
