@@ -68,7 +68,7 @@ transformer = False
 #use contact mlp
 contact_mlp = False
 #model name
-modelname = 'small5_geo_graph'
+modelname = 'large5_geo_graph_mf'
 
 if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
@@ -100,20 +100,20 @@ else:
 									AAdecoder_hidden = [200 , 100 , 100]  ,
 									)    
 	else:	
-		decoder_layers = 5
+		decoder_layers = 7
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  50, 100 , 150 , 100 , 50  ] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 50 , 100 , 150 , 100 , 50   ] * decoder_layers , 
+													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'sage' ,
+									flavor = 'mfconv' ,
 									output_foldx = True ,
 									contact_mlp = contact_mlp ,
 									denoise = geometry ,

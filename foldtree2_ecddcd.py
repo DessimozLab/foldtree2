@@ -612,8 +612,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'sage':
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5 ) 
-				
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = SoftmaxAggregation() )
+			
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -629,8 +629,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm( sum( self.hidden_channels[('res', 'backbone', 'res')])) , 
-				torch.nn.Linear( sum( self.hidden_channels[('res', 'backbone', 'res')])  , Xdecoder_hidden),
+				torch.nn.LayerNorm(sum( self.hidden_channels[('res', 'backbone', 'res')] )),
+				torch.nn.Linear( sum(self.hidden_channels[('res', 'backbone', 'res')]) , Xdecoder_hidden),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
 				torch.nn.GELU(),
