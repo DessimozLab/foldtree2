@@ -1,0 +1,87 @@
+date: 2025-02-20 16:55:57
+encoder: mk1_Encoder(
+  (convs): ModuleList(
+    (0): ModuleDict(
+      (res_contactPoints_res): GATv2Conv(857, 300, heads=8)
+      (res_hbond_res): GATv2Conv(857, 300, heads=8)
+    )
+    (1): ModuleDict(
+      (res_contactPoints_res): GATv2Conv(300, 300, heads=8)
+      (res_hbond_res): GATv2Conv(300, 300, heads=8)
+    )
+  )
+  (norms): ModuleList(
+    (0-1): 2 x LayerNorm((300,), eps=1e-05, elementwise_affine=True)
+  )
+  (bn): BatchNorm1d(857, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (dropout): Dropout(p=0.001, inplace=False)
+  (jk): JumpingKnowledge(cat)
+  (lin): Sequential(
+    (0): LayerNorm((600,), eps=1e-05, elementwise_affine=True)
+    (1): Linear(in_features=600, out_features=300, bias=True)
+  )
+  (out_dense): Sequential(
+    (0): Linear(in_features=320, out_features=400, bias=True)
+    (1): GELU(approximate='none')
+    (2): Linear(in_features=400, out_features=400, bias=True)
+    (3): GELU(approximate='none')
+    (4): Linear(in_features=400, out_features=20, bias=True)
+    (5): LayerNorm((20,), eps=1e-05, elementwise_affine=True)
+    (6): Tanh()
+  )
+  (vector_quantizer): VectorQuantizerEMA(
+    (embeddings): Embedding(40, 20)
+  )
+)
+decoder: HeteroGAE_Decoder(
+  (convs): ModuleList(
+    (0-4): 5 x HeteroConv(num_relations=2)
+  )
+  (norms): ModuleList(
+    (0-4): 5 x LayerNorm((75,), eps=1e-05, elementwise_affine=True)
+  )
+  (bn): BatchNorm1d(20, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (bn_foldx): BatchNorm1d(23, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (dropout): Dropout(p=0.001, inplace=False)
+  (jk): JumpingKnowledge(cat)
+  (sigmoid): Sigmoid()
+  (lin): Sequential(
+    (0): LayerNorm((375,), eps=1e-05, elementwise_affine=True)
+    (1): Linear(in_features=375, out_features=400, bias=True)
+    (2): GELU(approximate='none')
+    (3): Linear(in_features=400, out_features=400, bias=True)
+    (4): GELU(approximate='none')
+    (5): LayerNorm((400,), eps=1e-05, elementwise_affine=True)
+  )
+  (aadecoder): Sequential(
+    (0): Linear(in_features=420, out_features=200, bias=True)
+    (1): GELU(approximate='none')
+    (2): Linear(in_features=200, out_features=100, bias=True)
+    (3): GELU(approximate='none')
+    (4): Linear(in_features=100, out_features=100, bias=True)
+    (5): GELU(approximate='none')
+    (6): LayerNorm((100,), eps=1e-05, elementwise_affine=True)
+    (7): Linear(in_features=100, out_features=20, bias=True)
+    (8): LogSoftmax(dim=1)
+  )
+  (godnodedecoder): Sequential(
+    (0): Linear(in_features=75, out_features=100, bias=True)
+    (1): GELU(approximate='none')
+    (2): Linear(in_features=100, out_features=50, bias=True)
+    (3): GELU(approximate='none')
+    (4): Linear(in_features=50, out_features=23, bias=True)
+  )
+)
+geometry: False
+fapeloss: False
+lddtloss: False
+concat_positions: False
+transformer: False
+modelname: small5_geo_graph
+edgeweight: 0.1
+xweight: 0.1
+vqweight: 0.1
+foldxweight: 0.01
+fapeweight: 0.01
+angleweight: 0.1
+lddt_weight: 0.1
