@@ -53,8 +53,6 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 
 #overwrite saved model
 overwrite = True
-#set to true to train the model with distance weight for reconstruction loss
-distweight = False
 #set to true to train the model with geometry
 geometry = False
 #set to true to train the model with fape loss
@@ -64,11 +62,20 @@ lddtloss = False
 #set to true to train the model with positional encoding
 concat_positions = False
 #set to true to train the model with transformer
-transformer = False
-#use contact mlp
-contact_mlp = False
+transformer = True
+if transformer == True:	
+	concat_positions = True
+#use contact mlp to calculate distances
+contact_mlp = True
+#apply weight initialization
+applyinit_init = False
+
+err_eps = 1e-2
+batch_size = 40
+
+
 #model name
-modelname = 'large5_geo_graph_mf'
+modelname = 'distances_transformer'
 
 if os.path.exists(modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
@@ -94,8 +101,8 @@ else:
 									denoise = geometry ,
 									Xdecoder_hidden= 100 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
-									contactdecoder_hidden = [50 , 50 ] ,
-									nheads = 10, 
+									contactdecoder_hidden = [ 100 , 100 ] ,
+									nheads = 2, 
 									dropout = 0.001  ,
 									AAdecoder_hidden = [200 , 100 , 100]  ,
 									)    
@@ -104,20 +111,20 @@ else:
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  1000] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
+													( 'res','backbone','res'):[ 1000 ] * decoder_layers  , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'mfconv' ,
+									flavor = 'sage' ,
 									output_foldx = True ,
 									contact_mlp = contact_mlp ,
 									denoise = geometry ,
-									Xdecoder_hidden= 400 ,
+									Xdecoder_hidden= 500 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
 									contactdecoder_hidden = [50 , 50 ] ,
 									nheads = 4, 
@@ -135,8 +142,9 @@ def init_weights(m):
     if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
         torch.nn.init.xavier_uniform_(m.weight)
 
-encoder.apply(init_weights)
-decoder.apply(init_weights)
+if applyinit_init == True:
+	encoder.apply(init_weights)
+	decoder.apply(init_weights)
 
 #load mean and variance	and turn them into tensors	
 mean = pd.read_csv('foldxmean.csv', index_col = 0)
@@ -148,14 +156,13 @@ variance = torch.tensor(variance.values).float()
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
 print(device)
-batch_size = 20
 
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
 
-struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk4.h5')
-err_eps = 1e-2
+struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
+
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
@@ -175,8 +182,9 @@ xweight = .1
 vqweight = .1
 foldxweight = .01
 fapeweight = .01
-angleweight = .1
+angleweight = .01
 lddt_weight = .1
+dist_weight = .01
 
 with open( modelname + 'run.txt', 'w') as f:
 	#write date and time of run
@@ -197,6 +205,7 @@ with open( modelname + 'run.txt', 'w') as f:
 	f.write( 'fapeweight: ' + str(fapeweight) + '\n')
 	f.write( 'angleweight: ' + str(angleweight) + '\n')
 	f.write( 'lddt_weight: ' + str(lddt_weight) + '\n')
+	f.write( 'dist_weight: ' + str(dist_weight) + '\n')
 
 #log parameters w tensorboard
 writer.add_text('Parameters', 'encoder: ' + str(encoder) , 0)
@@ -214,6 +223,7 @@ writer.add_text('Parameters', 'foldxweight: ' + str(foldxweight) , 0)
 writer.add_text('Parameters', 'fapeweight: ' + str(fapeweight) , 0)
 writer.add_text('Parameters', 'angleweight: ' + str(angleweight) , 0)
 writer.add_text('Parameters', 'lddt_weight: ' + str(lddt_weight) , 0)
+writer.add_text('Parameters', 'dist_weight: ' + str(dist_weight) , 0)
 
 
 total_loss_x= 0
@@ -224,6 +234,7 @@ total_foldx=0
 total_fapeloss = 0
 total_lddtloss = 0
 total_angleloss = 0
+total_distloss = 0
 
 init = False
 for epoch in range(800):
@@ -235,16 +246,17 @@ for epoch in range(800):
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
 				data['res'].x = z
-				recon_x , edge_probs , zgodnode , foldxout, r , t , angles = decoder(  data , None ) 
+				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , distances = decoder(  data , None ) 
 				init = True
 				continue
 		
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data ) 
 		data['res'].x = z
-		edgeloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , distweight=distweight)
-		recon_x , edge_probs , zgodnode , foldxout , r , t , angles = decoder(  data , None ) 
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , calc_distances=contact_mlp )
+		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , distances = decoder(  data , None )
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+
 		if decoder.output_foldx == True:
 			data['Foldx'].x = data['Foldx'].x.view(-1, 23)
 			data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
@@ -272,7 +284,7 @@ for epoch in range(800):
 			else:
 				fploss = torch.tensor(0)
 			
-			angleloss = F.smooth_l1_loss( angles*data['plddt'].x.view(-1,1) , data.x_dict['bondangles']*data['plddt'].x.view(-1,1) )
+			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
 			
 			if lddtloss == True:
 				lddt_loss = ft2.lddt_loss(
@@ -294,10 +306,11 @@ for epoch in range(800):
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
 		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss 
 		loss += foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss+ lddt_weight*lddt_loss 
+		loss += dist_weight*distloss
 		loss.backward()
 		
-		torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
-		torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
+		#torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
+		#torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
 		
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
@@ -306,6 +319,7 @@ for epoch in range(800):
 		total_angleloss += angleloss.item()
 		total_lddtloss += lddt_loss.item()
 		total_fapeloss += fploss.item()
+		total_distloss += distloss.item()
 
 		if decoder.output_foldx == True:
 			total_foldx += foldxloss.item()
@@ -313,19 +327,16 @@ for epoch in range(800):
 			total_foldx = 0
 
 	scheduler.step(total_loss_x)
-	if total_loss_x < 1:
-		xweight = 10
+	
 	if total_loss_x < err_eps:
-		xweight = 0 
+		xweight = 0.001
 	else:
-		xweight = 1
-		#log the changes in weights
-	
+		xweight = 0.1
+
 	if total_foldx < err_eps:
-		foldxweight = 0
+		foldxweight = 0.001
 	else:
-		foldxweight = .01
-	
+		foldxweight = 0.01
 
 	#save the best model
 	if epoch % 10 == 0 :
@@ -334,7 +345,9 @@ for epoch in range(800):
 		with open( modelname + '.pkl', 'wb') as f:
 			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
-	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f} , fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f} , lddtloss: {total_lddtloss:4f}' )
+	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f}' ) 
+	print(f'fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f} , lddtloss: {total_lddtloss:4f} , distloss: {total_distloss:4f}' )
+	
 	writer.add_scalar('Loss/AA', total_loss_x, epoch)
 	writer.add_scalar('Loss/Edge', total_loss_edge, epoch)
 	writer.add_scalar('Loss/VQ', total_vq, epoch)
@@ -342,6 +355,7 @@ for epoch in range(800):
 	writer.add_scalar('Loss/Fape', total_fapeloss, epoch)
 	writer.add_scalar('Loss/Angle', total_angleloss, epoch)
 	writer.add_scalar('Loss/LDDT', total_lddtloss, epoch)
+	writer.add_scalar('Loss/Dist', total_distloss, epoch)
 	#log learning rate
 	writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 	total_loss_x = 0
