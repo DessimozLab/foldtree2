@@ -42,6 +42,7 @@ torch.backends.cudnn.benchmark = False
 #ndim = data_sample['res'].x.shape[1]
 #ndim_godnode = data_sample['godnode'].x.shape[1]
 datadir = '../../datasets/'
+modeldir = './models/'
 pdbfiles = glob.glob(datadir +'structs/*.pdb')
 data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=False)
 ndim = data_sample['res'].x.shape[1] 
@@ -50,11 +51,10 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 # Training loop
 #load model if it exists
 
-
 #overwrite saved model
 overwrite = True
 #set to true to train the model with geometry
-geometry = False
+geometry = True
 #set to true to train the model with fape loss
 fapeloss = False
 #set to true to train the model with lddt loss
@@ -65,19 +65,21 @@ concat_positions = False
 transformer = True
 if transformer == True:	
 	concat_positions = True
-#use contact mlp to calculate distances
-contact_mlp = True
 #apply weight initialization
 applyinit_init = False
+#clip gradients
+clip_grad = False
+#denoiser
+denoise = False
 
 err_eps = 1e-2
 batch_size = 40
 
 
 #model name
-modelname = 'distances_transformer'
+modelname = 'angles_transformer'
 
-if os.path.exists(modelname+'.pkl') and  overwrite == False:
+if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
@@ -97,23 +99,23 @@ else:
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
 									output_foldx = True ,
-									contact_mlp = contact_mlp ,
-									denoise = geometry ,
-									Xdecoder_hidden= 100 ,
+									geometry= geometry ,
+									denoise = denoise ,
+									Xdecoder_hidden= 400 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
-									contactdecoder_hidden = [ 100 , 100 ] ,
-									nheads = 2, 
+									contactdecoder_hidden = [ 200 , 100 ] ,
+									nheads = 10, 
 									dropout = 0.001  ,
 									AAdecoder_hidden = [200 , 100 , 100]  ,
 									)    
 	else:	
-		decoder_layers = 7
+		decoder_layers = 6
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  1000] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 1000 ] * decoder_layers  , 
+													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
@@ -122,11 +124,11 @@ else:
 									concat_positions = concat_positions ,
 									flavor = 'sage' ,
 									output_foldx = True ,
-									contact_mlp = contact_mlp ,
-									denoise = geometry ,
-									Xdecoder_hidden= 500 ,
+									geometry= geometry ,
+									denoise = denoise ,
+									Xdecoder_hidden= 400 ,
 									PINNdecoder_hidden = [ 100 , 50, 10] ,
-									contactdecoder_hidden = [50 , 50 ] ,
+									contactdecoder_hidden = [200 , 200 ] ,
 									nheads = 4, 
 									dropout = 0.001  ,
 									AAdecoder_hidden = [200 , 100 , 100]  ,
@@ -139,19 +141,14 @@ print('decoder', decoder)
 
 
 def init_weights(m):
-    if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
-        torch.nn.init.xavier_uniform_(m.weight)
-
+	if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
+		torch.nn.init.xavier_uniform_(m.weight)
+	if m.bias is not None:
+		torch.nn.init.zeros_(m.bias)
+			
 if applyinit_init == True:
 	encoder.apply(init_weights)
 	decoder.apply(init_weights)
-
-#load mean and variance	and turn them into tensors	
-mean = pd.read_csv('foldxmean.csv', index_col = 0)
-variance = pd.read_csv('foldxvariance.csv', index_col = 0)
-mean = torch.tensor(mean.values).float()
-variance = torch.tensor(variance.values).float()
-
 
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 #device = torch.device( 'cpu')
@@ -182,11 +179,11 @@ xweight = .1
 vqweight = .1
 foldxweight = .01
 fapeweight = .01
-angleweight = .01
+angleweight = .1
 lddt_weight = .1
 dist_weight = .01
 
-with open( modelname + 'run.txt', 'w') as f:
+with open( modeldir + modelname + 'run.txt', 'w') as f:
 	#write date and time of run
 	f.write( 'date: ' + time.strftime('%Y-%m-%d %H:%M:%S') + '\n')
 	f.write( 'encoder: ' + str(encoder) + '\n')
@@ -246,26 +243,19 @@ for epoch in range(800):
 			with torch.no_grad():  # Initialize lazy modules.
 				z,vqloss = encoder.forward(data)
 				data['res'].x = z
-				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , distances = decoder(  data , None ) 
+				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , r2,t2, angles2 = decoder(  data , None ) 
 				init = True
 				continue
 		
 		optimizer.zero_grad()
-		z,vqloss = encoder.forward(data ) 
+		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , calc_distances=contact_mlp )
-		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , distances = decoder(  data , None )
-		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
-
-		if decoder.output_foldx == True:
-			data['Foldx'].x = data['Foldx'].x.view(-1, 23)
-			data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
-			foldxout = foldxout.view(data['Foldx'].x.shape)
-			foldxloss = F.smooth_l1_loss( foldxout , data['Foldx'].x )
-		else:
-			foldxloss = 0
-
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , calc_distances=False )
+		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
+		
+		#compute geometry losses
 		if geometry == True:
+			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
 			if fapeloss == True:
 				#reshape the data into batched form
 				batch = data['t_true'].batch
@@ -283,9 +273,7 @@ for epoch in range(800):
 						soft = False )
 			else:
 				fploss = torch.tensor(0)
-			
-			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
-			
+
 			if lddtloss == True:
 				lddt_loss = ft2.lddt_loss(
 						coord_true= data['coords'],
@@ -295,22 +283,57 @@ for epoch in range(800):
 						)
 			else:
 				lddt_loss = torch.tensor(0)
+			if denoise == True:
+				angleloss += F.smooth_l1_loss( angles2 , data.x_dict['bondangles'] )
+				if fapeloss == True:
+					#reshape the data into batched form
+					batch = data['t_true'].batch
+					t_true = data['t_true'].x
+					R_true = data['R_true'].x
+					#Compute the FAPE loss
+					fploss += ft2.fape_loss(true_R = R_true,
+							true_t = t_true, 
+							pred_R = r2, 
+							pred_t = t2, 
+							batch = batch, 
+							d_clamp = 10.0,
+							eps=1e-8,
+							plddt = data['plddt'].x,
+							soft = False )
+				if lddtloss == True:
+					lddt_loss += ft2.lddt_loss(
+							coord_true= data['coords'],
+							pred_R = r, 
+							pred_t = t, 
+							batch = batch
+							)
 		else:
 			fploss = torch.tensor(0)
-			angleloss = torch.tensor(0)
 			lddt_loss = torch.tensor(0)
-		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss]:
+			angleloss = torch.tensor(0.0)
+	
+		#compute the amino acide reconstruction loss
+		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+		if decoder.output_foldx == True:
+			data['Foldx'].x = data['Foldx'].x.view(-1, 23)
+			data['Foldx'].x  = decoder.bn_foldx(data['Foldx'].x)
+			foldxout = foldxout.view(data['Foldx'].x.shape)
+			foldxloss = F.smooth_l1_loss( foldxout , data['Foldx'].x )
+		else:
+			foldxloss = torch.tensor(0.0)
+		
+		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss , lddt_loss  ]:
 			if torch.isnan(l).any():
 				l = 0
 		
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
 		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss 
 		loss += foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss+ lddt_weight*lddt_loss 
-		loss += dist_weight*distloss
 		loss.backward()
 		
-		#torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
-		#torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
+		if clip_grad:
+			torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
+			torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
 		
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
@@ -342,7 +365,7 @@ for epoch in range(800):
 	if epoch % 10 == 0 :
 		#save model
 		print( 'saving model')
-		with open( modelname + '.pkl', 'wb') as f:
+		with open( modeldir + modelname + '.pkl', 'wb') as f:
 			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
 	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f}' ) 
@@ -366,5 +389,5 @@ for epoch in range(800):
 	total_angleloss = 0
 	total_lddtloss = 0
 
-with open( modelname+'.pkl', 'wb') as f:
+with open( modeldir + modelname+'.pkl', 'wb') as f:
 	pickle.dump( (encoder, decoder) , f)

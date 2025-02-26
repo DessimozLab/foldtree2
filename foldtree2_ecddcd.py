@@ -489,9 +489,8 @@ def quaternion_to_rotation_matrix(quat):
 
 
 class DenoisingTransformer(nn.Module):
-	def __init__(self, input_dim=12, d_model=128, nhead=8, num_layers=2 , dropout=0.001):
+	def __init__(self, input_dim=3, d_model=128, nhead=8, num_layers=2 , dropout=0.001):
 		super(DenoisingTransformer, self).__init__()
-		# Linear projection from 12 (9 for rotation + 3 for translation) to d_model
 		self.input_proj = nn.Linear(input_dim, d_model)
 		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
@@ -515,7 +514,7 @@ class DenoisingTransformer(nn.Module):
 			nn.LayerNorm(5),
 			nn.Linear(5, 3) )
 	
-	def forward(self, embeddings , positions):
+	def forward(self, angles , positions):
 
 		"""
 		Args:
@@ -528,29 +527,26 @@ class DenoisingTransformer(nn.Module):
 		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
 		  t_refined: Tensor of shape ( N, 3) with denoised translations.
 		"""
-		N, _ = embeddings.shape
+		N, _ = angles.shape
 		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
 		if positions is not None:
-			x = torch.cat([embeddings , positions], dim=-1)
+			x = torch.cat([angles , positions], dim=-1)
 		else:
-			x = embeddings
+			x = angles
 		# Project to the transformer dimension: (N, d_model)
 		x = self.input_proj(x)
 		# PyTorch's transformer expects shape (seq_len, batch, d_model)
 		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
 		# Project back to the 12-dim space
 		refined_features_rt = self.output_proj_rt(x)  # ( N, 4)
-		refined_features_angles = self.output_proj_angles(x)  # ( N, 3)		
-		
+		refined_features_angles = self.output_proj_angles(x)  # ( N, 3)
+		#learn residual for angles
+		refined_features_angles += angles
 		# Split the features back into rotation and translation parts
 		r_refined_flat = refined_features_rt[..., :4]  # ( N, 4)
 		r_refined = quaternion_to_rotation_matrix(r_refined_flat)  # ( N, 3, 3)
 		t_refined = refined_features_rt[..., 4:]  # ( N, 3)
-		# Reshape the rotation back to ( N, 3, 3)
-		#r_refined = r_refined_flat.reshape( N, 3, 3)
-		# Re-orthogonalize each rotation matrix using SVD
-		#r_refined = self.orthogonalize(r_refined_flat)
-		#r_refined = r_refined_flat.reshape( N, 3, 3)
+		
 		return r_refined, t_refined , refined_features_angles
 
 	@staticmethod
@@ -578,7 +574,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
 			  amino_mapper= None  , flavor = None, dropout= .001 ,
-				output_foldx = False , contact_mlp = False , denoise = False):
+				output_foldx = False , geometry = False , denoise = False):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
@@ -660,35 +656,22 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
 		if denoise == True:
-			dim = 256+Xdecoder_hidden + in_channels_orig['res']
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=256, nhead=8, num_layers=2 , dropout=0.001)
+			dim = 256+10
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=100, nhead=5, num_layers=2 , dropout=0.001)
 		else:
 			self.denoiser = None
 		
-		if contact_mlp == True:
-			self.contact_decoder = torch.nn.Sequential( 
-				torch.nn.Linear( 2* Xdecoder_hidden  , contactdecoder_hidden[0]),
+		if geometry == True:
+			self.geometry_decoder = torch.nn.Sequential( 
+				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res']  , contactdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
 				torch.nn.LayerNorm(contactdecoder_hidden[1]) , 
-				torch.nn.Linear(contactdecoder_hidden[1], 1) )
-			
+				torch.nn.Linear(contactdecoder_hidden[1], 10) )
+		
 		else:
-			self.contact_decoder = None
-
-	def print_config(self):
-		print('decoder convs' ,  self.convs)
-		print( 'batchnorm' , self.bn)
-		print( 'dropout' , self.dropout)
-		print('aadecoder', self.aadecoder)
-		print('lin' ,  self.lin)
-		print( 'sigmoid' ,  self.sigmoid)
-		print('godnodedecoder' , self.godnodedecoder)
-		print('t_decoder' , self.t_decoder)
-		print('r_decoder' , self.r_decoder)
-		print( 'angledecoder' , self.angledecoder)
-		print('denoiser' , self.denoiser)
+			self.geometry_decoder = None
 	
 	def forward(self, data , contact_pred_index, **kwargs):
 		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
@@ -714,14 +697,26 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
-
+		#decode geometry
+		if self.geometry_decoder is not None:
+			rta = self.geometry_decoder(decoder_in)
+			r = rta[..., :4]  # ( N, 4)
+			r = quaternion_to_rotation_matrix(rr)  # ( N, 3, 3)
+			t = rta[..., 4:7]  # ( N, 3)
+			angles2 = rta[..., 7:]
+		else:
+			angles = None
+			r = None
+			t = None
+		
+		#decode godnode
 		if self.output_foldx == True:
 			zgodnode = xdata['godnode4decoder']
 			foldx_pred = self.godnodedecoder( xdata['godnode4decoder'] )
 		else:
 			foldx_pred = None
 			zgodnode = None
-		#decode contacts
+		#decode geometry with small transformer to refine coordinates etc
 		if self.denoiser is not None:
 			unique_batches = torch.unique(data['res'].batch)	
 			rs = []
@@ -730,7 +725,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			for b in unique_batches:
 				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
 				if idx.numel() > 2:
-					ri,ti, anglesi = self.denoiser(decoder_in[idx] ,  data['positions'].x[idx])
+					ri,ti, anglesi = self.denoiser(angles2[idx] ,  data['positions'].x[idx])
 					ri = ri.view(-1, 3 , 3)
 					ti = ti.view(-1, 3)
 					rs.append(ri)
@@ -740,29 +735,24 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					rs.append(r[idx])
 					ts.append(t[idx])			
 					angles_list.append(angles[idx])
-			angles = torch.cat(angles_list, dim=0)	
-			t = torch.cat(ts, dim=0)
-			r = torch.cat(rs, dim=0)
-			r = r.view(-1, 3, 3)
-			t = t.view(-1, 3)
+			angles2 = torch.cat(angles_list, dim=0)	
+			t2 = torch.cat(ts, dim=0)
+			r2 = torch.cat(rs, dim=0)
+			r2 = r.view(-1, 3, 3)
+			t2 = t.view(-1, 3)
 		else:
-			r = None
-			t = None
-			angles = None
-				
+			r2 = None
+			t2 = None
+			angles2 = None
+		
 		if contact_pred_index is None:
-			return aa, None, zgodnode , foldx_pred , r , t , angles
+			return aa, None, zgodnode , foldx_pred , r , t , angles , angles2
 		
 		if contact_pred_index is not None:
 				edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
-				if self.contact_decoder:
-					distances =  self.contact_decoder( torch.cat( [ z[contact_pred_index[0]] , z[contact_pred_index[1]] ]  , axis = -1) )
-				else:
-					distances = None
 		else:
 			edge_probs = None
-			distances = None	
-		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles , distances
+		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles , r2, t2, angles2
 		
 	
 	def x_to_amino_acid_sequence(self, x_r):
@@ -783,88 +773,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		
 		return amino_acid_sequence
 	
-
-class FlashAttentionTransformerEncoderLayer(nn.Module):
-    def __init__(self, d_model, nhead, dropout=0.1, dim_feedforward=512, activation="gelu"):
-        super().__init__()
-        self.d_model = d_model
-        self.nhead = nhead
-        self.head_dim = d_model // nhead
-        self.scale = self.head_dim ** -0.5
-        
-        # Combined linear projection for Q, K, and V.
-        self.qkv_proj = nn.Linear(d_model, d_model * 3)
-        self.out_proj = nn.Linear(d_model, d_model)
-        self.dropout = nn.Dropout(dropout)
-        
-        # Feedforward layers.
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-        
-        # Pre-normalization.
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        
-        # Activation function.
-        self.activation = F.gelu if activation == "gelu" else F.relu
-
-    def forward(self, src, mask=None, src_key_padding_mask=None):
-        # Pre-normalize input.
-        src_norm = self.norm1(src)
-        batch_size, seq_length, _ = src_norm.size()
-        
-        # Compute Q, K, V.
-        qkv = self.qkv_proj(src_norm)  # (batch, seq_length, 3*d_model)
-        q, k, v = qkv.chunk(3, dim=-1)
-        
-        # Reshape to separate heads: (batch, nhead, seq_length, head_dim)
-        q = q.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
-        k = k.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
-        v = v.view(batch_size, seq_length, self.nhead, self.head_dim).transpose(1, 2)
-        
-        # Scale the queries.
-        q = q * self.scale
-        
-        # Use flash attention via PyTorch's scaled_dot_product_attention.
-        attn_output = F.scaled_dot_product_attention(
-            q, k, v,
-            dropout_p=self.dropout.p if self.training else 0.0,
-            is_causal=False
-        )
-        
-        # Reshape back to (batch, seq_length, d_model).
-        attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_length, self.d_model)
-        attn_output = self.out_proj(attn_output)
-        attn_output = self.dropout(attn_output)
-        
-        # Residual connection.
-        src = src + attn_output
-        
-        # Feedforward block with pre-norm.
-        src_ff = self.norm2(src)
-        ff_output = self.linear2(self.dropout(self.activation(self.linear1(src_ff))))
-        ff_output = self.dropout(ff_output)
-        
-        output = src + ff_output
-        return output
-
-class FlashAttentionTransformerEncoder(nn.Module):
-    def __init__(self, encoder_layer, num_layers):
-        super().__init__()
-        # Create a stack of encoder layers.
-        self.layers = nn.ModuleList([encoder_layer for _ in range(num_layers)])
-        self.norm = nn.LayerNorm(encoder_layer.d_model)
-
-    def forward(self, src, mask=None, src_key_padding_mask=None):
-        output = src
-        # Sequentially pass the input through all encoder layers.
-        for layer in self.layers:
-            output = layer(output, mask, src_key_padding_mask)
-        # Apply final normalization.
-        output = self.norm(output)
-        return output
-
-
 class AttentionPooling(nn.Module):
 	def __init__(self, embedding_dim, hidden_dim):
 		super(AttentionPooling, self).__init__()
@@ -886,7 +794,7 @@ class Transformer_Decoder(torch.nn.Module):
 			  ,PINNdecoder_hidden = [10] * 3, contactdecoder_hidden = [10 ] * 2, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, concat_positions = True,
 			  amino_mapper= None  ,  dropout= .001 ,  
-				output_foldx = False , denoise = False , contact_mlp = False):
+				output_foldx = False , denoise = False , geometry = False):
 		super(Transformer_Decoder, self).__init__()
 
 		#aimed at testing what removing the local nature of the grpah based decoder does.
@@ -953,22 +861,23 @@ class Transformer_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.LayerNorm(PINNdecoder_hidden[1]),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
-		if contact_mlp == True:
-			self.contact_decoder = torch.nn.Sequential(
-					torch.nn.Linear( 2*(Xdecoder_hidden ) , contactdecoder_hidden[0] ),
-					torch.nn.Tanh(),
+		
+		if geometry == True:
+			self.spatial_decoder = torch.nn.Sequential(
+					torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] + input_positions  , contactdecoder_hidden[0] ),
+					torch.nn.GELU(),
 					torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-					torch.nn.Tanh(),
+					torch.nn.GELU(),
+					torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[1] ) ,
+					torch.nn.GELU(),
 					torch.nn.LayerNorm(contactdecoder_hidden[1]) ,
-					torch.nn.Linear(contactdecoder_hidden[1], 1), 
+					torch.nn.Linear(contactdecoder_hidden[1], 10), 
 					)
-		else:
-			self.contact_decoder = None
 
 		if denoise == True:
 			#always concat positions
-			dim = Xdecoder_hidden + in_channels_orig['res'] + 256
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=256, nhead=8, num_layers=2 , dropout=0.001)
+			dim = 10 + 256
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=50, nhead=5, num_layers=2 , dropout=0.001)
 		else:
 			self.denoiser = None
 	
@@ -991,6 +900,17 @@ class Transformer_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [ xdata['res'] , zin ] , axis = -1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
+		if self.spatial_decoder is not None:
+			rta = self.spatial_decoder(decoder_in)
+			r = rta[..., :4]  # ( N, 4)
+			r = quaternion_to_rotation_matrix(r)  # ( N, 3, 3)
+			t = rta[..., 4:7]  # ( N, 3)
+			angles = rta[..., 7:]
+		else:
+			angles = None
+			r = None
+			t = None
+
 		if self.output_foldx == True:
 			godnodes = []
 			for b in unique_batches:				
@@ -1003,7 +923,7 @@ class Transformer_Decoder(torch.nn.Module):
 			foldx_pred = None
 			zgodnode = None
 		
-		#decode geometry
+		#decode with small transformer to refine coordinates etc
 		if self.denoiser is not None:
 			unique_batches = torch.unique(data['res'].batch)
 			rs = []
@@ -1012,7 +932,7 @@ class Transformer_Decoder(torch.nn.Module):
 			for b in unique_batches:
 				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
 				if idx.numel() > 2:
-					ri,ti, anglesi = self.denoiser(decoder_in[idx] ,  None)
+					ri,ti, anglesi = self.denoiser(angles2[idx] ,  None)
 					ri = ri.view(-1, 3 , 3)
 					ti = ti.view(-1, 3)
 					rs.append(ri)
@@ -1023,29 +943,21 @@ class Transformer_Decoder(torch.nn.Module):
 					ts.append(t[idx])			
 					angles_list.append(angles[idx])
 			angles = torch.cat(angles_list, dim=0)	
-			t = torch.cat(ts, dim=0)
-			r = torch.cat(rs, dim=0)
-			r = r.view(-1, 3, 3)
-			t = t.view(-1, 3)
+			t2 = torch.cat(ts, dim=0)
+			r2 = torch.cat(rs, dim=0)
+			r2 = r2.view(-1, 3, 3)
+			t2 = t2.view(-1, 3)
 		else:
-			r = None
-			t = None
-			angles = None
+			r2 = None
+			t2 = None
+			angles2 = None
 		
 		#decode contacts
 		if contact_pred_index is None:
-			edge_probs = None
-		
-		if contact_pred_index is not None:
-			edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )	
-			if self.contact_decoder:
-				distances =  self.contact_decoder( torch.cat( [ z[contact_pred_index[0]] , z[contact_pred_index[1]] ]  , axis = -1) )
-			else:
-				distances = None
+			edge_probs = None		
 		else:
-			edge_probs = None
-			distances = None
-		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles , distances
+			edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )	
+		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles , r2, t2, angles2
 		
 	
 	def x_to_amino_acid_sequence(self, x_r):
@@ -1184,7 +1096,7 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				torch.nn.LayerNorm(PINNdecoder_hidden[2]),
 				torch.nn.Linear(PINNdecoder_hidden[2], foldxdim),
 				)
-		
+
 	def forward2(self, x1data, x2data, contact_pred_index, **kwargs):
 		x1data, x1edge_index = x1data.x_dict, x1data.edge_index_dict
 		x2data, x2edge_index = x2data.x_dict, x2data.edge_index_dict
