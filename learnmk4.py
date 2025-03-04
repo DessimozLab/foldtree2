@@ -54,7 +54,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 #overwrite saved model
 overwrite = True
 #set to true to train the model with geometry
-geometry = True
+geometry = False
 #set to true to train the model with fape loss
 fapeloss = False
 #set to true to train the model with lddt loss
@@ -62,7 +62,7 @@ lddtloss = False
 #set to true to train the model with positional encoding
 concat_positions = False
 #set to true to train the model with transformer
-transformer = True
+transformer = False
 if transformer == True:	
 	concat_positions = True
 #apply weight initialization
@@ -71,23 +71,36 @@ applyinit_init = False
 clip_grad = False
 #denoiser
 denoise = False
+#EMA for VQ
+ema = True
+
+edgeweight = .2
+xweight = .05
+vqweight = .05
+foldxweight = .01
+fapeweight = .01
+angleweight = .05
+lddt_weight = .1
+dist_weight = .01
+
 
 err_eps = 1e-2
-batch_size = 40
-
+batch_size = 20
+num_embeddings = 40
+encoder_hidden = 100
 
 #model name
-modelname = 'angles_transformer'
+modelname = 'angles_geomk2_transformer'
 
 if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
-	with open( modelname + '.pkl', 'rb') as f:
+	with open( modeldir +modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 30 ]*encoder_layers ,
 							out_channels=20, metadata=converter.metadata , 
-							num_embeddings=40, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=400 , EMA = True , nheads = 8 , dropout_p = 0.001 ,
+							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
+							encoder_hidden=encoder_hidden , EMA = ema , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
@@ -101,21 +114,22 @@ else:
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= 400 ,
-									PINNdecoder_hidden = [ 100 , 50, 10] ,
-									contactdecoder_hidden = [ 200 , 100 ] ,
+									Xdecoder_hidden= 50 ,
+									PINNdecoder_hidden = [ 10 , 10, 10] ,
+									contactdecoder_hidden = [ 20 , 10] ,
 									nheads = 10, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [200 , 100 , 100]  ,
+									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 6
+		decoder_layers = 7
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
-													#('godnode4decoder' ,'informs','res' ):[  75 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
+													('res' ,'informs','godnode4decoder' ):[  40] * decoder_layers ,
+													#('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
+													( 'res','backbone','res'):[ 40 ] * decoder_layers  , 
+													( 'res','window','res'):[ 40 ] * decoder_layers  , 
 													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
 													},
 									layers = decoder_layers ,
@@ -126,14 +140,13 @@ else:
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= 400 ,
-									PINNdecoder_hidden = [ 100 , 50, 10] ,
-									contactdecoder_hidden = [200 , 200 ] ,
-									nheads = 4, 
+									Xdecoder_hidden= [200, 100 , 50 ] ,
+									PINNdecoder_hidden = [ 10 , 10, 10] ,
+									geodecoder_hidden = [200 , 100, 50 ] ,
+									nheads = 4 	, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [200 , 100 , 100]  ,
+									AAdecoder_hidden = [ 100 , 50 , 20]  ,
 									)    
-	
 print('encoder', encoder)
 print('decoder', decoder)
 
@@ -174,14 +187,6 @@ vqlosses = []
 foldxlosses = []
 fapelosses = []
 
-edgeweight = .1
-xweight = .1
-vqweight = .1
-foldxweight = .01
-fapeweight = .01
-angleweight = .1
-lddt_weight = .1
-dist_weight = .01
 
 with open( modeldir + modelname + 'run.txt', 'w') as f:
 	#write date and time of run
@@ -235,8 +240,6 @@ total_distloss = 0
 
 init = False
 for epoch in range(800):
-	if epoch > 500:
-		vqweight = 1
 	for data in tqdm.tqdm(train_loader):
 		data = data.to(device)
 		if init == False:
@@ -250,12 +253,16 @@ for epoch in range(800):
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder , calc_distances=False )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= True )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses
 		if geometry == True:
-			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
+			#modulate angles row-wise with plddt
+			l2 = torch.abs( angles - data.x_dict['bondangles'] )**2
+			#modulate angles row-wise with plddt
+			l2 = l2 * data['plddt'].x
+			angleloss = l2.mean() #F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
 			if fapeloss == True:
 				#reshape the data into batched form
 				batch = data['t_true'].batch
@@ -357,7 +364,7 @@ for epoch in range(800):
 		xweight = 0.1
 
 	if total_foldx < err_eps:
-		foldxweight = 0.001
+		foldxweight = 0
 	else:
 		foldxweight = 0.01
 

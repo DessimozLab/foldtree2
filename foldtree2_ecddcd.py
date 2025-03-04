@@ -7,7 +7,7 @@ from losses import *
 from  torch_geometric.utils import to_undirected
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight= 1 , entropyweight = 1 ):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 0 , diversityweight=0 , entropyweight = 1 , jsweight = 0):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -26,6 +26,7 @@ class VectorQuantizerEMA(nn.Module):
 		self.entropyweight= entropyweight
 		self.diversityweight = diversityweight
 		self.klweight = klweight
+		self.jsweight = jsweight
 
 		# EMA variables
 		self.register_buffer('ema_cluster_size', torch.zeros(num_embeddings))
@@ -57,12 +58,24 @@ class VectorQuantizerEMA(nn.Module):
 		loss = q_latent_loss + self.commitment_cost * e_latent_loss
 
 		# Regularization
-		entropy_reg = entropy_regularization(encodings)
-		diversity_reg = diversity_regularization(encodings)
-		kl_div_reg = kl_divergence_regularization(encodings)
-
+		if self.entropyweight > 0:
+			entropy_reg = entropy_regularization(encodings)
+		else:
+			entropy_reg = 0
+		if self.diversityweight > 0:
+			diversity_reg = diversity_regularization(encodings)
+		else:
+			diversity_reg = 0
+		if self.klweight > 0:
+			kl_div_reg = kl_divergence_regularization(encodings)
+		else:
+			kl_div_reg = 0
+		if self.jsweight > 0:
+			jensen_shannon = jensen_shannon_regularization(encodings)
+		else:
+			jensen_shannon = 0
 		# Combine all losses
-		total_loss = loss - self.entropyweight*entropy_reg + self.diversityweight*diversity_reg + self.klweight*kl_div_reg
+		total_loss = loss - self.entropyweight*entropy_reg + self.diversityweight*diversity_reg + self.klweight*kl_div_reg - self.jsweight*jensen_shannon
 
 		# EMA updates
 		if self.training:
@@ -156,6 +169,29 @@ def kl_divergence_regularization(encodings):
 	probabilities = encodings.mean(dim=0)
 	kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
 	return kl_divergence
+
+def jensen_shannon_regularization(encodings):
+    # 1) Compute the average distribution p
+    p = encodings.mean(dim=0)
+    
+    # 2) Define uniform distribution u
+    K = p.size(0)
+    u = torch.ones_like(p) / K
+    
+    # 3) Compute the midpoint m = (p + u) / 2
+    m = 0.5 * (p + u)
+    
+    # 4) Use the definition of JSD(p || u):
+    # JSD(p || u) = 0.5 * KL(p || m) + 0.5 * KL(u || m)
+    # KL(x || y) = sum( x_i * log(x_i / y_i) )
+    eps = 1e-10
+    
+    kl_p_m = torch.sum(p * torch.log((p + eps) / (m + eps)))
+    kl_u_m = torch.sum(u * torch.log((u + eps) / (m + eps)))
+    
+    jsd = 0.5 * kl_p_m + 0.5 * kl_u_m
+    return jsd
+
 
 
 # residual block feed forward
@@ -388,7 +424,7 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
 			torch.nn.LayerNorm(self.out_channels),
-			#torch.nn.Tanh()
+			torch.nn.Tanh()
 			)
 		
 		if EMA == False:
@@ -415,7 +451,8 @@ class mk1_Encoder(torch.nn.Module):
 		x = self.jk(x_save)
 		x = self.lin(x)
 		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
-		#x = x / ( torch.norm(x, dim=1, keepdim=True) + 1e-10)
+		#normalize the output to have norm 1
+		x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
 		z_quantized, vq_loss = self.vector_quantizer(x)
 		return z_quantized, vq_loss
 
@@ -573,16 +610,18 @@ class HeteroGAE_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=20, concat_positions = False, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3,  AAdecoder_hidden = 20 
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
-			  amino_mapper= None  , flavor = None, dropout= .001 ,
-				output_foldx = False , geometry = False , denoise = False):
+			  amino_mapper= None  , flavor = None, dropout= .001 , geodecoder_hidden = 10 ,
+				output_foldx = False , geometry = False , denoise = False , normalize = True):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
+
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
 		self.convs = torch.nn.ModuleList()
 		self.norms = torch.nn.ModuleList()
+		self.normalize = normalize
 		self.concat_positions = concat_positions
 		in_channels_orig = copy.deepcopy(in_channels )
 		self.output_foldx = output_foldx
@@ -609,8 +648,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'sage':
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = SoftmaxAggregation() )
-			
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'max' )
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -619,31 +657,34 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-
-			conv = HeteroConv( layer  , aggr='mean')
+			conv = HeteroConv( layer  , aggr='max')
 			self.convs.append( conv )
 			self.norms.append( torch.nn.LayerNorm(hidden_channels[('res','backbone','res')][i]) )
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
 				torch.nn.LayerNorm(sum( self.hidden_channels[('res', 'backbone', 'res')] )),
-				torch.nn.Linear( sum(self.hidden_channels[('res', 'backbone', 'res')]) , Xdecoder_hidden),
+				torch.nn.Linear( sum(self.hidden_channels[('res', 'backbone', 'res')]) , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+				torch.nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden, Xdecoder_hidden),
+				torch.nn.Linear(Xdecoder_hidden[1], Xdecoder_hidden[2]),
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(Xdecoder_hidden),
+				torch.nn.Linear(Xdecoder_hidden[2], Xdecoder_hidden[2]),
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(Xdecoder_hidden[2]),
 				)
+		
+		self.aatransformer = TransformerConv( (-1, -1) , AAdecoder_hidden[0] , heads = nheads , concat= False  )
 		self.aadecoder = torch.nn.Sequential(
-				torch.nn.Linear(Xdecoder_hidden + in_channels_orig['res'] , AAdecoder_hidden[0]),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
-				torch.nn.GELU(),
-				torch.nn.LayerNorm(AAdecoder_hidden[2]),
-				torch.nn.Linear(AAdecoder_hidden[2] , xdim) ,
+				#torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
+				#torch.nn.GELU(),
+				torch.nn.LayerNorm(AAdecoder_hidden[1]),
+				torch.nn.Linear(AAdecoder_hidden[1] , xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
 	
 		if output_foldx == True:
@@ -662,21 +703,23 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			self.denoiser = None
 		
 		if geometry == True:
-			self.geometry_decoder = torch.nn.Sequential( 
-				torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res']  , contactdecoder_hidden[0]),
+			self.geometry_decoder = TransformerConv( (-1, -1) , geodecoder_hidden[0] , heads = nheads , concat= False  )
+			self.geo_out = torch.nn.Sequential(
+				torch.nn.Linear(geodecoder_hidden[0] , geodecoder_hidden[0]),
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.Linear(geodecoder_hidden[0], geodecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(contactdecoder_hidden[1]) , 
-				torch.nn.Linear(contactdecoder_hidden[1], 10) )
-		
+				torch.nn.Linear(geodecoder_hidden[1],geodecoder_hidden[2]) ,
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(geodecoder_hidden[2]),
+				torch.nn.Linear(geodecoder_hidden[2] , 10 )  )
 		else:
 			self.geometry_decoder = None
 	
 	def forward(self, data , contact_pred_index, **kwargs):
 		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
 		xdata, edge_index = data.x_dict, data.edge_index_dict
-		xdata['res'] = self.bn(xdata['res'])
+		#xdata['res'] = self.bn(xdata['res'])
 		if self.concat_positions == True:
 			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
 		xdata['res'] = self.dropout(xdata['res'])
@@ -692,18 +735,27 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		xdata['res'] = self.jk(x_dict_list)
 		z = xdata['res']
 		z = self.lin(z)
-		z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
-		
+		z = torch.tanh(z)
+		if self.normalize == True:
+			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
+
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
-		aa = self.aadecoder(decoder_in)
+		
+		aa_in = torch.cat([decoder_in, data['positions'].x], dim=1)
+		aa_in = self.aatransformer( aa_in , edge_index['res' , 'window' , 'res'] )
+		aa = self.aadecoder(aa_in)
+
 		#decode geometry
 		if self.geometry_decoder is not None:
-			rta = self.geometry_decoder(decoder_in)
+			#add positional encoding to decoder input
+			geo_in = torch.cat([decoder_in, data['positions'].x], dim=1)
+			rta = self.geometry_decoder( geo_in , edge_index['res' , 'window' , 'res'] )
+			rta = self.geo_out(rta)
 			r = rta[..., :4]  # ( N, 4)
-			r = quaternion_to_rotation_matrix(rr)  # ( N, 3, 3)
+			r = quaternion_to_rotation_matrix(r)  # ( N, 3, 3)
 			t = rta[..., 4:7]  # ( N, 3)
-			angles2 = rta[..., 7:]
+			angles = rta[..., 7:]
 		else:
 			angles = None
 			r = None
@@ -746,12 +798,10 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			angles2 = None
 		
 		if contact_pred_index is None:
-			return aa, None, zgodnode , foldx_pred , r , t , angles , angles2
-		
-		if contact_pred_index is not None:
-				edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
+			return aa, None, zgodnode , foldx_pred , r , t , angles , r2,t2, angles2
 		else:
-			edge_probs = None
+			edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
+		
 		return aa,  edge_probs , zgodnode , foldx_pred , r , t , angles , r2, t2, angles2
 		
 	
@@ -862,20 +912,25 @@ class Transformer_Decoder(torch.nn.Module):
 					torch.nn.LayerNorm(PINNdecoder_hidden[1]),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
+			
 		if geometry == True:
-			self.spatial_decoder = torch.nn.Sequential(
-					torch.nn.Linear( Xdecoder_hidden + in_channels_orig['res'] + input_positions  , contactdecoder_hidden[0] ),
-					torch.nn.GELU(),
-					torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-					torch.nn.GELU(),
-					torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[1] ) ,
-					torch.nn.GELU(),
-					torch.nn.LayerNorm(contactdecoder_hidden[1]) ,
-					torch.nn.Linear(contactdecoder_hidden[1], 10), 
-					)
+			self.geometry_decoder = TransformerConv( (-1, -1) , 100 , heads = nheads , concat= False  )
+			self.geo_out = torch.nn.Sequential(
+				torch.nn.Linear(AAdecoder_hidden[0] , AAdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(AAdecoder_hidden[2]),
+				torch.nn.Linear(AAdecoder_hidden[2] , 10 )  )
+		else:
+			self.geometry_decoder = None
+	
 
 		if denoise == True:
 			#always concat positions
+			#use transformer to denoise local geometrz from transformer conv
 			dim = 10 + 256
 			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=50, nhead=5, num_layers=2 , dropout=0.001)
 		else:
@@ -900,8 +955,10 @@ class Transformer_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [ xdata['res'] , zin ] , axis = -1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)
-		if self.spatial_decoder is not None:
-			rta = self.spatial_decoder(decoder_in)
+		#decode geometry
+		if self.geometry_decoder is not None:
+			rta = self.geometry_decoder( decoder_in , edge_index['res' , 'window' , 'res'] )
+			rta = self.geo_out(rta)
 			r = rta[..., :4]  # ( N, 4)
 			r = quaternion_to_rotation_matrix(r)  # ( N, 3, 3)
 			t = rta[..., 4:7]  # ( N, 3)
