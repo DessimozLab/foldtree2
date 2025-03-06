@@ -74,7 +74,7 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .2
+edgeweight = .05
 xweight = .05
 vqweight = .05
 foldxweight = .01
@@ -87,7 +87,8 @@ dist_weight = .01
 err_eps = 1e-2
 batch_size = 20
 num_embeddings = 40
-encoder_hidden = 100
+embedding_dim = 20
+encoder_hidden = 500
 
 #model name
 modelname = 'angles_geomk2_transformer'
@@ -97,8 +98,8 @@ if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 30 ]*encoder_layers ,
-							out_channels=20, metadata=converter.metadata , 
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+							out_channels= embedding_dim , metadata=converter.metadata , 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
 							encoder_hidden=encoder_hidden , EMA = ema , nheads = 8 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
@@ -122,30 +123,29 @@ else:
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 7
+		decoder_layers = 5
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  40] * decoder_layers ,
+													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
 													#('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 40 ] * decoder_layers  , 
-													( 'res','window','res'):[ 40 ] * decoder_layers  , 
-													#('res' , 'backbonerev' , 'res'): [75] * decoder_layers ,
+													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
+													( 'res','window','res'):[ 100 ] * decoder_layers  , 
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'sage' ,
+									flavor = 'gat' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [200, 100 , 50 ] ,
+									Xdecoder_hidden= [5000, 2000 , 1000  ] ,
 									PINNdecoder_hidden = [ 10 , 10, 10] ,
-									geodecoder_hidden = [200 , 100, 50 ] ,
+									geodecoder_hidden = [100 , 100, 50 ] ,
 									nheads = 4 	, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [ 100 , 50 , 20]  ,
+									AAdecoder_hidden = [ 100 , 100 , 20]  ,
 									)    
 print('encoder', encoder)
 print('decoder', decoder)
@@ -176,7 +176,7 @@ struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
@@ -253,7 +253,7 @@ for epoch in range(800):
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= True )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses

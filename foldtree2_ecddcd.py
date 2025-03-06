@@ -635,6 +635,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 		self.dropout = torch.nn.Dropout(p=dropout)
 		self.jk = JumpingKnowledge(mode='cat')# , channels =100 , num_layers = layers) 
+		finalout = list(hidden_channels.values())[-1][-1]
+
 		for i in range(layers):
 			layer = {}          
 			for k,edge_type in enumerate( hidden_channels.keys() ):
@@ -643,12 +645,13 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				dataout = edge_type[2]
 				if flavor == 'gat':
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
+				if flavor == 'mfconv':
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'mean' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
-				if flavor == 'sage':
+				if flavor == 'sage' or edge_type == ('res','backbone','res'):
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
-				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'max' )
+				
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -657,14 +660,16 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='max')
+			conv = HeteroConv( layer  , aggr='mean')
 			self.convs.append( conv )
-			self.norms.append( torch.nn.LayerNorm(hidden_channels[('res','backbone','res')][i]) )
+
+			self.norms.append( torch.nn.LayerNorm(finalout) )
+
 
 		self.sigmoid = nn.Sigmoid()
 		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm(sum( self.hidden_channels[('res', 'backbone', 'res')] )),
-				torch.nn.Linear( sum(self.hidden_channels[('res', 'backbone', 'res')]) , Xdecoder_hidden[0]),
+				torch.nn.LayerNorm( finalout * layers ),
+				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
@@ -675,9 +680,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.LayerNorm(Xdecoder_hidden[2]),
 				)
 		
-		self.aatransformer = TransformerConv( (-1, -1) , AAdecoder_hidden[0] , heads = nheads , concat= False  )
 		self.aadecoder = torch.nn.Sequential(
-				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[0]),
+				torch.nn.Linear(Xdecoder_hidden[-1] + in_channels_orig['res'] , AAdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
@@ -742,9 +746,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		
-		aa_in = torch.cat([decoder_in, data['positions'].x], dim=1)
-		aa_in = self.aatransformer( aa_in , edge_index['res' , 'window' , 'res'] )
-		aa = self.aadecoder(aa_in)
+		aa = self.aadecoder(decoder_in)
 
 		#decode geometry
 		if self.geometry_decoder is not None:
