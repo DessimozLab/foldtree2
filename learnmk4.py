@@ -54,7 +54,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 #overwrite saved model
 overwrite = True
 #set to true to train the model with geometry
-geometry = False
+geometry = True
 #set to true to train the model with fape loss
 fapeloss = False
 #set to true to train the model with lddt loss
@@ -74,12 +74,12 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .05
-xweight = .05
+edgeweight = .5
+xweight = .5
 vqweight = .05
 foldxweight = .01
 fapeweight = .01
-angleweight = .05
+angleweight = .1
 lddt_weight = .1
 dist_weight = .01
 
@@ -91,17 +91,17 @@ embedding_dim = 20
 encoder_hidden = 500
 
 #model name
-modelname = 'angles_geomk2_transformer'
+modelname = 'angles_geomk2_transformer_large'
 
 if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modeldir +modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
-	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ]*encoder_layers ,
+	encoder_layers = 3
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
 							out_channels= embedding_dim , metadata=converter.metadata , 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=encoder_hidden , EMA = ema , nheads = 8 , dropout_p = 0.001 ,
+							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
@@ -136,17 +136,18 @@ else:
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'gat' ,
+									flavor = 'transformer' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [5000, 2000 , 1000  ] ,
-									PINNdecoder_hidden = [ 10 , 10, 10] ,
-									geodecoder_hidden = [100 , 100, 50 ] ,
-									nheads = 4 	, 
+									Xdecoder_hidden= [1000, 500 , 300  ] ,
+									PINNdecoder_hidden = [ 100 , 10, 10] ,
+									geodecoder_hidden = [300 , 300, 300 ] ,
+									nheads = 10, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [ 100 , 100 , 20]  ,
-									)    
+									AAdecoder_hidden = [ 300 , 200 , 100]  ,
+									)
+    
 print('encoder', encoder)
 print('decoder', decoder)
 
