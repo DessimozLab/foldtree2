@@ -87,7 +87,8 @@ dist_weight = .01
 err_eps = 1e-2
 batch_size = 20
 num_embeddings = 40
-embedding_dim = 20
+embedding_dim = 256
+
 encoder_hidden = 500
 
 #model name
@@ -102,7 +103,7 @@ else:
 							out_channels= embedding_dim , metadata=converter.metadata , 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
 							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
-								reset_codes= False , flavor = 'gat' )
+								reset_codes= False , flavor = 'transformer' )
 
 	if transformer == True:
 		decoder_layers = 2

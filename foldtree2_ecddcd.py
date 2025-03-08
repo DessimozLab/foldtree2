@@ -303,7 +303,11 @@ class Encoder(torch.nn.Module):
 	
 	def forward(self, x_dict, edge_index_dict):
 		raise NotImplementedError('forward method not implemented')
-	
+
+	def structlist_loader(self, structlist, batch_size = 1):
+		#load a list of structures into a dataloader
+		dataloader = DataLoader(structlist, batch_size=batch_size, shuffle=False)
+		return dataloader	
 
 	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False):
 		#write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
@@ -400,6 +404,17 @@ class mk1_Encoder(torch.nn.Module):
 						for edge_type in metadata['edge_types']
 					})
 				)
+
+			if flavor == 'transformer':
+				self.convs.append(
+					torch.nn.ModuleDict({
+						'_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], 
+						hidden_channels[i] , heads = nheads , dropout = dropout_p,
+						concat = False )
+						for edge_type in metadata['edge_types']
+					})
+				)
+
 			if flavor == 'sage':
 				self.convs.append(
 					torch.nn.ModuleDict({
@@ -685,10 +700,10 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				#torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
-				#torch.nn.GELU(),
-				torch.nn.LayerNorm(AAdecoder_hidden[1]),
-				torch.nn.Linear(AAdecoder_hidden[1] , xdim) ,
+				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
+				torch.nn.GELU(),
+				torch.nn.LayerNorm(AAdecoder_hidden[2]),
+				torch.nn.Linear(AAdecoder_hidden[2] , xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
 	
 		if output_foldx == True:
