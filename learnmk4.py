@@ -54,7 +54,7 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 #overwrite saved model
 overwrite = True
 #set to true to train the model with geometry
-geometry = True
+geometry = False
 #set to true to train the model with fape loss
 fapeloss = False
 #set to true to train the model with lddt loss
@@ -74,12 +74,12 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .5
-xweight = .5
+edgeweight = .001
+xweight = .1
 vqweight = .05
 foldxweight = .01
 fapeweight = .01
-angleweight = .1
+angleweight = .01
 lddt_weight = .1
 dist_weight = .01
 
@@ -92,7 +92,7 @@ embedding_dim = 256
 encoder_hidden = 500
 
 #model name
-modelname = 'angles_geomk2_transformer_large'
+modelname = 'newmodelmk5'
 
 if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modeldir +modelname + '.pkl', 'rb') as f:
@@ -178,7 +178,7 @@ struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
@@ -255,7 +255,7 @@ for epoch in range(800):
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = True )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses

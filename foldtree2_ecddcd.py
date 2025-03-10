@@ -7,7 +7,7 @@ from losses import *
 from  torch_geometric.utils import to_undirected
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 0 , diversityweight=0 , entropyweight = 1 , jsweight = 0):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight=1 , entropyweight = 1 , jsweight = 0):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -437,8 +437,8 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
 			torch.nn.GELU(),
+			torch.nn.LayerNorm(self.encoder_hidden),
 			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
-			torch.nn.LayerNorm(self.out_channels),
 			torch.nn.Tanh()
 			)
 		
@@ -467,7 +467,7 @@ class mk1_Encoder(torch.nn.Module):
 		x = self.lin(x)
 		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
 		#normalize the output to have norm 1
-		x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
+		#x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
 		z_quantized, vq_loss = self.vector_quantizer(x)
 		return z_quantized, vq_loss
 
