@@ -7,7 +7,7 @@ from losses import *
 from  torch_geometric.utils import to_undirected
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = True , klweight = 1 , diversityweight=1 , entropyweight = 1 , jsweight = 0):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = False , klweight = 0 , diversityweight=1 , entropyweight = 1 , jsweight = 0):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -437,6 +437,11 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
 			torch.nn.GELU(),
+			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
+			torch.nn.GELU(),
+			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
+			torch.nn.GELU(),
+
 			torch.nn.LayerNorm(self.encoder_hidden),
 			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
 			torch.nn.Tanh()
@@ -626,11 +631,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			  ,PINNdecoder_hidden = 10, contactdecoder_hidden = 10, 
 			  nheads = 3 , Xdecoder_hidden=30, metadata={}, 
 			  amino_mapper= None  , flavor = None, dropout= .001 , geodecoder_hidden = 10 ,
-				output_foldx = False , geometry = False , denoise = False , normalize = True):
+				output_foldx = False , geometry = False , denoise = False , normalize = True , residual = True):
 		super(HeteroGAE_Decoder, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
 
+		
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
@@ -646,11 +652,17 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		self.amino_acid_indices = amino_mapper
 		self.nlayers = layers
 		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
+		self.norm_in = torch.nn.LayerNorm(in_channels['res'])
 		self.bn_foldx = torch.nn.BatchNorm1d(in_channels['foldx'])
+		self.norm_foldx = torch.nn.LayerNorm(in_channels['foldx'])
 		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 		self.dropout = torch.nn.Dropout(p=dropout)
 		self.jk = JumpingKnowledge(mode='cat')# , channels =100 , num_layers = layers) 
+		self.residual = residual
+		
 		finalout = list(hidden_channels.values())[-1][-1]
+
+
 
 		for i in range(layers):
 			layer = {}          
@@ -682,6 +694,14 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
 
 		self.sigmoid = nn.Sigmoid()
+
+
+		if self.residual == True:
+			lastlin = in_channels_orig['res']
+		else:
+			lastlin = Xdecoder_hidden[-1]
+
+
 		self.lin = torch.nn.Sequential(
 				torch.nn.LayerNorm( finalout * layers ),
 				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
@@ -690,13 +710,13 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[1], Xdecoder_hidden[2]),
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden[2], Xdecoder_hidden[2]),
+				torch.nn.Linear(Xdecoder_hidden[2], lastlin),
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(Xdecoder_hidden[2]),
+				torch.nn.LayerNorm(lastlin),
 				)
 		
 		self.aadecoder = torch.nn.Sequential(
-				torch.nn.Linear(Xdecoder_hidden[-1] + in_channels_orig['res'] , AAdecoder_hidden[0]),
+				torch.nn.Linear(lastlin + in_channels_orig['res'] , AAdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
@@ -738,10 +758,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 	def forward(self, data , contact_pred_index, **kwargs):
 		data['res', 'backbone', 'res'].edge_index = to_undirected(data['res' , 'backbone' , 'res'].edge_index) 
 		xdata, edge_index = data.x_dict, data.edge_index_dict
+		xdata['res'] = self.norm_in(xdata['res'])
 		#xdata['res'] = self.bn(xdata['res'])
+		xdata['res'] = self.dropout(xdata['res'])
+
 		if self.concat_positions == True:
 			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
-		xdata['res'] = self.dropout(xdata['res'])
 		#copy z for later concatenation
 		inz = xdata['res'].clone()	
 		x_dict_list = []
@@ -755,9 +777,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		z = xdata['res']
 		z = self.lin(z)
 		z = torch.tanh(z)
+		if self.residual == True:
+			z = z + inz
+		
 		if self.normalize == True:
 			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
-
+		
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		
@@ -885,6 +910,8 @@ class Transformer_Decoder(torch.nn.Module):
 		self.nlayers = layers
 		self.sigmoid = nn.Sigmoid()
 		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
+		self.norm_in = torch.nn.LayerNorm(in_channels['res'])
+
 		self.bn_foldx = torch.nn.BatchNorm1d(in_channels['foldx'])
 		self.revmap_aa = { v:k for k,v in amino_mapper.items() }
 		self.dropout = torch.nn.Dropout(p=dropout)
@@ -957,12 +984,11 @@ class Transformer_Decoder(torch.nn.Module):
 		xdata, edge_index = data.x_dict, data.edge_index_dict
 
 		xdata['res'] = self.bn(xdata['res'])
-
+		xdata['res'] = self.norm_in(xdata['res'])
+		xdata['res'] = self.dropout(xdata['res'])
 		if self.concat_positions == True:
 			xdata['res'] = torch.cat([xdata['res'], xdata['positions']], dim=-1)
-
 		zin = xdata['res'].clone()
-		xdata['res'] = self.dropout(xdata['res'])
 		xdata['res'] = self.lin(xdata['res'] )
 		unique_batches = torch.unique(data['res'].batch)
 		for b in unique_batches:
@@ -1187,9 +1213,9 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 			xsave = []
 			for i,layer in enumerate(self.convs):
 				xdata = layer(xdata, edge_index)
-				for key in layer.convs.keys():
-					key = key[2]
-					xdata[key] = F.gelu(xdata[key])
+				#for key in layer.convs.keys():
+				#	key = key[2]
+				#	xdata[key] = F.gelu(xdata[key])
 				xsave.append(xdata['res'])
 			xdata['res'] = self.jk(xsave)
 			z = self.lin(xdata['res'])

@@ -18,7 +18,7 @@ class PDB2PyG:
 		self.onehot = onehot
 		self.colmap = colmap
 		#self.aaproperties =  pl.from_pandas(aaproperties)
-		self.metadata = { 'edge_types': [   ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
+		self.metadata = { 'edge_types': [ ('res','backbone', 'res') ,   ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
 		#self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
 		
 		self.aaindex = aaindex
@@ -479,6 +479,9 @@ class PDB2PyG:
 
 		# Construct rotation matrix
 		R_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)  # (N, 3, 3)
+
+
+
 		return R_true, t_true
 
 

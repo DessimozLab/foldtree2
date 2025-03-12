@@ -27,20 +27,14 @@ filename = './1eei (1).pdb'
 url = 'https://files.rcsb.org/download/1EEI.pdb'
 #filename = wget.download(url)
 datadir = '../../datasets/foldtree2/'
-filename = './1eei.pdb'
 converter = pdbgraph.PDB2PyG()
-res  = converter.create_features(filename, distance = 10, verbose = False )
-angles, contact_points, springmat , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldxvals, coords ,window , windowrev = res
 # Setting the seed for everything
 torch.manual_seed(0)
 np.random.seed(0)
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-#data_sample =converter.struct2pyg( pdbfiles[0] , verbose=False)
-#print(data_sample)
-#ndim = data_sample['res'].x.shape[1]
-#ndim_godnode = data_sample['godnode'].x.shape[1]
+#set the directory for the datasets
 datadir = '../../datasets/'
 modeldir = './models/'
 pdbfiles = glob.glob(datadir +'structs/*.pdb')
@@ -74,7 +68,7 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .001
+edgeweight = .01
 xweight = .1
 vqweight = .05
 foldxweight = .01
@@ -84,12 +78,13 @@ lddt_weight = .1
 dist_weight = .01
 
 
-err_eps = 1e-2
-batch_size = 20
-num_embeddings = 40
-embedding_dim = 256
 
-encoder_hidden = 500
+err_eps = 1e-2
+batch_size = 10
+num_embeddings = 40
+embedding_dim = 512
+
+encoder_hidden = 100
 
 #model name
 modelname = 'newmodelmk5'
@@ -98,12 +93,13 @@ if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modeldir +modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
-	encoder_layers = 3
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 300 ]*encoder_layers ,
-							out_channels= embedding_dim , metadata=converter.metadata , 
+	encoder_layers = 2
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 30 ]*encoder_layers ,
+							out_channels= embedding_dim , 
+							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') ,  ('res','backbone', 'res') ] } , #, ('res','hbond', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
-								reset_codes= False , flavor = 'transformer' )
+							encoder_hidden=encoder_hidden , EMA = ema , nheads = 4 , dropout_p = 0.001 ,
+								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
 		decoder_layers = 2
@@ -114,6 +110,7 @@ else:
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
 									output_foldx = True ,
+									normalize= True ,
 									geometry= geometry ,
 									denoise = denoise ,
 									Xdecoder_hidden= 50 ,
@@ -128,25 +125,27 @@ else:
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[  100] * decoder_layers ,
-													#('godnode4decoder' ,'informs','res' ):[  100 ] * decoder_layers ,
-													( 'res','backbone','res'):[ 100 ] * decoder_layers  , 
-													( 'res','window','res'):[ 100 ] * decoder_layers  , 
+													('res' ,'informs','godnode4decoder' ):[ 20] * decoder_layers ,
+													#('godnode4decoder' ,'informs','res' ):[  500 ] * decoder_layers ,
+													( 'res','backbone','res'):[ 20 ] * decoder_layers  ,
+													#( 'res','backbonerev','res'):[ 20 ] * decoder_layers  ,
+													( 'res','window','res'):[ 20 ] * decoder_layers  , 
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'transformer' ,
+									flavor = 'gat' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [1000, 500 , 300  ] ,
-									PINNdecoder_hidden = [ 100 , 10, 10] ,
-									geodecoder_hidden = [300 , 300, 300 ] ,
-									nheads = 10, 
+									Xdecoder_hidden= [20, 20 , 20  ] ,
+									PINNdecoder_hidden = [ 10 , 10, 20] ,
+									geodecoder_hidden = [30 , 30, 30 ] ,
+									nheads = 4, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [ 300 , 200 , 100]  ,
+									AAdecoder_hidden = [ 20 , 20 , 20]  ,
+									residual = True
 									)
     
 print('encoder', encoder)
@@ -172,9 +171,7 @@ print(device)
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-
 struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
-
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
