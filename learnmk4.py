@@ -69,7 +69,7 @@ denoise = False
 ema = True
 
 edgeweight = .01
-xweight = .1
+xweight = .01
 vqweight = .05
 foldxweight = .01
 fapeweight = .01
@@ -81,25 +81,24 @@ dist_weight = .01
 
 err_eps = 1e-2
 batch_size = 10
-num_embeddings = 40
-embedding_dim = 512
-
-encoder_hidden = 100
+num_embeddings = 50
+embedding_dim = 100
+encoder_hidden = 500
 
 #model name
-modelname = 'newmodelmk5'
+modelname = 'newmodelmk5_bigencoder_norm'
 
 if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modeldir +modelname + '.pkl', 'rb') as f:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 30 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 1000 ]*encoder_layers ,
 							out_channels= embedding_dim , 
-							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') ,  ('res','backbone', 'res') ] } , #, ('res','hbond', 'res') ] }, 
+							metadata=  { 'edge_types': [     ('res','contactPoints', 'res')  ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=encoder_hidden , EMA = ema , nheads = 4 , dropout_p = 0.001 ,
-								reset_codes= False , flavor = 'gat' )
+							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
+								reset_codes= False , flavor = 'transformer' )
 
 	if transformer == True:
 		decoder_layers = 2
@@ -121,12 +120,11 @@ else:
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 5
+		decoder_layers = 4
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
 													('res' ,'informs','godnode4decoder' ):[ 20] * decoder_layers ,
-													#('godnode4decoder' ,'informs','res' ):[  500 ] * decoder_layers ,
 													( 'res','backbone','res'):[ 20 ] * decoder_layers  ,
 													#( 'res','backbonerev','res'):[ 20 ] * decoder_layers  ,
 													( 'res','window','res'):[ 20 ] * decoder_layers  , 
@@ -135,7 +133,7 @@ else:
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'gat' ,
+									flavor = 'sage' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
@@ -145,7 +143,8 @@ else:
 									nheads = 4, 
 									dropout = 0.001  ,
 									AAdecoder_hidden = [ 20 , 20 , 20]  ,
-									residual = True
+									residual = True,
+									normalize=True
 									)
     
 print('encoder', encoder)
@@ -243,6 +242,7 @@ for epoch in range(800):
 		data = data.to(device)
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
+
 				z,vqloss = encoder.forward(data)
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , r2,t2, angles2 = decoder(  data , None ) 
@@ -252,7 +252,7 @@ for epoch in range(800):
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = True )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = False )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses

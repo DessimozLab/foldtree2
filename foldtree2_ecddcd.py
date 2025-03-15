@@ -425,25 +425,25 @@ class mk1_Encoder(torch.nn.Module):
 				)
 				
 			self.norms.append( 
-				torch.nn.LayerNorm(hidden_channels[i])
+				NormTanh()
 				)
 		
 		self.lin = torch.nn.Sequential(
-			torch.nn.LayerNorm(hidden_channels[-1] * len(hidden_channels)), 
-			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] ))
-		
+			NormTanh(), 
+			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels), hidden_channels[-1] ) , 
+			torch.nn.GELU(),
+			torch.nn.Linear(hidden_channels[-1] , hidden_channels[-1] ) , 
+			torch.nn.GELU(),
+			)
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(hidden_channels[-1] + 20 , self.encoder_hidden) ,
 			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
+			torch.nn.Linear(self.encoder_hidden, hidden_channels[-1]) ,
 			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
-			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,
-			torch.nn.GELU(),
-
-			torch.nn.LayerNorm(self.encoder_hidden),
-			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,
+		)
+		self.out_dense2 = torch.nn.Sequential(			
+			NormTanh(),
+			torch.nn.Linear(self.hidden_channels[-1], self.out_channels) ,
 			torch.nn.Tanh()
 			)
 		
@@ -470,9 +470,12 @@ class mk1_Encoder(torch.nn.Module):
 			x_save.append(x)
 		x = self.jk(x_save)
 		x = self.lin(x)
+		#use aa sequence as input
+		xclone = x.clone()
 		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
+		x = x + xclone
+		x = self.out_dense2(x)
 		#normalize the output to have norm 1
-		#x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
 		z_quantized, vq_loss = self.vector_quantizer(x)
 		return z_quantized, vq_loss
 
@@ -513,7 +516,7 @@ class mk1_Encoder(torch.nn.Module):
 				if verbose == True:
 					print(identifier, outstr)
 		return filename 
-	
+
 def quaternion_to_rotation_matrix(quat):
 	"""
 	Convert a batch of quaternions (x, y, z, w) into 3x3 rotation matrices.
@@ -545,6 +548,19 @@ def quaternion_to_rotation_matrix(quat):
 	return rot_matrices  # Shape: (batch, N, 3, 3)
 
 
+class NormTanh(nn.Module):
+    def __init__(self, alpha=1.0, beta=0.0, gamma=1.0):
+        super(NormTanh, self).__init__()
+        # Initialize alpha, beta, and gamma as learnable parameters
+        self.alpha = torch.nn.Parameter(torch.tensor([alpha], dtype=torch.float))
+        self.beta = torch.nn.Parameter(torch.tensor([beta], dtype=torch.float))
+        self.gamma = torch.nn.Parameter(torch.tensor([gamma], dtype=torch.float))
+
+    def forward(self, x):
+        # Apply the custom activation function
+        return self.gamma * torch.tanh(self.alpha * x) + self.beta
+
+
 class DenoisingTransformer(nn.Module):
 	def __init__(self, input_dim=3, d_model=128, nhead=8, num_layers=2 , dropout=0.001):
 		super(DenoisingTransformer, self).__init__()
@@ -555,13 +571,13 @@ class DenoisingTransformer(nn.Module):
 		# Project back to the 12-dimensional output space
 		#self.output_proj = nn.Linear(d_model, 14 )
 		self.output_proj_rt = nn.Sequential(
-			nn.LayerNorm(d_model),
+			NormTanh(),
 			nn.Linear(d_model, 50),
 			nn.GELU(),
 			nn.Linear(50, 25),
 			nn.GELU(),
 			nn.Linear(25, 7) ,
-			nn.LayerNorm(7) )
+			NormTanh() )
 		
 		self.output_proj_angles = nn.Sequential(
 			nn.Linear(d_model, 10),
@@ -659,11 +675,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		self.dropout = torch.nn.Dropout(p=dropout)
 		self.jk = JumpingKnowledge(mode='cat')# , channels =100 , num_layers = layers) 
 		self.residual = residual
-		
 		finalout = list(hidden_channels.values())[-1][-1]
-
-
-
 		for i in range(layers):
 			layer = {}          
 			for k,edge_type in enumerate( hidden_channels.keys() ):
@@ -678,7 +690,6 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage' or edge_type == ('res','backbone','res'):
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
-				
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -703,7 +714,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
 
 		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm( finalout * layers ),
+				NormTanh(),
 				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
@@ -712,7 +723,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[2], lastlin),
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(lastlin),
+				NormTanh(),
 				)
 		
 		self.aadecoder = torch.nn.Sequential(
@@ -722,7 +733,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(AAdecoder_hidden[2]),
+				NormTanh(),
 				torch.nn.Linear(AAdecoder_hidden[2] , xdim) ,
 				torch.nn.LogSoftmax(dim=1) )
 	
@@ -732,7 +743,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
 					torch.nn.GELU(),
-					torch.nn.LayerNorm(PINNdecoder_hidden[1]),
+					NormTanh(),
 					torch.nn.Linear(PINNdecoder_hidden[1], in_channels['foldx']) )
 		
 		if denoise == True:
@@ -750,7 +761,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(geodecoder_hidden[1],geodecoder_hidden[2]) ,
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(geodecoder_hidden[2]),
+				NormTanh(),
 				torch.nn.Linear(geodecoder_hidden[2] , 10 )  )
 		else:
 			self.geometry_decoder = None
@@ -779,10 +790,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		z = torch.tanh(z)
 		if self.residual == True:
 			z = z + inz
-		
 		if self.normalize == True:
 			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
-		
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		
@@ -791,7 +800,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		#decode geometry
 		if self.geometry_decoder is not None:
 			#add positional encoding to decoder input
-			geo_in = torch.cat([decoder_in, data['positions'].x], dim=1)
+			geo_in = torch.cat([inz, data['positions'].x], dim=1)
 			rta = self.geometry_decoder( geo_in , edge_index['res' , 'window' , 'res'] )
 			rta = self.geo_out(rta)
 			r = rta[..., :4]  # ( N, 4)
@@ -1169,19 +1178,19 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(contactdecoder_hidden[2]),
+				NormTanh(),
 				torch.nn.Linear(contactdecoder_hidden[2], 1),
 				torch.nn.Sigmoid()
 				)
 		self.godnodedecoder = torch.nn.Sequential(
-				torch.nn.LayerNorm(in_channels['godnode4decoder']),
+				NormTanh(in_channels['godnode4decoder']),
 				torch.nn.Linear(in_channels['godnode4decoder'] , PINNdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
 				torch.nn.Linear(PINNdecoder_hidden[1], PINNdecoder_hidden[2] ) ,
 				torch.nn.GELU(),
-				torch.nn.LayerNorm(self.embeding_dim),
+				NormTanh(self.embeding_dim),
 				torch.nn.Linear(PINNdecoder_hidden[2], self.embeding_dim),
 				)
 	
@@ -1213,9 +1222,9 @@ class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 			xsave = []
 			for i,layer in enumerate(self.convs):
 				xdata = layer(xdata, edge_index)
-				#for key in layer.convs.keys():
-				#	key = key[2]
-				#	xdata[key] = F.gelu(xdata[key])
+				for key in layer.convs.keys():
+					key = key[2]
+					xdata[key] = F.gelu(xdata[key])
 				xsave.append(xdata['res'])
 			xdata['res'] = self.jk(xsave)
 			z = self.lin(xdata['res'])
