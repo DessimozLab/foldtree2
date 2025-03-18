@@ -69,8 +69,8 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .01
-xweight = .01
+edgeweight = .1
+xweight = .1
 vqweight = .001
 foldxweight = .001
 fapeweight = .01
@@ -82,9 +82,9 @@ dist_weight = .01
 
 err_eps = 1e-2
 batch_size = 20
+
 num_embeddings = 40
 embedding_dim = 256
-encoder_hidden = 200
 
 #model name
 modelname = 'newmodelmk5_bigencoder_norm'
@@ -98,7 +98,7 @@ else:
 							out_channels= embedding_dim , 
 							metadata=  { 'edge_types': [     ('res','contactPoints', 'res')  ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
+							encoder_hidden=200 , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
 								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
@@ -358,11 +358,6 @@ for epoch in range(800):
 
 	scheduler.step(total_loss_x)
 	
-	if total_loss_x < err_eps:
-		xweight = 0.001
-	else:
-		xweight = 0.1
-
 	if total_foldx < err_eps:
 		foldxweight = 0
 	else:
