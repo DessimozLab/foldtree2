@@ -59,6 +59,7 @@ concat_positions = False
 transformer = False
 if transformer == True:	
 	concat_positions = True
+
 #apply weight initialization
 applyinit_init = False
 #clip gradients
@@ -70,8 +71,8 @@ ema = True
 
 edgeweight = .01
 xweight = .01
-vqweight = .05
-foldxweight = .01
+vqweight = .001
+foldxweight = .001
 fapeweight = .01
 angleweight = .01
 lddt_weight = .1
@@ -80,10 +81,10 @@ dist_weight = .01
 
 
 err_eps = 1e-2
-batch_size = 10
-num_embeddings = 50
-embedding_dim = 100
-encoder_hidden = 500
+batch_size = 20
+num_embeddings = 40
+embedding_dim = 256
+encoder_hidden = 200
 
 #model name
 modelname = 'newmodelmk5_bigencoder_norm'
@@ -93,12 +94,12 @@ if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 1000 ]*encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ] *  encoder_layers ,
 							out_channels= embedding_dim , 
 							metadata=  { 'edge_types': [     ('res','contactPoints', 'res')  ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
 							encoder_hidden=encoder_hidden , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
-								reset_codes= False , flavor = 'transformer' )
+								reset_codes= False , flavor = 'gat' )
 
 	if transformer == True:
 		decoder_layers = 2
@@ -120,31 +121,32 @@ else:
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 4
+		decoder_layers = 5
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													('res' ,'informs','godnode4decoder' ):[ 20] * decoder_layers ,
-													( 'res','backbone','res'):[ 20 ] * decoder_layers  ,
-													#( 'res','backbonerev','res'):[ 20 ] * decoder_layers  ,
-													( 'res','window','res'):[ 20 ] * decoder_layers  , 
+													( 'res','backbone','res'):[ 100] * decoder_layers  ,
+													( 'res','backbonerev','res'):[ 100 ] * decoder_layers  ,
+													('res' ,'informs','godnode4decoder' ):[ 100] * decoder_layers ,
+													#( 'godnode4decoder' ,'informs','res' ):[ 20] * decoder_layers ,
+													( 'res','window','res'):[ 100 ] * decoder_layers  , 
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'sage' ,
+									flavor = 'gat' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [20, 20 , 20  ] ,
-									PINNdecoder_hidden = [ 10 , 10, 20] ,
+									Xdecoder_hidden= [100, 100 , 100  ] ,
+									PINNdecoder_hidden = [ 100 , 50, 20] ,
 									geodecoder_hidden = [30 , 30, 30 ] ,
-									nheads = 4, 
+									nheads = 10, 
 									dropout = 0.001  ,
-									AAdecoder_hidden = [ 20 , 20 , 20]  ,
-									residual = True,
-									normalize=True
+									AAdecoder_hidden = [ 100 , 100 , 100]  ,
+									residual = False,
+									normalize=False
 									)
     
 print('encoder', encoder)
@@ -164,7 +166,6 @@ if applyinit_init == True:
 	decoder.apply(init_weights)
 
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-#device = torch.device( 'cpu')
 print(device)
 
 #put encoder and decoder on the device
@@ -174,7 +175,7 @@ struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
