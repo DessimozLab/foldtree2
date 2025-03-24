@@ -945,7 +945,7 @@ class HeteroGAE_Decoder_separate(torch.nn.Module):
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'mean' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
-				if flavor == 'sage' or edge_type == ('res','backbone','res'):
+				if flavor == 'sage' or edge_type == ('res','backbone','res') or edge_type == ('res','backbonerev','res'):
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]

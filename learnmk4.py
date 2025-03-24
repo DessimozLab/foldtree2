@@ -69,8 +69,8 @@ denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = .1
-xweight = .1
+edgeweight = 1
+xweight = 1
 vqweight = .001
 foldxweight = .001
 fapeweight = .01
@@ -81,13 +81,13 @@ dist_weight = .01
 
 
 err_eps = 1e-2
-batch_size = 20
+batch_size = 15
 
 num_embeddings = 40
 embedding_dim = 256
 
 #model name
-modelname = 'newmodelmk5_bigencoder_norm'
+modelname = 'newmodelmk6tanh'
 
 if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 	with open( modeldir +modelname + '.pkl', 'rb') as f:
@@ -121,15 +121,15 @@ else:
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 5
+		decoder_layers = 3
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													( 'res','backbone','res'):[ 100] * decoder_layers  ,
-													( 'res','backbonerev','res'):[ 100 ] * decoder_layers  ,
-													('res' ,'informs','godnode4decoder' ):[ 100] * decoder_layers ,
+													( 'res','backbone','res'):[ 400] * decoder_layers  ,
+													( 'res','backbonerev','res'):[ 400 ] * decoder_layers  ,
+													('res' ,'informs','godnode4decoder' ):[ 400] * decoder_layers ,
 													#( 'godnode4decoder' ,'informs','res' ):[ 20] * decoder_layers ,
-													( 'res','window','res'):[ 100 ] * decoder_layers  , 
+													( 'res','window','res'):[ 400 ] * decoder_layers  , 
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
@@ -139,7 +139,7 @@ else:
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [100, 100 , 100  ] ,
+									Xdecoder_hidden= [300, 300 , 100  ] ,
 									PINNdecoder_hidden = [ 100 , 50, 20] ,
 									geodecoder_hidden = [30 , 30, 30 ] ,
 									nheads = 10, 
@@ -175,7 +175,8 @@ struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
 
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
 encoder.train()
@@ -238,6 +239,39 @@ total_angleloss = 0
 total_distloss = 0
 
 init = False
+
+
+
+def analyze_gradient_norms(model, top_k=3):
+    """
+    Analyzes gradients in the given model and returns the top_k layers with
+    highest and lowest gradient norms.
+
+    Parameters:
+        model (torch.nn.Module): The neural network model after backpropagation.
+        top_k (int): Number of layers to return for highest and lowest gradients.
+
+    Returns:
+        dict: {'highest': [(layer_name, grad_norm)], 'lowest': [(layer_name, grad_norm)]}
+    """
+    grad_norms = []
+
+    # Collect gradient norms
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            grad_norm = param.grad.norm().item()
+            grad_norms.append((name, grad_norm))
+
+    # Sort by gradient norms
+    grad_norms.sort(key=lambda x: x[1])
+
+    # Get lowest and highest
+    lowest = grad_norms[:top_k]
+    highest = grad_norms[-top_k:][::-1]
+
+    return {'highest': highest, 'lowest': lowest}
+
+
 for epoch in range(800):
 	for data in tqdm.tqdm(train_loader):
 		data = data.to(device)
@@ -248,12 +282,15 @@ for epoch in range(800):
 				data['res'].x = z
 				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , r2,t2, angles2 = decoder(  data , None ) 
 				init = True
+				#nparameters
+				print('nparams:' ,  sum(p.numel() for p in encoder.parameters() ) + sum(p.numel() for p in decoder.parameters() ) )
+
 				continue
 		
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = False )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= True , offdiag = False )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses
@@ -339,8 +376,9 @@ for epoch in range(800):
 		loss.backward()
 		
 		if clip_grad:
-			torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=100.0)
-			torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=100.0)
+			torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
+			torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+		
 		
 		optimizer.step()
 		total_loss_edge += edgeloss.item()
@@ -365,14 +403,19 @@ for epoch in range(800):
 
 	#save the best model
 	if epoch % 10 == 0 :
+
+		
+
 		#save model
 		print( 'saving model')
 		with open( modeldir + modelname + '.pkl', 'wb') as f:
 			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
-	print(f'Epoch {epoch}, AALoss: {total_loss_x:.4f}, Edge Loss: {total_loss_edge:.4f}, vq Loss: {total_vq:.4f} , foldx Loss: {total_foldx:.4f}' ) 
-	print(f'fapeloss: {total_fapeloss:.4f} , angleloss: {total_angleloss:4f} , lddtloss: {total_lddtloss:4f} , distloss: {total_distloss:4f}' )
-	
+	print(f'Epoch {epoch}, AALoss: {total_loss_x/batch_size:.4f}, Edge Loss: {total_loss_edge/batch_size:.4f}, vq Loss: {total_vq/batch_size:.4f} , foldx Loss: {total_foldx/batch_size:.4f}' ) 
+	print(f'fapeloss: {total_fapeloss/batch_size:.4f} , angleloss: {total_angleloss/batch_size:4f} , lddtloss: {total_lddtloss/batch_size:4f} , distloss: {total_distloss/batch_size:4f}' )
+	print( 'grad encoder:' ,  analyze_gradient_norms(encoder) )
+	print('grad decoder:' ,  analyze_gradient_norms(decoder) )
+
 	writer.add_scalar('Loss/AA', total_loss_x, epoch)
 	writer.add_scalar('Loss/Edge', total_loss_edge, epoch)
 	writer.add_scalar('Loss/VQ', total_vq, epoch)
