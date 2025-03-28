@@ -22,10 +22,6 @@ from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
 import numpy as np
 AVAIL_GPUS = min(1, torch.cuda.device_count())
-#download an example pdb file
-filename = './1eei (1).pdb'
-url = 'https://files.rcsb.org/download/1EEI.pdb'
-#filename = wget.download(url)
 datadir = '../../datasets/foldtree2/'
 converter = pdbgraph.PDB2PyG()
 # Setting the seed for everything
@@ -37,10 +33,6 @@ torch.backends.cudnn.benchmark = False
 #set the directory for the datasets
 datadir = '../../datasets/'
 modeldir = './models/'
-pdbfiles = glob.glob(datadir +'structs/*.pdb')
-data_sample =converter.struct2pyg( pdbfiles[0], foldxdir='./foldx/',  verbose=False)
-ndim = data_sample['res'].x.shape[1] 
-ndim_godnode = data_sample['godnode'].x.shape[1]  
 
 # Training loop
 #load model if it exists
@@ -61,16 +53,16 @@ if transformer == True:
 	concat_positions = True
 
 #apply weight initialization
-applyinit_init = False
+applyinit_init = True
 #clip gradients
-clip_grad = False
+clip_grad = True
 #denoiser
 denoise = False
 #EMA for VQ
 ema = True
 
-edgeweight = 1
-xweight = 1
+edgeweight = .001
+xweight = .01
 vqweight = .001
 foldxweight = .001
 fapeweight = .01
@@ -78,13 +70,21 @@ angleweight = .01
 lddt_weight = .1
 dist_weight = .01
 
-
-
 err_eps = 1e-2
-batch_size = 15
+batch_size = 10
 
 num_embeddings = 40
-embedding_dim = 256
+embedding_dim = 20
+
+
+struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
+# Create a DataLoader for training
+train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
+# Load a sample from the dataset
+data_sample = next(iter(train_loader))
+ndim = data_sample['res'].x.shape[1] 
+ndim_godnode = data_sample['godnode'].x.shape[1]  
+
 
 #model name
 modelname = 'newmodelmk6tanh'
@@ -94,13 +94,12 @@ if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 100 ] *  encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 50 ] *  encoder_layers ,
 							out_channels= embedding_dim , 
-							metadata=  { 'edge_types': [     ('res','contactPoints', 'res')  ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
+							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') , ('res','backbone', 'res') ,('res','backbonerev', 'res') ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=200 , EMA = ema , nheads = 10 , dropout_p = 0.001 ,
-								reset_codes= False , flavor = 'gat' )
-
+							encoder_hidden=200 , EMA = ema , nheads = 10 , dropout_p = 0.005 ,
+								reset_codes= False , flavor = 'transformer' )
 	if transformer == True:
 		decoder_layers = 2
 		decoder = ft2.Transformer_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
@@ -116,7 +115,7 @@ else:
 									Xdecoder_hidden= 50 ,
 									PINNdecoder_hidden = [ 10 , 10, 10] ,
 									contactdecoder_hidden = [ 20 , 10] ,
-									nheads = 10, 
+									nheads = 4, 
 									dropout = 0.001  ,
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
@@ -125,28 +124,29 @@ else:
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													( 'res','backbone','res'):[ 400] * decoder_layers  ,
-													( 'res','backbonerev','res'):[ 400 ] * decoder_layers  ,
-													('res' ,'informs','godnode4decoder' ):[ 400] * decoder_layers ,
-													#( 'godnode4decoder' ,'informs','res' ):[ 20] * decoder_layers ,
-													( 'res','window','res'):[ 400 ] * decoder_layers  , 
+													( 'res','window','res'):[ 20 ] * decoder_layers  , 
+													( 'res','backbone','res'):[ 20] * decoder_layers  ,
+													( 'res','backbonerev','res'):[ 20 ] * decoder_layers  ,
+													('res' ,'informs','godnode4decoder' ):[ 20] * decoder_layers ,
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'gat' ,
+									flavor = 'transformer' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
-									Xdecoder_hidden= [300, 300 , 100  ] ,
-									PINNdecoder_hidden = [ 100 , 50, 20] ,
+									Xdecoder_hidden= [500, 100 , 100  ] ,
+									PINNdecoder_hidden = [ 50 , 50, 20] ,
 									geodecoder_hidden = [30 , 30, 30 ] ,
+									AAdecoder_hidden = [ 500 , 100 , 100 ] ,
+									contactdecoder_hidden = [ 100 , 50 ] ,
 									nheads = 10, 
-									dropout = 0.001  ,
-									AAdecoder_hidden = [ 100 , 100 , 100]  ,
+									dropout = 0.005  ,
 									residual = False,
-									normalize=False
+									normalize=True,
+									contact_mlp=False
 									)
     
 print('encoder', encoder)
@@ -156,10 +156,11 @@ print('decoder', decoder)
 
 
 def init_weights(m):
-	if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d):
+	#init the heteroconv weights
+	if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv1d) :
 		torch.nn.init.xavier_uniform_(m.weight)
-	if m.bias is not None:
-		torch.nn.init.zeros_(m.bias)
+	#if m.bias is not None:
+	#	torch.nn.init.zeros_(m.bias)
 			
 if applyinit_init == True:
 	encoder.apply(init_weights)
@@ -171,11 +172,7 @@ print(device)
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
-
-# Create a DataLoader for training
-train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.001  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.0001  )
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
@@ -278,9 +275,9 @@ for epoch in range(800):
 		if init == False:
 			with torch.no_grad():  # Initialize lazy modules.
 
-				z,vqloss = encoder.forward(data)
+				z,vqloss = encoder.forward(data )
 				data['res'].x = z
-				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , r2,t2, angles2 = decoder(  data , None ) 
+				recon_x , edge_probs , zgodnode , foldxout, r , t , angles , r2,t2, angles2 = decoder(  data , None  ) 
 				init = True
 				#nparameters
 				print('nparams:' ,  sum(p.numel() for p in encoder.parameters() ) + sum(p.numel() for p in decoder.parameters() ) )
@@ -290,7 +287,7 @@ for epoch in range(800):
 		optimizer.zero_grad()
 		z,vqloss = encoder.forward(data )
 		data['res'].x = z
-		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= True , offdiag = False )
+		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = False )
 		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2,t2,angles2 = decoder(  data , None )
 		
 		#compute geometry losses
@@ -402,17 +399,14 @@ for epoch in range(800):
 		foldxweight = 0.01
 
 	#save the best model
-	if epoch % 10 == 0 :
-
-		
-
+	if epoch % 10 == 0 and epoch > 0:
 		#save model
 		print( 'saving model')
 		with open( modeldir + modelname + '.pkl', 'wb') as f:
 			print( encoder , decoder )
 			pickle.dump( (encoder, decoder) , f)
-	print(f'Epoch {epoch}, AALoss: {total_loss_x/batch_size:.4f}, Edge Loss: {total_loss_edge/batch_size:.4f}, vq Loss: {total_vq/batch_size:.4f} , foldx Loss: {total_foldx/batch_size:.4f}' ) 
-	print(f'fapeloss: {total_fapeloss/batch_size:.4f} , angleloss: {total_angleloss/batch_size:4f} , lddtloss: {total_lddtloss/batch_size:4f} , distloss: {total_distloss/batch_size:4f}' )
+	print(f'Epoch {epoch}, AALoss: {total_loss_x*batch_size:.4f}, Edge Loss: {total_loss_edge*batch_size:.4f}, vq Loss: {total_vq*batch_size:.4f} , foldx Loss: {total_foldx*batch_size:.4f}' ) 
+	print(f'fapeloss: {total_fapeloss*batch_size:.4f} , angleloss: {total_angleloss*batch_size:4f} , lddtloss: {total_lddtloss/batch_size:4f} , distloss: {total_distloss*batch_size:4f}' )
 	print( 'grad encoder:' ,  analyze_gradient_norms(encoder) )
 	print('grad decoder:' ,  analyze_gradient_norms(decoder) )
 
