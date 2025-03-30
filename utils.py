@@ -44,7 +44,6 @@ import numpy as np
 import pandas as pd
 from Bio import PDB
 import pydssp
-import polars as pl
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
 import src.losses.fafe as fafe 
