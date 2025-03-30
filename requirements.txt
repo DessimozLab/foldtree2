@@ -54,7 +54,6 @@ mygene==3.2.2
 ninja==1.11.1.1
 omegaconf==2.3.0
 opencv-python==4.10.0.84
-OpenMM==8.2.0
 opt-einsum-fx==0.1.4
 orjson==3.10.15
 pandas==2.2.2
