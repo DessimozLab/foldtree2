@@ -71,7 +71,6 @@ pydantic==2.9.1
 pydantic_core==2.23.3
 pydssp==0.9.0
 pymzml==2.5.10
-pyopenms==3.3.0
 pyparsing==3.1.2
 pypng==0.20220715.0
 python-utils==3.9.1

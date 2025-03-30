@@ -47,7 +47,6 @@ import pydssp
 import polars as pl
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
-from titans_pytorch import NeuralMemory
 import src.losses.fafe as fafe 
 EPS = 1e-15
 

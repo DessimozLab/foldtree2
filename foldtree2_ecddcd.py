@@ -7,20 +7,6 @@ from losses import *
 from  torch_geometric.utils import to_undirected
 
 
-
-class NormTanh(nn.Module):
-    def __init__(self, alpha=1.0, beta=0.0, gamma=1.0):
-        super(NormTanh, self).__init__()
-        # Initialize alpha, beta, and gamma as learnable parameters
-        self.alpha = torch.nn.Parameter(torch.tensor([alpha], dtype=torch.float))
-        self.beta = torch.nn.Parameter(torch.tensor([beta], dtype=torch.float))
-        self.gamma = torch.nn.Parameter(torch.tensor([gamma], dtype=torch.float))
-
-    def forward(self, x):
-        # Apply the custom activation function
-        return self.gamma * torch.tanh(self.alpha * x) + self.beta
-
-
 class DynamicTanh(nn.Module):
     def __init__(self, normalized_shape, channels_last, alpha_init_value=0.5):
         super().__init__()
