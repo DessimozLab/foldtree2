@@ -40,13 +40,13 @@ modeldir = './models/'
 #overwrite saved model
 overwrite = True
 #set to true to train the model with geometry
-geometry = False
+geometry = True
 #set to true to train the model with fape loss
-fapeloss = False
+fapeloss = True
 #set to true to train the model with lddt loss
 lddtloss = False
 #set to true to train the model with positional encoding
-concat_positions = False
+concat_positions = True
 #set to true to train the model with transformer
 transformer = False
 if transformer == True:	
@@ -57,25 +57,23 @@ applyinit_init = True
 #clip gradients
 clip_grad = True
 #denoiser
-denoise = False
+denoise = True
 #EMA for VQ
 ema = True
 
-edgeweight = .001
+edgeweight = .01
 xweight = .01
-vqweight = .001
+vqweight = .0001
 foldxweight = .001
 fapeweight = .01
 angleweight = .01
 lddt_weight = .1
 dist_weight = .01
-
 err_eps = 1e-2
-batch_size = 10
-
-num_embeddings = 40
+lr = 0.0001
+batch_size = 20
+num_embeddings = 50
 embedding_dim = 20
-
 
 struct_dat = pdbgraph.StructureDataset('structs_training_godnodemk5.h5')
 # Create a DataLoader for training
@@ -85,7 +83,6 @@ data_sample = next(iter(train_loader))
 ndim = data_sample['res'].x.shape[1] 
 ndim_godnode = data_sample['godnode'].x.shape[1]  
 
-
 #model name
 modelname = 'newmodelmk6tanh'
 
@@ -94,11 +91,11 @@ if os.path.exists(modeldir + modelname+'.pkl') and  overwrite == False:
 		encoder, decoder = pickle.load(f)
 else:
 	encoder_layers = 2
-	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 50 ] *  encoder_layers ,
+	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[ 200 ] *  encoder_layers ,
 							out_channels= embedding_dim , 
 							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') , ('res','backbone', 'res') ,('res','backbonerev', 'res') ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=200 , EMA = ema , nheads = 10 , dropout_p = 0.005 ,
+							encoder_hidden=300 , EMA = ema , nheads = 10 , dropout_p = 0.005 ,
 								reset_codes= False , flavor = 'transformer' )
 	if transformer == True:
 		decoder_layers = 2
@@ -120,20 +117,20 @@ else:
 									AAdecoder_hidden = [20 , 10 , 10]  ,
 									)    
 	else:	
-		decoder_layers = 3
+		decoder_layers = 5
 		decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 														'foldx':23 } , 
 									hidden_channels={
-													( 'res','window','res'):[ 20 ] * decoder_layers  , 
-													( 'res','backbone','res'):[ 20] * decoder_layers  ,
-													( 'res','backbonerev','res'):[ 20 ] * decoder_layers  ,
-													('res' ,'informs','godnode4decoder' ):[ 20] * decoder_layers ,
+													#( 'res','window','res'):[ 20 ] * decoder_layers  , 
+													( 'res','backbone','res'):[ 200] * decoder_layers  ,
+													( 'res','backbonerev','res'):[ 200 ] * decoder_layers  ,
+													('res' ,'informs','godnode4decoder' ):[ 200] * decoder_layers ,
 													},
 									layers = decoder_layers ,
 									metadata=converter.metadata , 
 									amino_mapper = converter.aaindex ,
 									concat_positions = concat_positions ,
-									flavor = 'transformer' ,
+									flavor = 'sage' ,
 									output_foldx = True ,
 									geometry= geometry ,
 									denoise = denoise ,
@@ -141,12 +138,12 @@ else:
 									PINNdecoder_hidden = [ 50 , 50, 20] ,
 									geodecoder_hidden = [30 , 30, 30 ] ,
 									AAdecoder_hidden = [ 500 , 100 , 100 ] ,
-									contactdecoder_hidden = [ 100 , 50 ] ,
+									contactdecoder_hidden = [ 100 , 100 ] ,
 									nheads = 10, 
 									dropout = 0.005  ,
 									residual = False,
 									normalize=True,
-									contact_mlp=False
+									contact_mlp=True
 									)
     
 print('encoder', encoder)
@@ -172,7 +169,7 @@ print(device)
 #put encoder and decoder on the device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=0.0001  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=lr  )
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
 
@@ -293,39 +290,11 @@ for epoch in range(800):
 		#compute geometry losses
 		if geometry == True:
 			#modulate angles row-wise with plddt
-			l2 = torch.abs( angles - data.x_dict['bondangles'] )**2
-			#modulate angles row-wise with plddt
-			l2 = l2 * data['plddt'].x
-			angleloss = l2.mean() #F.smooth_l1_loss( angles , data.x_dict['bondangles'] )
-			if fapeloss == True:
-				#reshape the data into batched form
-				batch = data['t_true'].batch
-				t_true = data['t_true'].x
-				R_true = data['R_true'].x
-				#Compute the FAPE loss
-				fploss = ft2.fape_loss(true_R = R_true,
-						true_t = t_true, 
-						pred_R = r, 
-						pred_t = t, 
-						batch = batch, 
-						d_clamp = 10.0,
-						eps=1e-8,
-						plddt = data['plddt'].x,
-						soft = False )
-			else:
-				fploss = torch.tensor(0)
-
-			if lddtloss == True:
-				lddt_loss = ft2.lddt_loss(
-						coord_true= data['coords'],
-						pred_R = r, 
-						pred_t = t, 
-						batch = batch
-						)
-			else:
-				lddt_loss = torch.tensor(0)
+			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] , reduction='none' )
+			fploss = torch.tensor(0.0).to(device)
+			lddt_loss = torch.tensor(0.0).to(device)
 			if denoise == True:
-				angleloss += F.smooth_l1_loss( angles2 , data.x_dict['bondangles'] )
+				angleloss += F.smooth_l1_loss( angles2 , data.x_dict['bondangles'] , reduction='none' )
 				if fapeloss == True:
 					#reshape the data into batched form
 					batch = data['t_true'].batch
@@ -339,19 +308,20 @@ for epoch in range(800):
 							batch = batch, 
 							d_clamp = 10.0,
 							eps=1e-8,
-							plddt = data['plddt'].x,
+							plddt = None ,
 							soft = False )
 				if lddtloss == True:
 					lddt_loss += ft2.lddt_loss(
-							coord_true= data['coords'],
+							coord_true= data['coords'].x,
 							pred_R = r, 
 							pred_t = t, 
 							batch = batch
 							)
+			angleloss = angleloss.mean()
 		else:
-			fploss = torch.tensor(0)
-			lddt_loss = torch.tensor(0)
-			angleloss = torch.tensor(0.0)
+			fploss = torch.tensor(0.0).to(device)
+			lddt_loss = torch.tensor(0.0).to(device)
+			angleloss = torch.tensor(0.0).to(device)
 	
 		#compute the amino acide reconstruction loss
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)

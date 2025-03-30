@@ -18,7 +18,7 @@ experiment_dir = './scaling_experiment/'
 os.makedirs(experiment_dir, exist_ok=True)
 
 # Experiment configuration
-hidden_sizes = [100, 200, 500, 1000]  # Different hidden layer sizes to test
+hidden_sizes = [10, 20, 50, 100]  # Different hidden layer sizes to test
 dataset_fractions = [0.1, 0.25, 0.5, 0.75, 1.0]  # Dataset size fractions to test
 num_epochs = 50  # Fixed number of epochs for each experiment
 modeldir = './models/'
@@ -28,6 +28,7 @@ datadir = '../../datasets/'
 batch_size = 10
 num_embeddings = 40
 embedding_dim = 20
+learning_rate = 0.001  # Added learning rate hyperparameter
 edgeweight = 0.1
 xweight = 0.1
 vqweight = 0.001
@@ -162,7 +163,7 @@ def run_experiment(hidden_size, dataset_fraction):
     # Setup optimizer
     optimizer = torch.optim.AdamW(
         list(encoder.parameters()) + list(decoder.parameters()), 
-        lr=0.001
+        lr=learning_rate  # Use the learning rate from fixed hyperparameters
     )
     
     # Training preparation
@@ -174,6 +175,7 @@ def run_experiment(hidden_size, dataset_fraction):
     writer.add_text('Parameters', f'Dataset fraction: {dataset_fraction}', 0)
     writer.add_text('Parameters', f'Dataset size: {subset_size}', 0)
     writer.add_text('Parameters', f'Number of parameters: {sum(p.numel() for p in encoder.parameters()) + sum(p.numel() for p in decoder.parameters())}', 0)
+    writer.add_text('Parameters', f'Learning rate: {learning_rate}', 0)
     
     # Initialize models with one forward pass
     init_done = False

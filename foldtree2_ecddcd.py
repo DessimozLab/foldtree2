@@ -616,23 +616,25 @@ class DenoisingTransformer(nn.Module):
 		# Project back to the 12-dimensional output space
 		#self.output_proj = nn.Linear(d_model, 14 )
 		self.output_proj_rt = nn.Sequential(
-			NormTanh(),
+			DynamicTanh( d_model , channels_last = True),
 			nn.Linear(d_model, 50),
 			nn.GELU(),
 			nn.Linear(50, 25),
 			nn.GELU(),
 			nn.Linear(25, 7) ,
-			NormTanh() )
+			DynamicTanh(7 , channels_last = True)
+			)
 		
 		self.output_proj_angles = nn.Sequential(
+			DynamicTanh( d_model , channels_last = True),
 			nn.Linear(d_model, 10),
 			nn.GELU(),
 			nn.Linear(10, 5),
 			nn.GELU(),
-			nn.LayerNorm(5),
+			DynamicTanh(5 , channels_last = True),
 			nn.Linear(5, 3) )
 	
-	def forward(self, angles , positions):
+	def forward(self, z , positions):
 
 		"""
 		Args:
@@ -645,21 +647,19 @@ class DenoisingTransformer(nn.Module):
 		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
 		  t_refined: Tensor of shape ( N, 3) with denoised translations.
 		"""
-		N, _ = angles.shape
-		# Flatten each 3x3 rotation matrix into 9 numbers: ( N, 9)
+		N, _ = z.shape
 		if positions is not None:
-			x = torch.cat([angles , positions], dim=-1)
+			x = torch.cat([z , positions], dim=-1)
 		else:
-			x = angles
+			x = z
 		# Project to the transformer dimension: (N, d_model)
 		x = self.input_proj(x)
 		# PyTorch's transformer expects shape (seq_len, batch, d_model)
 		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
 		# Project back to the 12-dim space
-		refined_features_rt = self.output_proj_rt(x)  # ( N, 4)
+		refined_features_rt = self.output_proj_rt(x)  # ( N, 7)
 		refined_features_angles = self.output_proj_angles(x)  # ( N, 3)
-		#learn residual for angles
-		refined_features_angles += angles
+
 		# Split the features back into rotation and translation parts
 		r_refined_flat = refined_features_rt[..., :4]  # ( N, 4)
 		r_refined = quaternion_to_rotation_matrix(r_refined_flat)  # ( N, 3, 3)
@@ -698,6 +698,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		# Setting the seed
 		L.seed_everything(42)
 
+		if concat_positions == True:
+			in_channels['res'] = in_channels['res'] + 256
 		
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
@@ -808,8 +810,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			self.contact_mlp = None
 
 		if denoise == True:
-			dim = 256+10
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=100, nhead=5, num_layers=2 , dropout=0.001)
+			dim = 256+lastlin
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=geodecoder_hidden[0], nhead=10, num_layers=2 , dropout=0.005)
 		else:
 			self.denoiser = None
 		
@@ -844,6 +846,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			if i > 0:
 				xdata['res'] = xdata['res'] + prev
 			x_dict_list.append(xdata['res'])
+
 		xdata['res'] = self.jk(x_dict_list)
 		z = xdata['res']
 		z = self.lin(z)
@@ -858,7 +861,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		#decode geometry
 		if self.geometry_decoder is not None:
 			#add positional encoding to decoder input
-			geo_in = torch.cat([inz, data['positions'].x], dim=1)
+			geo_in = torch.cat([z, data['positions'].x], dim=1)
 			rta = self.geometry_decoder( geo_in , edge_index['res' , 'window' , 'res'] )
 			rta = self.geo_out(rta)
 			r = rta[..., :4]  # ( N, 4)
@@ -886,7 +889,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 			for b in unique_batches:
 				idx = (data['res'].batch == b).nonzero(as_tuple=True)[0]
 				if idx.numel() > 2:
-					ri,ti, anglesi = self.denoiser(angles2[idx] ,  data['positions'].x[idx])
+					ri,ti, anglesi = self.denoiser(z[idx] ,  data['positions'].x[idx])
 					ri = ri.view(-1, 3 , 3)
 					ti = ti.view(-1, 3)
 					rs.append(ri)
