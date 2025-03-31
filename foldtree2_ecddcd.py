@@ -797,7 +797,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 
 		if denoise == True:
 			dim = 256+lastlin
-			self.denoiser = DenoisingTransformer(input_dim= dim, d_model=geodecoder_hidden[0], nhead=10, num_layers=2 , dropout=0.005)
+			self.denoiser = DenoisingTransformer(input_dim= dim, d_model= geodecoder_hidden[0] , nhead=  1  , num_layers=2 , dropout=0.005)
 		else:
 			self.denoiser = None
 		
