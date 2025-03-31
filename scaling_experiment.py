@@ -30,10 +30,12 @@ parser.add_argument('--learning-rate', '-lr', type=float, default=0.001,
 					help='Learning rate (default: 0.001)')
 parser.add_argument('--batch-size', '-bs', type=int, default=10,
 					help='Batch size (default: 10)')
+parser.add_argument('--output-dir', '-o', type=str, default='./scaling_experiment/',
+					help='Directory to save experiment results (default: ./scaling_experiment/)')
 args = parser.parse_args()
 
 # Create directory for experiment results
-experiment_dir = './scaling_experiment/'
+experiment_dir = args.output_dir
 os.makedirs(experiment_dir, exist_ok=True)
 
 # Experiment configuration
@@ -58,6 +60,10 @@ lddt_weight = 0.1
 dist_weight = 0.01
 clip_grad = True
 ema = True
+geometry = True   # Enable geometry prediction
+denoise = True    # Enable denoiser
+fapeloss = True   # Enable FAPE loss
+lddtloss = False  # LDDT loss disabled by default
 
 # Setting the seed for reproducibility
 torch.manual_seed(0)
@@ -93,6 +99,9 @@ results = {
 	'aa_loss': [],
 	'edge_loss': [],
 	'vq_loss': [],
+	'angle_loss': [],    # Added
+	'fape_loss': [],     # Added
+	'dist_loss': [],     # Added
 	'total_loss': [],
 	'training_time': []
 }
@@ -163,8 +172,8 @@ def run_experiment(hidden_size, dataset_fraction):
 		concat_positions=False,
 		flavor='sage',
 		output_foldx=False,
-		geometry=False,
-		denoise=False,
+		 geometry=geometry,      # Enable geometry prediction
+		 denoise=denoise,        # Enable denoiser
 		Xdecoder_hidden=[hidden_size, hidden_size//2, hidden_size//5],
 		PINNdecoder_hidden=[hidden_size//2, hidden_size//4, hidden_size//5],
 		geodecoder_hidden=[hidden_size//3, hidden_size//3, hidden_size//3],
@@ -224,6 +233,9 @@ def run_experiment(hidden_size, dataset_fraction):
 		total_loss_x = 0
 		total_loss_edge = 0
 		total_vq = 0
+		total_angle = 0        # Added
+		total_fape = 0         # Added
+		total_dist = 0         # Added
 		
 		for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
 			data = data.to(device)
@@ -239,8 +251,49 @@ def run_experiment(hidden_size, dataset_fraction):
 			# Compute amino acid reconstruction loss
 			xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
 			
-			# Compute total loss
-			loss = xweight * xloss + edgeweight * edgeloss + vqweight * vqloss
+			# Compute geometry losses - based on learnmk4
+			if geometry:
+				# Angle loss with reduction='none' first
+				angleloss = F.smooth_l1_loss(angles, data.x_dict['bondangles'], reduction='none')
+				fploss = torch.tensor(0.0).to(device)
+				
+				# Additional calculations if denoise is enabled
+				if denoise:
+					# Add second angle loss from denoised prediction
+					angleloss += F.smooth_l1_loss(angles2, data.x_dict['bondangles'], reduction='none')
+					
+					# FAPE loss using the denoised predictions (r2, t2)
+					if fapeloss and 't_true' in data and 'R_true' in data:
+						batch_data = data['t_true'].batch if hasattr(data['t_true'], 'batch') else None
+						t_true = data['t_true'].x
+						R_true = data['R_true'].x
+						
+						# Use r2, t2 for the denoised predictions
+						fploss = ft2.fape_loss(
+							true_R=R_true,
+							true_t=t_true,
+							pred_R=r2,
+							pred_t=t2,
+							batch=batch_data,
+							d_clamp=10.0,
+							eps=1e-8,
+							plddt=None,
+							soft=False
+						)
+				
+				# Take the mean of angle loss at the end
+				angleloss = angleloss.mean()
+			else:
+				angleloss = torch.tensor(0.0).to(device)
+				fploss = torch.tensor(0.0).to(device)
+			
+			# Compute total loss including new components
+			loss = (xweight * xloss + 
+					edgeweight * edgeloss + 
+					vqweight * vqloss + 
+					angleweight * angleloss + 
+					fapeweight * fploss + 
+					dist_weight * distloss)
 			
 			# Backpropagation
 			loss.backward()
@@ -255,19 +308,35 @@ def run_experiment(hidden_size, dataset_fraction):
 			total_loss_x += xloss.item()
 			total_loss_edge += edgeloss.item()
 			total_vq += vqloss.item()
+			total_angle += angleloss.item()
+			total_fape += fploss.item()
+			total_dist += distloss.item()
 		
-		# Log results
+		# Log results with new metrics
 		avg_xloss = total_loss_x / len(train_loader)
 		avg_edgeloss = total_loss_edge / len(train_loader)
 		avg_vqloss = total_vq / len(train_loader)
-		total_loss = avg_xloss * xweight + avg_edgeloss * edgeweight + avg_vqloss * vqweight
+		avg_angleloss = total_angle / len(train_loader)  # Added
+		avg_fapeloss = total_fape / len(train_loader)    # Added
+		avg_distloss = total_dist / len(train_loader)    # Added
 		
+		total_loss = (avg_xloss * xweight + 
+					 avg_edgeloss * edgeweight + 
+					 avg_vqloss * vqweight +
+					 avg_angleloss * angleweight +
+					 avg_fapeloss * fapeweight +
+					 avg_distloss * dist_weight)
+		
+		# Add new metrics to tensorboard
 		writer.add_scalar('Loss/AA', avg_xloss, epoch)
 		writer.add_scalar('Loss/Edge', avg_edgeloss, epoch)
 		writer.add_scalar('Loss/VQ', avg_vqloss, epoch)
+		writer.add_scalar('Loss/Angle', avg_angleloss, epoch)  # Added
+		writer.add_scalar('Loss/FAPE', avg_fapeloss, epoch)    # Added
+		writer.add_scalar('Loss/Dist', avg_distloss, epoch)    # Added
 		writer.add_scalar('Loss/Total', total_loss, epoch)
 		
-		# Store results
+		# Store results with new metrics
 		results['hidden_size'].append(hidden_size)
 		results['dataset_fraction'].append(dataset_fraction)
 		results['dataset_size'].append(subset_size)
@@ -275,10 +344,14 @@ def run_experiment(hidden_size, dataset_fraction):
 		results['aa_loss'].append(avg_xloss)
 		results['edge_loss'].append(avg_edgeloss)
 		results['vq_loss'].append(avg_vqloss)
+		results['angle_loss'].append(avg_angleloss)    # Added
+		results['fape_loss'].append(avg_fapeloss)      # Added
+		results['dist_loss'].append(avg_distloss)      # Added
 		results['total_loss'].append(total_loss)
 		results['training_time'].append(time.time() - start_time)
 		
-		print(f"Epoch {epoch+1}/{num_epochs}, AA Loss: {avg_xloss:.4f}, Edge Loss: {avg_edgeloss:.4f}, VQ Loss: {avg_vqloss:.4f}, Total Loss: {total_loss:.4f}")
+		print(f"Epoch {epoch+1}/{num_epochs}, AA Loss: {avg_xloss:.4f}, Edge Loss: {avg_edgeloss:.4f}, VQ Loss: {avg_vqloss:.4f}")
+		print(f"Angle Loss: {avg_angleloss:.4f}, FAPE Loss: {avg_fapeloss:.4f}, Dist Loss: {avg_distloss:.4f}, Total Loss: {total_loss:.4f}")
 	
 	# Save model for this configuration
 	model_path = f"{experiment_dir}/model_hidden{hidden_size}_data{dataset_fraction}.pkl"
