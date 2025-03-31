@@ -1,6 +1,9 @@
 
 from utils import *
 
+import pydssp
+
+
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
 	def __init__(self , aapropcsv = './aaindex1.csv'):
@@ -858,10 +861,10 @@ class StructureDataset(Dataset):
 	def __getitem__(self, idx):
 		if type(idx) == str:
 			f = self.h5dataset['structs'][idx]
-		elif type(idx) == int:
-			f = self.h5dataset['structs'][self.structlist[idx]]
 		else:
-			raise 'use a structure filename or integer'
+			f = self.h5dataset['structs'][self.structlist[int(idx)]]
+		#else:
+		#	raise 'use a structure filename or integer'
 		data = {}
 		hetero_data = HeteroData()
 		

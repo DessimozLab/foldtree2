@@ -20,15 +20,15 @@ os.makedirs(f"{experiment_dir}/checkpoints", exist_ok=True)
 
 # Model configuration
 hidden_size = 500  # Single hidden size value
-num_epochs = 50
+num_epochs = 20
 modeldir = './models/'
 datadir = '../../datasets/'
 
 # Fixed hyperparameters
-batch_size = 10
+batch_size = 30
 num_embeddings = 40
 embedding_dim = 20
-learning_rate = 0.001
+learning_rate = 0.0001
 edgeweight = 0.1
 xweight = 0.1
 vqweight = 0.001

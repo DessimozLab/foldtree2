@@ -29,7 +29,6 @@ from urllib.error import HTTPError
 import pytorch_lightning as L
 import scipy.sparse
 import tqdm
-import src.egnlayer as egnlayer
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data, Dataset
@@ -43,10 +42,9 @@ from datasketch import WeightedMinHashGenerator , MinHashLSHForest
 import numpy as np
 import pandas as pd
 from Bio import PDB
-import pydssp
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
-import src.losses.fafe as fafe 
+import src.losses.fafe as fafe
 EPS = 1e-15
 
 datadir = '../../datasets/foldtree2/'
