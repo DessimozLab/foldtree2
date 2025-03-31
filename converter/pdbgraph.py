@@ -1,4 +1,3 @@
-
 from utils import *
 
 import pydssp
@@ -692,157 +691,356 @@ class PDB2PyG:
 					print('err' , pdbfile )
 
 	
-	def store_pyg_complexdata(self, pdbfiles, filename, verbose = True ):
-		with h5py.File(filename , mode = 'w') as f:
-			for pdbfile in  tqdm.tqdm( pdbfiles ):
-				#load the pdb and get chains
+	def store_pyg_complexdata(self, pdbfiles, filename, verbose=False):
+		"""
+		Store protein complex data from multiple PDB files into an HDF5 file.
+		
+		Args:
+			pdbfiles: List of PDB filenames to process
+			filename: Output HDF5 filename
+			verbose: Whether to print detailed information during processing
+		"""
+		with h5py.File(filename, mode='w') as f:
+			# Create root group for structures
+			structs_group = f.create_group('structs')
+			
+			for pdbfile in tqdm.tqdm(pdbfiles):
 				try:
+					# Load the PDB and get chains
 					chains = self.read_pdb(pdbfile)
-				except:
-					print('err' , pdbfile)
-					continue
-				
-				if verbose:
-					print(pdbfile)
-					print( chains , [len(list(c.get_residues())) for c in chains] )
-				if chains and len(chains) > 1:
-
+					
+					if verbose:
+						print(f"Processing {pdbfile}")
+						print(f"Found {len(chains)} chains with lengths: {[len(list(c.get_residues())) for c in chains]}")
+					
+					# Skip if file doesn't have multiple chains
+					if not chains or len(chains) < 2:
+						print(f"Warning: {pdbfile} doesn't have multiple chains - skipping")
+						continue
+					
+					# Extract identifier (PDB code)
 					identifier = pdbfile.split('/')[-1].split('.')[0]
 					
-					for i,c in enumerate(chains):
-						hetero_data = self.struct2pyg(c)
-						if verbose:
-							#print(hetero_data)
-							pass
-						
-						if i == 0 and hetero_data:
-							f.create_group(identifier)
-						if hetero_data:
-							for node_type in hetero_data.node_types:
-								if hetero_data[node_type].x is not None:
-									node_group = f.create_group(f'structs/{identifier}/chains/{i}/node/{node_type}')
-									node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-							# Iterate over edge types and their connections
-							for edge_type in hetero_data.edge_types:
-								# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
+					# Create structure group
+					struct_group = structs_group.create_group(identifier)
+					
+					# Add structure metadata
+					struct_group.attrs['num_chains'] = len(chains)
+					struct_group.attrs['filename'] = os.path.basename(pdbfile)
+					
+					# Create chains group
+					chains_group = struct_group.create_group('chains')
+					
+					# Process individual chains
+					valid_chain_ids = []
+					for i, chain in enumerate(chains):
+						chain_id = str(i)
+						try:
+							hetero_data = self.struct2pyg(chain)
+							if hetero_data:
+								# Store chain data
+								chain_group = chains_group.create_group(chain_id)
 								
-								edge_group = f.create_group(f'structs/{identifier}/chains/{i}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-								if hetero_data[edge_type].edge_index is not None:
-									edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-								# If there are edge features, save them too
-								if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-									edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-					for i,c1 in enumerate(chains):
-						for j,c2 in enumerate(chains):
-							if i < j:
-								hetero_data = self.complex2pyg(c1, c2 )
-								if hetero_data and hetero_data['res','contactPointsComplex', 'res'].edge_index.shape[1] > 0:
-									if verbose:
-										print('complex',hetero_data)
+								# Store chain metadata
+								if hasattr(chain, 'id'):
+									chain_group.attrs['chain_id'] = chain.id
 									
-									for node_type in hetero_data.node_types:
-										if hetero_data[node_type].x is not None:
-											node_group = f.create_group(f'structs/{identifier}/complex/{i}_{j}/node/{node_type}')
-											node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-									# Iterate over edge types and their connections
-									for edge_type in hetero_data.edge_types:
-										# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-										edge_group = f.create_group(f'structs/{identifier}/complex/{i}_{j}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-										if hetero_data[edge_type].edge_index is not None:
-											edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-										
-										# If there are edge features, save them too
-										if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-											edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-										#todo. store some other data. sequence. uniprot info etc.
+								# Get chain sequence
+								sequence = ''.join([self.revmap_aa.get(int(aa), 'X') for aa in torch.argmax(hetero_data['AA'].x, dim=1).numpy()])
+								chain_group.attrs['sequence'] = sequence
+								chain_group.attrs['length'] = len(sequence)
 								
-				else:
-					print('err' , pdbfile , 'not multichain')
+								# Store node features
+								node_group = chain_group.create_group('node')
+								for node_type in hetero_data.node_types:
+									if hetero_data[node_type].x is not None:
+										type_group = node_group.create_group(node_type)
+										type_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+								
+								# Store edge features
+								edge_group = chain_group.create_group('edge')
+								for edge_type in hetero_data.edge_types:
+									# Format edge type for storage
+									edge_name = f"{edge_type[0]}_{edge_type[1]}_{edge_type[2]}"
+									type_group = edge_group.create_group(edge_name)
+									
+									if hetero_data[edge_type].edge_index is not None:
+										type_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+									
+									if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+										type_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+								
+								valid_chain_ids.append(chain_id)
+						except Exception as e:
+							if verbose:
+								print(f"Error processing chain {i} in {pdbfile}: {str(e)}")
+								traceback.print_exc()
+					
+					# Only process interfaces if we have at least 2 valid chains
+					if len(valid_chain_ids) >= 2:
+						# Create complex group for interfaces
+						complex_group = struct_group.create_group('complex')
+						
+						# Process chain pairs for interfaces
+						for i in range(len(valid_chain_ids)):
+							for j in range(i+1, len(valid_chain_ids)):
+								c1_idx = int(valid_chain_ids[i])
+								c2_idx = int(valid_chain_ids[j])
+								c1 = chains[c1_idx]
+								c2 = chains[c2_idx]
+								
+								try:
+									# Generate interface graph
+									hetero_data = self.complex2pyg(c1, c2)
+									
+									# Only store if there are actual contacts
+									if (hetero_data and 
+										('res', 'contactPointsComplex', 'res') in hetero_data.edge_types and 
+										hetero_data['res', 'contactPointsComplex', 'res'].edge_index.shape[1] > 0):
+										
+										# Create interface group
+										pair_id = f"{valid_chain_ids[i]}_{valid_chain_ids[j]}"
+										interface_group = complex_group.create_group(pair_id)
+										
+										# Store interface metadata
+										interface_group.attrs['chain1'] = valid_chain_ids[i]
+										interface_group.attrs['chain2'] = valid_chain_ids[j]
+										interface_group.attrs['num_contacts'] = hetero_data['res', 'contactPointsComplex', 'res'].edge_index.shape[1]
+										
+										# Store node features (if any)
+										if any(hetero_data[nt].x is not None for nt in hetero_data.node_types):
+											node_group = interface_group.create_group('node')
+											for node_type in hetero_data.node_types:
+												if hetero_data[node_type].x is not None:
+													type_group = node_group.create_group(node_type)
+													type_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+										
+										# Store edge features
+										edge_group = interface_group.create_group('edge')
+										for edge_type in hetero_data.edge_types:
+											# Format edge type for storage
+											edge_name = f"{edge_type[0]}_{edge_type[1]}_{edge_type[2]}"
+											type_group = edge_group.create_group(edge_name)
+											
+											if hetero_data[edge_type].edge_index is not None:
+												type_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+											
+											if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
+												type_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+								except Exception as e:
+									if verbose:
+										print(f"Error processing interface between chains {i} and {j} in {pdbfile}: {str(e)}")
+										traceback.print_exc()
+					
+				except Exception as e:
+					print(f"Error processing PDB file {pdbfile}: {str(e)}")
+					if verbose:
+						traceback.print_exc()
 
 class ComplexDataset(Dataset):
-	def __init__(self, h5dataset  ):
-		super().__init__()
-		#keys should be the structures
+    """
+    Dataset for protein complexes with multiple chains.
+    
+    This dataset loads multi-chain protein structures from an HDF5 file,
+    where each structure contains individual chain graphs and chain-chain
+    interaction graphs.
+    
+    Args:
+        h5dataset: Path to HDF5 file or an open HDF5 file object containing complex data
+        combined_graph: If True, returns a single combined heterogeneous graph for the entire complex
+    """
+    def __init__(self, h5dataset, combined_graph=False):
+        super().__init__()
+        self.h5dataset = h5dataset
+        self.combined_graph = combined_graph
 
+        if isinstance(h5dataset, str):
+            self.h5dataset = h5py.File(h5dataset, 'r')
+            
+        self.structlist = list(self.h5dataset['structs'].keys())
+    
+    def __len__(self):
+        return len(self.structlist)
 
-		self.h5dataset = h5dataset
+    def __getitem__(self, idx):
+        # Handle index by string (PDB ID) or integer
+        if isinstance(idx, str):
+            structure_id = idx
+            f = self.h5dataset['structs'][idx]
+        else:
+            structure_id = self.structlist[int(idx)]
+            f = self.h5dataset['structs'][structure_id]
+        
+        # Load individual chain graphs
+        chaindata = {}
+        chains = [c for c in f['chains'].keys()]
+        
+        for chain in chains:
+            hetero_data = HeteroData()        
+            hetero_data.identifier = f"{structure_id}_{chain}"
+            
+            # Load node features
+            if 'node' in f['chains'][chain].keys():
+                for node_type in f['chains'][chain]['node'].keys():
+                    node_group = f['chains'][chain]['node'][node_type]
+                    if 'x' in node_group.keys():
+                        hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+            
+            # Load edge data
+            if 'edge' in f['chains'][chain].keys():
+                for edge_name in f['chains'][chain]['edge'].keys():
+                    edge_group = f['chains'][chain]['edge'][edge_name]
+                    src_type, link_type, dst_type = edge_name.split('_')
+                    edge_type = (src_type, link_type, dst_type)
+                    
+                    if 'edge_index' in edge_group.keys():
+                        hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+                    
+                    if 'edge_attr' in edge_group.keys():
+                        hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+            
+            # Store chain metadata
+            hetero_data.chain_id = chain
+            chaindata[chain] = hetero_data
+        
+        # Load chain-chain interaction data (complex interfaces)
+        pairdata = {}
+        if 'complex' in f:
+            pairs = [c for c in f['complex'].keys()]
+            
+            for pair in pairs:
+                hetero_data = HeteroData()        
+                hetero_data.identifier = f"{structure_id}_{pair}"
+                chain1, chain2 = pair.split('_')
+                hetero_data.chain_ids = (chain1, chain2)
+                
+                if 'node' in f['complex'][pair].keys():
+                    for node_type in f['complex'][pair]['node'].keys():
+                        node_group = f['complex'][pair]['node'][node_type]
+                        if 'x' in node_group.keys():
+                            hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+                
+                if 'edge' in f['complex'][pair].keys():
+                    for edge_name in f['complex'][pair]['edge'].keys():
+                        edge_group = f['complex'][pair]['edge'][edge_name]
+                        src_type, link_type, dst_type = edge_name.split('_')
+                        edge_type = (src_type, link_type, dst_type)
+                        
+                        if 'edge_index' in edge_group.keys():
+                            hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+                        
+                        if 'edge_attr' in edge_group.keys():
+                            hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+                
+                pairdata[pair] = hetero_data
+        
+        # If combined_graph is True, merge all chains and interactions into a single graph
+        if self.combined_graph:
+            return self._create_combined_graph(structure_id, chaindata, pairdata)
+        
+        # Otherwise, return separate chain and interaction graphs
+        return {
+            'structure_id': structure_id,
+            'chains': chaindata,
+            'interfaces': pairdata
+        }
+    
+    def _create_combined_graph(self, structure_id, chaindata, pairdata):
+        """
+        Create a single combined graph for the entire complex.
+        
+        Args:
+            structure_id: PDB ID or other identifier for the structure
+            chaindata: Dictionary of chain graphs
+            pairdata: Dictionary of interface graphs
+            
+        Returns:
+            A single HeteroData object representing the entire complex
+        """
+        combined_graph = HeteroData()
+        combined_graph.identifier = structure_id
+        
+        # Track node offsets for each chain to adjust edge indices
+        node_offsets = {}
+        current_offset = 0
+        
+        # First, combine all node features
+        for chain_id, chain_graph in chaindata.items():
+            for node_type in chain_graph.node_types:
+                # Initialize features for this node type if not present
+                if node_type not in combined_graph.node_types:
+                    combined_graph[node_type].x = chain_graph[node_type].x
+                else:
+                    combined_graph[node_type].x = torch.cat(
+                        [combined_graph[node_type].x, chain_graph[node_type].x], dim=0
+                    )
+                
+                # Store the offset for this chain's nodes
+                if node_type not in node_offsets:
+                    node_offsets[node_type] = {}
+                node_offsets[node_type][chain_id] = current_offset
+                current_offset += chain_graph[node_type].x.shape[0]
+        
+        # Then, combine all intra-chain edges
+        for chain_id, chain_graph in chaindata.items():
+            for edge_type in chain_graph.edge_types:
+                src_type, link_type, dst_type = edge_type
+                
+                # Adjust edge indices based on offsets
+                edge_index = chain_graph[edge_type].edge_index.clone()
+                edge_index[0, :] += node_offsets[src_type][chain_id]
+                edge_index[1, :] += node_offsets[dst_type][chain_id]
+                
+                # Create or append edge data
+                if edge_type not in combined_graph.edge_types:
+                    combined_graph[edge_type].edge_index = edge_index
+                    if hasattr(chain_graph[edge_type], 'edge_attr'):
+                        combined_graph[edge_type].edge_attr = chain_graph[edge_type].edge_attr
+                else:
+                    combined_graph[edge_type].edge_index = torch.cat(
+                        [combined_graph[edge_type].edge_index, edge_index], dim=1
+                    )
+                    if hasattr(chain_graph[edge_type], 'edge_attr') and hasattr(combined_graph[edge_type], 'edge_attr'):
+                        combined_graph[edge_type].edge_attr = torch.cat(
+                            [combined_graph[edge_type].edge_attr, chain_graph[edge_type].edge_attr], dim=0
+                        )
+        
+        # Finally, add inter-chain edges
+        for pair_id, pair_graph in pairdata.items():
+            for edge_type in pair_graph.edge_types:
+                src_type, link_type, dst_type = edge_type
+                
+                # Get the chain IDs
+                chain1, chain2 = pair_id.split('_')
+                
+                # Adjust edge indices based on offsets
+                edge_index = pair_graph[edge_type].edge_index.clone()
+                # This assumes interface edges always go from chain1 to chain2
+                edge_index[0, :] += node_offsets[src_type][chain1]
+                edge_index[1, :] += node_offsets[dst_type][chain2]
+                
+                # Create a special edge type for inter-chain interactions
+                inter_edge_type = (src_type, f"{link_type}_interface", dst_type)
+                
+                if inter_edge_type not in combined_graph.edge_types:
+                    combined_graph[inter_edge_type].edge_index = edge_index
+                    if hasattr(pair_graph[edge_type], 'edge_attr'):
+                        combined_graph[inter_edge_type].edge_attr = pair_graph[edge_type].edge_attr
+                else:
+                    combined_graph[inter_edge_type].edge_index = torch.cat(
+                        [combined_graph[inter_edge_type].edge_index, edge_index], dim=1
+                    )
+                    if hasattr(pair_graph[edge_type], 'edge_attr') and hasattr(combined_graph[inter_edge_type], 'edge_attr'):
+                        combined_graph[inter_edge_type].edge_attr = torch.cat(
+                            [combined_graph[inter_edge_type].edge_attr, pair_graph[edge_type].edge_attr], dim=0
+                        )
+        
+        # Add metadata about chains
+        combined_graph.chains = list(chaindata.keys())
+        combined_graph.num_chains = len(combined_graph.chains)
+        
+        return combined_graph
 
-		if type(h5dataset) == str:
-			self.h5dataset = h5py.File(h5dataset, 'r')
-		self.structlist = list(self.h5dataset['structs'].keys())
-	
-	def __len__(self):
-		return len(self.structlist)
-
-	def __getitem__(self, idx):
-		if type(idx) == str:
-			f = self.h5dataset['structs'][idx]
-		elif type(idx) == int:
-			f = self.h5dataset['structs'][self.structlist[idx]]
-		else:
-			raise 'use a structure filename or integer'
-		chaindata = {}
-
-		chains = [ c for c in f['chains'].keys()]
-		for chain in chains:
-			hetero_data = HeteroData()        
-			if type (idx) == int:
-				hetero_data.identifier = self.structlist[idx]
-			else:
-				hetero_data.identifier = idx
-
-
-			if 'node' in f['chains'][chain].keys():
-				for node_type in f['chains'][chain]['node'].keys():
-					node_group = f['chains'][chain]['node'][node_type]
-					# Assuming 'x' exists
-					if 'x' in node_group.keys():
-						hetero_data[node_type].x = torch.tensor(node_group['x'][:])
-			# Edge data
-			if 'edge' in f['chains'][chain].keys():
-				for edge_name in f['chains'][chain]['edge'].keys():
-					edge_group = f['chains'][chain]['edge'][edge_name]
-					src_type, link_type, dst_type = edge_name.split('_')
-					edge_type = (src_type, link_type, dst_type)
-					# Assuming 'edge_index' exists
-					if 'edge_index' in edge_group.keys():
-						hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
-					
-					# If there are edge attributes, load them too
-					if 'edge_attr' in edge_group.keys():
-						hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
-			chaindata[chain] = hetero_data
-		
-		pairdata = {}
-		pairs = [ c for c in f['complex'].keys()]
-		for pair in pairs:
-			hetero_data = HeteroData()        
-			if type (idx) == int:
-				hetero_data.identifier = self.structlist[idx]
-			else:
-				hetero_data.identifier = idx
-			if 'node' in f['complex'][pair].keys():
-				for node_type in f['complex'][pair]['node'].keys():
-					node_group = f['complex'][pair]['node'][node_type]
-					# Assuming 'x' exists
-					if 'x' in node_group.keys():
-						hetero_data[node_type].x = torch.tensor(node_group['x'][:])
-			# Edge data
-			if 'edge' in f['complex'][pair].keys():
-				for edge_name in f['complex'][pair]['edge'].keys():
-					edge_group = f['complex'][pair]['edge'][edge_name]
-					src_type, link_type, dst_type = edge_name.split('_')
-					edge_type = (src_type, link_type, dst_type)
-					# Assuming 'edge_index' exists
-					if 'edge_index' in edge_group.keys():
-						hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
-					
-					# If there are edge attributes, load them too
-					if 'edge_attr' in edge_group.keys():
-						hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
-			pairdata[pair] = hetero_data
-		return chaindata, pairdata
-	
 class StructureDataset(Dataset):
 	def __init__(self, h5dataset  ):
 		super().__init__()
@@ -894,4 +1092,3 @@ class StructureDataset(Dataset):
 					hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
 		#return pytorch geometric heterograph
 		return hetero_data
-	

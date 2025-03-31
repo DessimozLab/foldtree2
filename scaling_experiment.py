@@ -183,7 +183,7 @@ def run_experiment(hidden_size, dataset_fraction):
 		dropout=0.005,
 		residual=False,
 		normalize=True,
-		contact_mlp=False
+		contact_mlp=True
 	)
 	
 	# Apply weight initialization
