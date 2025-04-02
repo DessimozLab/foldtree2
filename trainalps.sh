@@ -4,12 +4,16 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=20
-#SBATCH --environment=gemma-pytorch
 #SBATCH --account=A-prep01
 #SBATCH --array=0-12
 #SBATCH --mem=32G
 #SBATCH --output=ft2_scaling_%A_%a.out
 #SBATCH --error=ft2_scaling_%A_%a.err
+
+source /users/dmoi/miniforge3/etc/profile.d/conda.sh
+source /users/dmoi/miniforge3/etc/profile.d/mamba.sh
+
+mamba activate ft2
 
 # Define an array of hidden sizes
 hidden_sizes=(100 300 500 700 900 1100 1300 1500 1700 1900 2100 2300 2500)

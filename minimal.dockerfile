@@ -3,7 +3,7 @@ FROM nvcr.io/nvidia/pytorch:24.01-py3
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV VENV_PATH=/capstor/store/cscs/swissai/prep01/venv
+ENV VENV_PATH=/worspace/venv
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,16 +19,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 
 
-#mount the capstor
-RUN mkdir -p /capstor && mount -t nfs server:/capstor /capstor
-
-
 # Create workspace directory
 RUN mkdir -p /workspace
 WORKDIR /workspace
 
 # add the gemma env directory
-RUN mkdir -p /capstor/store/cscs/swissai/prep01/venv
+RUN mkdir -p /worspace/venv
 
 # Create virtual environment with system site packages
 RUN python3.10 -m venv --system-site-packages ${VENV_PATH}
