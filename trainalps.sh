@@ -4,6 +4,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=20
+#SBATCH --gpus-per-node=1
+#SBATCH --gres=gpu:1
+#SBATCH --gres-flags=enforce-binding
 #SBATCH --account=A-prep01
 #SBATCH --array=0-12
 #SBATCH --mem=32G
