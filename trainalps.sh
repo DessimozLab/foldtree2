@@ -28,12 +28,11 @@ mkdir -p $OUTPUT_DIR
 echo "Starting job with hidden size: ${HIDDEN_SIZE}"
 echo "Output will be saved to: ${OUTPUT_DIR}"
 
-# Activate virtual environment
-source /capstor/store/cscs/swissai/prep01/venv/bin/activate
+cd /capstor/store/cscs/swissai/prep01/foldtree2/foldtree2
 
 # Run experiment with the specified hidden size
 python /capstor/store/cscs/swissai/prep01/foldtree2/foldtree2/scaling_experiment.py \
-    --dataset /capstor/scratch/cscs/dmoi/structs_trainingalpstest.h5 \
+    --dataset /capstor/store/cscs/swissai/prep01/structs_trainingalpstest.h5 \
     --hidden-size ${HIDDEN_SIZE} \
     --dataset-fractions 0.5 1.0 \
     --epochs 30 \
