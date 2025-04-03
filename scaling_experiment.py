@@ -60,9 +60,10 @@ lddt_weight = 0.1
 dist_weight = 0.01
 clip_grad = True
 ema = True
-geometry = True   # Enable geometry prediction
-denoise = True    # Enable denoiser
-fapeloss = True   # Enable FAPE loss
+
+geometry = False   # Enable geometry prediction
+denoise = False    # Enable denoiser
+fapeloss = False   # Enable FAPE loss
 lddtloss = False  # LDDT loss disabled by default
 
 # Setting the seed for reproducibility
