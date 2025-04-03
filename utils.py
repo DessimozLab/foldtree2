@@ -44,7 +44,6 @@ import pandas as pd
 from Bio import PDB
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
-import src.losses.fafe as fafe
 EPS = 1e-15
 
 datadir = '../../datasets/foldtree2/'
