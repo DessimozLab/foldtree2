@@ -29,8 +29,8 @@ batch_size = 30
 num_embeddings = 40
 embedding_dim = 20
 learning_rate = 0.0001
-edgeweight = 0.1
-xweight = 0.1
+edgeweight = 0.01
+xweight = 0.05
 vqweight = 0.001
 foldxweight = 0.001
 fapeweight = 0.01
@@ -139,7 +139,7 @@ class FoldTreeModule(pl.LightningModule):
             dropout=0.005,
             residual=False,
             normalize=True,
-            contact_mlp=False
+            contact_mlp=True
         )
         
         # Initialize weights

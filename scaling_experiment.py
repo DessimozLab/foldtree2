@@ -26,7 +26,7 @@ parser.add_argument('--epochs', '-e', type=int, default=50,
 					help='Number of epochs for training (default: 50)')
 parser.add_argument('--device', type=str, default=None,
 					help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
-parser.add_argument('--learning-rate', '-lr', type=float, default=0.001,
+parser.add_argument('--learning-rate', '-lr', type=float, default=0.0001,
 					help='Learning rate (default: 0.001)')
 parser.add_argument('--batch-size', '-bs', type=int, default=10,
 					help='Batch size (default: 10)')
@@ -41,23 +41,33 @@ os.makedirs(experiment_dir, exist_ok=True)
 # Experiment configuration
 hidden_sizes = [args.hidden_size]  # Use the provided hidden size
 dataset_fractions = args.dataset_fractions  # Use the provided dataset fractions
+
 num_epochs = args.epochs  # Number of epochs for each experiment
 modeldir = './models/'
 datadir = '../../datasets/'
 
 # Fixed hyperparameters (based on original script)
 batch_size = args.batch_size
+
+
 num_embeddings = 40
 embedding_dim = 20
 learning_rate = args.learning_rate
-edgeweight = 0.1
-xweight = 0.1
-vqweight = 0.001
-foldxweight = 0.001
-fapeweight = 0.01
-angleweight = 0.01
-lddt_weight = 0.1
-dist_weight = 0.01
+edgeweight = 0.01
+xweight = 0.01
+vqweight = 0.0001
+foldxweight = .001
+fapeweight = .001
+angleweight = .001
+lddt_weight = .1
+dist_weight = .01
+err_eps = 1e-2
+batch_size = 20
+num_embeddings = 50
+embedding_dim = 20
+
+
+
 clip_grad = True
 ema = True
 
@@ -178,7 +188,7 @@ def run_experiment(hidden_size, dataset_fraction):
 		Xdecoder_hidden=[hidden_size, hidden_size//2, hidden_size//5],
 		PINNdecoder_hidden=[hidden_size//2, hidden_size//4, hidden_size//5],
 		geodecoder_hidden=[hidden_size//3, hidden_size//3, hidden_size//3],
-		AAdecoder_hidden=[hidden_size, hidden_size//5, hidden_size//10],
+		AAdecoder_hidden=[hidden_size, hidden_size//2, hidden_size//2],
 		contactdecoder_hidden=[hidden_size//2, hidden_size//4],
 		nheads=10,
 		dropout=0.005,
