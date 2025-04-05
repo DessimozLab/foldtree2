@@ -3,20 +3,17 @@
 #SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=20
+#SBATCH --cpus-per-task=288
 #SBATCH --gpus-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --gres-flags=enforce-binding
 #SBATCH --account=A-prep01
 #SBATCH --array=0-12
-#SBATCH --mem=32G
 #SBATCH --output=ft2_scaling_%A_%a.out
 #SBATCH --error=ft2_scaling_%A_%a.err
+#SBATCH --environment=torch
 
-source /users/dmoi/miniforge3/etc/profile.d/conda.sh
-source /users/dmoi/miniforge3/etc/profile.d/mamba.sh
-
-mamba activate ft2
+source ${VENV_PATH}/bin/activate
 
 # Define an array of hidden sizes
 hidden_sizes=(100 300 500 700 900 1100 1300 1500 1700 1900 2100 2300 2500)
@@ -38,7 +35,7 @@ python /capstor/store/cscs/swissai/prep01/foldtree2/foldtree2/scaling_experiment
     --dataset /capstor/store/cscs/swissai/prep01/structs_trainingalpstest.h5 \
     --hidden-size ${HIDDEN_SIZE} \
     --dataset-fractions 0.5 1.0 \
-    --epochs 30 \
+    --epochs 50 \
     --learning-rate 0.0001 \
     --batch-size 16 \
     --output-dir ${OUTPUT_DIR}

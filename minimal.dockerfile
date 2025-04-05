@@ -17,8 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-
-
 # Create workspace directory
 RUN mkdir -p /workspace
 WORKDIR /workspace
@@ -35,10 +33,6 @@ RUN ${VENV_PATH}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install PyTorch Geometric and its CUDA-dependent packages (without version numbers)
 RUN ${VENV_PATH}/bin/pip install --no-cache-dir \
-    torch-scatter \
-    torch-sparse \
-    torch-cluster \
-    torch-spline-conv \
     torch-geometric \
     --extra-index-url https://data.pyg.org/whl/torch-$(python -c "import torch; print(torch.__version__.split('+')[0])")+cu$(python -c "import torch; print(torch.version.cuda.replace('.',''))")
 
@@ -69,4 +63,3 @@ RUN pip --version
 
 #output the venv path
 RUN echo $VENV_PATH
-
