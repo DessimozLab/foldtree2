@@ -7,13 +7,9 @@ import requests
 from scipy.stats import describe
 from Bio.PDB import *
 from Bio.SeqUtils import seq1
-
 import time
 import numpy as np
-import os
 import sys
-
-
 
 def get_amino_acid_sequence(pdb_filename):
 	""" This function extracts the amino acid sequence from a PDB file."""
@@ -31,8 +27,6 @@ def get_amino_acid_sequence(pdb_filename):
 					continue  # Ignore water molecules
 				sequence += seq1(residue.get_resname(), undef_code='X')
 			return sequence
-
-
 
 def descr(pdb_path):
 	'''

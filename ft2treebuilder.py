@@ -8,7 +8,7 @@ import torch_geometric
 import multiprocessing as mp
 import pebble
 import argparse
-import foldtree2_ecddcd as ft2
+import src.foldtree2_ecddcd as ft2
 from converter import pdbgraph
 import traceback
 import tqdm
@@ -19,7 +19,6 @@ import ete3
 class treebuilder():
 	def __init__ ( self , model , mafftmat = None , submat = None , n_state = None, raxml_path= None, **kwargs ):
 		
-
 		#make fasta is shifted by 1 and goes from 1-248 included
 		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
 		#replace 0x22 or " which is necesary for nexus files and 0x23 or # which is also necesary
@@ -455,8 +454,8 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser(description="CLI for running structs2tree")
 	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
-	parser.add_argument("--mafftmat", required=True, help="Path to the MAFFT substitution matrix")
-	parser.add_argument("--submat", required=True, help="Path to the substitution matrix for RAxML")
+	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
+	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
@@ -470,6 +469,11 @@ if __name__ == "__main__":
 		if not os.path.exists(args.outdir):
 			os.makedirs(args.outdir)
 	
+	if args.mafftmat is None:
+		args.mafftmat = args.model + '_mafftmat.mtx'
+	if args.submat is None:
+		args.submat = args.model + '_submat.txt'
+
 	# Example usage:
 	# Run the script from the command line with:
 	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral

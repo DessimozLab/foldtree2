@@ -1,4 +1,4 @@
-from converter import pdbgraph
+from src.converter import pdbgraph
 import os
 import torch
 import argparse
@@ -18,9 +18,6 @@ if __name__ == '__main__':
     parser.description = "Encode PDB files into PyTorch geometric graphs with optional FoldX data integration."
     parser.epilog = ("Example usage:\n"
                      "  python encode_pdbs.py /path/to/pdbs '*.pdb' output.h5 /path/to/foldx")
-
-
-
 
     args = parser.parse_args()
     

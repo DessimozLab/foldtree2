@@ -1,0 +1,12 @@
+#raxml path
+
+raxml_path: /usr/local/bin/raxmlHPC
+
+#mad path 
+
+mad_path: /usr/local/bin/mad
+
+#mafft path
+
+mafft_path: /usr/local/bin/mafft
+
