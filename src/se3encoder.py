@@ -47,6 +47,9 @@ class se3_Encoder(torch.nn.Module):
 		x = data['res'].x  # (N, in_channels)
 		coors = data['coords'].x  # (N, 3)
 		mask = torch.ones(x.shape[0], dtype=torch.bool, device=x.device)  # or use data['res'].mask if available
+		batches = data['res'].batch  # (N,)
+		# Mask is a boolean tensor indicating valid nodes
+		
 
 		# Adjacency matrix: should be (N, N) bool tensor
 		# Build from edge_index if needed

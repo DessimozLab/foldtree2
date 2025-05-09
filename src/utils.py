@@ -43,6 +43,7 @@ import pandas as pd
 from Bio import PDB
 from Bio.PDB import PDBParser
 import torch.nn.functional as F
+from scipy.spatial.distance import cdist
 EPS = 1e-15
 
 datadir = '../../datasets/foldtree2/'

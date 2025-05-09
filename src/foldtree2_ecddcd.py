@@ -88,7 +88,7 @@ class mk1_Encoder(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
 	num_embeddings, commitment_cost, metadata={} , edge_dim = 1,
 	 encoder_hidden = 100 , dropout_p = 0.05 , EMA = False , 
-	 reset_codes = True  , nheads = 3 , flavor= 'sage'):
+	 reset_codes = True  , nheads = 3 , flavor= 'sage' , fftin = False):
 		super(mk1_Encoder, self).__init__()
 
 		#save all arguments to constructor
@@ -114,11 +114,21 @@ class mk1_Encoder(torch.nn.Module):
 		
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
-		for i in range(len(hidden_channels)):
+		self.fftin = fftin
+
+		self.ffin = torch.nn.Sequential(
+			torch.nn.Linear(in_channels, hidden_channels[0] * 2 ),
+			torch.nn.GELU(),
+			torch.nn.Linear(hidden_channels[0] * 2 , hidden_channels[0]),
+			torch.nn.GELU(),
+			DynamicTanh(hidden_channels[0] , channels_last = True),
+			)
+
+		for i in range(1,len(hidden_channels)):
 			if flavor == 'gat':
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): GATv2Conv(in_channels if i == 0 else hidden_channels[i-1], 
+						'_'.join(edge_type): GATv2Conv(hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,
 						concat = False )
 						for edge_type in metadata['edge_types']
@@ -128,7 +138,7 @@ class mk1_Encoder(torch.nn.Module):
 			if flavor == 'transformer':
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): TransformerConv(in_channels if i == 0 else hidden_channels[i-1], 
+						'_'.join(edge_type): TransformerConv( hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,
 						concat = False )
 						for edge_type in metadata['edge_types']
@@ -138,20 +148,20 @@ class mk1_Encoder(torch.nn.Module):
 			if flavor == 'sage':
 				self.convs.append(
 					torch.nn.ModuleDict({
-						'_'.join(edge_type): SAGEConv(in_channels if i == 0 else hidden_channels[i-1], 
+						'_'.join(edge_type): SAGEConv( hidden_channels[i-1], 
 						hidden_channels[i] )
 						for edge_type in metadata['edge_types']
 					})
 				)
-				
 			self.norms.append( 
-				#DynamicTanh( hidden_channels[i] , channels_last = True)
 				GraphNorm(hidden_channels[i])
 				)
 		
 		self.lin = torch.nn.Sequential(
-			DynamicTanh(hidden_channels[-1]* len(hidden_channels)  , channels_last = True),
-			torch.nn.Linear(hidden_channels[-1] * len(hidden_channels),self.encoder_hidden ) , 
+			DynamicTanh(hidden_channels[-1]* (len(hidden_channels)-1)  , channels_last = True),
+			torch.nn.Linear(hidden_channels[-1] * (len(hidden_channels)-1),self.encoder_hidden ) , 
+			torch.nn.GELU(),
+			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,	
 			torch.nn.GELU(),
 			)
 		
@@ -169,10 +179,14 @@ class mk1_Encoder(torch.nn.Module):
 		
 	def forward(self, data , edge_attr_dict = None , **kwargs):
 		
+		if self.fftin == True:
+			x_dict['res'] = torch.cat([x_dict['res'], data['fourier1dr'].x , data['fourier1di'].x ], dim=1)
 		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		x_dict['res'] = self.bn(x_dict['res'])
 		x = self.dropout(x_dict['res'])
 		x_save= []
+		# Apply the first layer
+		x = self.ffin(x)
 		for i, convs in enumerate(self.convs):
 			# Apply the graph convolutions and average over all edge types
 			if edge_attr_dict is not None:

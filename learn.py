@@ -1,7 +1,7 @@
 from src import foldtree2_ecddcd as ft2
 from src.losses import fafe as fafe
 from src import pdbgraph
-from src import geodecoder 
+#from src import geodecoder 
 
 
 from matplotlib import pyplot as plt
@@ -29,7 +29,8 @@ import argparse
 
 AVAIL_GPUS = min(1, torch.cuda.device_count())
 datadir = '../../datasets/foldtree2/'
-converter = pdbgraph.PDB2PyG( aapropcsv = 'src/aaindex1.csv' )
+
+converter = pdbgraph.PDB2PyG( aapropcsv = 'config/aaindex1.csv' )
 # Setting the seed for everything
 torch.manual_seed(0)
 np.random.seed(0)
@@ -39,7 +40,7 @@ torch.backends.cudnn.benchmark = False
 
 # Add argparse for CLI configuration
 parser = argparse.ArgumentParser(description='Train model with configurable parameters (scaling_experiment style)')
-parser.add_argument('--dataset', '-d', type=str, default='structs_training_godnodemk5.h5',
+parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
                     help='Path to the dataset file (default: structs_training_godnodemk5.h5)')
 parser.add_argument('--hidden-size', '-hs', type=int, default=100,
                     help='Hidden layer size (default: 100)')
@@ -112,7 +113,7 @@ print(f"Using device: {device}")
 # Training loop
 #load model if it exists
 
-
+fftin = True
 #apply weight initialization
 applyinit_init = True
 #clip gradients
@@ -120,10 +121,10 @@ clip_grad = True
 #denoiser
 denoise = True
 #EMA for VQ
-ema = True
+ema = False
 
 edgeweight = .01
-xweight = .1
+xweight = .01
 vqweight = .0001
 foldxweight = .001
 fapeweight = .001
@@ -139,7 +140,9 @@ train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , work
 # Load a sample from the dataset
 data_sample = next(iter(train_loader))
 ndim = data_sample['res'].x.shape[1] 
-ndim_godnode = data_sample['godnode'].x.shape[1]  
+if fftin == True:
+	ndim += data_sample['fourier1dr'].x.shape[1] + data_sample['fourier1di'].x.shape[1]
+ndim_godnode = data_sample['godnode'].x.shape[1]
 
 #model name
 modelname = args.model_name
@@ -153,17 +156,16 @@ else:
 	encoder_layers = 2
 	encoder = ft2.mk1_Encoder(in_channels=ndim, hidden_channels=[args.hidden_size] * encoder_layers ,
 							out_channels= embedding_dim , 
-							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') , ('res','backbone', 'res') ,('res','backbonerev', 'res') ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
+							metadata=  { 'edge_types': [     ('res','contactPoints', 'res') , ('res','hbond', 'res')  ] } , #, ('res','hbond', 'res') ,  ('res','backbone', 'res') ] }, 
 							num_embeddings=num_embeddings, commitment_cost=.9 , edge_dim = 1 ,
-							encoder_hidden=args.hidden_size * 4 , EMA = ema , nheads = 10 , dropout_p = 0.005 ,
-								reset_codes= False , flavor = 'transformer' )
+							encoder_hidden=args.hidden_size , EMA = ema , nheads = 5 , dropout_p = 0.005 ,
+								reset_codes= False , flavor = 'transformer' , fftin= fftin)
 	
-	
-	decoder_layers = 5
+	decoder_layers = 3
 	decoder = ft2.HeteroGAE_Decoder(in_channels = {'res':encoder.out_channels  , 'godnode4decoder':ndim_godnode ,
 													'foldx':23 } , 
 								hidden_channels={
-												#( 'res','window','res'):[ 20 ] * decoder_layers  , 
+												#( 'res','window','res'):[ args.hidden_size ] * decoder_layers  , 
 												( 'res','backbone','res'):[ args.hidden_size] * decoder_layers  ,
 												( 'res','backbonerev','res'):[ args.hidden_size ] * decoder_layers  ,
 												('res' ,'informs','godnode4decoder' ):[ args.hidden_size] * decoder_layers ,
@@ -172,18 +174,20 @@ else:
 								metadata=converter.metadata , 
 								amino_mapper = converter.aaindex ,
 								concat_positions = concat_positions ,
-								flavor = 'sage' ,
+								flavor = 'mfconv' ,
 								output_foldx = output_foldx ,
 								Xdecoder_hidden= [args.hidden_size, args.hidden_size//2 , max(1,args.hidden_size//5)  ] ,
 								PINNdecoder_hidden = [ max(1,args.hidden_size//2) , max(1,args.hidden_size//4), max(1,args.hidden_size//5)] ,
 								AAdecoder_hidden = [ args.hidden_size , args.hidden_size//2 , args.hidden_size//2 ] ,
-								contactdecoder_hidden = [ max(1,args.hidden_size//2) , max(1,args.hidden_size//4) ] ,
-								nheads = 10, 
+								contactdecoder_hidden = [ max(1,args.hidden_size//2) , max(1,args.hidden_size//2)  ] ,
+								nheads = 1, 
 								dropout = 0.005  ,
 								residual = False,
 								normalize=True,
 								contact_mlp=True
 								)
+	
+	"""
 	if args.geometry:
 		geodecoder1 = CoordinateFreeTransformer(
 			node_feature_dim: embedding_dim,
@@ -200,7 +204,7 @@ else:
 			num_degrees: int = 2,
 			dropout: float = 0.05,
 		)
-
+	"""
 print('encoder', encoder)
 print('decoder', decoder)
 
@@ -335,6 +339,12 @@ for epoch in range(num_epochs):
 		edgeloss , distloss = ft2.recon_loss(  data , data.edge_index_dict[('res', 'contactPoints', 'res')] , decoder  , plddt= False , offdiag = False )
 		recon_x , edge_probs , zgodnode , foldxout  = decoder(  data , None )
 		
+
+		angleloss = torch.tensor(0.0).to(device)
+		fapeloss = torch.tensor(0.0).to(device)
+		lddtloss = torch.tensor(0.0).to(device)
+
+		"""
 		#compute geometry losses
 		if geometry == True:
 			#compute the geometry loss
@@ -346,7 +356,7 @@ for epoch in range(num_epochs):
 
 			#modulate angles row-wise with plddt
 			angleloss = F.smooth_l1_loss( angles , data.x_dict['bondangles'] , reduction='none' )
-			fploss = torch.tensor(0.0).to(device)
+			fapeloss = torch.tensor(0.0).to(device)
 			lddt_loss = torch.tensor(0.0).to(device)
 			angleloss += F.smooth_l1_loss( angles2 , data.x_dict['bondangles'] , reduction='none' )
 			if fapeloss == True:
@@ -355,7 +365,7 @@ for epoch in range(num_epochs):
 				t_true = data['t_true'].x
 				R_true = data['R_true'].x
 				#Compute the FAPE loss
-				fploss += ft2.fape_loss(true_R = R_true,
+				fapeloss += ft2.fape_loss(true_R = R_true,
 						true_t = t_true, 
 						pred_R = r2, 
 						pred_t = t2, 
@@ -376,6 +386,7 @@ for epoch in range(num_epochs):
 			fploss = torch.tensor(0.0).to(device)
 			lddt_loss = torch.tensor(0.0).to(device)
 			angleloss = torch.tensor(0.0).to(device)
+		"""
 
 		#compute the amino acide reconstruction loss
 		xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
@@ -387,13 +398,10 @@ for epoch in range(num_epochs):
 		else:
 			foldxloss = torch.tensor(0.0)
 		
-		for l in [ xloss , edgeloss , vqloss , foldxloss , fploss, angleloss , lddt_loss  ]:
-			if torch.isnan(l).any():
-				l = 0
 		
 		#plddtloss = x_reconstruction_loss(data['plddt'].x, recon_plddt)
 		loss = xweight*xloss + edgeweight*edgeloss + vqweight*vqloss 
-		loss += foldxloss*foldxweight + fapeweight*fploss + angleweight*angleloss+ lddt_weight*lddt_loss 
+		loss += foldxloss*foldxweight + fapeweight*fapeloss + angleweight*angleloss+ lddt_weight*lddtloss 
 		loss.backward()
 		
 		if clip_grad:
@@ -401,13 +409,13 @@ for epoch in range(num_epochs):
 			torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
 		
 		
-		optimizer.step()
+		optimizer.step()		
 		total_loss_edge += edgeloss.item()
 		total_loss_x += xloss.item()
 		total_vq += vqloss.item()		
 		total_angleloss += angleloss.item()
-		total_lddtloss += lddt_loss.item()
-		total_fapeloss += fploss.item()
+		total_lddtloss += lddtloss.item()
+		total_fapeloss += fapeloss.item()
 		total_distloss += distloss.item()
 
 		if decoder.output_foldx == True:
@@ -433,6 +441,7 @@ for epoch in range(num_epochs):
 
 	print(f'Epoch {epoch}, AALoss: {total_loss_x/trainlen:.4f}, Edge Loss: {total_loss_edge/trainlen:.4f}, vq Loss: {total_vq/trainlen:.4f} , foldx Loss: {total_foldx/trainlen:.4f}' ) 
 	print(f'fapeloss: {total_fapeloss/trainlen:.4f} , angleloss: {total_angleloss/trainlen:4f} , lddtloss: {total_lddtloss/trainlen:4f} , distloss: {total_distloss/trainlen:4f}' )
+	print( f'total_loss: {(total_loss_x + total_loss_edge + total_vq + total_foldx)/trainlen:.4f}' )
 	print( 'grad encoder:' ,  analyze_gradient_norms(encoder) )
 	print('grad decoder:' ,  analyze_gradient_norms(decoder) )
 

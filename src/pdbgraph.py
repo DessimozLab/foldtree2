@@ -246,8 +246,6 @@ class PDB2PyG:
 		#get the delta g
 		return delta_g
 
-
-	
 	@staticmethod
 	def get_positional_encoding(seq_len, d_model):
 		"""
@@ -281,8 +279,121 @@ class PDB2PyG:
 				if i+j < seq_len:
 					adjacent[i , i-j:i+j] = 1
 		return adjacent
-		
 	
+	@staticmethod
+	def keep_corner_triangles(matrix, size=30 , verbose = False):
+		"""
+		Zero out all values in the matrix except for the lower/upper triangles
+		in each of the four corners. The size of each triangle is given by `size`.
+		"""
+		mask = np.zeros_like(matrix, dtype=bool)
+		n, m = matrix.shape
+
+		# Top-left corner
+		for i in range(size):
+			for j in range(size):
+				if i + j <= size - 1:
+					mask[i, j] = True
+
+		# Top-right corner
+		for i in range(size):
+			for j in range(m - size, m):
+				if i <= (j - (m - size)):
+					mask[i, j] = True
+
+		# Bottom-left corner
+		for i in range(n - size, n):
+			for j in range(size):
+				if (i - (n - size)) >= j:
+					mask[i, j] = True
+
+		# Bottom-right corner
+		for i in range(n - size, n):
+			for j in range(m - size, m):
+				if (i - (n - size)) + (j - (m - size)) >= size - 1:
+					mask[i, j] = True
+
+		if verbose == True:
+			#plot the mask 
+			plt.figure(figsize=(10, 8))
+			plt.imshow(mask, cmap='hot', interpolation='nearest')
+			plt.colorbar()
+			plt.title('Mask for Corner Triangles')
+			plt.show()
+
+		#store non-zero values in the mask
+		values = matrix[mask]
+		#expand to 2d 
+		values = np.expand_dims(values, axis=1)
+		result = np.zeros_like(matrix)
+		result[mask] = matrix[mask]
+		return result, values
+
+	@staticmethod
+	def corners2matrix(corners, size , cornersize =30):
+		"""
+		Take the corners of a matrix and return the full matrix
+		"""
+		n = int(np.sqrt(len(corners)))
+		m = int(np.sqrt(len(corners)))
+		matrix = np.zeros((n, m))
+		for i in range(n):
+			for j in range(m):
+				if i+j <= size - 1:
+					matrix[i, j] = corners[i+j]
+				if i <= (j - (m - size)):
+					matrix[i, j] = corners[i+j]
+				if (i - (n - size)) >= j:
+					matrix[i, j] = corners[i+j]
+				if (i - (n - size)) + (j - (m - size)) >= size - 1:
+					matrix[i, j] = corners[i+j]
+		return matrix
+
+
+	@staticmethod
+	def pdb_chain_fft(pdb_path, chain_id = None, cutoff_1d=80, cutoff_2d=30):
+		"""
+		Compute 1D and 2D FFT of the distance matrix for a given PDB chain.
+		Optionally apply frequency cutoffs for 1D and 2D FFTs.
+		Returns:
+			dict with keys:
+				'fft_1d_real', 'fft_1d_imag', 'fft_2d_real', 'fft_2d_imag'
+		"""
+		parser = PDBParser(QUIET=True)
+		structure = parser.get_structure('protein', pdb_path)
+		ca_coords = []
+		for model in structure:
+			for chain in model:
+				if chain.id == chain_id or chain_id is None:
+					for residue in chain:
+						if 'CA' in residue:
+							ca_coords.append(residue['CA'].get_coord())
+				break
+			break
+		ca_coords = np.array(ca_coords)
+		if ca_coords.shape[0] == 0:
+			raise ValueError(f"No CA atoms found in chain {chain_id}")
+
+		dist_matrix = cdist(ca_coords, ca_coords)
+		n = dist_matrix.shape[0]
+
+		# 1D FFT (row-wise)
+		fft_1d = np.fft.fft(dist_matrix, axis=1)
+		if cutoff_1d is not None:
+			cut = min(cutoff_1d, n)
+			fft_1d = fft_1d[:, :cut]
+		
+		# 2D FFT
+		fft_2d = np.fft.fft2(dist_matrix)
+		#cut the corners
+		mat, fft_2d = PDB2PyG.keep_corner_triangles(fft_2d, size=cutoff_2d)
+
+		return  {
+		'fft_1d_real': np.real(fft_1d),
+		'fft_1d_imag': np.real(np.imag(fft_1d)),
+		'fft_2d_real': np.real(fft_2d),
+		'fft_2d_imag': np.real(np.imag(fft_2d))
+		}
 
 	@staticmethod
 	def read_foldx_file(file = None , foldxdir = None , pdb = None):
@@ -505,6 +616,7 @@ class PDB2PyG:
 		#get the adjacency matrices
 		#try:
 		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir)
+		fourrier = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
 		#except:
 		#	return None
 		if xdata is not None:
@@ -550,7 +662,10 @@ class PDB2PyG:
 		#data['res'].x = angles
 		#add the angles and props df w the frames to residues 
 		data['res'].x = torch.cat( [angles, data['R_true'].x.view(-1,9) , data['t_true'].x], dim = 1)
-
+		data[ 'fourier1dr'].x = torch.tensor(fourrier['fft_1d_real'], dtype=torch.float32)
+		data[ 'fourier1di'].x = torch.tensor(fourrier['fft_1d_imag'], dtype=torch.float32)
+		data[ 'fourier2dr'].x = torch.tensor(fourrier['fft_2d_real'], dtype=torch.float32)
+		data[ 'fourier2di'].x = torch.tensor(fourrier['fft_2d_imag'], dtype=torch.float32)
 
 		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
@@ -836,208 +951,208 @@ class PDB2PyG:
 						traceback.print_exc()
 
 class ComplexDataset(Dataset):
-    """
-    Dataset for protein complexes with multiple chains.
-    
-    This dataset loads multi-chain protein structures from an HDF5 file,
-    where each structure contains individual chain graphs and chain-chain
-    interaction graphs.
-    
-    Args:
-        h5dataset: Path to HDF5 file or an open HDF5 file object containing complex data
-        combined_graph: If True, returns a single combined heterogeneous graph for the entire complex
-    """
-    def __init__(self, h5dataset, combined_graph=False):
-        super().__init__()
-        self.h5dataset = h5dataset
-        self.combined_graph = combined_graph
+	"""
+	Dataset for protein complexes with multiple chains.
+	
+	This dataset loads multi-chain protein structures from an HDF5 file,
+	where each structure contains individual chain graphs and chain-chain
+	interaction graphs.
+	
+	Args:
+		h5dataset: Path to HDF5 file or an open HDF5 file object containing complex data
+		combined_graph: If True, returns a single combined heterogeneous graph for the entire complex
+	"""
+	def __init__(self, h5dataset, combined_graph=False):
+		super().__init__()
+		self.h5dataset = h5dataset
+		self.combined_graph = combined_graph
 
-        if isinstance(h5dataset, str):
-            self.h5dataset = h5py.File(h5dataset, 'r')
-            
-        self.structlist = list(self.h5dataset['structs'].keys())
-    
-    def __len__(self):
-        return len(self.structlist)
+		if isinstance(h5dataset, str):
+			self.h5dataset = h5py.File(h5dataset, 'r')
+			
+		self.structlist = list(self.h5dataset['structs'].keys())
+	
+	def __len__(self):
+		return len(self.structlist)
 
-    def __getitem__(self, idx):
-        # Handle index by string (PDB ID) or integer
-        if isinstance(idx, str):
-            structure_id = idx
-            f = self.h5dataset['structs'][idx]
-        else:
-            structure_id = self.structlist[int(idx)]
-            f = self.h5dataset['structs'][structure_id]
-        
-        # Load individual chain graphs
-        chaindata = {}
-        chains = [c for c in f['chains'].keys()]
-        
-        for chain in chains:
-            hetero_data = HeteroData()        
-            hetero_data.identifier = f"{structure_id}_{chain}"
-            
-            # Load node features
-            if 'node' in f['chains'][chain].keys():
-                for node_type in f['chains'][chain]['node'].keys():
-                    node_group = f['chains'][chain]['node'][node_type]
-                    if 'x' in node_group.keys():
-                        hetero_data[node_type].x = torch.tensor(node_group['x'][:])
-            
-            # Load edge data
-            if 'edge' in f['chains'][chain].keys():
-                for edge_name in f['chains'][chain]['edge'].keys():
-                    edge_group = f['chains'][chain]['edge'][edge_name]
-                    src_type, link_type, dst_type = edge_name.split('_')
-                    edge_type = (src_type, link_type, dst_type)
-                    
-                    if 'edge_index' in edge_group.keys():
-                        hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
-                    
-                    if 'edge_attr' in edge_group.keys():
-                        hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
-            
-            # Store chain metadata
-            hetero_data.chain_id = chain
-            chaindata[chain] = hetero_data
-        
-        # Load chain-chain interaction data (complex interfaces)
-        pairdata = {}
-        if 'complex' in f:
-            pairs = [c for c in f['complex'].keys()]
-            
-            for pair in pairs:
-                hetero_data = HeteroData()        
-                hetero_data.identifier = f"{structure_id}_{pair}"
-                chain1, chain2 = pair.split('_')
-                hetero_data.chain_ids = (chain1, chain2)
-                
-                if 'node' in f['complex'][pair].keys():
-                    for node_type in f['complex'][pair]['node'].keys():
-                        node_group = f['complex'][pair]['node'][node_type]
-                        if 'x' in node_group.keys():
-                            hetero_data[node_type].x = torch.tensor(node_group['x'][:])
-                
-                if 'edge' in f['complex'][pair].keys():
-                    for edge_name in f['complex'][pair]['edge'].keys():
-                        edge_group = f['complex'][pair]['edge'][edge_name]
-                        src_type, link_type, dst_type = edge_name.split('_')
-                        edge_type = (src_type, link_type, dst_type)
-                        
-                        if 'edge_index' in edge_group.keys():
-                            hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
-                        
-                        if 'edge_attr' in edge_group.keys():
-                            hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
-                
-                pairdata[pair] = hetero_data
-        
-        # If combined_graph is True, merge all chains and interactions into a single graph
-        if self.combined_graph:
-            return self._create_combined_graph(structure_id, chaindata, pairdata)
-        
-        # Otherwise, return separate chain and interaction graphs
-        return {
-            'structure_id': structure_id,
-            'chains': chaindata,
-            'interfaces': pairdata
-        }
-    
-    def _create_combined_graph(self, structure_id, chaindata, pairdata):
-        """
-        Create a single combined graph for the entire complex.
-        
-        Args:
-            structure_id: PDB ID or other identifier for the structure
-            chaindata: Dictionary of chain graphs
-            pairdata: Dictionary of interface graphs
-            
-        Returns:
-            A single HeteroData object representing the entire complex
-        """
-        combined_graph = HeteroData()
-        combined_graph.identifier = structure_id
-        
-        # Track node offsets for each chain to adjust edge indices
-        node_offsets = {}
-        current_offset = 0
-        
-        # First, combine all node features
-        for chain_id, chain_graph in chaindata.items():
-            for node_type in chain_graph.node_types:
-                # Initialize features for this node type if not present
-                if node_type not in combined_graph.node_types:
-                    combined_graph[node_type].x = chain_graph[node_type].x
-                else:
-                    combined_graph[node_type].x = torch.cat(
-                        [combined_graph[node_type].x, chain_graph[node_type].x], dim=0
-                    )
-                
-                # Store the offset for this chain's nodes
-                if node_type not in node_offsets:
-                    node_offsets[node_type] = {}
-                node_offsets[node_type][chain_id] = current_offset
-                current_offset += chain_graph[node_type].x.shape[0]
-        
-        # Then, combine all intra-chain edges
-        for chain_id, chain_graph in chaindata.items():
-            for edge_type in chain_graph.edge_types:
-                src_type, link_type, dst_type = edge_type
-                
-                # Adjust edge indices based on offsets
-                edge_index = chain_graph[edge_type].edge_index.clone()
-                edge_index[0, :] += node_offsets[src_type][chain_id]
-                edge_index[1, :] += node_offsets[dst_type][chain_id]
-                
-                # Create or append edge data
-                if edge_type not in combined_graph.edge_types:
-                    combined_graph[edge_type].edge_index = edge_index
-                    if hasattr(chain_graph[edge_type], 'edge_attr'):
-                        combined_graph[edge_type].edge_attr = chain_graph[edge_type].edge_attr
-                else:
-                    combined_graph[edge_type].edge_index = torch.cat(
-                        [combined_graph[edge_type].edge_index, edge_index], dim=1
-                    )
-                    if hasattr(chain_graph[edge_type], 'edge_attr') and hasattr(combined_graph[edge_type], 'edge_attr'):
-                        combined_graph[edge_type].edge_attr = torch.cat(
-                            [combined_graph[edge_type].edge_attr, chain_graph[edge_type].edge_attr], dim=0
-                        )
-        
-        # Finally, add inter-chain edges
-        for pair_id, pair_graph in pairdata.items():
-            for edge_type in pair_graph.edge_types:
-                src_type, link_type, dst_type = edge_type
-                
-                # Get the chain IDs
-                chain1, chain2 = pair_id.split('_')
-                
-                # Adjust edge indices based on offsets
-                edge_index = pair_graph[edge_type].edge_index.clone()
-                # This assumes interface edges always go from chain1 to chain2
-                edge_index[0, :] += node_offsets[src_type][chain1]
-                edge_index[1, :] += node_offsets[dst_type][chain2]
-                
-                # Create a special edge type for inter-chain interactions
-                inter_edge_type = (src_type, f"{link_type}_interface", dst_type)
-                
-                if inter_edge_type not in combined_graph.edge_types:
-                    combined_graph[inter_edge_type].edge_index = edge_index
-                    if hasattr(pair_graph[edge_type], 'edge_attr'):
-                        combined_graph[inter_edge_type].edge_attr = pair_graph[edge_type].edge_attr
-                else:
-                    combined_graph[inter_edge_type].edge_index = torch.cat(
-                        [combined_graph[inter_edge_type].edge_index, edge_index], dim=1
-                    )
-                    if hasattr(pair_graph[edge_type], 'edge_attr') and hasattr(combined_graph[inter_edge_type], 'edge_attr'):
-                        combined_graph[inter_edge_type].edge_attr = torch.cat(
-                            [combined_graph[inter_edge_type].edge_attr, pair_graph[edge_type].edge_attr], dim=0
-                        )
-        
-        # Add metadata about chains
-        combined_graph.chains = list(chaindata.keys())
-        combined_graph.num_chains = len(combined_graph.chains)
-        
-        return combined_graph
+	def __getitem__(self, idx):
+		# Handle index by string (PDB ID) or integer
+		if isinstance(idx, str):
+			structure_id = idx
+			f = self.h5dataset['structs'][idx]
+		else:
+			structure_id = self.structlist[int(idx)]
+			f = self.h5dataset['structs'][structure_id]
+		
+		# Load individual chain graphs
+		chaindata = {}
+		chains = [c for c in f['chains'].keys()]
+		
+		for chain in chains:
+			hetero_data = HeteroData()        
+			hetero_data.identifier = f"{structure_id}_{chain}"
+			
+			# Load node features
+			if 'node' in f['chains'][chain].keys():
+				for node_type in f['chains'][chain]['node'].keys():
+					node_group = f['chains'][chain]['node'][node_type]
+					if 'x' in node_group.keys():
+						hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+			
+			# Load edge data
+			if 'edge' in f['chains'][chain].keys():
+				for edge_name in f['chains'][chain]['edge'].keys():
+					edge_group = f['chains'][chain]['edge'][edge_name]
+					src_type, link_type, dst_type = edge_name.split('_')
+					edge_type = (src_type, link_type, dst_type)
+					
+					if 'edge_index' in edge_group.keys():
+						hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+					
+					if 'edge_attr' in edge_group.keys():
+						hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+			
+			# Store chain metadata
+			hetero_data.chain_id = chain
+			chaindata[chain] = hetero_data
+		
+		# Load chain-chain interaction data (complex interfaces)
+		pairdata = {}
+		if 'complex' in f:
+			pairs = [c for c in f['complex'].keys()]
+			
+			for pair in pairs:
+				hetero_data = HeteroData()        
+				hetero_data.identifier = f"{structure_id}_{pair}"
+				chain1, chain2 = pair.split('_')
+				hetero_data.chain_ids = (chain1, chain2)
+				
+				if 'node' in f['complex'][pair].keys():
+					for node_type in f['complex'][pair]['node'].keys():
+						node_group = f['complex'][pair]['node'][node_type]
+						if 'x' in node_group.keys():
+							hetero_data[node_type].x = torch.tensor(node_group['x'][:])
+				
+				if 'edge' in f['complex'][pair].keys():
+					for edge_name in f['complex'][pair]['edge'].keys():
+						edge_group = f['complex'][pair]['edge'][edge_name]
+						src_type, link_type, dst_type = edge_name.split('_')
+						edge_type = (src_type, link_type, dst_type)
+						
+						if 'edge_index' in edge_group.keys():
+							hetero_data[edge_type].edge_index = torch.tensor(edge_group['edge_index'][:])
+						
+						if 'edge_attr' in edge_group.keys():
+							hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
+				
+				pairdata[pair] = hetero_data
+		
+		# If combined_graph is True, merge all chains and interactions into a single graph
+		if self.combined_graph:
+			return self._create_combined_graph(structure_id, chaindata, pairdata)
+		
+		# Otherwise, return separate chain and interaction graphs
+		return {
+			'structure_id': structure_id,
+			'chains': chaindata,
+			'interfaces': pairdata
+		}
+	
+	def _create_combined_graph(self, structure_id, chaindata, pairdata):
+		"""
+		Create a single combined graph for the entire complex.
+		
+		Args:
+			structure_id: PDB ID or other identifier for the structure
+			chaindata: Dictionary of chain graphs
+			pairdata: Dictionary of interface graphs
+			
+		Returns:
+			A single HeteroData object representing the entire complex
+		"""
+		combined_graph = HeteroData()
+		combined_graph.identifier = structure_id
+		
+		# Track node offsets for each chain to adjust edge indices
+		node_offsets = {}
+		current_offset = 0
+		
+		# First, combine all node features
+		for chain_id, chain_graph in chaindata.items():
+			for node_type in chain_graph.node_types:
+				# Initialize features for this node type if not present
+				if node_type not in combined_graph.node_types:
+					combined_graph[node_type].x = chain_graph[node_type].x
+				else:
+					combined_graph[node_type].x = torch.cat(
+						[combined_graph[node_type].x, chain_graph[node_type].x], dim=0
+					)
+				
+				# Store the offset for this chain's nodes
+				if node_type not in node_offsets:
+					node_offsets[node_type] = {}
+				node_offsets[node_type][chain_id] = current_offset
+				current_offset += chain_graph[node_type].x.shape[0]
+		
+		# Then, combine all intra-chain edges
+		for chain_id, chain_graph in chaindata.items():
+			for edge_type in chain_graph.edge_types:
+				src_type, link_type, dst_type = edge_type
+				
+				# Adjust edge indices based on offsets
+				edge_index = chain_graph[edge_type].edge_index.clone()
+				edge_index[0, :] += node_offsets[src_type][chain_id]
+				edge_index[1, :] += node_offsets[dst_type][chain_id]
+				
+				# Create or append edge data
+				if edge_type not in combined_graph.edge_types:
+					combined_graph[edge_type].edge_index = edge_index
+					if hasattr(chain_graph[edge_type], 'edge_attr'):
+						combined_graph[edge_type].edge_attr = chain_graph[edge_type].edge_attr
+				else:
+					combined_graph[edge_type].edge_index = torch.cat(
+						[combined_graph[edge_type].edge_index, edge_index], dim=1
+					)
+					if hasattr(chain_graph[edge_type], 'edge_attr') and hasattr(combined_graph[edge_type], 'edge_attr'):
+						combined_graph[edge_type].edge_attr = torch.cat(
+							[combined_graph[edge_type].edge_attr, chain_graph[edge_type].edge_attr], dim=0
+						)
+		
+		# Finally, add inter-chain edges
+		for pair_id, pair_graph in pairdata.items():
+			for edge_type in pair_graph.edge_types:
+				src_type, link_type, dst_type = edge_type
+				
+				# Get the chain IDs
+				chain1, chain2 = pair_id.split('_')
+				
+				# Adjust edge indices based on offsets
+				edge_index = pair_graph[edge_type].edge_index.clone()
+				# This assumes interface edges always go from chain1 to chain2
+				edge_index[0, :] += node_offsets[src_type][chain1]
+				edge_index[1, :] += node_offsets[dst_type][chain2]
+				
+				# Create a special edge type for inter-chain interactions
+				inter_edge_type = (src_type, f"{link_type}_interface", dst_type)
+				
+				if inter_edge_type not in combined_graph.edge_types:
+					combined_graph[inter_edge_type].edge_index = edge_index
+					if hasattr(pair_graph[edge_type], 'edge_attr'):
+						combined_graph[inter_edge_type].edge_attr = pair_graph[edge_type].edge_attr
+				else:
+					combined_graph[inter_edge_type].edge_index = torch.cat(
+						[combined_graph[inter_edge_type].edge_index, edge_index], dim=1
+					)
+					if hasattr(pair_graph[edge_type], 'edge_attr') and hasattr(combined_graph[inter_edge_type], 'edge_attr'):
+						combined_graph[inter_edge_type].edge_attr = torch.cat(
+							[combined_graph[inter_edge_type].edge_attr, pair_graph[edge_type].edge_attr], dim=0
+						)
+		
+		# Add metadata about chains
+		combined_graph.chains = list(chaindata.keys())
+		combined_graph.num_chains = len(combined_graph.chains)
+		
+		return combined_graph
 
 class StructureDataset(Dataset):
 	def __init__(self, h5dataset  ):
