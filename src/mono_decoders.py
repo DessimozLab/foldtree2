@@ -398,17 +398,18 @@ class HeteroGAE_AA_Decoder(torch.nn.Module):
 class Transformer_AA_Decoder(torch.nn.Module):
 	def __init__(
 		self,
-		input_dim=10,
+		in_channels={'res':10},
+		hidden_channels={'res_backbone_res': [20, 20, 20]},
 		xdim=20,
 		concat_positions=True,
-		d_model=128,
-		nhead=8,
-		num_layers=2,
+		nheads=4,
+		layers=2,
 		AAdecoder_hidden=[128, 64, 32],
 		amino_mapper=None,
 		dropout=0.001,
 		normalize=True,
 		residual=True,
+		**kwargs
 	):
 		super(Transformer_AA_Decoder, self).__init__()
 		L.seed_everything(42)
@@ -417,13 +418,23 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		self.normalize = normalize
 		self.residual = residual
 		self.amino_acid_indices = amino_mapper
-
+		input_dim = in_channels['res']
 		if concat_positions:
 			input_dim = input_dim + 256
+		d_model = hidden_channels[('res' , 'backbone', 'res')][0]
 
-		self.input_proj = nn.Linear(input_dim, d_model)
-		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
-		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+		print( d_model , nheads , layers , dropout)
+
+		self.input_proj = torch.nn.Sequential( 
+			nn.Linear(input_dim, d_model), 
+			torch.nn.GELU(),
+			torch.nn.Dropout(dropout),
+			nn.Linear(d_model, d_model),
+			DynamicTanh(d_model, channels_last=True)
+		)
+
+		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
+		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
 		self.lin = torch.nn.Sequential(
 			torch.nn.Dropout(dropout),
@@ -448,14 +459,40 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		# Transformer expects (seq_len, batch, d_model), so add batch dim if needed
 		batch = data['res'].batch
 		if batch is not None:
-			x = x.view(-1, batch.size(0), x.size(1))
+			# Find the number of graphs in the batch
+			num_graphs = batch.max().item() + 1
+			# Split x into a list of tensors, one per graph
+			x_split = [x[batch == i] for i in range(num_graphs)]
+			# Pad sequences to the same length
+			max_len = max([xi.shape[0] for xi in x_split])
+			padded = []
+			for xi in x_split:
+				pad_len = max_len - xi.shape[0]
+				if pad_len > 0:
+					xi = torch.cat([xi, torch.zeros(pad_len, xi.shape[1], device=xi.device, dtype=xi.dtype)], dim=0)
+				padded.append(xi)
+			x = torch.stack(padded, dim=1)  # (seq_len, batch, d_model)
+		else:
+			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
+		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
-		x = x.squeeze(1)  # (N, d_model)
+		
 		if self.residual:
 			x = x + inz if inz.shape[-1] == x.shape[-1] else x
 		if self.normalize:
 			x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
+		
 		aa = self.lin(x)
+		
+		if batch is not None:
+			# Remove padding and concatenate results for all graphs in the batch
+			aa_list = []
+			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
+				# Remove batch dimension and padding (assume original lengths from batch)
+				seq_len = (batch == i).sum().item()
+				aa_list.append(self.lin(xi[:seq_len, 0]))
+			aa = torch.cat(aa_list, dim=0)
+
 		return  {'aa': aa }
 
 	def x_to_amino_acid_sequence(self, x_r):
@@ -782,6 +819,8 @@ class MultiMonoDecoder(torch.nn.Module):
 		for task in tasks:
 			if task == 'sequence':
 				self.decoders['sequence'] = HeteroGAE_AA_Decoder(**configs['sequence'])
+			if task == 'sequence_transformer':
+				self.decoders['sequence_transformer'] = Transformer_AA_Decoder(**configs['sequence_transformer'])
 			elif task == 'contacts':
 				self.decoders['contacts'] = HeteroGAE_geo_Decoder(**configs['contacts'])
 			elif task == 'geometry':
