@@ -137,8 +137,11 @@ err_eps = 1e-2
 struct_dat = pdbgraph.StructureDataset(args.dataset)
 # Create a DataLoader for training
 train_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=True , worker_init_fn = np.random.seed(0) , num_workers=6)
+for data_sample in train_loader:
+	print('data sample:', data_sample)
+	break
 # Load a sample from the dataset
-data_sample = next(iter(train_loader))
+data_sample = next(train_loader)
 ndim = data_sample['res'].x.shape[1] 
 if fftin == True:
 	ndim += data_sample['fourier1dr'].x.shape[1] + data_sample['fourier1di'].x.shape[1]

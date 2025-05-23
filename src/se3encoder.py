@@ -50,7 +50,6 @@ class se3_Encoder(torch.nn.Module):
 		batches = data['res'].batch  # (N,)
 		# Mask is a boolean tensor indicating valid nodes
 		
-
 		# Adjacency matrix: should be (N, N) bool tensor
 		# Build from edge_index if needed
 		N = x.shape[0]

@@ -68,7 +68,7 @@ def jaccard_distance_multiset(A: torch.Tensor,
 	return jaccard_similarity
 
 
-def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1,  plddt = True  , offdiag = False , nclamp = 30 ) -> Tensor:
+def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1,  plddt = True  , offdiag = False , nclamp = 30 , key = None) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
 	entropy loss for positive edges :obj:`pos_edge_index` and negative
 	sampled edges.
@@ -83,7 +83,12 @@ def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 ,
 	#remove the diagonal
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
 	res =decoder(data, pos_edge_index )
-	pos = res[1]
+
+	if key == None:
+		pos = res[1]
+	if key != None:
+		pos = res[key]
+	
 	#turn pos edge index into a binary matrix
 	pos_loss = -torch.log( pos + EPS)
 	if plddt == True:
@@ -109,7 +114,12 @@ def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 ,
 	#remove the diagonal
 	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
 	res = decoder(data ,  neg_edge_index )
-	neg = res[1]
+
+	if key == None:
+		neg = res[1]
+	if key != None:
+		neg = res[key]
+
 	neg_loss = -torch.log( ( 1 - neg) + EPS )
 	if plddt == False:
 		c1 = data['plddt'].x[pos_edge_index[0]].view(-1,1)

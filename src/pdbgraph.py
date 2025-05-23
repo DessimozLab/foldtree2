@@ -324,7 +324,7 @@ class PDB2PyG:
 		#store non-zero values in the mask
 		values = matrix[mask]
 		#expand to 2d 
-		values = np.expand_dims(values, axis=1)
+		values = np.expand_dims(values, axis=0)
 		result = np.zeros_like(matrix)
 		result[mask] = matrix[mask]
 		return result, values
@@ -379,21 +379,30 @@ class PDB2PyG:
 
 		# 1D FFT (row-wise)
 		fft_1d = np.fft.fft(dist_matrix, axis=1)
-		if cutoff_1d is not None:
-			cut = min(cutoff_1d, n)
-			fft_1d = fft_1d[:, :cut]
-		
+		#if smaller than cutoff_1d, pad with zeros
+		if fft_1d.shape[1] < cutoff_1d:
+			new = np.zeros((fft_1d.shape[0], cutoff_1d))
+			new[:, :fft_1d.shape[1]] = fft_1d
+			fft_1d = new
+		else:
+			fft_1d = fft_1d[:, :cutoff_1d]
+
+
 		# 2D FFT
 		fft_2d = np.fft.fft2(dist_matrix)
 		#cut the corners
 		mat, fft_2d = PDB2PyG.keep_corner_triangles(fft_2d, size=cutoff_2d)
 
-		return  {
-		'fft_1d_real': np.real(fft_1d),
-		'fft_1d_imag': np.real(np.imag(fft_1d)),
-		'fft_2d_real': np.real(fft_2d),
-		'fft_2d_imag': np.real(np.imag(fft_2d))
-		}
+		if fft_2d.shape[1] < 1300:
+			new = np.zeros( ( 1, 1300 ) )
+			new[: , :fft_2d.shape[1]] = fft_2d
+			fft_2d = new
+		else:
+			fft_2d = fft_2d[:, :1300]
+
+		fft1r, fft1i , fft2r , fft2i = np.real(fft_1d), np.real(np.sqrt(np.imag(fft_1d)**2)), np.real(fft_2d), np.real(np.sqrt(np.imag(fft_2d)**2))
+
+		return fft1r, fft1i, fft2r , fft2i
 
 	@staticmethod
 	def read_foldx_file(file = None , foldxdir = None , pdb = None):
@@ -616,7 +625,17 @@ class PDB2PyG:
 		#get the adjacency matrices
 		#try:
 		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir)
-		fourrier = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
+		try:
+			fft1r, fft1i, fft2r , fft2i  = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
+			#transform the ffts into tensors
+			fft1r = torch.tensor(fft1r, dtype=torch.float32)
+			fft1i = torch.tensor(fft1i, dtype=torch.float32)
+			fft2r = torch.tensor(fft2r, dtype=torch.float32)
+			fft2i = torch.tensor(fft2i, dtype=torch.float32)
+
+		except:
+			return None
+
 		#except:
 		#	return None
 		if xdata is not None:
@@ -662,10 +681,14 @@ class PDB2PyG:
 		#data['res'].x = angles
 		#add the angles and props df w the frames to residues 
 		data['res'].x = torch.cat( [angles, data['R_true'].x.view(-1,9) , data['t_true'].x], dim = 1)
-		data[ 'fourier1dr'].x = torch.tensor(fourrier['fft_1d_real'], dtype=torch.float32)
-		data[ 'fourier1di'].x = torch.tensor(fourrier['fft_1d_imag'], dtype=torch.float32)
-		data[ 'fourier2dr'].x = torch.tensor(fourrier['fft_2d_real'], dtype=torch.float32)
-		data[ 'fourier2di'].x = torch.tensor(fourrier['fft_2d_imag'], dtype=torch.float32)
+		
+		data[ 'fourier1dr'].x = torch.tensor(fft1r, dtype=torch.float32)
+		data[ 'fourier1di'].x = torch.tensor(fft1i, dtype=torch.float32)
+		
+		data[ 'fourier2dr'].x = torch.tensor(fft2r, dtype=torch.float32)
+		data[ 'fourier2di'].x = torch.tensor(fft2i, dtype=torch.float32)
+		
+		
 
 		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
@@ -802,6 +825,8 @@ class PDB2PyG:
 					#pring traceback
 					print(traceback.format_exc())
 					print('err' , pdbfile )
+			#close the file
+			f.close()
 
 	
 	def store_pyg_complexdata(self, pdbfiles, filename, verbose=False):
