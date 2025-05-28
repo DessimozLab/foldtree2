@@ -1,7 +1,6 @@
-from src import foldtree2_ecddcd as ft2
+from foldtree2 import foldtree2_ecddcd as ft2
 from src.losses import fafe as fafe
 from src import pdbgraph
-#from src import geodecoder 
 
 
 from matplotlib import pyplot as plt

@@ -116,6 +116,9 @@ class mk1_Encoder(torch.nn.Module):
 		self.jk = JumpingKnowledge(mode='cat')
 		self.fftin = fftin
 
+		if self.fftin == True:
+			in_channels = in_channels + 2 * 80
+
 		self.ffin = torch.nn.Sequential(
 			torch.nn.Linear(in_channels, hidden_channels[0] * 2 ),
 			torch.nn.GELU(),
@@ -166,10 +169,12 @@ class mk1_Encoder(torch.nn.Module):
 			)
 		
 		self.out_dense= torch.nn.Sequential(
-			torch.nn.Linear(self.encoder_hidden + 20 , self.out_channels) ,
+			torch.nn.Linear(self.encoder_hidden + 20 , self.encoder_hidden) ,
+			torch.nn.GELU(),
+			torch.nn.Linear( self.encoder_hidden, self.out_channels) ,
 			torch.nn.GELU(),
 			DynamicTanh(self.out_channels , channels_last = True),
-			torch.nn.Tanh()
+			#torch.nn.Tanh()
 			)
 		
 		if EMA == False:
@@ -179,10 +184,11 @@ class mk1_Encoder(torch.nn.Module):
 		
 	def forward(self, data , edge_attr_dict = None , **kwargs):
 		
-		if self.fftin == True:
-			x_dict['res'] = torch.cat([x_dict['res'], data['fourier1dr'].x , data['fourier1di'].x ], dim=1)
 		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		x_dict['res'] = self.bn(x_dict['res'])
+		
+		if self.fftin == True:
+			x_dict['res'] = torch.cat([x_dict['res'], data['fourier1dr'].x , data['fourier1di'].x ], dim=1)
 		x = self.dropout(x_dict['res'])
 		x_save= []
 		# Apply the first layer

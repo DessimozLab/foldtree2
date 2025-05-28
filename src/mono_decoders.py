@@ -186,11 +186,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1] ) ,
 					torch.nn.GELU(),
-					torch.nn.Linear(FFT2decoder_hidden[1], FFT2decoder_hidden[2] ) ,
-					torch.nn.GELU(),
-					DynamicTanh(FFT2decoder_hidden[2] , channels_last = True),
-					torch.nn.Linear(FFT2decoder_hidden[2], in_channels['fft2i'] +in_channels['fft2r'] ) )
-	
+					DynamicTanh(FFT2decoder_hidden[1] , channels_last = True),
+					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] +in_channels['fft2r'] ) )
+
 		if contact_mlp == True:
 			self.contact_mlp = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
@@ -207,11 +205,11 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			#feed into refinement network
 			self.rt_mlp = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
-				torch.nn.Linear(2*lastlin, contactdecoder_hidden[0]),
+				torch.nn.Linear(2*lastlin, RTdecoder_hidden[0]),
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
+				torch.nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[1], 7) )
+				torch.nn.Linear(RTdecoder_hidden[1], 7) )
 		else:
 			self.rt_mlp = None
 
@@ -249,15 +247,20 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		# amino acid prediction removed
 
 		#decode godnode
+		fft2_pred = None
 		if self.output_fft == True:
 			zgodnode = xdata['godnode4decoder']
 			fft2_pred = self.godnodedecoder( xdata['godnode4decoder'] )
-		else:
-			fft2_pred = None
-			zgodnode = None
 		
+		rt_pred = None
+		if self.rt_mlp is not None:
+			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
+		
+
 		if contact_pred_index is None:
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred }
+		
+			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None }
+		
 		else:
 			if self.contact_mlp is None:
 				edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
@@ -273,7 +276,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred }
+		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred }
 
 
 class HeteroGAE_AA_Decoder(torch.nn.Module):
@@ -443,10 +446,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			torch.nn.GELU(),
-			DynamicTanh(AAdecoder_hidden[2], channels_last=True),
-			torch.nn.Linear(AAdecoder_hidden[2], xdim),
+			torch.nn.Linear(AAdecoder_hidden[1], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)
 
@@ -477,10 +477,6 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
 		
-		if self.residual:
-			x = x + inz if inz.shape[-1] == x.shape[-1] else x
-		if self.normalize:
-			x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-10)
 		
 		aa = self.lin(x)
 		

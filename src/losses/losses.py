@@ -298,92 +298,166 @@ def quaternion_fape_loss(q_pred, t_pred, q_target, t_target, points):
 	loss = torch.mean(torch.norm(points_pred - points_target, dim=-1))
 	return loss
 
-
 def quaternion_multiply(q1, q2):
 	"""
-	Multiplies two quaternions in [w, x, y, z] format.
+	Multiplies two quaternions in [w, x, y, z] format. Handles both individual quaternions
+	and batches of quaternions.
 	
 	Args:
-		q1 (Tensor): Shape (4,), first quaternion.
-		q2 (Tensor): Shape (4,), second quaternion.
+		q1 (Tensor): First quaternion(s) of shape (..., 4)
+		q2 (Tensor): Second quaternion(s) of shape (..., 4)
 	
 	Returns:
-		Tensor: Shape (4,), the product quaternion.
+		Tensor: Product quaternion(s) of shape (..., 4)
 	"""
-	w1, x1, y1, z1 = q1
-	w2, x2, y2, z2 = q2
+	# Handle both individual quaternions and batches
+	w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+	w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
+	
+	# Hamilton product formula
 	w = w1*w2 - x1*x2 - y1*y2 - z1*z2
 	x = w1*x2 + x1*w2 + y1*z2 - z1*y2
 	y = w1*y2 - x1*z2 + y1*w2 + z1*x2
 	z = w1*z2 + x1*y2 - y1*x2 + z1*w2
-	return torch.tensor([w, x, y, z], dtype=q1.dtype, device=q1.device)
+	
+	return torch.stack([w, x, y, z], dim=-1)
 
 def quaternion_rotate(q, v):
 	"""
-	Rotates a 3D vector v by a unit quaternion q.
+	Rotates vectors using quaternions through efficient vectorized operations.
 	
 	Args:
-		q (Tensor): Shape (4,) or (1, 4), representing a unit quaternion in [w, x, y, z] format.
-		v (Tensor): Shape (3,) or (1, 3), the 3D vector to rotate.
-	
+		q (Tensor): Quaternions with shape (..., 4) in [w, x, y, z] format
+		v (Tensor): Vectors with shape (..., 3) to rotate
+		
 	Returns:
-		Tensor: The rotated vector, with shape matching the input.
+		Tensor: Rotated vectors with same shape as input vectors
 	"""
-	# Ensure inputs are batched for consistency.
-	if q.ndim == 1:
-		q = q.unsqueeze(0)
-	if v.ndim == 1:
-		v = v.unsqueeze(0)
-	
-	q_w = q[..., 0:1]  # shape (B, 1)
-	q_vec = q[..., 1:] # shape (B, 3)
-	
-	# Efficient rotation formula: v_rot = v + 2 * cross(q_vec, q_w * v + cross(q_vec, v))
-	t = 2 * torch.cross(q_vec, v, dim=-1)
-	v_rot = v + q_w * t + torch.cross(q_vec, t, dim=-1)
-	
-	# Remove extra dimension if necessary.
-	if v_rot.shape[0] == 1:
-		return v_rot.squeeze(0)
-	return v_rot
+	# Ensure q and v have compatible batch dimensions
+	if q.shape[:-1] != v.shape[:-1]:
+		q = q.expand(*v.shape[:-1], 4)
+
+	# Extract quaternion components
+	w = q[..., 0]
+	x = q[..., 1] 
+	y = q[..., 2]
+	z = q[..., 3]
+
+	# Pre-compute common terms to avoid duplicate calculations
+	ww = w * w
+	xx = x * x
+	yy = y * y
+	zz = z * z
+	wx = w * x
+	wy = w * y
+	wz = w * z
+	xy = x * y
+	xz = x * z
+	yz = y * z
+
+	# Build rotation matrix elements
+	R = torch.stack([
+		ww + xx - yy - zz, 2 * (xy - wz), 2 * (xz + wy),
+		2 * (xy + wz), ww - xx + yy - zz, 2 * (yz - wx),
+		2 * (xz - wy), 2 * (yz + wx), ww - xx - yy + zz
+	], dim=-1).reshape(*q.shape[:-1], 3, 3)
+
+	# Apply rotation
+	return torch.matmul(R, v.unsqueeze(-1)).squeeze(-1)
 
 def compute_chain_positions(quaternions, translations):
 	"""
-	Computes the global positions of the origin after each transformation in a chain.
-	Each transformation is defined by a unit quaternion (rotation) and a translation vector.
-	
-	The global position is computed as:
-	  p_i = p_{i-1} + R_{i-1} * t_i,
-	where p_0 is the origin, and R_{i-1} is the cumulative rotation up to the previous transformation.
+	Computes the global coordinates for a chain of transformations given by quaternions and translations.
 	
 	Args:
-		quaternions (Tensor): Shape (N, 4) of unit quaternions in [w, x, y, z] format.
-		translations (Tensor): Shape (N, 3) of translations corresponding to each transformation.
+		quaternions (Tensor): Shape (*, N, 4) quaternions in [w, x, y, z] format
+		translations (Tensor): Shape (*, N, 3) translation vectors
 		
 	Returns:
-		Tensor: Shape (N, 3) where each row is the global position (origin of the transformed frame)
-				after applying the first i+1 transformations.
+		Tensor: Shape (*, N, 3) global coordinates for each position
 	"""
-	N = quaternions.shape[0]
+	# Handle batched or unbatched input
+	orig_shape = quaternions.shape[:-1]
+	if quaternions.ndim == 2:
+		quaternions = quaternions.unsqueeze(0)
+		translations = translations.unsqueeze(0)
+
+	batch_size = quaternions.shape[0]
+	N = quaternions.shape[1]
 	positions = []
+
+	for b in range(batch_size):
+		# Initialize starting position and rotation
+		global_q = torch.tensor([1.0, 0.0, 0.0, 0.0], 
+								dtype=quaternions.dtype, 
+								device=quaternions.device)
+		curr_pos = torch.zeros(3, dtype=translations.dtype, device=translations.device)
+		chain_positions = []
+
+		for i in range(N):
+			# Apply current rotation to translation
+			rotated_t = quaternion_rotate(global_q, translations[b,i])
+			curr_pos = curr_pos + rotated_t
+			chain_positions.append(curr_pos.clone())
+			
+			# Update cumulative rotation
+			global_q = quaternion_multiply(global_q, quaternions[b,i])
+			global_q = global_q / global_q.norm()  # Normalize to prevent drift
+
+		positions.append(torch.stack(chain_positions))
+
+	positions = torch.stack(positions)
 	
-	# Initialize global rotation (identity quaternion) and translation (origin).
-	global_q = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=quaternions.dtype, device=quaternions.device)
-	global_t = torch.zeros(3, dtype=translations.dtype, device=translations.device)
-	
-	for i in range(N):
-		# Use the current global rotation to rotate the local translation.
-		# Note: We use the rotation before updating the global rotation.
-		rotated_translation = quaternion_rotate(global_q, translations[i])
-		global_t = global_t + rotated_translation
+	# Return to original shape if unbatched input
+	if len(orig_shape) == 1:
+		positions = positions.squeeze(0)
 		
-		positions.append(global_t.clone())
-		
-		# Update global rotation by composing with the current transformation's rotation.
-		global_q = quaternion_multiply(global_q, quaternions[i])
-		global_q = global_q / global_q.norm()  # normalize to prevent numerical drift
+	return positions
+
+def compute_chain_positions_rotmat(rotations, translations):
+	"""
+	Computes the global coordinates for a chain of transformations given by rotation matrices and translations.
 	
-	positions = torch.stack(positions, dim=0)
+	Args:
+		rotations (Tensor): Shape (*, N, 3, 3) rotation matrices
+		translations (Tensor): Shape (*, N, 3) translation vectors
+		
+	Returns:
+		Tensor: Shape (*, N, 3) global coordinates for each position
+	"""
+	# Handle batched or unbatched input
+	orig_shape = rotations.shape[:-2]
+	if rotations.ndim == 3:
+		rotations = rotations.unsqueeze(0)
+		translations = translations.unsqueeze(0)
+
+	batch_size = rotations.shape[0]
+	N = rotations.shape[1]
+	positions = []
+
+	for b in range(batch_size):
+		# Initialize starting position and rotation
+		global_R = torch.eye(3, dtype=rotations.dtype, device=rotations.device)
+		curr_pos = torch.zeros(3, dtype=translations.dtype, device=translations.device)
+		chain_positions = []
+
+		for i in range(N):
+			# Apply current rotation to translation
+			rotated_t = torch.matmul(global_R, translations[b,i])
+			curr_pos = curr_pos + rotated_t
+			chain_positions.append(curr_pos.clone())
+			
+			# Update cumulative rotation
+			global_R = torch.matmul(global_R, rotations[b,i])
+
+		positions.append(torch.stack(chain_positions))
+
+	positions = torch.stack(positions)
+	
+	# Return to original shape if unbatched input
+	if len(orig_shape) == 1:
+		positions = positions.squeeze(0)
+		
 	return positions
 
 def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):

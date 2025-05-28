@@ -1,4 +1,4 @@
-from utils import *
+from .utils import *
 import pydssp
 
 #create a class for transforming pdb files to pyg 
@@ -572,35 +572,36 @@ class PDB2PyG:
 	@staticmethod
 	def compute_local_frame(coords):
 		"""
-		Compute rotation matrices and translation vectors for each residue.
+		Compute rotation matrices and translation vectors between consecutive residues.
 
 		Args:
-			coords: (N, 3, 3) Tensor, where each residue has three atoms defining a frame.
+			coords: (N, 3, 3) Tensor, where each residue has coordinates for N, CA, C atoms
 
 		Returns:
-			R_true: (N, 3, 3) Tensor of rotation matrices.
-			t_true: (N, 3) Tensor of translation vectors.
+			R_true: (N, 3, 3) Tensor of rotation matrices for each residue's local frame
+			t_true: (N-1, 3) Tensor of translation vectors between consecutive residues
 		"""
-
 		N = coords.shape[0]
 		
-		# Translation: Use Cα as the reference point
-		t_true = coords[:, 1, :]  # (N, 3) - Alpha Carbon (CA) positions
-
-		# Define local axes using N, Cα, and C atoms
-		x_axis = coords[:, 2, :] - coords[:, 1, :]  # C - Cα
+		# Define local axes for each residue
+		x_axis = coords[:, 2, :] - coords[:, 1, :]  # C - CA
 		x_axis = x_axis / torch.norm(x_axis, dim=-1, keepdim=True)  # Normalize
 
-		y_axis = coords[:, 0, :] - coords[:, 1, :]  # N - Cα
+		y_axis = coords[:, 0, :] - coords[:, 1, :]  # N - CA 
 		y_axis = y_axis - (torch.sum(y_axis * x_axis, dim=-1, keepdim=True) * x_axis)  # Make orthogonal to x
 		y_axis = y_axis / torch.norm(y_axis, dim=-1, keepdim=True)  # Normalize
 
 		z_axis = torch.cross(x_axis, y_axis, dim=-1)  # Ensure right-handed system
 
-		# Construct rotation matrix
+		# Construct rotation matrices for each residue's local frame
 		R_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)  # (N, 3, 3)
 
+		# Compute translations between consecutive residues (CA_i+1 - CA_i)
+		t_true = coords[1:, 1, :] - coords[:-1, 1, :]  # (N-1, 3)
 
+		# Pad translations with zeros to match number of residues
+		t_pad = torch.zeros((1, 3), device=coords.device)
+		t_true = torch.cat([t_true, t_pad], dim=0)  # (N, 3)
 
 		return R_true, t_true
 
