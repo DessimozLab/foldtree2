@@ -90,6 +90,16 @@ class DenoisingTransformer(nn.Module):
 		r_ortho = r_ortho.reshape( N, 3, 3)
 		return r_ortho
 
+
+class SIRENLayer(nn.Module):
+    def __init__(self, in_features, out_features, omega_0=30):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+        self.omega_0 = omega_0
+
+    def forward(self, x):
+        return torch.sin(self.omega_0 * self.linear(x))
+
 class HeteroGAE_geo_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23 },
 			   	concat_positions = False, hidden_channels={'res_backbone_res': [20, 20, 20]},
@@ -181,13 +191,22 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				)
 		
 		if output_fft == True:
+			#todo implement siren layer to output spatial frequencies
+			#massage output to distmat
+			#take fft2 of distmat
+			#calc spatial and fft losses
+			
 			self.godnodedecoder = torch.nn.Sequential(
 					torch.nn.Linear(in_channels['godnode4decoder'] , FFT2decoder_hidden[0]),
 					torch.nn.GELU(),
 					torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1] ) ,
 					torch.nn.GELU(),
 					DynamicTanh(FFT2decoder_hidden[1] , channels_last = True),
-					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] +in_channels['fft2r'] ) )
+					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] +in_channels['fft2r'] ),
+					#SIRENLayer( in_channels['fft2i'] +in_channels['fft2r'] , in_channels['fft2i'] +in_channels['fft2r'] , omega_0 = 30 )
+				)
+		else:
+			self.godnodedecoder = None
 
 		if contact_mlp == True:
 			self.contact_mlp = torch.nn.Sequential(
@@ -801,7 +820,6 @@ def load_model(file_path):
 	epoch = checkpoint['epoch']
 
 	return model, optimizer, epoch
-
 
 class MultiMonoDecoder(torch.nn.Module):
 	"""
