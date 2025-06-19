@@ -143,6 +143,66 @@ def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 ,
 	neg_loss = neg_loss.mean()
 	return poslossmod*pos_loss + neglossmod*neg_loss  , torch.tensor(0.0)
 
+def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor:
+	# Remove the diagonal
+	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
+	res = decoder(data, pos_edge_index)
+
+	if key == None:
+		pos = res[1]
+	if key != None:
+		pos = res[key]
+	
+	# Calculate distance from diagonal for positive edges
+	diag_dist = torch.abs(pos_edge_index[0] - pos_edge_index[1]).float()
+	# Normalize the distance weights to [1, 2] range - far edges get 2x weight
+	pos_weights = 1.0 + (diag_dist / diag_dist.max())
+	
+	pos_loss = -torch.log(pos + EPS) * pos_weights.view(-1, 1)
+
+	if plddt == True:
+		c1 = data['plddt'].x[pos_edge_index[0]].view(-1,1)
+		c2 = data['plddt'].x[pos_edge_index[1]].view(-1,1)
+		c1 = c1 > .5
+		c2 = c2 > .5
+		mask = c1 & c2
+		pos_loss = pos_loss[mask]
+	
+	if offdiag == True:
+		nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
+		nres = torch.clamp(nres, max=nclamp)
+		nres = nres / nclamp
+		pos_loss = pos_loss * nres.view(-1,1).float()
+	
+	pos_loss = pos_loss.mean()
+	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
+	
+	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
+	res = decoder(data, neg_edge_index)
+
+	if key == None:
+		neg = res[1]
+	if key != None:
+		neg = res[key]
+
+	neg_loss = -torch.log((1 - neg) + EPS)
+	if plddt == False:
+		c1 = data['plddt'].x[pos_edge_index[0]].view(-1,1)
+		c2 = data['plddt'].x[pos_edge_index[1]].view(-1,1)
+		c1 = c1 > .5
+		c2 = c2 > .5
+		mask = c1 & c2
+		neg_loss = neg_loss.view(-1,1)[mask]
+		
+	if offdiag == True:
+		nres = torch.abs(neg_edge_index[0] - neg_edge_index[1])
+		nres = torch.clamp(nres, max=nclamp)
+		nres = nres / nclamp
+		neg_loss = neg_loss * nres.view(-1,1).float()
+	
+	neg_loss = neg_loss.mean()
+	return poslossmod*pos_loss + neglossmod*neg_loss, torch.tensor(0.0)
+
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):
 	"""

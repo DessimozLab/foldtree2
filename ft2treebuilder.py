@@ -386,8 +386,11 @@ class treebuilder():
 		
 		#decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
 		allpairs = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T.to( self.device )
-		recon_x , edge_probs , zgodnode , foldxout , r , t , angles , r2, t2 , angles2 = decoder( data.x_dict, data.edge_index_dict , allpairs ) 
-		amino_map = self.decoder.amino_acid_indices
+		out = decoder( data.x_dict, data.edge_index_dict , allpairs )
+		recon_x = out['aa'] if 'aa' in out else None
+		edge_probs = out['edge_probs'] if 'edge_probs' in out else None
+		print( edge_probs.shape)
+		amino_map = decoder.decoders['sequence_transformer'].amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
@@ -395,8 +398,6 @@ class treebuilder():
 
 	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None):
 		#encode the structures
-
-
 		encoded_fasta = self.encode_structblob( blob=structs , outfile = None )	
 		#replace special characters
 		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = None  , verbose = False)

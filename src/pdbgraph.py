@@ -759,41 +759,78 @@ class PDB2PyG:
 		return data
 
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg_mp(self, pdbfiles, filename, verbose = True , ncpu = 4):
-		#working but crashes after a while. cant figure out why
-		#todo fix the crash
-		with h5py.File(filename , mode = 'w') as f:
-			#create structs list
+	def store_pyg_mp(self, pdbfiles, filename, verbose=True, ncpu=4):
+		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
+		def process_single_pdb(pdb_file):
+			try:
+				return self.struct2pyg(pdb_file)
+			except Exception as e:
+				return (None, pdb_file, str(e))
+
+		# Create HDF5 file
+		with h5py.File(filename, mode='w') as f:
+			f.create_group('structs')
+			
+			# Process files in parallel
 			with pebble.ProcessPool(max_workers=ncpu) as pool:
-				#map the pdb files to the struct2pyg function and get the results asynchonously
-				results = pool.map( self.struct2pyg , pdbfiles , timeout=1000)                
-				for pygdata in tqdm.tqdm(results.result(), total=len(pdbfiles)):
-					
-					if verbose:
-						print(res)
-						print(pdbfile)
-					graph,identifier  = pygdata
-					hetero_data = graph
-					#hetero_data = self.struct2pyg(pdbfile, self.aaproperties)
-					if hetero_data:
-						f.create_group(identifier)
-						for node_type in hetero_data.node_types:
-							if hetero_data[node_type].x is not None:
-								node_group = f.create_group(f'structs/{identifier}/node/{node_type}')
-								node_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
-						# Iterate over edge types and their connections
-						for edge_type in hetero_data.edge_types:
-							# edge_type is a tuple: (src_node_type, relation_type, dst_node_type)
-							edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
-							if hetero_data[edge_type].edge_index is not None:
-								edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
+				future = pool.map(process_single_pdb, pdbfiles, timeout=1000)
+				
+				iterator = future.result()
+				failed_files = []
+				
+				# Process results
+				for result in tqdm.tqdm(iterator, total=len(pdbfiles), desc="Processing PDB files"):
+					try:
+						if isinstance(result, tuple) and len(result) == 3:
+							# This is an error result
+							_, pdb_file, error = result
+							if verbose:
+								print(f"Error processing {pdb_file}: {error}")
+							failed_files.append((pdb_file, error))
+							continue
 							
-							# If there are edge features, save them too
-							if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
-								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
-							#todo. store some other data. sequence. uniprot info etc.
-					else:
-						print('err' , pdbfile )
+						hetero_data = result
+						if hetero_data and hasattr(hetero_data, 'identifier'):
+							identifier = hetero_data.identifier
+							struct_group = f.create_group(f'structs/{identifier}')
+							
+							# Store node features
+							for node_type in hetero_data.node_types:
+								if hetero_data[node_type].x is not None:
+									node_group = struct_group.create_group(f'node/{node_type}')
+									node_group.create_dataset('x', 
+										data=hetero_data[node_type].x.numpy())
+							
+							# Store edge features
+							for edge_type in hetero_data.edge_types:
+								edge_name = (f'{edge_type[0]}_{edge_type[1]}_'
+										   f'{edge_type[2]}')
+								edge_group = struct_group.create_group(f'edge/{edge_name}')
+								
+								if hetero_data[edge_type].edge_index is not None:
+									edge_group.create_dataset(
+										'edge_index',
+										data=hetero_data[edge_type].edge_index.numpy()
+									)
+								
+								if (hasattr(hetero_data[edge_type], 'edge_attr') and 
+									hetero_data[edge_type].edge_attr is not None):
+									edge_group.create_dataset(
+										'edge_attr',
+										data=hetero_data[edge_type].edge_attr.numpy()
+									)
+						
+					except Exception as e:
+						if verbose:
+							print(f"Error storing data: {str(e)}")
+						failed_files.append((str(result), str(e)))
+				
+				if failed_files and verbose:
+					print("\nFailed files:")
+					for pdb_file, error in failed_files:
+						print(f"{pdb_file}: {error}")
+					
+				return failed_files
 	
 	#create a function to store the pytorch geometric data in a hdf5 file
 	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, verbose = True ):

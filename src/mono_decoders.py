@@ -270,6 +270,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.output_fft == True:
 			zgodnode = xdata['godnode4decoder']
 			fft2_pred = self.godnodedecoder( xdata['godnode4decoder'] )
+		else:
+			zgodnode = None
 		
 		rt_pred = None
 		if self.rt_mlp is not None:
@@ -297,7 +299,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred }
 
-
+	
+		
 class HeteroGAE_AA_Decoder(torch.nn.Module):
 	def __init__(self, in_channels={'res': 10},
 			  	 xdim=20, concat_positions=True, 
