@@ -427,57 +427,47 @@ def quaternion_rotate(q, v):
 
 	# Apply rotation
 	return torch.matmul(R, v.unsqueeze(-1)).squeeze(-1)
-def compute_chain_positions(quaternions, translations):
-	"""
-	Computes the global coordinates for a chain of transformations given by quaternions and translations.
-	
-	Args:
-		quaternions (Tensor): Shape (*, N, 4) quaternions in [w, x, y, z] format
-		translations (Tensor): Shape (*, N, 3) translation vectors
-		
-	Returns:
-		Tensor: Shape (*, N, 3) global coordinates for each position
-	"""
-	# Handle batched or unbatched input
-	orig_shape = quaternions.shape[:-1]
-	if quaternions.ndim == 2:
-		quaternions = quaternions.unsqueeze(0)
-		translations = translations.unsqueeze(0)
 
-	batch_size = quaternions.shape[0]
-	N = quaternions.shape[1]
-	positions = []
 
-	for b in range(batch_size):
-		# Initialize starting position and rotation
-		global_q = torch.tensor([1.0, 0.0, 0.0, 0.0], 
-								dtype=quaternions.dtype, 
-								device=quaternions.device)
-		curr_pos = torch.zeros(3, dtype=translations.dtype, device=translations.device)
-		chain_positions = []
+def compute_chain_positions(quaternions, translations, reference_coords=None):
+    """
+    Apply rotation (quaternion) and translation to a set of 3D reference coordinates using PyTorch.
+    
+    Parameters:
+    - quaternions: (N, 4) tensor of quaternions (x, y, z, w)
+    - translations: (N, 3) tensor of translations (tx, ty, tz)
+    - reference_coords: (M, 3) tensor of reference points (default is [[0, 0, 0]])
+    
+    Returns:
+    - transformed_coords: (N, M, 3) tensor of transformed coordinates
+    """
+    device = quaternions.device
+    quaternions = quaternions / quaternions.norm(dim=-1, keepdim=True)  # Normalize quaternions
+    
+    if reference_coords is None:
+        reference_coords = torch.zeros(1, 3, device=device)
+    
+    N = quaternions.shape[0]
+    M = reference_coords.shape[0]
+    
+    x, y, z, w = quaternions.unbind(-1)
+    
+    # Rotation matrix components
+    R = torch.stack([
+        1 - 2*(y**2 + z**2), 2*(x*y - z*w),     2*(x*z + y*w),
+        2*(x*y + z*w),     1 - 2*(x**2 + z**2), 2*(y*z - x*w),
+        2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x**2 + y**2)
+    ], dim=-1).reshape(N, 3, 3)
+    
+    # Apply rotation
+    rotated = torch.matmul(reference_coords.unsqueeze(0), R.transpose(1,2))  # (N, M, 3)
+    
+    # Apply translation
+    transformed_coords = rotated + translations.unsqueeze(1)
+    
+    return transformed_coords
 
-		for i in range(N):
-			# Apply current rotation to translation
-			rotated_t = quaternion_rotate(global_q, translations[b,i])
-			curr_pos = curr_pos + rotated_t
-			chain_positions.append(curr_pos.clone())
-			
-			# Update cumulative rotation
-			global_q = quaternion_multiply(global_q, quaternions[b,i])
-			global_q = global_q / global_q.norm()  # Normalize to prevent drift
 
-		positions.append(torch.stack(chain_positions))
-
-	positions = torch.stack(positions)
-	
-	# Return to original shape if unbatched input
-	if len(orig_shape) == 1:
-		positions = positions.squeeze(0)
-		
-	return positions
-	positions = positions.squeeze(0)
-	
-return positions
 
 def compute_chain_positions_rotmat(rotations, translations):
 	"""
