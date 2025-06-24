@@ -30,6 +30,8 @@ echo "Output will be saved to: ${OUTPUT_DIR}"
 
 cd /capstor/store/cscs/swissai/prep01/foldtree2/foldtree2
 
+pip install --no-cache-dir  -e .
+
 # Run experiment with the specified hidden size using learn_monodecoder.py
 python /capstor/store/cscs/swissai/prep01/foldtree2/foldtree2/learn_monodecoder.py \
     --dataset /capstor/store/cscs/swissai/prep01/structs_traininffttest.h5 \
