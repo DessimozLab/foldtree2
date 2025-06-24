@@ -431,8 +431,10 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
-			DynamicTanh(AAdecoder_hidden[1], channels_last=True),
-			torch.nn.Linear(AAdecoder_hidden[1], xdim),
+			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+			torch.nn.GELU(),
+			DynamicTanh(AAdecoder_hidden[2], channels_last=True),
+			torch.nn.Linear(AAdecoder_hidden[2], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)
 
@@ -474,7 +476,6 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				seq_len = (batch == i).sum().item()
 				aa_list.append(self.lin(xi[:seq_len, 0]))
 			aa = torch.cat(aa_list, dim=0)
-
 		return  {'aa': aa }
 
 	def x_to_amino_acid_sequence(self, x_r):
@@ -793,11 +794,12 @@ class MultiMonoDecoder(torch.nn.Module):
 	A decoder that combines several mono decoders (e.g., sequence, contacts) and calls them in the forward pass.
 	Pass a list of tasks (e.g., ['sequence', 'contacts']) and their configs to __init__.
 	"""
-	def __init__(self, tasks, configs):
+	def __init__(self,  configs):
 		super().__init__()
-		self.tasks = tasks
 		self.decoders = torch.nn.ModuleDict()
-		for task in tasks:
+		for task in configs.keys():
+			print(f"Initializing decoder for task: {task}")
+			print( task == 'sequence' , task == 'sequence_transformer' , task == 'contacts' , task == 'geometry' , task == 'foldx')
 			if task == 'sequence':
 				self.decoders['sequence'] = HeteroGAE_AA_Decoder(**configs['sequence'])
 			if task == 'sequence_transformer':
@@ -808,8 +810,7 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['geometry'] = HeteroGAE_geo_Decoder(**configs['contacts'])
 			elif task == 'foldx':
 				self.decoders['foldx'] = HeteroGAE_geo_Decoder(**configs['foldx'])
-			else:
-				raise ValueError(f"Unknown task: {task}")
+			
 
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}

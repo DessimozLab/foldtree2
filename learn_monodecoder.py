@@ -173,16 +173,18 @@ else:
     else:
         # MultiMonoDecoder for sequence and geometry
         mono_configs = {
-            'sequence_transformer': {
+            #'sequence_transformer': {
+            'sequence': {
                 'in_channels': {'res': args.embedding_dim},
                 'xdim': 20,  # 20 amino acids
                 'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3},
-                'layers': 2,
+                'hidden_channels': {('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+                #'layers': 2,
+                'layers': 5,
                 'AAdecoder_hidden': [hidden_size, hidden_size//2, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                'nheads' : 10,
+                #'nheads' : 10,
                 'dropout': 0.005,
                 'normalize': True,
                 'residual': False
@@ -211,8 +213,9 @@ else:
             }
         }
         # Initialize decoder
-        tasks = ['sequence_transformer', 'contacts']
-        decoder = MultiMonoDecoder(tasks=tasks, configs=mono_configs)
+        #tasks = ['sequence_transformer', 'contacts']
+        tasks = ['sequence', 'contacts']
+        decoder = MultiMonoDecoder( configs=mono_configs)
 
 # Move models to device
 encoder = encoder.to(device)
