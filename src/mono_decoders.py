@@ -9,86 +9,6 @@ from quantizers import *
 from  torch_geometric.utils import to_undirected
 #encoder super class
 
-class DenoisingTransformer(nn.Module):
-	def __init__(self, input_dim=3, d_model=128, nhead=8, num_layers=2 , dropout=0.001):
-		super(DenoisingTransformer, self).__init__()
-		self.input_proj = nn.Linear(input_dim, d_model)
-		# Transformer encoder: PyTorch transformer expects input of shape (seq_len, batch, d_model)
-		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
-		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-		# Project back to the 12-dimensional output space
-		#self.output_proj = nn.Linear(d_model, 14 )
-		self.output_proj_rt = nn.Sequential(
-			DynamicTanh( d_model , channels_last = True),
-			nn.Linear(d_model, 50),
-			nn.GELU(),
-			nn.Linear(50, 25),
-			nn.GELU(),
-			nn.Linear(25, 7) ,
-			DynamicTanh(7 , channels_last = True)
-			)
-		
-		self.output_proj_angles = nn.Sequential(
-			DynamicTanh( d_model , channels_last = True),
-			nn.Linear(d_model, 10),
-			nn.GELU(),
-			nn.Linear(10, 5),
-			nn.GELU(),
-			DynamicTanh(5 , channels_last = True),
-			nn.Linear(5, 3) )
-	
-	def forward(self, z , positions):
-
-		"""
-		Args:
-		  r: Tensor of shape ( N, 3, 3) containing input rotation matrices.
-		  t: Tensor of shape ( N, 3) containing input translation vectors.
-		  angles: Tensor of shape ( N, 2) containing angles.
-		  positions: Tensor of shape ( N, M) containing positional encoding.
-
-		Returns:
-		  r_refined: Tensor of shape ( N, 3, 3) with denoised (and re-orthogonalized) rotations.
-		  t_refined: Tensor of shape ( N, 3) with denoised translations.
-		"""
-		N, _ = z.shape
-		if positions is not None:
-			x = torch.cat([z , positions], dim=-1)
-		else:
-			x = z
-		# Project to the transformer dimension: (N, d_model)
-		x = self.input_proj(x)
-		# PyTorch's transformer expects shape (seq_len, batch, d_model)
-		x = self.transformer_encoder(x)  # Process all positions (sequence length) per batch
-		# Project back to the 12-dim space
-		refined_features_rt = self.output_proj_rt(x)  # ( N, 7)
-		refined_features_angles = self.output_proj_angles(x)  # ( N, 3)
-
-		# Split the features back into rotation and translation parts
-		r_refined_flat = refined_features_rt[..., :4]  # ( N, 4)
-		r_refined = quaternion_to_rotation_matrix(r_refined_flat)  # ( N, 3, 3)
-		t_refined = refined_features_rt[..., 4:]  # ( N, 3)
-		
-		return r_refined, t_refined , refined_features_angles
-
-	@staticmethod
-	def orthogonalize(r):
-		"""
-		Re-orthogonalizes each 3x3 matrix in the batch so that it is a valid rotation matrix.
-		
-		Args:
-		  r: Tensor of shape ( N, 9)
-		
-		Returns:
-		  r_ortho: Tensor of shape ( N, 3, 3) where each matrix is orthogonal.
-		"""
-		N, _ = r.shape
-		# Flatten sequence dimensions: (N, 3, 3)
-		r_flat = r.reshape(-1, 3, 3)
-		U, S, Vh = torch.linalg.svd(r, full_matrices=False)
-		r_ortho = torch.matmul(U, Vh)
-		# Reshape back to ( N, 3, 3)
-		r_ortho = r_ortho.reshape( N, 3, 3)
-		return r_ortho
 
 
 class SIRENLayer(nn.Module):
@@ -298,8 +218,6 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 							nn.init.xavier_uniform_(param)
 
 		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred }
-
-	
 		
 class HeteroGAE_AA_Decoder(torch.nn.Module):
 	def __init__(self, in_channels={'res': 10},

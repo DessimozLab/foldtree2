@@ -1,4 +1,4 @@
-from .utils import *
+from utils import *
 import pydssp
 
 #create a class for transforming pdb files to pyg 

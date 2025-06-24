@@ -162,13 +162,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	pos_loss = -torch.log(pos + EPS).squeeze()
 	pos_loss = (pos_loss * pos_weights).unsqueeze(1)
 
-	if plddt == True:
-		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
-		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
-		c1 = c1 > .5
-		c2 = c2 > .5
-		mask = c1 & c2
-		pos_loss = pos_loss[mask]
+	
 	
 	if offdiag == True:
 		nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
@@ -176,6 +170,17 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		nres = nres / nclamp
 		pos_loss = (pos_loss.squeeze() * nres.float()).unsqueeze(1)
 	
+
+	if plddt == True:
+		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
+		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
+		c1 = c1 > .5
+		c2 = c2 > .5
+		mask = c1 & c2
+		mask = mask.squeeze(1)  # Ensure mask is 1D
+		pos_loss = pos_loss[mask]
+
+
 	pos_loss = pos_loss.mean()
 	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
 	
@@ -189,19 +194,21 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 
 	neg_loss = -torch.log((1 - neg) + EPS).squeeze()
 	
-	if plddt == True:
-		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
-		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
-		c1 = c1 > .5
-		c2 = c2 > .5
-		mask = c1 & c2
-		neg_loss = neg_loss.unsqueeze(1)[mask]
 		
 	if offdiag == True:
 		nres = torch.abs(neg_edge_index[0] - neg_edge_index[1])
 		nres = torch.clamp(nres, max=nclamp)
 		nres = nres / nclamp
 		neg_loss = (neg_loss.squeeze() * nres.float()).unsqueeze(1)
+	
+	if plddt == True:
+		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
+		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
+		c1 = c1 > .5
+		c2 = c2 > .5
+		mask = c1 & c2
+		mask = mask.squeeze(1)  # Ensure mask is 1D	
+		neg_loss = neg_loss[mask]
 	
 	neg_loss = neg_loss.mean()
 	return poslossmod*pos_loss + neglossmod*neg_loss, torch.tensor(0.0)
@@ -430,42 +437,41 @@ def quaternion_rotate(q, v):
 
 
 def compute_chain_positions(quaternions, translations, reference_coords=None):
-    """
-    Apply rotation (quaternion) and translation to a set of 3D reference coordinates using PyTorch.
-    
-    Parameters:
-    - quaternions: (N, 4) tensor of quaternions (x, y, z, w)
-    - translations: (N, 3) tensor of translations (tx, ty, tz)
-    - reference_coords: (M, 3) tensor of reference points (default is [[0, 0, 0]])
-    
-    Returns:
-    - transformed_coords: (N, M, 3) tensor of transformed coordinates
-    """
-    device = quaternions.device
-    quaternions = quaternions / quaternions.norm(dim=-1, keepdim=True)  # Normalize quaternions
-    
-    if reference_coords is None:
-        reference_coords = torch.zeros(1, 3, device=device)
-    
-    N = quaternions.shape[0]
-    M = reference_coords.shape[0]
-    
-    x, y, z, w = quaternions.unbind(-1)
-    
-    # Rotation matrix components
-    R = torch.stack([
-        1 - 2*(y**2 + z**2), 2*(x*y - z*w),     2*(x*z + y*w),
-        2*(x*y + z*w),     1 - 2*(x**2 + z**2), 2*(y*z - x*w),
-        2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x**2 + y**2)
-    ], dim=-1).reshape(N, 3, 3)
-    
-    # Apply rotation
-    rotated = torch.matmul(reference_coords.unsqueeze(0), R.transpose(1,2))  # (N, M, 3)
-    
-    # Apply translation
-    transformed_coords = rotated + translations.unsqueeze(1)
-    
-    return transformed_coords
+	"""
+	Apply rotation (quaternion) and translation to a set of 3D reference coordinates using PyTorch.
+	
+	Parameters:
+	- quaternions: (N, 4) tensor of quaternions (x, y, z, w)
+	- translations: (N, 3) tensor of translations (tx, ty, tz)
+	- reference_coords: (M, 3) tensor of reference points (default is [[0, 0, 0]])
+	
+	Returns:
+	- transformed_coords: (N, 3) tensor of transformed coordinates
+	"""
+	device = quaternions.device
+	quaternions = quaternions / quaternions.norm(dim=-1, keepdim=True)  # Normalize quaternions
+	
+	if reference_coords is None:
+		reference_coords = torch.zeros(1, 3, device=device)
+	
+	N = quaternions.shape[0]
+	
+	x, y, z, w = quaternions.unbind(-1)
+	
+	# Rotation matrix components
+	R = torch.stack([
+		1 - 2*(y**2 + z**2), 2*(x*y - z*w),     2*(x*z + y*w),
+		2*(x*y + z*w),     1 - 2*(x**2 + z**2), 2*(y*z - x*w),
+		2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x**2 + y**2)
+	], dim=-1).reshape(N, 3, 3)
+	
+	# Apply rotation to reference coordinates (take first point if multiple)
+	rotated = torch.matmul(reference_coords[0:1], R.transpose(1,2)).squeeze(0)  # (N, 3)
+	
+	# Apply translation
+	transformed_coords = rotated + translations
+	
+	return transformed_coords
 
 
 
