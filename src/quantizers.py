@@ -1,10 +1,27 @@
-
-
-from losses.losses import *
-
 import torch
 from torch import nn
 from torch.nn import functional as F
+import numpy as np
+
+
+
+# Define the regularization functions outside the class
+def entropy_regularization(encodings):
+	probabilities = encodings.mean(dim=0)
+	entropy = -torch.sum(probabilities * torch.log(probabilities + 1e-10))
+	return entropy
+
+def diversity_regularization(encodings):
+	probabilities = encodings.mean(dim=0)
+	diversity_loss = torch.sum((probabilities - 1 / probabilities.size(0)) ** 2)
+	return diversity_loss
+
+def kl_divergence_regularization(encodings):
+	probabilities = encodings.mean(dim=0)
+	kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
+	return kl_divergence
+
+
 
 class VectorQuantizerEMA(nn.Module):
 	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = False , klweight = 0 , diversityweight=1 , entropyweight = 1 , jsweight = 0):

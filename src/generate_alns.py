@@ -5,16 +5,13 @@ import pandas as pd
 import numpy as np
 import glob
 import os
-#autoreload
 import pickle
-from src import AFDB_tools
 import tqdm
 
 datadir = '../../datasets/foldtree2/'
 
 repdirs = '../../datasets/foldtree2/struct_align/'
 dl_structs = False
-from src import foldseek2tree
 aln_structs = True
 
 

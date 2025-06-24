@@ -17,12 +17,13 @@ from matplotlib import pyplot as plt
 # Optional: import custom modules if available
 try:
     from src import AFDB_tools, foldseek2tree
-    from src.converter import pdbgraph
+    from src.pdbgraph import PDB2PyG, StructureDataset
     import src.foldtree2_ecddcd as ft2
 except ImportError:
     AFDB_tools = None
     foldseek2tree = None
-    pdbgraph = None
+    PDB2PyG = None
+    StructureDataset = None
     ft2 = None
 
 
@@ -38,6 +39,8 @@ def parse_args():
     parser.add_argument('--plot', action='store_true', help='Show plots')
     parser.add_argument('--mafftmat', type=str, default=None, help='Output path for MAFFT matrix')
     parser.add_argument('--submat', type=str, default=None, help='Output path for RAxML substitution matrix')
+    parser.add_argument('--dataset', type=str, default='structalignmk4.h5', help='Dataset name for structure encoding')
+    parser.add_argument('--fident_thresh', type=float, default=0.3, help ='Identity threshold for pair counts')
     return parser.parse_args()
 
 
@@ -86,9 +89,9 @@ def align_structs_fn(reps, datadir):
         )
 
 
-def encode_structures(encoder, modelname, device):
+def encode_structures(encoder, modelname, device, dataset):
     from torch_geometric.data import DataLoader
-    struct_dat = pdbgraph.StructureDataset('structalignmk4.h5')
+    struct_dat = StructureDataset(dataset)
     encoder_loader = DataLoader(struct_dat, batch_size=1, shuffle=False)
     def databatch2list(loader):
         for data in loader:
@@ -234,7 +237,7 @@ def main():
     decoder = decoder.to(device)
     encoder.eval()
     if args.encode_alns:
-        encode_structures(encoder, args.modelname, device)
+        encode_structures(encoder, args.modelname, device, args.dataset)
     # Parse encoded FASTA
     encoded_fasta = args.modelname + '_aln_encoded.fasta'
     encoded_df = parse_encoded_fasta(encoded_fasta)

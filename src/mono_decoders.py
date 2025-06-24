@@ -1,7 +1,51 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-from utils import *
+import copy
+import importlib
+import warnings
+import torch_geometric
+import glob
+import h5py
+from scipy import sparse
+from copy import deepcopy
+import pebble
+import time
+import torch
+import networkx as nx
+import matplotlib.pyplot as plt
+from torch_geometric.utils import to_networkx, to_undirected
+from torch_geometric.data import HeteroData
+from torch_geometric.nn import GraphNorm, Linear, AGNNConv, TransformerConv, GATv2Conv, GCNConv, SAGEConv, MFConv, GENConv, JumpingKnowledge, HeteroConv
+from einops import rearrange
+from torch_geometric.nn.dense import dense_diff_pool as DiffPool
+from torch.nn import ModuleDict, ModuleList, L1Loss
+from torch_geometric.nn import global_mean_pool
+from torch_geometric.nn.aggr import SoftmaxAggregation
+from torch_geometric.utils import negative_sampling
+import os
+import urllib.request
+from urllib.error import HTTPError
+import pytorch_lightning as L
+import scipy.sparse
+import tqdm
+import torch.nn.functional as F
+import torch.optim as optim
+from torch_geometric.data import Data, Dataset
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch import Tensor
+import torch.nn as nn
+import traceback
+from datasketch import WeightedMinHashGenerator, MinHashLSHForest
+import numpy as np
+import pandas as pd
+from Bio import PDB
+from Bio.PDB import PDBParser
+from scipy.spatial.distance import cdist
+EPS = 1e-15
+datadir = '../../datasets/foldtree2/'
+
+
 from losses import *
 from dynamictan import *
 from quantizers import *
@@ -28,6 +72,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				contactdecoder_hidden = 10,
 				nheads = 3 ,
 				Xdecoder_hidden=30, 
+				RTdecoder_hidden=30,
 				metadata={}, 
 				flavor = None,
 				dropout= .001,
@@ -140,6 +185,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			self.contact_mlp = None
 
 		if output_rt == True:
+			if type(RTdecoder_hidden) is not list:
+				RTdecoder_hidden = [RTdecoder_hidden, RTdecoder_hidden]
 			#suggest r and t for each residue
 			#feed into refinement network
 			self.rt_mlp = torch.nn.Sequential(
@@ -369,23 +416,22 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		print( d_model , nheads , layers , dropout)
 
 		self.input_proj = torch.nn.Sequential( 
+			DynamicTanh(input_dim, channels_last=True),
 			nn.Linear(input_dim, d_model), 
 			torch.nn.GELU(),
 			torch.nn.Dropout(dropout),
 			nn.Linear(d_model, d_model),
-			DynamicTanh(d_model, channels_last=True)
 		)
 
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
 		self.lin = torch.nn.Sequential(
-			torch.nn.Dropout(dropout),
-			DynamicTanh(d_model, channels_last=True),
 			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
+			DynamicTanh(AAdecoder_hidden[1], channels_last=True),
 			torch.nn.Linear(AAdecoder_hidden[1], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)

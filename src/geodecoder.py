@@ -1,7 +1,13 @@
 import torch
 import torch.nn as nn
 from se3_transformer_pytorch import SE3Transformer
-from src.utils import quaternion_to_rotation_matrix
+import numpy as np
+from scipy.spatial.distance import cdist
+
+def quaternion_to_rotation_matrix(quat):
+    # ...implement or copy the function here if needed...
+    # Placeholder for actual implementation
+    pass
 
 class SE3InvariantTransformer(nn.Module):
     """

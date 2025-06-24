@@ -1,20 +1,5 @@
 from src.utils import *
 
-# Define the regularization functions outside the class
-def entropy_regularization(encodings):
-	probabilities = encodings.mean(dim=0)
-	entropy = -torch.sum(probabilities * torch.log(probabilities + 1e-10))
-	return entropy
-
-def diversity_regularization(encodings):
-	probabilities = encodings.mean(dim=0)
-	diversity_loss = torch.sum((probabilities - 1 / probabilities.size(0)) ** 2)
-	return diversity_loss
-
-def kl_divergence_regularization(encodings):
-	probabilities = encodings.mean(dim=0)
-	kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
-	return kl_divergence
 
 def jensen_shannon_regularization(encodings):
     # 1) Compute the average distribution p
