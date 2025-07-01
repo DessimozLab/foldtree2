@@ -4,7 +4,7 @@
 
 # FoldTree2: Maximum Likelihood Phylogenetic Tree Inference from Protein Structures
 
-FoldTree2 is a Python package and toolkit for inferring phylogenetic trees from protein structures using maximum likelihood methods. It provides tools for converting protein structure files (PDBs) into graph representations, encoding structural alignments, and building phylogenetic trees based on structural data.
+FoldTree2 is a Python package and toolkit for inferring phylogenetic trees from protein structures using maximum likelihood methods. It provides tools for converting protein structure files (PDBs) into graph representations, deriving structural alignments, and building phylogenetic trees based on structural data.
 
 ## Features
 - **PDB to Graph Conversion:** Convert protein structures into graph-based representations suitable for machine learning and phylogenetic analysis.
@@ -14,17 +14,21 @@ FoldTree2 is a Python package and toolkit for inferring phylogenetic trees from 
 
 ## Installation
 
-### Using pip (recommended for development)
+### Using pip and conda
+
+First create the environment 
+
+```bash
+conda env create --name foldtree2 --file=foldtree2.yml
+conda activate foldtree2
+```
+and then install the project with pip
+
 ```bash
 pip install .
 ```
 This will install all required dependencies as specified in `pyproject.toml` and `setup.py`.
 
-### Using Conda (legacy)
-```bash
-conda env create --name foldtree2 --file=foldtree2.yml
-conda activate foldtree2
-```
 
 ## Usage
 

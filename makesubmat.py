@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Command-line script version of makesubmat_redo.ipynb
+Command-line script version of makesubmat.ipynb
 """
+
 import sys
 import os
 import argparse
@@ -15,16 +16,10 @@ import importlib
 from matplotlib import pyplot as plt
 
 # Optional: import custom modules if available
-try:
-    from src import AFDB_tools, foldseek2tree
-    from src.pdbgraph import PDB2PyG, StructureDataset
-    import src.foldtree2_ecddcd as ft2
-except ImportError:
-    AFDB_tools = None
-    foldseek2tree = None
-    PDB2PyG = None
-    StructureDataset = None
-    ft2 = None
+from src import AFDB_tools, foldseek2tree
+from src.pdbgraph import PDB2PyG, StructureDataset
+import src.foldtree2_ecddcd as ft2
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate substitution matrices and run alignments.")
@@ -33,6 +28,7 @@ def parse_args():
     parser.add_argument('--datadir', type=str, default='../../datasets/', help='Data directory')
     parser.add_argument('--outdir_base', type=str, default='../../results/foldtree2/', help='Base output directory')
     parser.add_argument('--download_structs', action='store_true', help='Download structure members')
+    parser.add_argument('--nstructs', type=int, default=5, help='Number of structures to download per cluster representative')
     parser.add_argument('--align_structs', action='store_true', help='Align structures with foldseek')
     parser.add_argument('--encode_alns', action='store_true', help='Encode alignments')
     parser.add_argument('--plot', action='store_true', help='Show plots')
@@ -61,7 +57,6 @@ def read_reps(datadir):
     reps = pd.read_table(os.path.join(datadir, 'afdbclusters/1-AFDBClusters-entryId_repId_taxId.tsv'),
                         header=None, names=['entryId', 'repId', 'taxId'])
     return reps
-
 
 def download_structs_fn(reps, datadir, n=5):
     if AFDB_tools is None:
