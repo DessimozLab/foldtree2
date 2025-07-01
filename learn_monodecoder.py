@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
 
 # Add argparse for CLI configuration
-parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoder for sequence and geometry prediction')
+parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoders for sequence and geometry prediction')
 parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
                     help='Path to the dataset file (default: structs_traininffttest.h5)')
 parser.add_argument('--hidden-size', '-hs', type=int, default=100,
@@ -52,6 +52,8 @@ parser.add_argument('--output-fft', action='store_true',
                     help='Train the model with FFT output')
 parser.add_argument('--output-rt', action='store_true',
                     help='Train the model with rotation and translation output')
+parser.add_argument('--output-foldx' , action='store_true'
+                    help='Train the model with Foldx energy prediction output')
 parser.add_argument('--seed', type=int, default=0,
                     help='Random seed for reproducibility')
 parser.add_argument('--hetero-gae', action='store_true',
@@ -193,9 +195,8 @@ else:
                 'residual': False
             },
             
-
             'contacts': {
-                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 
+                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode,
                                'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
                 'concat_positions': True,
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3, 
@@ -216,6 +217,23 @@ else:
                 'contact_mlp': True
             }
         }
+
+        if args.output_foldx:
+            mono_configs['foldx'] = {
+                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
+                'concat_positions': True,
+                'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3,
+                                   ('res','informs','godnode4decoder'): [hidden_size]*3, 
+                                   ('godnode4decoder','informs','res'): [hidden_size]*3},
+                'layers': 3,
+                'foldx_hidden': [hidden_size, hidden_size//2],
+                'nheads': 2,
+                'metadata': converter.metadata,
+                'flavor': 'sage',
+                'dropout': 0.005,
+                'normalize': True,
+                'residual': False
+            }
 
 
 

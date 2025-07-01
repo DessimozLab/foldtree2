@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
 
 # Argument parsing
-parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoder for sequence and geometry prediction (Lightning refactor)')
+parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoder for sequence and geometry prediction (Lightning version)')
 parser.add_argument('--dataset', '-d', type=str, default='structs_training_godnodemk5.h5',
                     help='Path to the dataset file (default: structs_training_godnodemk5.h5)')
 parser.add_argument('--hidden-size', '-hs', type=int, default=100,

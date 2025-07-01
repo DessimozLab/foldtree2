@@ -1,0 +1,57 @@
+# --------------------------------------------------------------------------------
+# 1. Build system definition: tells pip how to build your package
+# --------------------------------------------------------------------------------
+[build-system]
+requires = [
+  "setuptools>=61.0",  # PEP-621 support
+  "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+# --------------------------------------------------------------------------------
+# 2. Project metadata: PEP-621
+# --------------------------------------------------------------------------------
+[project]
+name = "foldtree2"
+version = "0.1.0"
+description = "Maximum likelihood phylogenetic tree inference from protein structures."
+readme = "README.md"
+requires-python = ">=3.7"
+license = { file = "LICENSE.txt" }
+authors = [
+  { name = "Dave Moi", email = "dmoi@unil.ch" }
+]
+keywords = ["bioinformatics", "phylogenetics", "protein structure"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+dependencies = [
+  "numpy",
+  "pandas",
+  "tqdm",
+  "matplotlib",
+  "torch",
+  "scipy",
+  "h5py",
+  "pebble",
+  "networkx",
+  "einops",
+  "pytorch-lightning",
+  "torch-geometric",
+  "biopython",
+  "datasketch",
+  "wget",
+  "toytree",
+  "toyplot",
+  "statsmodels"
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*"]
