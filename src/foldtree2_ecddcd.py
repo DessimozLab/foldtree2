@@ -110,22 +110,6 @@ class Encoder(torch.nn.Module):
 					print(identifier, outstr)
 		return filename
 
-#decoder super class
-class Decoder(torch.nn.Module):
-	def __init__() :
-		super(Decoder, self).__init__()
-		#save all arguments to constructor
-		self.args = locals()
-		self.args.pop('self')
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False
-
-	def	forward(self, z):
-		raise NotImplementedError('forward method not implemented')
-	
 
 class mk1_Encoder(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
@@ -209,12 +193,15 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,	
 			torch.nn.GELU(),
+			DynamicTanh(self.encoder_hidden , channels_last = True),
 			)
 		
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(self.encoder_hidden + 20 , self.encoder_hidden) ,
 			torch.nn.GELU(),
-			torch.nn.Linear( self.encoder_hidden, self.out_channels) ,
+			torch.nn.Linear( self.encoder_hidden, self.encoder_hidden //2 ) ,
+			torch.nn.GELU(),
+			torch.nn.Linear(self.encoder_hidden//2, self.out_channels) ,	
 			torch.nn.GELU(),
 			DynamicTanh(self.out_channels , channels_last = True),
 			#torch.nn.Tanh()
@@ -497,182 +484,6 @@ class AttentionPooling(nn.Module):
 		pooled_embedding = torch.sum(token_embeddings * attn_weights.unsqueeze(-1), dim=0)
 		
 		return pooled_embedding
-
-
-class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
-	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=100, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3
-			,PINNdecoder_hidden = [10, 10 , 10], 
-			contactdecoder_hidden = [10,10,10], 
-			nheads = 8 , Xdecoder_hidden=30, metadata={}  ,
-			 flavor = None, dropout= .1 , num_hashes = 100 , sample_size = 1000):
-		super(HeteroGAE_Decoder, self).__init__()
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False
-
-		self.convs = torch.nn.ModuleList()
-		in_channels_orig = copy.deepcopy(in_channels )
-		self.wmg = WeightedMinHashGenerator( num_hashes = num_hashes , sample_size = sample_size , seed = 42)
-		self.num_hashes = num_hashes
-		self.sample_size = sample_size
-
-		self.metadata = metadata
-		self.hidden_channels = hidden_channels
-		self.in_channels = in_channels
-		self.nlayers = layers
-		self.embeding_dim = xdim
-		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
-		self.dropout = torch.nn.Dropout(p=dropout)		
-		self.jk = JumpingKnowledge(mode='cat')
-		
-		for i in range(layers):
-			layer = {}          
-			for k,edge_type in enumerate( hidden_channels.keys() ):
-				edgestr = '_'.join(edge_type)
-				datain = edge_type[0]
-				dataout = edge_type[2]
-				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = torch.nn.Sequential( TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
-				if flavor == 'sage':
-					layer[edge_type] = torch.nn.Sequential( SAGEConv( (-1, -1) , hidden_channels[edge_type][i]) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
-				if ( 'res','backbone','res') == edge_type and i > 0:
-					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
-				else:
-					if k == 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k == 0 and i > 0:
-						in_channels[dataout] = hidden_channels[edge_type][i-1]
-					if k > 0 and i > 0:                    
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k > 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='max')
-			self.convs.append( conv )
-		self.sigmoid = nn.Sigmoid()
-		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm(self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers),
-				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden),
-		)
-		self.contactdecoder = torch.nn.Sequential(
-				torch.nn.Linear( 2 * ( Xdecoder_hidden + in_channels) , contactdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(contactdecoder_hidden[1], contactdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				NormTanh(),
-				torch.nn.Linear(contactdecoder_hidden[2], 1),
-				torch.nn.Sigmoid()
-				)
-		self.godnodedecoder = torch.nn.Sequential(
-				NormTanh(in_channels['godnode4decoder']),
-				torch.nn.Linear(in_channels['godnode4decoder'] , PINNdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[1], PINNdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				NormTanh(),
-				torch.nn.Linear(PINNdecoder_hidden[2], self.embeding_dim),
-				)
-	
-		self.pair_foldx = torch.nn.Sequential(
-				torch.nn.LayerNorm(self.embeding_dim*2),
-				torch.nn.Linear(self.embeding_dim*2 , PINNdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[1], PINNdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				torch.nn.LayerNorm(PINNdecoder_hidden[2]),
-				torch.nn.Linear(PINNdecoder_hidden[2], foldxdim),
-				)
-
-	def forward2(self, x1data, x2data, contact_pred_index, **kwargs):
-		x1data, x1edge_index = x1data.x_dict, x1data.edge_index_dict
-		x2data, x2edge_index = x2data.x_dict, x2data.edge_index_dict
-		#z = self.bn(z)
-		#copy z for later concatenation
-		inz1 = x1data['res'].copy()
-		inz2 = x2data['res'].copy()
-		inzs = [ inz1, inz2 ]
-		xdatas = [ x1data, x2data ]
-		indices = [ x1edge_index, x2edge_index ]
-		decoder_inputs = []
-		godnodes = []
-		for inz,xdata,edge_index in zip(inzs,xdatas,indices):
-			xsave = []
-			for i,layer in enumerate(self.convs):
-				xdata = layer(xdata, edge_index)
-				for key in layer.convs.keys():
-					key = key[2]
-					xdata[key] = F.gelu(xdata[key])
-				xsave.append(xdata['res'])
-			xdata['res'] = self.jk(xsave)
-			z = self.lin(xdata['res'])
-			decoder_in =  torch.cat( [inz,  z] , axis = 1)
-			decoder_inputs.append(decoder_in)
-			xdata['godnode4decoder'] = self.godnodedecoder( xdata['godnode4decoder'] )
-			godnodes.append(xdata['godnode4decoder'])
-		z1, z2 = decoder_inputs
-		g1 , g2 = godnodes
-		foldx_pred = self.godnodedecoder( torch.cat(godnodes, dim=1) )
-		interaction_prob = jaccard_distance_multiset(g1 , g2)
-		if contact_pred_index is None:
-			return interaction_prob, None, godnodes , foldx_pred
-		edge_probs = self.contactdecoder(torch.cat( ( z1[contact_pred_index[0]] , z2[contact_pred_index[1]] ) ,dim= 1) )
-		return interaction_prob, edge_probs, godnodes , foldx_pred
-	
-	def forward1(self, x1data, **kwargs):
-		#only useful for generating embeddings in eval mode
-		#check if model is in eval mode
-		if self.training:
-			raise ValueError('forward1 only useful in eval mode')
-		x1data, x1edge_index = x1data.x_dict, x1data.edge_index_dict
-		#z = self.bn(z)
-		#copy z for later concatenation
-		inz1 = x1data['res'].copy()
-		inzs = [ inz1 ]
-		xdatas = [ x1data ]
-		indices = [ x1edge_index ]
-		decoder_inputs = []
-		godnodes = []
-		for inz,xdata,edge_index in zip(inzs,xdatas,indices):
-			xsave = []
-			for i,layer in enumerate(self.convs):
-				xdata = layer(xdata, edge_index)
-				for key in layer.convs.keys():
-					key = key[2]
-					xdata[key] = F.gelu(xdata[key])
-				xsave.append(xdata['res'])
-			xdata['res'] = self.jk(xsave)
-			z = self.lin(xdata['res'])
-			decoder_in =  torch.cat( [inz,  z] , axis = 1)
-			decoder_inputs.append(decoder_in)
-			xdata['godnode4decoder'] = self.godnodedecoder( xdata['godnode4decoder'] )
-			godnodes.append(xdata['godnode4decoder'])
-		z1 = decoder_inputs[0]
-		g1 = godnodes[0]
-		return z1 , g1
-	
-	def hash_foldome(self , dataloader , name = 'foldome'):
-		Forest = MinHashLSHForest(num_perm=self.wmg.sample_size)
-		#open hdf5 to store hash vals
-		with h5py.File(name+'_embeddings.h5', 'w') as foldome:
-			for data in tqdm.tqdm(dataloader):
-				z1, g1 = self.forward1(data)
-				g1_hash = self.wmg.minhash(g1)
-				Forest.add(data['identifier'] , g1_hash)
-				foldome.create_dataset(data['identifier'] + '/hash' , data = g1_hash)
-				foldome.create_dataset(data['identifier'] + '/z' , data = z1)
-				foldome.create_dataset(data['identifier'] + '/godnode' , data = g1)
-		Forest.index()
-		#store the forest
-		with open(name+'_forest.pkl', 'wb') as f:
-			pickle.dump(Forest, f)
-		return name+'_embeddings.h5', name+'_forest.pkl'
 
 
 def save_model(model, optimizer, epoch, file_path):

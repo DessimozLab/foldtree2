@@ -56,6 +56,11 @@ parser.add_argument('--seed', type=int, default=0,
                     help='Random seed for reproducibility')
 parser.add_argument('--hetero-gae', action='store_true',
                     help='Use HeteroGAE_Decoder instead of MultiMonoDecoder')
+parser.add_argument('--clip-grad', action='store_true',
+                    help='Enable gradient clipping during training')
+parser.add_argument('--burn-in', type=int, default=0,
+                    help='Burn-in period for training (default: 0, no burn-in)')
+parser.add_argument('--EMA', action='store_true', help='Use Exponential Moving Average for encoder cordebook')
 
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:
@@ -96,10 +101,10 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.0001
-xweight = 1
+edgeweight = 0.001
+xweight = .1
 fft2weight = 0.001
-vqweight = 0.1
+vqweight = 0.01
 
 # Create output directory
 modeldir = args.output_dir
@@ -128,7 +133,7 @@ else:
             commitment_cost=0.9,
             edge_dim=1,
             encoder_hidden=hidden_size,
-            EMA=True,
+            EMA= args.EMA,
             nheads=5,
             dropout_p=0.005,
             reset_codes=False,
@@ -145,7 +150,7 @@ else:
             commitment_cost=0.9,
             edge_dim=1,
             encoder_hidden=hidden_size,
-            EMA=True,
+            EMA=args.EMA,
             nheads=5,
             dropout_p=0.005,
             reset_codes=False,
@@ -173,23 +178,22 @@ else:
     else:
         # MultiMonoDecoder for sequence and geometry
         mono_configs = {
-            #'sequence_transformer': {
-            'sequence': {
+            'sequence_transformer': {
                 'in_channels': {'res': args.embedding_dim},
                 'xdim': 20,  # 20 amino acids
                 'concat_positions': True,
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
-                #'layers': 2,
-                'layers': 5,
+                'layers': 2,
                 'AAdecoder_hidden': [hidden_size, hidden_size//2, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                #'nheads' : 10,
+                'nheads' : 4,
                 'dropout': 0.005,
                 'normalize': True,
                 'residual': False
             },
             
+
             'contacts': {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 
                                'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
@@ -203,7 +207,7 @@ else:
                 'nheads': 2,
                 'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
                 'metadata': converter.metadata,
-                'flavor': 'transformer',
+                'flavor': 'sage',
                 'dropout': 0.005,
                 'output_fft': args.output_fft,
                 'output_rt': args.output_rt,
@@ -212,6 +216,27 @@ else:
                 'contact_mlp': True
             }
         }
+
+
+
+        '''
+        'sequence': {
+            'in_channels': {'res': args.embedding_dim},
+            'xdim': 20,  # 20 amino acids
+            'concat_positions': True,
+            'hidden_channels': {('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+            'layers': 5,
+            'AAdecoder_hidden': [hidden_size, hidden_size//2, hidden_size//2],
+            'amino_mapper': converter.aaindex,
+            'flavor': 'sage',
+            'nheads' : 1,
+            'dropout': 0.005,
+            'normalize': True,
+            'residual': False
+        },
+        '''
+        
+
         # Initialize decoder
         #tasks = ['sequence_transformer', 'contacts']
         tasks = ['sequence', 'contacts']
@@ -220,7 +245,6 @@ else:
 # Move models to device
 encoder = encoder.to(device)
 decoder = decoder.to(device)
-
 print("Encoder:", encoder)
 print("Decoder:", decoder)
 
@@ -261,10 +285,38 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
 # Training loop
 encoder.train()
 decoder.train()
-clip_grad = False
-best_loss = float('inf')
+clip_grad = args.clip_grad  # Enable gradient clipping
+burn_in = args.burn_in  # Use burn-in period if specified
 
+best_loss = float('inf')
+done_burn = False
+after_burn_in = args.epochs - burn_in if burn_in else args.epochs
+print(f"Total epochs: {args.epochs}, Burn-in epochs: {burn_in}, After burn-in epochs: {after_burn_in}")
 for epoch in range(args.epochs):
+    if burn_in and epoch < burn_in:
+        print(f"Burn-in epoch {epoch+1}/{args.epochs}: Adjusting loss weights")
+        xweight = 1
+        edgeweight = 0.0001  # Lower initial weight for edge loss
+        fft2weight = 0.001  # Lower initial weight for FFT2 loss
+        vqweight = 0.01  # Lower initial weight for VQ loss
+        #change learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] =   args.learning_rate * 10 
+            print(f"Using learning rate {param_group['lr']:.6f} during burn-in")
+        done_burn = True
+    if done_burn and epoch >= burn_in:
+        done_burn = False
+        # After burn-in, use normal weights
+        print(f"Training epoch {epoch+1}/{args.epochs}: Using adjusted loss weights")
+        xweight = 0.1  # Normal weight for amino acid reconstruction
+        edgeweight = 0.001  # Normal weight for edge loss
+        fft2weight = 0.001  # Normal weight for FFT2 loss
+        vqweight = 0.01  # Normal weight for VQ loss
+        #change learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.learning_rate
+            print(f"Using learning rate {param_group['lr']:.6f} after burn-in")
+
     total_loss_x = 0
     total_loss_edge = 0
     total_vq = 0

@@ -347,10 +347,10 @@ class HeteroGAE_AA_Decoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			torch.nn.GELU(),
-			DynamicTanh(AAdecoder_hidden[2], channels_last=True),
-			torch.nn.Linear(AAdecoder_hidden[2], xdim),
+			#torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+			#torch.nn.GELU(),
+			DynamicTanh(AAdecoder_hidden[1], channels_last=True),
+			torch.nn.Linear(AAdecoder_hidden[1], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)
 

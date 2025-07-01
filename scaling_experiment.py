@@ -251,249 +251,32 @@ def run_experiment(hidden_size, dataset_fraction):
 	decoder.train()
 	print("Initialization complete.")
 	
-	# Training loop
-	start_time = time.time()
+	# Training loop (learn_monodecoder.py style)
+	best_loss = float('inf')
 	for epoch in range(num_epochs):
 		total_loss_x = 0
 		total_loss_edge = 0
 		total_vq = 0
-		total_angle = 0
-		total_fape = 0
-		total_dist = 0
-		total_foldx = 0
-		total_lddt = 0
+		total_fft2_loss = 0
+		total_loss = 0
 		for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
 			data = data.to(device)
-			
 			optimizer.zero_grad()
-			
-			# Forward pass (no need for initialization check now)
-			z, vqloss = encoder.forward(data)
+			z, vqloss = encoder(data)
 			data['res'].x = z
-			edgeloss, distloss = ft2.recon_loss(data, data.edge_index_dict[('res', 'contactPoints', 'res')], decoder, plddt=False, offdiag=False)
-			recon_x, edge_probs, zgodnode, foldxout, r, t, angles, r2, t2, angles2 = decoder(data, None)
-			
-			# Compute amino acid reconstruction loss
+			out = decoder(data, None)
+			recon_x = out['aa'] if 'aa' in out else None
+			fft2_x = out['fft2pred'] if 'fft2pred' in out else None
+			edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
+			if edge_index is not None:
+				edgeloss, _ = ft2.recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
+			else:
+				edgeloss = torch.tensor(0.0, device=device)
 			xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
-			
-			# Foldx loss
-			if output_foldx and 'Foldx' in data:
-				data['Foldx'].x = data['Foldx'].x.view(-1, 23)
-				if hasattr(decoder, 'bn_foldx'):
-					data['Foldx'].x = decoder.bn_foldx(data['Foldx'].x)
-				foldxout = foldxout.view(data['Foldx'].x.shape)
-				foldxloss = F.smooth_l1_loss(foldxout, data['Foldx'].x)
-			else:
-				foldxloss = torch.tensor(0.0, device=device)
-			
-			# Geometry losses
-			if geometry:
-				# Angle loss with reduction='none' first
-				angleloss = F.smooth_l1_loss(angles, data.x_dict['bondangles'], reduction='none')
-				fploss = torch.tensor(0.0, device=device)
-				lddt_loss = torch.tensor(0.0, device=device)
-				
-				# Additional calculations if denoise is enabled
-				if denoise:
-					# Add second angle loss from denoised prediction
-					angleloss += F.smooth_l1_loss(angles2, data.x_dict['bondangles'], reduction='none')
-					
-					# FAPE loss using the denoised predictions (r2, t2)
-					if fapeloss and 't_true' in data and 'R_true' in data:
-						batch_data = data['t_true'].batch if hasattr(data['t_true'], 'batch') else None
-						t_true = data['t_true'].x
-						R_true = data['R_true'].x
-						
-						# Use r2, t2 for the denoised predictions
-						fploss = ft2.fape_loss(
-							true_R=R_true,
-							true_t=t_true,
-							pred_R=r2,
-							pred_t=t2,
-							batch=batch_data,
-							d_clamp=10.0,
-							eps=1e-8,
-							plddt=None,
-							soft=False
-						)
-					if lddtloss and 'coords' in data:
-						lddt_loss = ft2.lddt_loss(
-							coord_true=data['coords'].x,
-							pred_R=r,
-							pred_t=t,
-							batch=data['res'].batch
-						)
-				
-				# Take the mean of angle loss at the end
-				angleloss = angleloss.mean()
-			else:
-				angleloss = torch.tensor(0.0, device=device)
-				fploss = torch.tensor(0.0, device=device)
-				lddt_loss = torch.tensor(0.0, device=device)
-			
-			# Compute total loss including new components
-			loss = (xweight * xloss + 
-					edgeweight * edgeloss + 
-					vqweight * vqloss + 
-					foldxweight * foldxloss +
-					fapeweight * fploss + 
-					angleweight * angleloss + 
-					lddt_weight * lddt_loss +
-					dist_weight * distloss)
-			
-			# Backpropagation
-			loss.backward()
-			
-			if clip_grad:
-				torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
-				torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-			
-			optimizer.step()
-			
-			# Track losses
-			total_loss_x += xloss.item()
-			total_loss_edge += edgeloss.item()
-			total_vq += vqloss.item()
-			total_angle += angleloss.item()
-			total_fape += fploss.item()
-			total_dist += distloss.item()
-			total_foldx += foldxloss.item()
-			total_lddt += lddt_loss.item()
-		
-		# Scheduler step
-		scheduler.step(total_loss_x)
-		
-		# Log results
-		avg_xloss = total_loss_x / len(train_loader)
-		avg_edgeloss = total_loss_edge / len(train_loader)
-		avg_vqloss = total_vq / len(train_loader)
-		avg_angleloss = total_angle / len(train_loader)
-		avg_fapeloss = total_fape / len(train_loader)
-		avg_distloss = total_dist / len(train_loader)
-		avg_foldxloss = total_foldx / len(train_loader)
-		avg_lddtloss = total_lddt / len(train_loader)
-		
-		total_loss = (avg_xloss * xweight +
-					  avg_edgeloss * edgeweight +
-					  avg_vqloss * vqweight +
-					  avg_foldxloss * foldxweight +
-					  avg_angleloss * angleweight +
-					  avg_fapeloss * fapeweight +
-					  avg_lddtloss * lddt_weight +
-					  avg_distloss * dist_weight)
-		
-		# Add new metrics to tensorboard
-		writer.add_scalar('Loss/AA', avg_xloss, epoch)
-		writer.add_scalar('Loss/Edge', avg_edgeloss, epoch)
-		writer.add_scalar('Loss/VQ', avg_vqloss, epoch)
-		writer.add_scalar('Loss/Foldx', avg_foldxloss, epoch)
-		writer.add_scalar('Loss/FAPE', avg_fapeloss, epoch)
-		writer.add_scalar('Loss/Angle', avg_angleloss, epoch)
-		writer.add_scalar('Loss/LDDT', avg_lddtloss, epoch)
-		writer.add_scalar('Loss/Dist', avg_distloss, epoch)
-		writer.add_scalar('Loss/Total', total_loss, epoch)
-		
-		# Store results
-		results['hidden_size'].append(hidden_size)
-		results['dataset_fraction'].append(dataset_fraction)
-		results['dataset_size'].append(subset_size)
-		results['epoch'].append(epoch)
-		results['aa_loss'].append(avg_xloss)
-		results['edge_loss'].append(avg_edgeloss)
-		results['vq_loss'].append(avg_vqloss)
-		results['angle_loss'].append(avg_angleloss)
-		results['fape_loss'].append(avg_fapeloss)
-		results['dist_loss'].append(avg_distloss)
-		results['total_loss'].append(total_loss)
-		results['training_time'].append(time.time() - start_time)
-		
-		print(f"Epoch {epoch+1}/{num_epochs}, AA Loss: {avg_xloss:.4f}, Edge Loss: {avg_edgeloss:.4f}, VQ Loss: {avg_vqloss:.4f}, Foldx Loss: {avg_foldxloss:.4f}")
-		print(f"Angle Loss: {avg_angleloss:.4f}, FAPE Loss: {avg_fapeloss:.4f}, LDDT Loss: {avg_lddtloss:.4f}, Dist Loss: {avg_distloss:.4f}, Total Loss: {total_loss:.4f}")
-	
-	# Save model for this configuration
-	with open(model_path, 'wb') as f:
-		pickle.dump((encoder, decoder), f)
-	
-	# Close writer
-	writer.close()
-	
-	return avg_xloss, avg_edgeloss, avg_vqloss, total_loss
-
-if __name__ == "__main__":
-	# Run all experiments
-	for hidden_size in hidden_sizes:
-		for dataset_fraction in dataset_fractions:
-			try:
-				run_experiment(hidden_size, dataset_fraction)
-			except Exception as e:
-				import traceback
-				#print traceback
-				print( 		traceback.format_exc()		)
-				print(f"Error in experiment with hidden_size={hidden_size}, dataset_fraction={dataset_fraction}: {e}")
-				continue
-
-	# Create results dataframe
-	results_df = pd.DataFrame(results)
-
-	# Save results
-	results_df.to_csv(f"{experiment_dir}/scaling_experiment_results.csv", index=False)
-
-	# Plot results
-	fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-	fig.suptitle('Scaling Experiment Results', fontsize=16)
-
-	# Plot 1: Loss vs Hidden Size for different dataset sizes (final epoch)
-	final_epochs = results_df.groupby(['hidden_size', 'dataset_fraction']).max('epoch')
-	for dataset_fraction in dataset_fractions:
-		subset = final_epochs[final_epochs.index.get_level_values('dataset_fraction') == dataset_fraction]
-		axes[0, 0].plot(
-			subset.index.get_level_values('hidden_size'), 
-			subset['total_loss'], 
-			marker='o', 
-			label=f'Dataset {int(dataset_fraction*100)}%'
-		)
-	axes[0, 0].set_xlabel('Hidden Size')
-	axes[0, 0].set_ylabel('Final Total Loss')
-	axes[0, 0].legend()
-	axes[0, 0].set_title('Model Size vs Final Loss')
-
-	# Plot 2: Loss vs Dataset Size for different hidden sizes (final epoch)
-	for hidden_size in hidden_sizes:
-		subset = final_epochs[final_epochs.index.get_level_values('hidden_size') == hidden_size]
-		axes[0, 1].plot(
-			subset.index.get_level_values('dataset_fraction'), 
-			subset['total_loss'], 
-			marker='o', 
-			label=f'Hidden Size {hidden_size}'
-		)
-	axes[0, 1].set_xlabel('Dataset Fraction')
-	axes[0, 1].set_ylabel('Final Total Loss')
-	axes[0, 1].legend()
-	axes[0, 1].set_title('Dataset Size vs Final Loss')
-
-	# Plot 3: Training time vs Model Size
-	time_data = results_df.groupby('hidden_size')['training_time'].max()
-	axes[1, 0].plot(time_data.index, time_data.values, marker='o')
-	axes[1, 0].set_xlabel('Hidden Size')
-	axes[1, 0].set_ylabel('Training Time (s)')
-	axes[1, 0].set_title('Training Time vs Model Size')
-
-	# Plot 4: AA Loss vs Dataset Size
-	for hidden_size in hidden_sizes:
-		subset = final_epochs[final_epochs.index.get_level_values('hidden_size') == hidden_size]
-		axes[1, 1].plot(
-			subset.index.get_level_values('dataset_fraction'), 
-			subset['aa_loss'], 
-			marker='o', 
-			label=f'Hidden Size {hidden_size}'
-		)
-	axes[1, 1].set_xlabel('Dataset Fraction')
-	axes[1, 1].set_ylabel('Final AA Loss')
-	axes[1, 1].legend()
-	axes[1, 1].set_title('Dataset Size vs AA Reconstruction Loss')
-
-	plt.tight_layout()
-	plt.savefig(f"{experiment_dir}/scaling_experiment_results.png")
-	plt.close()
-
-	print(f"Scaling experiment completed. Results saved to {experiment_dir}")
+			if fft2_x is not None:
+				# FFT2 loss: real and imaginary parts
+				F_hat = torch.complex(fft2_x[:, :fft2_x.shape[1]//2], fft2_x[:, fft2_x.shape[1]//2:])
+				F = torch.complex(data['fourier2dr'].x, data['fourier2di'].x)
+				mag_loss = torch.mean(torch.abs((torch.abs(F_hat) - torch.abs(F))))
+				phase_loss = torch.mean(torch.abs((torch.angle(F_hat) - torch.angle(F))))
+				ff

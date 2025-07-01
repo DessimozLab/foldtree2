@@ -1,12 +1,4 @@
 [submodule "protein_comparison_tool"]
 	path = protein_comparison_tool
 	url = git@github.com:DessimozLab/protein_comparison_tool.git
-[submodule "praline"]
-	path = praline
-	url = git@github.com:ibivu/PRALINE.git
-[submodule "pastml"]
-	path = pastml
-	url = git@github.com:evolbioinfo/pastml.git
-[submodule "esm"]
-	path = esm
-	url = git@github.com:facebookresearch/esm.git
+	branch = main

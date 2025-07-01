@@ -26,7 +26,6 @@ except ImportError:
     StructureDataset = None
     ft2 = None
 
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate substitution matrices and run alignments.")
     parser.add_argument('--modelname', type=str, default='small5_geo_graph', help='Model name to load')
@@ -42,7 +41,6 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='structalignmk4.h5', help='Dataset name for structure encoding')
     parser.add_argument('--fident_thresh', type=float, default=0.3, help ='Identity threshold for pair counts')
     return parser.parse_args()
-
 
 def ensure_dirs(outdir_base):
     matdir = os.path.join(outdir_base, 'matrices')
@@ -77,7 +75,6 @@ def download_structs_fn(reps, datadir, n=5):
         for uniID in subdf['entryId']:
             AFDB_tools.grab_struct(uniID, structfolder=os.path.join(datadir, 'struct_align', rep, 'structs'))
 
-
 def align_structs_fn(reps, datadir):
     if foldseek2tree is None:
         print("foldseek2tree not available. Skipping alignment.")
@@ -87,7 +84,6 @@ def align_structs_fn(reps, datadir):
             infolder=os.path.join(datadir, 'struct_align', rep, 'structs'),
             outpath=os.path.join(datadir, 'struct_align', rep, 'allvall.csv')
         )
-
 
 def encode_structures(encoder, modelname, device, dataset):
     from torch_geometric.data import DataLoader
@@ -186,7 +182,6 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, fident_thresh=0.3
         submat += submat_chunk
     return submat, background_freq, char_set
 
-
 def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e):
     n = pair_counts.shape[0]
     total_pairs = np.sum(pair_counts)
@@ -214,6 +209,17 @@ def output_mafft_matrix(submat, char_set, outpath):
                     hexj = formathex(hex(ord(stringj)))
                     f.write(f'{hexi} {hexj} {submat[i,j]}\n')
 
+def output_raxml_matrix(log_odds, char_set, outpath):
+    """Output a RAxML substitution matrix file."""
+    with open(outpath, 'w') as f:
+        f.write('x  ' + ' '.join(char_set) + '\n')
+        for i, c1 in enumerate(char_set):
+            row = [c1]
+            for j, c2 in enumerate(char_set):
+                val = log_odds[i, j]
+                row.append(f"{val:.4f}")
+            f.write('  '.join(row) + '\n')
+
 def main():
     args = parse_args()
     # Set default output paths if not provided
@@ -226,6 +232,9 @@ def main():
     print(encoder)
     print(decoder)
     print(encoder.num_embeddings)
+    print( ' creating matrices in', matdir)
+    print('modelname', args.modelname)
+
     reps = read_reps(args.datadir)
     print('reps', reps.head())
     if args.download_structs:
@@ -238,17 +247,29 @@ def main():
     encoder.eval()
     if args.encode_alns:
         encode_structures(encoder, args.modelname, device, args.dataset)
-    # Parse encoded FASTA
     encoded_fasta = args.modelname + '_aln_encoded.fasta'
     encoded_df = parse_encoded_fasta(encoded_fasta)
     char_set = build_char_set(encoded_df)
     alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
     pair_counts, background_freq, char_set = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set)
+    print(f"Pair counts shape: {pair_counts.shape}, Background frequencies shape: {background_freq.shape}")
+    #save pair counts
+    pair_counts_path = os.path.join(args.outdir_base, 'matrices', args.modelname + '_pair_counts.pkl')
+    with open(pair_counts_path, 'wb') as f:
+        pickle.dump((pair_counts, char_set), f)
+    print(f"Pair counts saved to {pair_counts_path}")
+    # Compute log odds matrix
+    print("Computing log odds matrix...")
+    background_freq = background_freq / np.sum(background_freq)
     log_odds = compute_log_odds_from_counts(pair_counts, background_freq)
     # Save MAFFT matrix
     mafftmat_path = os.path.join(args.outdir_base, 'matrices', args.mafftmat)
     output_mafft_matrix(pair_counts, char_set, mafftmat_path)
     print(f"MAFFT matrix written to {mafftmat_path}")
+    # Save RAxML matrix
+    raxmlmat_path = os.path.join(args.outdir_base, 'matrices', args.submat)
+    output_raxml_matrix(log_odds, char_set, raxmlmat_path)
+    print(f"RAxML matrix written to {raxmlmat_path}")
 
 if __name__ == "__main__":
     main()

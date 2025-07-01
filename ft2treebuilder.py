@@ -8,13 +8,15 @@ import torch_geometric
 import multiprocessing as mp
 import pebble
 import argparse
-import src.foldtree2_ecddcd as ft2
-from converter import pdbgraph
+from src import foldtree2_ecddcd as ft2
+from src import mono_decoders
+from src.converter import pdbgraph
 import traceback
 import tqdm
 import pandas as pd
 import os
 import ete3 
+import sys
 
 class treebuilder():
 	def __init__ ( self , model , mafftmat = None , submat = None , n_state = None, raxml_path= None, **kwargs ):
@@ -439,11 +441,11 @@ class treebuilder():
 				aastr ,edge_probs , zgodnode , foldxout , r , t , angles = decoder_reconstruction( ords[l] , verbose = False)	
 				ancestral_df.loc[l , 'aastr'] = aastr
 				ancestral_df.loc[l , 'edge_probs'] = edge_probs
-				ancestral_df.loc[l , 'zgodnode'] = zgodnode
-				ancestral_df.loc[l , 'foldxout'] = foldxout
-				ancestral_df.loc[l , 'r'] = r
-				ancestral_df.loc[l , 't'] = t
-				ancestral_df.loc[l , 'angles'] = angles
+				ancestral_df.loc[l , 'zgodnode' ] = zgodnode
+				ancestral_df.loc[l , 'foldxout' ] = foldxout
+				ancestral_df.loc[l , 'r' ] = r
+				ancestral_df.loc[l , 't' ] = t
+				ancestral_df.loc[l , 'angles' ] = angles
 			#write the ancestral dataframe to a file
 			ancestral_df.to_csv( outfasta.replace('.fasta' , '.csv') )
 			#write out aastr to a fasta
@@ -453,7 +455,35 @@ class treebuilder():
 			
 if __name__ == "__main__":
 
+	def print_about():
+		ascii_art = r'''
+		+-------------------------------+
+		|       foldtree2     	   	    |	
+		|  Structural Phylogenetics & AI|
+		|   	🧬  🧠  🌳              |
+		+-------------------------------+
+		'''
+	
+		print(ascii_art)
+		print("FoldTree2: Structural Phylogenetics and Ancestral Sequence Reconstruction")
+		print("--------------------------------------------------------------------------------")
+		print("FoldTree2 is a toolkit for encoding protein structures as sequences using deep learning,\n"
+		      "enabling phylogenetic tree inference, ancestral structure/sequence reconstruction, and\n"
+		      "custom alphabets for evolutionary analysis. It integrates structure encoding, alignment,\n"
+		      "custom substitution matrices, and tree inference (RAxML-NG), supporting both sequence\n"
+		      "and structure-based workflows. FoldTree2 is designed for protein family analysis,\n"
+		      "benchmarking, and exploring the evolution of protein folds.\n\n"
+		      "Project: https://github.com/yourusername/foldtree2\n"
+		      "Contact: your.email@domain.com\n")
+		print("Cite: If you use FoldTree2, please cite the corresponding publication (see README).\n")
+		print("Run with --help for usage instructions.")
+
+	if '--about' in sys.argv:
+		print_about()
+		sys.exit(0)
+
 	parser = argparse.ArgumentParser(description="CLI for running structs2tree")
+	parser.add_argument("--about", action="store_true", help="Show information about FoldTree2 and exit.")
 	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
@@ -463,9 +493,35 @@ if __name__ == "__main__":
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations")
 	parser.add_argument("--n_state", type=int, default=20, help="Number of encoded states")
 	parser.add_argument("--raxmlpath", default='./raxml-ng', help="Path to RAxML-NG executable")
+
+	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
+		print('No arguments provided. Use -h or --help for help.')
+		print('Example command:')
+		print('  python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.txt --structures "/path/to/structures/*.pdb" --outdir ./results --ancestral')
+		parser.print_help()
+		sys.exit(0)
+
+	if '--about' in sys.argv:
+		print_about()
+		sys.exit(0)
 	args = parser.parse_args()
+	if args.model is None:
+		print('Model path is required. Use --model to specify the model path.')
+		sys.exit(1)
 
+	if not os.path.exists(args.model + '.pkl'):
+		print(f"Model file {args.model}.pkl does not exist. Please provide a valid model path.")
+		sys.exit(1)
+		
+	if args.structures is None:
+		print('Structures glob pattern is required. Use --structures to specify the glob pattern.')
+		sys.exit(1)
 
+	if args.structures[-1] == '/':
+		args.structures += '*.pdb'
+	elif not args.structures.endswith('.pdb'):
+		args.structures += '.pdb'
+	
 	if args.outdir is not None:
 		if not os.path.exists(args.outdir):
 			os.makedirs(args.outdir)
@@ -474,6 +530,8 @@ if __name__ == "__main__":
 		args.mafftmat = args.model + '_mafftmat.mtx'
 	if args.submat is None:
 		args.submat = args.model + '_submat.txt'
+
+	
 
 	# Example usage:
 	# Run the script from the command line with:
