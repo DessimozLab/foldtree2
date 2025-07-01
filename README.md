@@ -44,7 +44,7 @@ Generate structure-based substitution matrices and alignments:
 python makesubmat.py --modelname <model_name> --modeldir models/ --datadir <data_dir> --outdir_base <results_dir> --dataset <input_graphs.h5> --encode_alns
 ```
 
-- `--modelname`: Name of the model to use (e.g., `small5_geo_graph`)
+- `--modelname`: Name of the model to use (e.g., `small`)
 - `--modeldir`: Directory containing model `.pkl` files
 - `--datadir`: Directory with datasets and alignment files
 - `--outdir_base`: Output directory for results
@@ -69,24 +69,6 @@ python ft2treebuilder.py --model ./models/small/small \
 - `--outdir`: Output directory for results
 - `--n_state`: Number of states (alphabet size)
 
-## Example Workflow
-1. **Convert PDBs to graphs:**
-   ```bash
-   python scripts/pdbs_to_graphs.py ./my_pdbs ./my_graphs.h5 --aapropcsv config/aaindex1.csv
-   ```
-2. **Generate alignments and matrices:**
-   ```bash
-   python makesubmat.py --modelname mymodel --modeldir models/ --datadir ./data --outdir_base ./results --dataset ./my_graphs.h5 --encode_alns
-   ```
-3. **Build the tree:**
-   ```bash
-   python ft2treebuilder.py --model ./models/mymodel \
-     --mafftmat ./results/mymodel_mafftmat.mtx \
-     --submat ./results/mymodel_submat.txt \
-     --structures ./my_pdbs \
-     --outdir ./results/tree \
-     --n_state 35
-   ```
 
 ## Training Custom Models
 
