@@ -215,7 +215,7 @@ else:
                 'output_rt': args.output_rt,
                 'normalize': True,
                 'residual': False,
-                'contact_mlp': True
+                'contact_mlp': False
             }
         }
 
