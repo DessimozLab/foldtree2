@@ -93,28 +93,6 @@ def encode_structures(encoder, modeldir, modelname, device, dataset):
     encoder_loader = databatch2list(encoder_loader)
     encoder.encode_structures_fasta(encoder_loader, modeldir + modelname + '_aln_encoded.fasta')
 
-def parse_encoded_fasta(fasta_path):
-    """Parse encoded FASTA and return a DataFrame with sequences."""
-    import tqdm
-    seqdict = {}
-    seqstr = ''
-    ID = ''
-    with open(fasta_path, 'r') as f:
-        for line in tqdm.tqdm(f, desc="Parsing encoded FASTA"):
-            if line.startswith('>'):
-                if ID:
-                    seqdict[ID] = seqstr
-                ID = line[1:].strip()
-                seqstr = ''
-            else:
-                seqstr += line.strip()
-        if ID:
-            seqdict[ID] = seqstr
-    encoded_df = pd.DataFrame(seqdict.items(), columns=['protid', 'seq'])
-    encoded_df.index = encoded_df.protid
-    encoded_df = encoded_df.drop('protid', axis=1)
-    return encoded_df
-
 def build_char_set(encoded_df):
     """Build the set of all characters in the encoded sequences."""
     char_set = set()
@@ -260,8 +238,7 @@ def main():
     if not os.path.exists(encoded_fasta):
         print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
         sys.exit(1)
-
-    encoded_df = parse_encoded_fasta(encoded_fasta)
+    encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
     char_set = build_char_set(encoded_df)
     alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
     pair_counts, background_freq, char_set = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set)

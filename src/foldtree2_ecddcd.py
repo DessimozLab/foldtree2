@@ -342,7 +342,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'gat':
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'mean' )
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = 'mean' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage' or edge_type == ('res','backbone','res'):
@@ -551,8 +551,6 @@ def load_model(file_path):
 	return model, optimizer, epoch
 
 def load_encoded_fasta(filename, alphabet=None, replace=None):
-	if replace is None:
-
 	with open(filename, 'r') as f:
 		#read all chars of file into a string
 		for line in tqdm.tqdm(f):

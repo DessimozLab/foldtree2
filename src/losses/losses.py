@@ -152,8 +152,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	pos_loss = -torch.log(pos + EPS).squeeze()
 	pos_loss = (pos_loss * pos_weights).unsqueeze(1)
 
-	
-	
+
 	if offdiag == True:
 		nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
 		nres = torch.clamp(nres, max=nclamp)

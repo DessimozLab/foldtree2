@@ -199,7 +199,7 @@ else:
             'contacts': {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode,
                                'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': True,
+                'concat_positions': False,
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3, 
                                    ('res','informs','godnode4decoder'): [hidden_size]*3, 
                                    ('godnode4decoder','informs','res'): [hidden_size]*3},
@@ -359,7 +359,7 @@ for epoch in range(args.epochs):
         # Edge loss
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
         if edge_index is not None:
-            edgeloss, _ = recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
+            edgeloss, _ = recon_loss_diag(data, edge_index, decoder, plddt=False, offdiag=False, key='edge_probs')
         else:
             edgeloss = torch.tensor(0.0, device=device)
         
