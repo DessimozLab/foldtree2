@@ -6,6 +6,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from src import pdbgraph
 from src import foldtree2_ecddcd as ft2
+from src.losses.losses import recon_loss_diag, aa_reconstruction_loss
 from src.mono_decoders import MultiMonoDecoder
 import os
 import tqdm
@@ -52,7 +53,7 @@ parser.add_argument('--output-fft', action='store_true',
                     help='Train the model with FFT output')
 parser.add_argument('--output-rt', action='store_true',
                     help='Train the model with rotation and translation output')
-parser.add_argument('--output-foldx' , action='store_true'
+parser.add_argument('--output-foldx' , action='store_true',
                     help='Train the model with Foldx energy prediction output')
 parser.add_argument('--seed', type=int, default=0,
                     help='Random seed for reproducibility')
@@ -208,7 +209,7 @@ else:
                 'nheads': 2,
                 'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
                 'metadata': converter.metadata,
-                'flavor': 'sage',
+                'flavor': 'mfconv',
                 'dropout': 0.005,
                 'output_fft': args.output_fft,
                 'output_rt': args.output_rt,
@@ -358,12 +359,12 @@ for epoch in range(args.epochs):
         # Edge loss
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
         if edge_index is not None:
-            edgeloss, _ = ft2.recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
+            edgeloss, _ = recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
         else:
             edgeloss = torch.tensor(0.0, device=device)
         
         # Amino acid reconstruction loss
-        xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+        xloss = aa_reconstruction_loss(data['AA'].x, recon_x)
         
         # FFT2 loss if available
         if fft2_x is not None:

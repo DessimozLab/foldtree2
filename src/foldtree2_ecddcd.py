@@ -548,6 +548,29 @@ def load_model(file_path):
 	optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
 	epoch = checkpoint['epoch']
-
 	return model, optimizer, epoch
 
+def load_encoded_fasta(filename, alphabet=None, replace=None):
+	if replace is None:
+
+	with open(filename, 'r') as f:
+		#read all chars of file into a string
+		for line in tqdm.tqdm(f):
+			if line[0] == '>':
+				seqdict[ID] = seqstr[:-1]
+				ID = line[1:].strip()
+				seqstr = ''
+			else:
+				seqstr += line
+		del seqdict['']
+	encoded_df = pd.DataFrame( seqdict.items() , columns=['protid', 'seq'] )
+	encoded_df['seqlen'] = encoded_df.seq.map( lambda x: len(x) )
+	#change index to protid
+	encoded_df.index = encoded_df.protid
+	encoded_df = encoded_df.drop( 'protid', axis=1 )
+	encoded_df['ord'] = encoded_df.seq.map( lambda x: [ ord(c) for c in x] )
+	#hex starts at 1
+	encoded_df['hex2'] = encoded_df.ord.map( lambda x: [ hex(c) for c in x] )
+	return encoded_df
+
+	
