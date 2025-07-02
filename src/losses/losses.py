@@ -1,4 +1,9 @@
-from src.utils import *
+import torch
+import torch.nn.functional as F
+from torch import Tensor
+from torch_geometric.utils import negative_sampling
+
+EPS = 1e-8
 
 
 def jensen_shannon_regularization(encodings):

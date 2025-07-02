@@ -80,7 +80,7 @@ def align_structs_fn(reps, datadir):
             outpath=os.path.join(datadir, 'struct_align', rep, 'allvall.csv')
         )
 
-def encode_structures(encoder, modelname, device, dataset):
+def encode_structures(encoder, modeldir, modelname, device, dataset):
     from torch_geometric.data import DataLoader
     struct_dat = StructureDataset(dataset)
     encoder_loader = DataLoader(struct_dat, batch_size=1, shuffle=False)
@@ -91,7 +91,7 @@ def encode_structures(encoder, modelname, device, dataset):
                 d = d.to(device)
                 yield d
     encoder_loader = databatch2list(encoder_loader)
-    encoder.encode_structures_fasta(encoder_loader, modelname + '_aln_encoded.fasta')
+    encoder.encode_structures_fasta(encoder_loader, modeldir + modelname + '_aln_encoded.fasta')
 
 def parse_encoded_fasta(fasta_path):
     """Parse encoded FASTA and return a DataFrame with sequences."""
@@ -222,27 +222,45 @@ def main():
         args.mafftmat = args.modelname + '_mafftmat.mtx'
     if args.submat is None:
         args.submat = args.modelname + '_submat.txt'
+    
     matdir, treedir = ensure_dirs(args.outdir_base)
+    
     encoder, decoder = load_model(args.modeldir, args.modelname)
     print(encoder)
     print(decoder)
+
     print(encoder.num_embeddings)
     print( ' creating matrices in', matdir)
     print('modelname', args.modelname)
 
     reps = read_reps(args.datadir)
     print('reps', reps.head())
+
     if args.download_structs:
         download_structs_fn(reps, args.datadir)
     if args.align_structs:
         align_structs_fn(reps, args.datadir)
+
+    if not os.path.exists(os.path.join(args.datadir, 'struct_align')):
+        print("No structure alignments found. Please run --download_structs and --align_structs first.")
+        sys.exit(1)
+            
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     encoder = encoder.to(device)
     decoder = decoder.to(device)
     encoder.eval()
+    decoder.eval()
+    print(f"Using device: {device}")
+
     if args.encode_alns:
-        encode_structures(encoder, args.modelname, device, args.dataset)
-    encoded_fasta = args.modelname + '_aln_encoded.fasta'
+        encode_structures(encoder, args.modeldir, args.modelname, device, args.dataset)
+    else:
+        print("Skipping encoding of alignments, using existing encoded FASTA.")
+        encoded_fasta = args.modeldir + args.modelname + '_aln_encoded.fasta'
+    if not os.path.exists(encoded_fasta):
+        print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
+        sys.exit(1)
+
     encoded_df = parse_encoded_fasta(encoded_fasta)
     char_set = build_char_set(encoded_df)
     alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))

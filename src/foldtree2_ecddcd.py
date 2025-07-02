@@ -216,6 +216,8 @@ class mk1_Encoder(torch.nn.Module):
 		
 		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		x_dict['res'] = self.bn(x_dict['res'])
+		if 'debug' in kwargs and kwargs['debug'] == True:
+			print( x_dict['res'].shape , 'x_dict[res] shape')
 		
 		if self.fftin == True:
 			x_dict['res'] = torch.cat([x_dict['res'], data['fourier1dr'].x , data['fourier1di'].x ], dim=1)
@@ -240,12 +242,21 @@ class mk1_Encoder(torch.nn.Module):
 		x = self.out_dense( torch.cat([ x , x_dict['AA']], dim=1) )
 		#normalize the output to have norm 1
 		z_quantized, vq_loss = self.vector_quantizer(x)
-		
+		if 'debug' in kwargs and kwargs['debug'] == True:
+			print('z_quantized shape:', z_quantized.shape)
+			print('vq_loss:', vq_loss)
+			print('x shape:', x.shape)
+
+			print('x_dict keys:', x_dict.keys())
+			print('edge_index_dict keys:', edge_index_dict.keys())
 		return z_quantized, vq_loss
 
-	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False):
-		#write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
-		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
+	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False , **kwargs):
+		"""
+		Write an encoded fasta for use with mafft and raxmlng. Only doable with alphabet size of less than 248.
+		0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
+		"""
+		#replace characters with special characters to avoid issues with fasta format
 		replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
 		#check encoding size
 		if self.vector_quantizer.num_embeddings > 248:
@@ -257,6 +268,8 @@ class mk1_Encoder(torch.nn.Module):
 		
 		with open( filename , 'w') as f:
 			for i,data in tqdm.tqdm(enumerate(dataloader)):
+				if 'debug' in kwargs and kwargs['debug'] == True:
+					print('res shape' ,  data['res'].x.shape[0] )
 				data = data.to(self.device)
 				z,qloss = self.forward(data)
 				strdata = self.vector_quantizer.discretize_z(z)
@@ -269,16 +282,16 @@ class mk1_Encoder(torch.nn.Module):
 						char = alphabet[char]
 					else:
 						char = chr(char+1)
-					
 					if replace and char in replace_dict:
 						char = replace_dict[char]
 					outstr += char
-					f.write(char)
-
+				if 'debug' in kwargs and kwargs['debug'] == True:
+					print('len outstring' , len(outstr) )
+					assert len(outstr) == data['res'].x.shape[0], f"Output string length {len(outstr)} does not match AA length {data['res'].x.shape[0]} for identifier {identifier}"
+					assert len(outstr) == data['AA'].x.shape[0], f"Output string length {len(outstr)} does not match AA length {data['AA'].x.shape[0]} for identifier {identifier}"
+					assert len(outstr) == z.shape[0], f"Output string length {len(outstr)} does not match z shape {z.shape[0]} for identifier {identifier}"
+				f.write(outstr)
 				f.write('\n')
-
-				if verbose == True:
-					print(identifier, outstr)
 		return filename 
 
 class HeteroGAE_Decoder(torch.nn.Module):

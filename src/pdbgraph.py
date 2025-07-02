@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 from Bio import PDB
 from Bio.PDB import PDBParser
+import pydssp
 from scipy.spatial.distance import cdist
 EPS = 1e-15
 datadir = '../../datasets/foldtree2/'
@@ -248,17 +249,7 @@ class PDB2PyG:
 			print(self.aaproperties , angles )
 		nodeprops = angles.merge(self.aaproperties, left_on='single_letter_code', right_index=True, how='left')
 		nodeprops = nodeprops.replace(np.nan, 0)
-		# Merge operation in Polars using join
-		"""nodeprops = angles.join(
-			self.aaproperties,
-			left_on="single_letter_code",
-			right_on=self.aaproperties.index,  # This assumes the index of aaproperties is set as a column; if not, adjust accordingly
-			how="left"
-		)
 		
-		# Dropping rows with missing values
-		nodeprops = nodeprops.drop_nulls()
-		nodeprops = nodeprops.to_pandas()"""
 		return nodeprops
 
 	@staticmethod
@@ -465,10 +456,19 @@ class PDB2PyG:
 		else:
 			chain = monomerpdb
 		chain = [ r for r in chain if PDB.is_aa(r)]
+
 		if len(chain) ==0:
 			return None
 		angles = self.get_angles(chain)
 		
+		assert len(angles) == len(chain), f'angles {len(angles)} != chain {len(chain)}'
+		#check if the angles are in the right order
+		if angles.iloc[0]['Chain'] != chain[0].get_full_id()[2]:
+			raise ValueError('angles and chain do not match')
+		if angles.iloc[-1]['Chain'] != chain[-1].get_full_id()[2]:
+			raise ValueError('angles and chain do not match')
+
+
 		coords = np.array([r['CA'].get_coord() for r in chain])
 
 		bondangles = np.array(angles[['Phi_Angle', 'Psi_Angle' , 'Omega_Angle']])
@@ -506,8 +506,6 @@ class PDB2PyG:
 
 		window = self.get_sliding_window(len(chain), window = 2)
 		window_rev = backbone.T
-
-
 
 		positional_encoding = self.get_positional_encoding( len(chain) , 256)
 
