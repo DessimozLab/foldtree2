@@ -104,9 +104,9 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.001
-xweight = .01
-fft2weight = 0.001
+edgeweight = 0.01
+xweight = .1
+fft2weight = 0.01
 vqweight = 0.0001
 
 # Create output directory
@@ -191,7 +191,7 @@ else:
                 'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                'nheads': 1,
+                'nheads': 2,
                 'dropout': 0.005,
                 'normalize': True,
                 'residual': False
@@ -312,10 +312,10 @@ print(f"Total epochs: {args.epochs}, Burn-in epochs: {burn_in}, After burn-in ep
 for epoch in range(args.epochs):
     if burn_in and epoch < burn_in:
         print(f"Burn-in epoch {epoch+1}/{args.epochs}: Adjusting loss weights")
-        xweight = 1
-        edgeweight = 0.0001  # Lower initial weight for edge loss
-        fft2weight = 0.001  # Lower initial weight for FFT2 loss
-        vqweight = 0.01  # Lower initial weight for VQ loss
+        edgeweight = 0.00001
+        xweight = .1
+        fft2weight = 0.01
+        vqweight = 0.0001
         #change learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] =   args.learning_rate * 10 
@@ -325,10 +325,10 @@ for epoch in range(args.epochs):
         done_burn = False
         # After burn-in, use normal weights
         print(f"Training epoch {epoch+1}/{args.epochs}: Using adjusted loss weights")
-        xweight = 0.1  # Normal weight for amino acid reconstruction
-        edgeweight = 0.001  # Normal weight for edge loss
-        fft2weight = 0.001  # Normal weight for FFT2 loss
-        vqweight = 0.01  # Normal weight for VQ loss
+        xweight = .1  # Normal weight for amino acid reconstruction
+        edgeweight = 0.0001  # Normal weight for edge loss
+        fft2weight = 0.0001  # Normal weight for FFT2 loss
+        vqweight = 0.001  # Normal weight for VQ loss
         #change learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
