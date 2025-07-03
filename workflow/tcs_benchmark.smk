@@ -35,7 +35,7 @@ rule calc_tax_score:
 		"foldtree2"
 	input:
 		"{folder}/sequence_dataset.csv",
-		"{folder}/{mattype}_{alntype}_{exp}_struct_tree.PP.nwk.rooted"
+		"{folder}/{treetype}.nwk.rooted"
 	output:
 		"{folder}/{mattype}_{alntype}_{exp}_treescores_struct_tree.json"
 	log:
@@ -43,18 +43,6 @@ rule calc_tax_score:
 	script:
 		"../src/calctreescores.py"
 
-rule calc_tax_score_seq:
-	conda:
-		"foldtree2"
-	input:
-		"{folder}/sequence_dataset.csv",
-		"{folder}/sequences.aln.{aligner}.fst.nwk.rooted"
-	output:
-		"{folder}/treescores_sequences.{aligner}.json"
-	log:
-		"{folder}/logs/sequences_scoring.{aligner}.log"
-	script:
-		"../src/calctreescores.py"
 
 rule calc_tax_score_iq:
 	conda:

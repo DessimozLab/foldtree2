@@ -33,19 +33,7 @@ models = ['monodecoders_smallGAE', 'monodecoders_bigGAE', 'monodecoders_heteroGA
 
 rule all:
 	input:
-		expand("{folder}/alnAA_3di.fasta.treefile.rooted.final", folder = folders ),
-		expand('{folder}/alnfident_dist_{restype}_{alntype}.json', folder = folders, alntype = alntype, restype = ['AA', '3di']),
-		expand("{folder}/{alntype}_xaln_tree.PP.nwk.rooted.final", folder = folders , alntype = ['3di','AA']),
-		expand("{folder}/templateX{alntype}.nx.treefile.rooted.final", folder = folders , alntype = alntype),
-		expand('{folder}/alnfident_dist_{restype}_{alntype}.json', folder = folders, alntype = alntype, restype = ['AA', '3di']),
-		expand( "{folder}/plddt.json" , folder = folders ) ,
-		expand("{folder}/{mattype}_{alntype}_{exp}_struct_tree.PP.nwk.rooted", folder = folders, mattype = mattypes, alntype = alntypes, exp = exp),
-		#expand("{folder}/alnAA_3di.fasta.treefile.rooted.final.treescore", folder = folders ),
-		#expand("{folder}/{alntype}_xaln_tree.PP.nwk.rooted.final.treescore", folder = folders , alntype = ['3di','AA'] ),
-		#expand("{folder}/templateX{alntype}.nx.treefile.rooted.final.treescore", folder = folders , alntype = alntype),
-		#expand( "{folder}/{mattype}_{alntype}_{exp}_treescores_struct_tree.json" , folder = folders , mattype = mattypes , alntype = alntypes , exp=exp),
-		#expand( "{folder}/treescores_sequences.{aligner}.json" , folder = folders , aligner = aligners),
-		#expand( "{folder}/treescores_sequences_iq.{aligner}.json" , folder = folders , aligner = aligners),
+		
 		
 module tcs_benchmark:
 	# here, plain paths, URLs and the special markers for code hosting providers (see below) are possible.
