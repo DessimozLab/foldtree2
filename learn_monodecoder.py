@@ -107,7 +107,7 @@ ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 edgeweight = 0.001
 xweight = .1
 fft2weight = 0.001
-vqweight = 0.01
+vqweight = 0.0001
 
 # Create output directory
 modeldir = args.output_dir
@@ -183,42 +183,39 @@ else:
         mono_configs = {
             'sequence_transformer': {
                 'in_channels': {'res': args.embedding_dim},
-                'xdim': 20,  # 20 amino acids
+                'xdim': 20,
                 'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+                'hidden_channels': {('res','backbone','res'): [hidden_size]*3 , ('res','backbonerev','res'): [hidden_size]*3},
                 'layers': 2,
-                'AAdecoder_hidden': [hidden_size, hidden_size//2, hidden_size//2],
+                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                'nheads' : 4,
+                'nheads': 1,
                 'dropout': 0.005,
                 'normalize': True,
                 'residual': False
             },
             
             'contacts': {
-                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode,
-                               'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': False,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3, 
-                                   ('res','informs','godnode4decoder'): [hidden_size]*3, 
-                                   ('godnode4decoder','informs','res'): [hidden_size]*3},
+                'in_channels': {'res': args.embedding_dim , 'godnode4decoder': ndim_godnode, 'foldx': 23 ,  'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+                'concat_positions': True,
+                'hidden_channels': {('res','backbone','res'): [hidden_size]*4, ('res','backbonerev','res'): [hidden_size]*4, ('res','informs','godnode4decoder'): [hidden_size]*4 , ('godnode4decoder','informs','res'): [hidden_size]*4},
                 'layers': 3,
-                'FFT2decoder_hidden': [hidden_size*2, hidden_size*2],
+                'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],
                 'contactdecoder_hidden': [hidden_size, hidden_size//2],
-                'nheads': 2,
-                'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+                'nheads': 1,
+                'Xdecoder_hidden': [hidden_size, hidden_size,  hidden_size ],
                 'metadata': converter.metadata,
                 'flavor': 'mfconv',
                 'dropout': 0.005,
-                'output_fft': args.output_fft,
-                'output_rt': args.output_rt,
+                'output_fft': False,
+                'output_rt':False,
                 'normalize': True,
                 'residual': False,
-                'contact_mlp': False
+                'contact_mlp': True
+
             }
         }
-
         if args.output_foldx:
             mono_configs['foldx'] = {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
