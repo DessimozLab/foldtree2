@@ -32,9 +32,20 @@ models = ['monodecoders_smallGAE', 'monodecoders_bigGAE', 'monodecoders_heteroGA
 
 
 rule all:
-	input:
-		
-		
+input:
+	# ML3ditree trees and scores
+	expand("{folder}/templateX{alntype}.nx.treefile.rooted.final", folder=folders, alntype=["3di","AA"]),
+	expand("{folder}/templateX{alntype}.nx.treefile.rooted.final.treescore", folder=folders, alntype=["3di","AA"]),
+	# FT2 tree and TCS score
+	expand("{folder}/{model}_FT2_tree.nwk", folder=folders, model=models),
+	expand("{folder}/{model}_FT2_tree.nwk.tcs", folder=folders, model=models),
+	# Fold_tree1 tree and TCS score
+	expand("{folder}/{model}_foldtree1_tree.nwk", folder=folders, model=models),
+	expand("{folder}/{model}_foldtree1_tree.nwk.tcs", folder=folders, model=models),
+	#regular raxmlng tree and TCS score
+	
+
+
 module tcs_benchmark:
 	# here, plain paths, URLs and the special markers for code hosting providers (see below) are possible.
 	snakefile: "tcs_benchmark"
@@ -52,4 +63,24 @@ module raxmlng:
 	snakefile: "raxmlng"
 	config: config
 use rule * from iqtreeXsingle as RM_*
+
+module foldtree:
+	# here, plain paths, URLs and the special markers for code hosting providers (see below) are possible.
+	snakefile: "fold_tree"
+	config: config
+use rule * from fold_tree as FTI_*
+
+module foldtree2:
+	# here, plain paths, URLs and the special markers for code hosting providers (see below) are possible.
+	snakefile: "ft2"
+	config: config
+use rule * from fold_tree as FTII_*
+
+
+module ML3di:
+	# here, plain paths, URLs and the special markers for code hosting providers (see below) are possible.
+	snakefile: "ml3ditree"
+	config: config
+use rule * from fold_tree as ML3di_*
+
 

@@ -105,7 +105,7 @@ ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
 edgeweight = 0.001
-xweight = .1
+xweight = .01
 fft2weight = 0.001
 vqweight = 0.0001
 
@@ -146,20 +146,21 @@ else:
     else:
         encoder = ft2.mk1_Encoder(
             in_channels=ndim,
-            hidden_channels=[hidden_size, hidden_size , hidden_size],
+            hidden_channels=[hidden_size*2, hidden_size*2],
             out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
+            metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
             commitment_cost=0.9,
             edge_dim=1,
             encoder_hidden=hidden_size,
-            EMA=args.EMA,
+            EMA=True,
             nheads=5,
-            dropout_p=0.005,
+            dropout_p=0.01,
             reset_codes=False,
             flavor='transformer',
             fftin=True
         )
+
     if args.hetero_gae:
         # HeteroGAE_Decoder config (example, adjust as needed)
         decoder = ft2.HeteroGAE_Decoder(
@@ -202,7 +203,7 @@ else:
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*4, ('res','backbonerev','res'): [hidden_size]*4, ('res','informs','godnode4decoder'): [hidden_size]*4 , ('godnode4decoder','informs','res'): [hidden_size]*4},
                 'layers': 3,
                 'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],
-                'contactdecoder_hidden': [hidden_size, hidden_size//2],
+                'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
                 'nheads': 1,
                 'Xdecoder_hidden': [hidden_size, hidden_size,  hidden_size ],
                 'metadata': converter.metadata,
