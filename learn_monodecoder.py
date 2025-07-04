@@ -116,9 +116,9 @@ modelname = args.model_name
 
 
 # Initialize or load model
-if os.path.exists(os.path.join(modeldir, modelname + '.pkl')) and not args.overwrite:
-    print(f"Loading existing model from {os.path.join(modeldir, modelname + '.pkl')}")
-    with open(os.path.join(modeldir, modelname + '.pkl'), 'rb') as f:
+if os.path.exists(os.path.join(modeldir, modelname + '_best.pkl')) and not args.overwrite:
+    print(f"Loading existing model from {os.path.join(modeldir, modelname + '_best.pkl')}")
+    with open(os.path.join(modeldir, modelname + '_best.pkl'), 'rb') as f:
         encoder, decoder = pickle.load(f)
 else:
     print("Creating new model...")
@@ -150,7 +150,7 @@ else:
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.9,
+            commitment_cost=0.5,# 0.9,
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=True,
