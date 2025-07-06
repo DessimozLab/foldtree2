@@ -89,21 +89,24 @@ def grab_struct(uniID, structfolder, rejected = None, overwrite=False):
 		os.mkdir(structfolder)
 	except:
 		pass
-	#try:
+	#try:https://alphafold.ebi.ac.uk/files/AF-Q8VCK6-F1-model_v4.pdb
+
 	prefix = 'https://alphafold.ebi.ac.uk/files/AF-'
 	post = '-F1-model_v4.pdb'
-	url = prefix+uniID.upper()+post
+	url = prefix+uniID.upper().strip()+post
 
 
 	if not os.path.isfile(structfolder + uniID +'.pdb'):
-			
 		# Redirect stdout to suppress printed output
 		#original_stdout = sys.stdout
 		#sys.stdout = open(os.devnull, 'w')
-
-		if rejected is None or (rejected and not os.path.isfile(structfolder + uniID +'.pdb')):
-			wget.download(url, structfolder + uniID +'.pdb'  , bar=None )	
-
+		try:
+			if rejected is None or (rejected and not os.path.isfile(structfolder + uniID +'.pdb')):
+				wget.download(url, structfolder + uniID +'.pdb'  , bar=None )	
+		except Exception as e:
+			print('error downloading structure for', uniID, e)
+			print( url )
+			return None
 		# Restore stdout to original state
 		#sys.stdout.close()
 		#sys.stdout = original_stdout

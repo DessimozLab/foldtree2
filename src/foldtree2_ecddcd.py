@@ -342,10 +342,10 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'gat':
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = 'mean' )
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = 'max' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
-				if flavor == 'sage' or edge_type == ('res','backbone','res'):
+				if flavor == 'sage':
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
@@ -355,7 +355,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='mean')
+			conv = HeteroConv( layer  , aggr='max')
 			
 			self.convs.append( conv )
 			#self.norms.append( DynamicTanh(finalout , channels_last=True) )
