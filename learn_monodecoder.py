@@ -105,7 +105,7 @@ ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
 edgeweight = 0.01
-xweight = .1
+xweight = 0.01
 fft2weight = 0.01
 vqweight = 0.0001
 
@@ -166,18 +166,18 @@ else:
         decoder = ft2.HeteroGAE_Decoder(
             in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
             concat_positions=True,
-            hidden_channels={('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3},
-            layers=3,
+            hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+            layers=5,
             AAdecoder_hidden=[hidden_size, hidden_size, hidden_size//2],
             Xdecoder_hidden=[hidden_size, hidden_size, hidden_size],
             contactdecoder_hidden=[hidden_size//2, hidden_size//2],
             nheads=5,
             amino_mapper=converter.aaindex,
-            flavor='sage',
+            flavor='mfconv',
             dropout=0.005,
             normalize=True,
             residual=False,
-            contact_mlp=True
+            contact_mlp=False,
         )
     else:
         # MultiMonoDecoder for sequence and geometry
