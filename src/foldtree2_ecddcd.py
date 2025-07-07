@@ -355,7 +355,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='max')
+			conv = HeteroConv( layer  , aggr='mean')
 			
 			self.convs.append( conv )
 			#self.norms.append( DynamicTanh(finalout , channels_last=True) )

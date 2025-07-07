@@ -105,7 +105,7 @@ ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
 edgeweight = 0.01
-xweight = 0.01
+xweight = 0.1
 fft2weight = 0.01
 vqweight = 0.0001
 
@@ -133,7 +133,7 @@ else:
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.9,
+            commitment_cost=0.8,
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA= args.EMA,
@@ -146,11 +146,11 @@ else:
     else:
         encoder = ft2.mk1_Encoder(
             in_channels=ndim,
-            hidden_channels=[hidden_size*2, hidden_size*2],
+            hidden_channels=[hidden_size, hidden_size],
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.5,# 0.9,
+            commitment_cost=0.8,
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=True,
@@ -165,15 +165,15 @@ else:
         # HeteroGAE_Decoder config (example, adjust as needed)
         decoder = ft2.HeteroGAE_Decoder(
             in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
-            concat_positions=True,
-            hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+            concat_positions=False,
+            hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5, ('res','informs','godnode4decoder'): [hidden_size]*5 , ('godnode4decoder','informs','res'): [hidden_size]*5},
             layers=5,
             AAdecoder_hidden=[hidden_size, hidden_size, hidden_size//2],
             Xdecoder_hidden=[hidden_size, hidden_size, hidden_size],
             contactdecoder_hidden=[hidden_size//2, hidden_size//2],
             nheads=5,
             amino_mapper=converter.aaindex,
-            flavor='mfconv',
+            flavor='sage',
             dropout=0.005,
             normalize=True,
             residual=False,
@@ -266,8 +266,8 @@ print("Encoder:", encoder)
 print("Decoder:", decoder)
 
 # Training setup
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=10  )
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.00001)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3, min_lr=1e-6)
 
 # Function to analyze gradient norms
 def analyze_gradient_norms(model, top_k=3):
