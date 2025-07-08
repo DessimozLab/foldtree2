@@ -152,7 +152,7 @@ ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
 edgeweight = 0.1
-xweight = 0.1
+xweight = 100
 fft2weight = 0.01
 vqweight = 0.00001
 
@@ -202,7 +202,7 @@ else:
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.8,
+            commitment_cost=0.9,
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=args.EMA,
@@ -251,7 +251,7 @@ else:
             
             'contacts': {
                 'in_channels': {'res': args.embedding_dim , 'godnode4decoder': ndim_godnode, 'foldx': 23 ,  'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': True,
+                'concat_positions': False,
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*4, ('res','backbonerev','res'): [hidden_size]*4, ('res','informs','godnode4decoder'): [hidden_size]*4 , ('godnode4decoder','informs','res'): [hidden_size]*4},
                 'layers': 3,
                 'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],

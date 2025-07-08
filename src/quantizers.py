@@ -21,10 +21,8 @@ def kl_divergence_regularization(encodings):
 	kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
 	return kl_divergence
 
-
-
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = False , klweight = 0 , diversityweight=1 , entropyweight = 0 , jsweight = 0):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=1, entropyweight=0, jsweight=0, prior_momentum=0.99):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -33,48 +31,47 @@ class VectorQuantizerEMA(nn.Module):
 		self.epsilon = epsilon
 		self.reset_threshold = reset_threshold
 		self.reset = reset
-		# Initialize the codebook with uniform distribution
-		self.diversityweight = diversityweight
-		self.klweight= klweight
-		self.entropyweight = entropyweight
 
-		self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
-		self.embeddings.weight.data.uniform_(-1 / self.num_embeddings, 1 / self.num_embeddings)
-		self.entropyweight= entropyweight
+		# Regularization weights
 		self.diversityweight = diversityweight
 		self.klweight = klweight
+		self.entropyweight = entropyweight
 		self.jsweight = jsweight
+
+		# Embeddings
+		self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
+		self.embeddings.weight.data.uniform_(-1 / self.num_embeddings, 1 / self.num_embeddings)
 
 		# EMA variables
 		self.register_buffer('ema_cluster_size', torch.zeros(num_embeddings))
 		self.ema_w = nn.Parameter(self.embeddings.weight.clone())
-
-		# Track usage of embeddings
 		self.register_buffer('embedding_usage_count', torch.zeros(num_embeddings, dtype=torch.long))
 
+		# Running average prior
+		self.prior_momentum = prior_momentum
+		self.register_buffer('running_prior', torch.ones(num_embeddings) / num_embeddings)
+
 	def forward(self, x):
-		# Flatten input
 		flat_x = x.view(-1, self.embedding_dim)
 
-		# Compute distances between input and codebook embeddings
+		# Distance and encoding
 		distances = (torch.sum(flat_x**2, dim=1, keepdim=True)
 					 + torch.sum(self.embeddings.weight**2, dim=1)
 					 - 2 * torch.matmul(flat_x, self.embeddings.weight.t()))
-
-		# Get the encoding that has the minimum distance
 		encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
 		encodings = torch.zeros(encoding_indices.shape[0], self.num_embeddings, device=x.device)
 		encodings.scatter_(1, encoding_indices, 1)
 
-		# Quantize the latents by mapping to the nearest embeddings
+		# Quantization
 		quantized = torch.matmul(encodings, self.embeddings.weight).view_as(x)
 
-		# Compute the commitment loss
+		# Loss terms
 		e_latent_loss = F.mse_loss(quantized.detach(), x)
 		q_latent_loss = F.mse_loss(quantized, x.detach())
 		loss = q_latent_loss + self.commitment_cost * e_latent_loss
 
 		# Regularization
+		probabilities = encodings.mean(dim=0)
 		if self.entropyweight > 0:
 			entropy_reg = entropy_regularization(encodings)
 		else:
@@ -84,17 +81,19 @@ class VectorQuantizerEMA(nn.Module):
 		else:
 			diversity_reg = 0
 		if self.klweight > 0:
-			kl_div_reg = kl_divergence_regularization(encodings)
+			kl_div_reg = torch.sum(probabilities * (torch.log(probabilities + 1e-10) - torch.log(self.running_prior + 1e-10)))
 		else:
 			kl_div_reg = 0
-		#if self.jsweight > 0:
-		#	jensen_shannon = jensen_shannon_regularization(encodings)
-		#else:
-		jensen_shannon = 0
-		# Combine all losses
-		total_loss = loss - self.entropyweight*entropy_reg + self.diversityweight*diversity_reg + self.klweight*kl_div_reg - self.jsweight*jensen_shannon
+		jensen_shannon = 0  # optional
 
-		# EMA updates
+		# Total loss
+		total_loss = loss \
+			- self.entropyweight * entropy_reg \
+			+ self.diversityweight * diversity_reg \
+			+ self.klweight * kl_div_reg \
+			- self.jsweight * jensen_shannon
+
+		# EMA updates (only during training)
 		if self.training:
 			encodings_sum = encodings.sum(0)
 			dw = torch.matmul(encodings.t(), flat_x)
@@ -109,14 +108,15 @@ class VectorQuantizerEMA(nn.Module):
 
 			# Update usage count
 			self.embedding_usage_count += encodings_sum.long()
-			
-			if self.reset== True:
-				# Reset unused embeddings
+
+			# Update running prior
+			self.running_prior = self.prior_momentum * self.running_prior + (1 - self.prior_momentum) * probabilities
+			self.running_prior = self.running_prior / self.running_prior.sum()
+
+			if self.reset:
 				self.reset_unused_embeddings()
 
-		# Straight-through estimator for the backward pass
 		quantized = x + (quantized - x).detach()
-
 		return quantized, total_loss
 
 	def reset_unused_embeddings(self):
