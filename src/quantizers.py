@@ -24,7 +24,7 @@ def kl_divergence_regularization(encodings):
 
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = False , klweight = 0 , diversityweight=1 , entropyweight = 1 , jsweight = 0):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset = False , klweight = 0 , diversityweight=1 , entropyweight = 0 , jsweight = 0):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -87,10 +87,10 @@ class VectorQuantizerEMA(nn.Module):
 			kl_div_reg = kl_divergence_regularization(encodings)
 		else:
 			kl_div_reg = 0
-		if self.jsweight > 0:
-			jensen_shannon = jensen_shannon_regularization(encodings)
-		else:
-			jensen_shannon = 0
+		#if self.jsweight > 0:
+		#	jensen_shannon = jensen_shannon_regularization(encodings)
+		#else:
+		jensen_shannon = 0
 		# Combine all losses
 		total_loss = loss - self.entropyweight*entropy_reg + self.diversityweight*diversity_reg + self.klweight*kl_div_reg - self.jsweight*jensen_shannon
 

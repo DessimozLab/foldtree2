@@ -82,6 +82,53 @@ random.seed(args.seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+if args.EMA:
+    print("Using Exponential Moving Average for encoder codebook")
+else:
+    print("Not using Exponential Moving Average for encoder codebook")
+    args.EMA = False
+
+if args.overwrite:
+    print("Overwrite mode enabled. Existing models will be overwritten.")
+else:
+    print("Overwrite mode disabled. Existing models will not be overwritten.")
+    args.overwrite = False
+if args.clip_grad:
+    print("Gradient clipping enabled.")
+else:
+    print("Gradient clipping disabled.")
+    args.clip_grad = False
+
+
+
+# Print configuration
+print(f"Configuration:")
+print(f"  Dataset: {args.dataset}")
+print(f"  Hidden Size: {args.hidden_size}")
+print(f"  Epochs: {args.epochs}")
+print(f"  Device: {args.device if args.device else 'auto-select'}")
+print(f"  Learning Rate: {args.learning_rate}")
+print(f"  Batch Size: {args.batch_size}")
+print(f"  Output Directory: {args.output_dir}")
+print(f"  Model Name: {args.model_name}")
+print(f"  Number of Embeddings: {args.num_embeddings}")
+print(f"  Embedding Dimension: {args.embedding_dim}")
+print(f"  SE3 Transformer: {'Enabled' if args.se3_transformer else 'Disabled'}")
+print(f"  Overwrite Existing Models: {'Yes' if args.overwrite else 'No'}")
+print(f"  Output FFT: {'Enabled' if args.output_fft else 'Disabled'}")
+print(f"  Output RT: {'Enabled' if args.output_rt else 'Disabled'}")
+print(f"  Output Foldx: {'Enabled' if args.output_foldx else 'Disabled'}")
+print(f"  Hetero GAE Decoder: {'Enabled' if args.hetero_gae else 'Disabled'}")
+print(f"  Gradient Clipping: {'Enabled' if args.clip_grad else 'Disabled'}")
+print(f"  Burn-in Period: {args.burn_in} epochs")
+print(f"  Random Seed: {args.seed}")
+print(f"  Exponential Moving Average: {'Enabled' if args.EMA else 'Disabled'}")
+
+if os.path.exists(args.output_dir) and args.overwrite:
+    #remove existing model
+    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best.pkl')):
+        os.remove(os.path.join(args.output_dir, args.model_name + '_best.pkl'))
+
 # Data setup
 datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
@@ -104,10 +151,10 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.01
+edgeweight = 0.1
 xweight = 0.1
 fft2weight = 0.01
-vqweight = 0.0001
+vqweight = 0.00001
 
 # Create output directory
 modeldir = args.output_dir
@@ -116,8 +163,13 @@ modelname = args.model_name
 
 
 # Initialize or load model
-if os.path.exists(os.path.join(modeldir, modelname + '_best.pkl')) and not args.overwrite:
+if os.path.exists(os.path.join(modeldir, modelname + '_best.pkl')) and args.overwrite == False:
     print(f"Loading existing model from {os.path.join(modeldir, modelname + '_best.pkl')}")
+    if os.path.exists(os.path.join(modeldir, modelname + '_info.txt')):
+        with open(os.path.join(modeldir, modelname + '_info.txt'), 'r') as f:
+            model_info = f.read()
+        print("Model info:", model_info)
+    # Load encoder and decoder from saved model
     with open(os.path.join(modeldir, modelname + '_best.pkl'), 'rb') as f:
         encoder, decoder = pickle.load(f)
 else:
@@ -153,7 +205,7 @@ else:
             commitment_cost=0.8,
             edge_dim=1,
             encoder_hidden=hidden_size,
-            EMA=True,
+            EMA=args.EMA,
             nheads=5,
             dropout_p=0.01,
             reset_codes=False,
@@ -166,14 +218,14 @@ else:
         decoder = ft2.HeteroGAE_Decoder(
             in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
             concat_positions=False,
-            hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5, ('res','informs','godnode4decoder'): [hidden_size]*5 , ('godnode4decoder','informs','res'): [hidden_size]*5},
-            layers=5,
+            hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
+            layers=3,
             AAdecoder_hidden=[hidden_size, hidden_size, hidden_size//2],
             Xdecoder_hidden=[hidden_size, hidden_size, hidden_size],
             contactdecoder_hidden=[hidden_size//2, hidden_size//2],
             nheads=5,
             amino_mapper=converter.aaindex,
-            flavor='sage',
+            flavor='mfconv',
             dropout=0.005,
             normalize=True,
             residual=False,
@@ -266,7 +318,7 @@ print("Encoder:", encoder)
 print("Decoder:", decoder)
 
 # Training setup
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.00001)
+optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.000001)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3, min_lr=1e-6)
 
 # Function to analyze gradient norms
