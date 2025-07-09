@@ -148,8 +148,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				torch.nn.Linear(  Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[1], lastlin),
-				torch.nn.GELU(),
-				DynamicTanh(lastlin , channels_last = True),
+				torch.nn.Tanh(),
+				#DynamicTanh(lastlin , channels_last = True),
+				
 				)
 		
 		if output_fft == True:
@@ -202,7 +203,6 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		#apply batch norm to res
 
 		xdata, edge_index = data.x_dict, data.edge_index_dict
-		xdata['res'] = self.bn(xdata['res'])
 		xdata['res'] = self.dropout(xdata['res'])
 		if self.concat_positions == True:
 			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
@@ -327,7 +327,7 @@ class HeteroGAE_AA_Decoder(torch.nn.Module):
 
 		self.lin = torch.nn.Sequential(
 			torch.nn.Dropout(dropout),
-			DynamicTanh(finalout * layers, channels_last=True),
+			#DynamicTanh(finalout * layers, channels_last=True),
 			torch.nn.Linear(finalout * layers, AAdecoder_hidden[0]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
@@ -413,11 +413,12 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		print( d_model , nheads , layers , dropout)
 
 		self.input_proj = torch.nn.Sequential( 
-			DynamicTanh(input_dim, channels_last=True),
+			#DynamicTanh(input_dim, channels_last=True),
+			torch.nn.Dropout(dropout),
 			nn.Linear(input_dim, d_model), 
 			torch.nn.GELU(),
-			torch.nn.Dropout(dropout),
 			nn.Linear(d_model, d_model),
+			torch.nn.GELU(),
 		)
 
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
@@ -430,8 +431,9 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 			torch.nn.GELU(),
-			DynamicTanh(AAdecoder_hidden[2], channels_last=True),
+			#DynamicTanh(AAdecoder_hidden[2], channels_last=True),
 			torch.nn.Linear(AAdecoder_hidden[2], xdim),
+			torch.nn.GELU(),
 			torch.nn.LogSoftmax(dim=1)
 		)
 

@@ -151,8 +151,8 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.1
-xweight = 100
+edgeweight = 0.001
+xweight = 0.1
 fft2weight = 0.01
 vqweight = 0.00001
 

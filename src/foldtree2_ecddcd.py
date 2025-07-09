@@ -199,12 +199,11 @@ class mk1_Encoder(torch.nn.Module):
 		self.out_dense= torch.nn.Sequential(
 			torch.nn.Linear(self.encoder_hidden + 20 , self.encoder_hidden) ,
 			torch.nn.GELU(),
-			torch.nn.Linear( self.encoder_hidden, self.encoder_hidden //2 ) ,
+			torch.nn.Linear( self.encoder_hidden, self.encoder_hidden ) ,
 			torch.nn.GELU(),
-			torch.nn.Linear(self.encoder_hidden//2, self.out_channels) ,	
-			torch.nn.GELU(),
-			DynamicTanh(self.out_channels , channels_last = True),
-			#torch.nn.Tanh()
+			torch.nn.Linear(self.encoder_hidden, self.out_channels) ,	
+			#DynamicTanh(self.out_channels , channels_last = True),
+			torch.nn.Tanh()
 			)
 		
 		if EMA == False:
@@ -355,10 +354,8 @@ class HeteroGAE_Decoder(torch.nn.Module):
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='mean')
-			
+			conv = HeteroConv( layer  , aggr='mean')			
 			self.convs.append( conv )
-			#self.norms.append( DynamicTanh(finalout , channels_last=True) )
 			self.norms.append( GraphNorm(finalout) )
 		self.sigmoid = nn.Sigmoid()
 		if self.residual == True:
@@ -374,21 +371,21 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				torch.nn.Linear(  Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[1], lastlin),
-				torch.nn.GELU(),
-				DynamicTanh(lastlin , channels_last = True),
+				torch.nn.Tanh(),
+				#DynamicTanh(lastlin , channels_last = True),
+				
 				)
 		
 		self.aadecoder = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
-				DynamicTanh(lastlin + in_channels_orig['res']  , channels_last = True),
+				#DynamicTanh(lastlin + in_channels_orig['res']  , channels_last = True),
 				torch.nn.Linear(lastlin + in_channels_orig['res'] , AAdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[1],AAdecoder_hidden[2]) ,
 				torch.nn.GELU(),
-				DynamicTanh(AAdecoder_hidden[2] , channels_last = True),
-				torch.nn.Linear(AAdecoder_hidden[2] , xdim) ,
+				#DynamicTanh(AAdecoder_hidden[2] , channels_last = True),
 				torch.nn.LogSoftmax(dim=1) )
 	
 		if output_foldx == True:
@@ -414,9 +411,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 	
 	def forward(self, data , contact_pred_index, **kwargs):		
 		xdata, edge_index = data.x_dict, data.edge_index_dict
+
 		xdata['res'] = self.dropout(xdata['res'])
+
 		if self.concat_positions == True:
 			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
+		
 		#copy z for later concatenation
 		inz = xdata['res'].clone()	
 		x_dict_list = []
@@ -433,10 +433,12 @@ class HeteroGAE_Decoder(torch.nn.Module):
 		xdata['res'] = self.jk(x_dict_list)
 		z = xdata['res']
 		z = self.lin(z)
-		if self.residual == True:
-			z = z + inz
 		if self.normalize == True:
 			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
+		
+		if self.residual == True:
+			z = z + inz
+		
 		decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#decode aa
 		aa = self.aadecoder(decoder_in)

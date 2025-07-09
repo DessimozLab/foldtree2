@@ -22,7 +22,7 @@ def kl_divergence_regularization(encodings):
 	return kl_divergence
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=1, entropyweight=0, jsweight=0, prior_momentum=0.99):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
