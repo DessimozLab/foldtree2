@@ -151,7 +151,7 @@ class mk1_Encoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(hidden_channels[0] * 2 , hidden_channels[0]),
 			torch.nn.GELU(),
-			DynamicTanh(hidden_channels[0] , channels_last = True),
+			#DynamicTanh(hidden_channels[0] , channels_last = True),
 			)
 
 		for i in range(1,len(hidden_channels)):
@@ -188,12 +188,12 @@ class mk1_Encoder(torch.nn.Module):
 				)
 		
 		self.lin = torch.nn.Sequential(
-			DynamicTanh(hidden_channels[-1]* (len(hidden_channels)-1)  , channels_last = True),
+			#DynamicTanh(hidden_channels[-1]* (len(hidden_channels)-1)  , channels_last = True),
 			torch.nn.Linear(hidden_channels[-1] * (len(hidden_channels)-1),self.encoder_hidden ) , 
 			torch.nn.GELU(),
 			torch.nn.Linear(self.encoder_hidden, self.encoder_hidden) ,	
 			torch.nn.GELU(),
-			DynamicTanh(self.encoder_hidden , channels_last = True),
+			#DynamicTanh(self.encoder_hidden , channels_last = True),
 			)
 		
 		self.out_dense= torch.nn.Sequential(

@@ -142,14 +142,14 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		self.lin = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
-				#DynamicTanh(finalout*layers , channels_last = True),
+				DynamicTanh(finalout*layers , channels_last = True),
 				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(  Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[1], lastlin),
-				torch.nn.Tanh(),
-				#DynamicTanh(lastlin , channels_last = True),
+				#torch.nn.Tanh(),
+				DynamicTanh(lastlin , channels_last = True),
 				
 				)
 		
