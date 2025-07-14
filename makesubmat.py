@@ -20,7 +20,6 @@ from src import AFDB_tools, foldseek2tree
 from src.pdbgraph import PDB2PyG, StructureDataset
 import src.foldtree2_ecddcd as ft2
 
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate substitution matrices and run alignments.")
     parser.add_argument('--modelname', type=str, default='small5_geo_graph', help='Model name to load')

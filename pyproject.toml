@@ -49,9 +49,14 @@ dependencies = [
   "statsmodels"
 ]
 
-[tool.setuptools]
-package-dir = { "" = "src" }
+[project.scripts]
+ft2treebuilder = "ft2treebuilder:main"
+foldtree2 = "ft2treebuilder:main"
+makesubmat = "makesubmat:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 exclude = ["tests*"]
+
+[tool.setuptools]
+py-modules = ["ft2treebuilder", "makesubmat"]

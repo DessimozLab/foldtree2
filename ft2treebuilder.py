@@ -457,31 +457,31 @@ class treebuilder():
 				for i in ancestral_df.index:
 					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
 			
-if __name__ == "__main__":
+def print_about():
+	ascii_art = r'''
+	+-------------------------------+
+	|       foldtree2     	   	    |	
+	|  Structural Phylogenetics & AI|
+	|   	🧬  🧠  🌳              |
+	+-------------------------------+
+	'''
 
-	def print_about():
-		ascii_art = r'''
-		+-------------------------------+
-		|       foldtree2     	   	    |	
-		|  Structural Phylogenetics & AI|
-		|   	🧬  🧠  🌳              |
-		+-------------------------------+
-		'''
-	
-		print(ascii_art)
-		print("FoldTree2: Structural Phylogenetics and Ancestral Sequence Reconstruction")
-		print("--------------------------------------------------------------------------------")
-		print("FoldTree2 is a toolkit for encoding protein structures as sequences using deep learning,\n"
-		      "enabling phylogenetic tree inference, ancestral structure/sequence reconstruction, and\n"
-		      "custom alphabets for evolutionary analysis. It integrates structure encoding, alignment,\n"
-		      "custom substitution matrices, and tree inference (RAxML-NG), supporting both sequence\n"
-		      "and structure-based workflows. FoldTree2 is designed for protein family analysis,\n"
-		      "benchmarking, and exploring the evolution of protein folds.\n\n"
-		      "Project: https://github.com/yourusername/foldtree2\n"
-		      "Contact: your.email@domain.com\n")
-		print("Cite: If you use FoldTree2, please cite the corresponding publication (see README).\n")
-		print("Run with --help for usage instructions.")
+	print(ascii_art)
+	print("FoldTree2: Structural Phylogenetics and Ancestral Sequence Reconstruction")
+	print("--------------------------------------------------------------------------------")
+	print("FoldTree2 is a toolkit for encoding protein structures as sequences using deep learning,\n"
+		  "enabling phylogenetic tree inference, ancestral structure/sequence reconstruction, and\n"
+		  "custom alphabets for evolutionary analysis. It integrates structure encoding, alignment,\n"
+		  "custom substitution matrices, and tree inference (RAxML-NG), supporting both sequence\n"
+		  "and structure-based workflows. FoldTree2 is designed for protein family analysis,\n"
+		  "benchmarking, and exploring the evolution of protein folds.\n\n"
+		  "NOTE: FoldTree2 is under heavy development and its interface, models, and workflows may change\n"
+		  "as new features and improvements are added.\n\n"
+		  "Project: https://github.com/DessimozLab/foldtree2\n"
+		  "Contact: dmoi@unil.ch\n")
+	print("Run with --help for usage instructions.")
 
+def main():
 	if '--about' in sys.argv:
 		print_about()
 		sys.exit(0)
@@ -495,7 +495,7 @@ if __name__ == "__main__":
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations")
-	parser.add_argument("--n_state", type=int, default=20, help="Number of encoded states")
+	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states")
 	parser.add_argument("--raxmlpath", default='./raxml-ng', help="Path to RAxML-NG executable")
 
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
@@ -536,7 +536,6 @@ if __name__ == "__main__":
 		args.submat = args.model + '_submat.txt'
 
 	
-
 	# Example usage:
 	# Run the script from the command line with:
 	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral
@@ -550,3 +549,6 @@ if __name__ == "__main__":
 	
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath)
+
+if __name__ == "__main__":
+	main()
