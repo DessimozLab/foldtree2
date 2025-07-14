@@ -142,7 +142,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		self.lin = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
-				DynamicTanh(finalout*layers , channels_last = True),
+				#DynamicTanh(finalout*layers , channels_last = True),
 				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(  Xdecoder_hidden[0], Xdecoder_hidden[1]),
@@ -164,7 +164,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1] ) ,
 					torch.nn.GELU(),
-					DynamicTanh(FFT2decoder_hidden[1] , channels_last = True),
+					#DynamicTanh(FFT2decoder_hidden[1] , channels_last = True),
 					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] +in_channels['fft2r'] ),
 					#SIRENLayer( in_channels['fft2i'] +in_channels['fft2r'] , in_channels['fft2i'] +in_channels['fft2r'] , omega_0 = 30 )
 				)
@@ -273,7 +273,7 @@ class HeteroGAE_AA_Decoder(torch.nn.Module):
 				flavor=None, 
 				dropout=0.001, 
 				normalize=True, 
-				residual=True):
+				residual=True , **kwargs):
 		
 		super(HeteroGAE_AA_Decoder, self).__init__()
 		L.seed_everything(42)
@@ -333,20 +333,20 @@ class HeteroGAE_AA_Decoder(torch.nn.Module):
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[1], lastlin),
-			torch.nn.GELU(),
-			DynamicTanh(lastlin, channels_last=True),
+			torch.nn.Tanh(),
+			#DynamicTanh(lastlin, channels_last=True),
 		)
 
 		self.aadecoder = torch.nn.Sequential(
 			torch.nn.Dropout(dropout),
-			DynamicTanh(lastlin + in_channels_orig['res'], channels_last=True),
+			#DynamicTanh(lastlin + in_channels_orig['res'], channels_last=True),
 			torch.nn.Linear(lastlin + in_channels_orig['res'], AAdecoder_hidden[0]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
 			#torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 			#torch.nn.GELU(),
-			DynamicTanh(AAdecoder_hidden[1], channels_last=True),
+			#DynamicTanh(AAdecoder_hidden[1], channels_last=True),
 			torch.nn.Linear(AAdecoder_hidden[1], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)
@@ -418,7 +418,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			nn.Linear(input_dim, d_model), 
 			torch.nn.GELU(),
 			nn.Linear(d_model, d_model),
-			torch.nn.GELU(),
+			torch.nn.Tanh(),
 		)
 
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
@@ -430,10 +430,10 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			torch.nn.GELU(),
+			#torch.nn.GELU(),
 			#DynamicTanh(AAdecoder_hidden[2], channels_last=True),
-			torch.nn.Linear(AAdecoder_hidden[2], xdim),
-			torch.nn.GELU(),
+			#torch.nn.Linear(AAdecoder_hidden[2], xdim),
+			#torch.nn.GELU(),
 			torch.nn.LogSoftmax(dim=1)
 		)
 
@@ -463,7 +463,6 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
-		
 		
 		aa = self.lin(x)
 		

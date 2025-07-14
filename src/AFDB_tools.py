@@ -10,6 +10,8 @@ from Bio.SeqUtils import seq1
 import time
 import numpy as np
 import sys
+from Bio.PDB import PDBParser
+import os
 
 def get_amino_acid_sequence(pdb_filename):
 	""" This function extracts the amino acid sequence from a PDB file."""
@@ -96,13 +98,14 @@ def grab_struct(uniID, structfolder, rejected = None, overwrite=False):
 	url = prefix+uniID.upper().strip()+post
 
 
-	if not os.path.isfile(structfolder + uniID +'.pdb'):
+	if not os.path.isfile(os.path.join( structfolder , uniID +'.pdb' )) or overwrite:
 		# Redirect stdout to suppress printed output
 		#original_stdout = sys.stdout
 		#sys.stdout = open(os.devnull, 'w')
 		try:
-			if rejected is None or (rejected and not os.path.isfile(structfolder + uniID +'.pdb')):
-				wget.download(url, structfolder + uniID +'.pdb'  , bar=None )	
+			if rejected is None or (rejected and not os.path.isfile(os.path.join( structfolder , uniID +'.pdb' ))):
+				wget.download(url, os.path.join( structfolder , uniID +'.pdb' ), bar=None )
+				return os.path.join( structfolder , uniID +'.pdb' )
 		except Exception as e:
 			print('error downloading structure for', uniID, e)
 			print( url )
@@ -114,6 +117,8 @@ def grab_struct(uniID, structfolder, rejected = None, overwrite=False):
 	#except:
 	#	print('structure not found', uniID)
 	#	return uniID
+	else:
+		return os.path.join( structfolder , uniID +'.pdb' )
 	return None
 
 
@@ -215,3 +220,30 @@ def res2fasta(unires_df):
 	unires_df['fasta'] = unires_df['fasta'].map( lambda x : x + '\n')
 	fasta = ''.join(unires_df.fasta)
 	return fasta
+
+def pdb_folder_to_fasta(folder_path, output_fasta):
+	"""
+	Converts all PDB files in a folder to a single FASTA file using Biopython.
+
+	Parameters:
+	folder_path (str): Path to the folder containing PDB files.
+	output_fasta (str): Path to the output FASTA file.
+
+	Returns:
+	None
+	"""
+
+	parser = PDBParser(QUIET=True)
+	with open(output_fasta, 'w') as fasta_out:
+		for pdb_file in os.listdir(folder_path):
+			if pdb_file.lower().endswith('.pdb'):
+				pdb_path = os.path.join(folder_path, pdb_file)
+				structure = parser.get_structure(pdb_file, pdb_path)
+				for model in structure:
+					for chain in model:
+						sequence = ''
+						for residue in chain.get_residues():
+							if residue.get_resname() in ['HOH', 'WAT']:
+								continue
+							sequence += seq1(residue.get_resname(), undef_code='X')
+						fasta_out.write(f'>{pdb_file}_{chain.id}\n{sequence}\n')

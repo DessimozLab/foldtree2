@@ -20,6 +20,9 @@ import se3encoder as se3e
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
+#mfnew_128mk2.pkl ok
+
+
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
 
@@ -151,10 +154,10 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.001
-xweight = 0.1
+edgeweight = 0.00001
+xweight = .1
 fft2weight = 0.01
-vqweight = 0.00001
+vqweight = 0.000001
 
 # Create output directory
 modeldir = args.output_dir
@@ -234,21 +237,21 @@ else:
     else:
         # MultiMonoDecoder for sequence and geometry
         mono_configs = {
+      
             'sequence_transformer': {
                 'in_channels': {'res': args.embedding_dim},
                 'xdim': 20,
                 'concat_positions': True,
                 'hidden_channels': {('res','backbone','res'): [hidden_size]*3 , ('res','backbonerev','res'): [hidden_size]*3},
-                'layers': 2,
+                'layers': 1,
                 'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                'nheads': 2,
+                'nheads': 1,
                 'dropout': 0.005,
-                'normalize': True,
+                'normalize': False,
                 'residual': False
             },
-            
             'contacts': {
                 'in_channels': {'res': args.embedding_dim , 'godnode4decoder': ndim_godnode, 'foldx': 23 ,  'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
                 'concat_positions': False,
@@ -289,6 +292,22 @@ else:
 
 
         '''
+
+        'sequence_transformer': {
+                'in_channels': {'res': args.embedding_dim},
+                'xdim': 20,
+                'concat_positions': True,
+                'hidden_channels': {('res','backbone','res'): [hidden_size]*3 , ('res','backbonerev','res'): [hidden_size]*3},
+                'layers': 1,
+                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+                'amino_mapper': converter.aaindex,
+                'flavor': 'sage',
+                'nheads': 2,
+                'dropout': 0.005,
+                'normalize': False,
+                'residual': False
+            },
+            
         'sequence': {
             'in_channels': {'res': args.embedding_dim},
             'xdim': 20,  # 20 amino acids
@@ -364,10 +383,10 @@ print(f"Total epochs: {args.epochs}, Burn-in epochs: {burn_in}, After burn-in ep
 for epoch in range(args.epochs):
     if burn_in and epoch < burn_in:
         print(f"Burn-in epoch {epoch+1}/{args.epochs}: Adjusting loss weights")
-        edgeweight = 0.00001
-        xweight = .1
-        fft2weight = 0.01
-        vqweight = 0.0001
+        edgeweight = 0
+        xweight = 1
+        fft2weight = 0
+        vqweight = 0.001
         #change learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] =   args.learning_rate * 10 
@@ -377,9 +396,9 @@ for epoch in range(args.epochs):
         done_burn = False
         # After burn-in, use normal weights
         print(f"Training epoch {epoch+1}/{args.epochs}: Using adjusted loss weights")
-        xweight = .1  # Normal weight for amino acid reconstruction
-        edgeweight = 0.0001  # Normal weight for edge loss
-        fft2weight = 0.0001  # Normal weight for FFT2 loss
+        xweight = 1  # Normal weight for amino acid reconstruction
+        edgeweight = 0.001  # Normal weight for edge loss
+        fft2weight = 0.001  # Normal weight for FFT2 loss
         vqweight = 0.001  # Normal weight for VQ loss
         #change learning rate
         for param_group in optimizer.param_groups:

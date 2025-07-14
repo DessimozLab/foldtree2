@@ -10,7 +10,7 @@ import pebble
 import argparse
 from src import foldtree2_ecddcd as ft2
 from src import mono_decoders
-from src.converter import pdbgraph
+from src.pdbgraph import PDB2PyG
 import traceback
 import tqdm
 import pandas as pd
@@ -40,7 +40,11 @@ class treebuilder():
 		with open( model + '.pkl', 'rb') as f:
 			self.encoder, self.decoder = pickle.load(f)
 
-		self.converter = pdbgraph.PDB2PyG()
+		if kwargs['aapropcsv'] is not None:
+			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
+		else:
+			self.converter = PDB2PyG()
+
 		#detect if we are using a GPU
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.encoder = self.encoder.to(self.device)

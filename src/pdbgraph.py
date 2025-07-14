@@ -66,6 +66,9 @@ class PDB2PyG:
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
 
+
+
+
 	@staticmethod
 	def read_pdb(filename):
 		#silence all warnings
