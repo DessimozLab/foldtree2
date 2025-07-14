@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import torch
 from tqdm import tqdm
-from src.pdbgraph import PDB2PyG
+from foldtree2.src.pdbgraph import PDB2PyG
 
 def find_pdbs_recursive(root_dir):
     pdb_files = []

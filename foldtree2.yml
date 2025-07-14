@@ -7,69 +7,33 @@ channels:
   - bioconda
 dependencies:
   - python=3.12
-  - pip
   - numpy
   - pandas
+  - tqdm
   - matplotlib
-  - scikit-learn
-  - scipy
-  - pytorch
+  - torch
   - torchvision
   - torchaudio
   - pytorch-cuda=12.1  # Remove or adjust if not using GPU
   - torch-geometric
+  - scipy
+  - h5py
+  - networkx
+  - statsmodels
   - jupyterlab
   - ipykernel
-  - tqdm
-  - h5py
+  - pip
   - pip:
       - biopython
       - einops
-      - tensorboard
-      - seaborn
-      - py3dmol
-      - e3nn
-      - fair-esm
+      - pebble
+      - pytorch-lightning
+      - datasketch
+      - wget
       - toytree
       - toyplot
-      - polars
-      - pyparsing
-      - hjson
-      - loguru
-      - fsspec
-      - huggingface-hub
-      - transformers
-      - lightning-utilities
-      - pytorch-lightning
-      - torchmetrics
-      - x-transformers
-      - deepspeed
-      - tqdm
-      - h5py
-      - pandas
-      - matplotlib
-      - seaborn
-      - scikit-learn
-      - scipy
-      - einops
-      - tensorboard
-      - py3dmol
-      - e3nn
-      - fair-esm
-      - toytree
-      - toyplot
-      - polars
-      - pyparsing
-      - hjson
-      - loguru
-      - fsspec
-      - huggingface-hub
-      - transformers
-      - lightning-utilities
-      - pytorch-lightning
-      - torchmetrics
-      - x-transformers
-      - deepspeed
+      - pydssp
+      - ete3
 
 # To use: conda env create -f foldtree2.yml
 # To activate: conda activate foldtree2
