@@ -46,16 +46,18 @@ dependencies = [
   "wget",
   "toytree",
   "toyplot",
-  "statsmodels"
+  "statsmodels",
+  "pydssp",
+  "ete3"
 ]
 
 [project.scripts]
-ft2treebuilder = "ft2treebuilder:main"
-foldtree2 = "ft2treebuilder:main"
-makesubmat = "makesubmat:main"
+ft2treebuilder = "foldtree2.ft2treebuilder:main"
+foldtree2 = "foldtree2.ft2treebuilder:main"
+makesubmat = "foldtree2.makesubmat:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["." , "src", "scripts"]
 exclude = ["tests*"]
 
 [tool.setuptools]

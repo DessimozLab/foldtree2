@@ -8,8 +8,12 @@ setup(
     long_description_content_type="text/markdown",
     author="Dave Moi",
     author_email="dmoi@unil.ch",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=find_packages(where=[".", "src", "scripts"]),  
+    package_dir={
+        "": ".",
+        "src": "src",
+        "scripts": "scripts"
+    },
     install_requires=[
         "numpy",
         "pandas",
@@ -28,7 +32,9 @@ setup(
         "wget",
         "toytree",
         "toyplot",
-        "statsmodels"
+        "statsmodels",
+        "pydssp",
+        "ete3",
     ],
     python_requires=">=3.7",
     include_package_data=True,
