@@ -405,11 +405,13 @@ class treebuilder():
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
 		return aastr ,edge_probs , zgodnode , foldxout , r , t , angles
 
-	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None):
+	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False ):
 		#encode the structures
-		encoded_fasta = self.encode_structblob( blob=structs , outfile = None )	
+		
+		outfasta = os.path.join(outdir,output_prefix, 'encoded.fasta')
+		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta , verbose = verbose	 )	
 		#replace special characters
-		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = None  , verbose = False)
+		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
 		#convert to hex
 		print('converting to hex for mafft')
 		hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None )
@@ -426,10 +428,13 @@ class treebuilder():
 		alnfasta = self.read_textaln( mafftaln )
 		#run raxml-ng
 		print('running raxml-ng')
-		treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat 
-			   , nsymbols = self.nchars , 
-			   output_prefix = alnfasta.replace('.raxml_aln.fasta' , '') ,
-			   iterations = raxml_iterations , 
+		if output_prefix is None:
+			output_prefix = alnfasta.replace('.raxml_aln.fasta' , '')
+
+		treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat
+			   , nsymbols = self.nchars ,
+			   output_prefix = output_prefix ,
+			   iterations = raxml_iterations ,
 			    )
 		#print the tree
 		print('treefile:', treefile)
@@ -445,7 +450,7 @@ class treebuilder():
 			#decode the ancestral sequence
 			ords = ancestral_df.ord.values
 			for l in ords.shape[0]:
-				aastr ,edge_probs , zgodnode , foldxout , r , t , angles = decoder_reconstruction( ords[l] , verbose = False)	
+				aastr ,edge_probs , zgodnode , foldxout , r , t , angles = decoder_reconstruction( ords[l] , verbose = verbose)	
 				ancestral_df.loc[l , 'aastr'] = aastr
 				ancestral_df.loc[l , 'edge_probs'] = edge_probs
 				ancestral_df.loc[l , 'zgodnode' ] = zgodnode
@@ -496,6 +501,16 @@ def main():
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
+	parser.add_argument("--output_prefix", default="encoded", help="Output file prefix for encoded sequences")
+
+	parser.add_argument("--aapropcsv", default=None, help="Path to amino acid properties CSV file for PDB2PyG conversion")
+	parser.add_argument("--maffttext2hex", default='/usr/local/libexec/mafft/maffttext2hex', help="Path to maffttext2hex executable")
+	parser.add_argument("--ncores", type=int, default=mp.cpu_count(), help="Number of CPU cores to use for processing")
+	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
+	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
+	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states (default: 40)")
+	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations")
 	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states")
@@ -551,7 +566,7 @@ def main():
 	tb = treebuilder(model=args.model, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state)	
 	
 	# Generate tree from structures using the provided options
-	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath)
+	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix, verbose=args.verbose , n_state=args.n_state)
 
 if __name__ == "__main__":
 	main()

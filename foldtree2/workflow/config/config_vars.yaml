@@ -1,34 +1,37 @@
 # Paths to MAFFT utilities
 hex2maffttext: /usr/lib/mafft/lib/mafft/hex2maffttext
 maffttext2hex: /usr/lib/mafft/lib/mafft/maffttext2hex
-#Plddt filetering parameters for models
-filter: True
+
+# Plddt filtering parameters for models
+filter: true
 filter_min: 10
 filter_avg: 50
-
-
 
 astral_path: /work/FAC/FBM/DBC/cdessim2/default/dmoi/software/ASTER-Linux/bin/astral-pro
 foldseek_path: foldseek
 foldseek_cores: 1
 
-#If set to True then use a folder of structures that is provided by the user. This will skip the structure downloading step
-#when using the fold_tree workflow. If all of your structures are in the AFDB then just use an identifier file.
-#If you have a mix of structures in the AFDB and some that are not then use the folder option.
-#Place structures in a folder called structs within the working directory.
-# e.g. myfamily/structs/
+custom_structs: false
+cath: false
 
-custom_structs: False
-cath: False
+raxml_redo: false
+raxml_cores: 1
 
-raxml_redo : False
-raxml_cores : 1
-
-
-#Path to the 3di submat from the root of the workflow repository
 submat3di: 3diphy/3DI_substmat/3di_substmat.txt
 mafft_submat3di: mafftmat/3diHEXmat.txt
 
-#clean all the previous results before running
-clean_folder: False
+clean_folder: false
 fam_limit: 10000
+
+# ft2 workflow options
+aaprop_csv: /work/FAC/FBM/DBC/cdessim2/default/dmoi/projects/foldtree2/foldtree2/config/aaindex1.csv
+
+root_dir: .
+ancestral: false
+model: null
+mafftmat: null
+submat: null
+outdir: null
+raxml_iterations: null
+n_state: null
+raxmlpath: null

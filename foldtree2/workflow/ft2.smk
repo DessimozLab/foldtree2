@@ -1,6 +1,12 @@
 import glob
 import os
 
+from snakemake.utils import min_version
+min_version("6.0")
+
+configfile: "./config/config_vars.yaml"
+
+
 # Get root directory and all relevant options from config
 ROOT_DIR = config.get("root_dir", ".")
 ANCESTRAL = config.get("ancestral", False)
@@ -24,9 +30,10 @@ def get_struct_folders(root_dir):
 
 FOLDERS = get_struct_folders(ROOT_DIR)
 
+
 rule all:
     input:
-        expand("{folder}/ft2treebuilder.done", folder=FOLDERS)
+        expand("{folder}/ft2_encoded_replaced.ASCIIaln.txt.raxml.bestTree.rooted", folder=FOLDERS)
 
 rule ft2treebuilder:
     conda:
@@ -35,6 +42,8 @@ rule ft2treebuilder:
         structs_dir="{folder}/structs"
     output:
         done="{folder}/ft2treebuilder.done"
+        tree="{folder}/ft2_encoded_replaced.ASCIIaln.txt.raxml.bestTree"
+        aln="{folder}/ft2_encoded_replaced.ASCIIaln.txt.raxml_aln.fasta.raxml_aln.fasta"
     params:
         ancestral=ANCESTRAL,
         model=MODEL,
@@ -58,3 +67,11 @@ rule ft2treebuilder:
             (f"--raxmlpath {params.raxmlpath} " if params.raxmlpath else "") +
             "> {output.done}"
         )
+
+rule madroot:
+    input:
+        tree="{folder}/ft2_encoded_replaced.ASCIIaln.txt.raxml.bestTree"
+    output:
+        rooted="{folder}/ft2_encoded_replaced.ASCIIaln.txt.raxml.bestTree.rooted"
+    shell:
+        "{config.madroot} {input.tree}"
