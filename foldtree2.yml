@@ -11,7 +11,7 @@ dependencies:
   - pandas
   - tqdm
   - matplotlib
-  - torch
+  - pytorch
   - torchvision
   - torchaudio
   - pytorch-cuda=12.1  # Remove or adjust if not using GPU
