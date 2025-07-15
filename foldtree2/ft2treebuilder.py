@@ -409,7 +409,7 @@ class treebuilder():
 		#encode the structures
 		
 		outfasta = os.path.join(outdir,output_prefix, 'encoded.fasta')
-		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta , verbose = verbose	 )	
+		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta , verbose = verbose )	
 		#replace special characters
 		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
 		#convert to hex
@@ -497,14 +497,18 @@ def main():
 	parser = argparse.ArgumentParser(description="CLI for running foldtree2 tree builder.")
 	parser.add_argument("--about", action="store_true", help="Show information about FoldTree2 and exit.")
 	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
+	
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
 	parser.add_argument("--output_prefix", default="encoded", help="Output file prefix for encoded sequences")
 
+	#paths to properties and executables
 	parser.add_argument("--aapropcsv", default=None, help="Path to amino acid properties CSV file for PDB2PyG conversion")
 	parser.add_argument("--maffttext2hex", default='/usr/local/libexec/mafft/maffttext2hex', help="Path to maffttext2hex executable")
+	parser.add_argument("--maffthex2text", default='/usr/local/libexec/mafft/hex2maffttext', help="Path to hex2maffttext executable")
+
 	parser.add_argument("--ncores", type=int, default=mp.cpu_count(), help="Number of CPU cores to use for processing")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
