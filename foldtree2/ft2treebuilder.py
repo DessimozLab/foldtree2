@@ -43,7 +43,7 @@ class treebuilder():
 		with open( model + '.pkl', 'rb') as f:
 			self.encoder, self.decoder = pickle.load(f)
 
-		if kwargs['aapropcsv'] is not None:
+		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
 		else:
 			self.converter = PDB2PyG()
@@ -51,7 +51,9 @@ class treebuilder():
 		#detect if we are using a GPU
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.encoder = self.encoder.to(self.device)
-		self.decoder = self.decoder.to(self.device)        
+		self.decoder = self.decoder.to(self.device)     
+		self.encoder.device = self.device
+		
 		self.encoder.eval()
 		self.decoder.eval()
 		
@@ -60,10 +62,12 @@ class treebuilder():
 		
 		self.alphabet = [ chr(c+1) if chr(c+1) not in self.replace_dict else self.replace_dict[chr(c+1)] for c in range(self.encoder.num_embeddings) ]
 		self.nchars = len(self.alphabet)
+		
+		
 		self.map = { c:i for i,c in enumerate(self.alphabet)}
 		self.revmap = { i:c for i,c in enumerate(self.alphabet)}
 
-		#load the mafftmat and submat npy matrices
+		#load the mafftmat and submat matrices
 		#if mafftmat == None or submat == None:
 		#	raise ValueError('Need to provide mafftmat and submat')
 		self.mafftmat = mafftmat
@@ -71,7 +75,15 @@ class treebuilder():
 		if 'maffttext2hex' in kwargs:
 			self.maffttext2hex = kwargs['maffttext2hex']
 		else:
-			self.maffttext2hex = '/usr/local/libexec/mafft/maffttext2hex'
+			self.maffttext2hex = 'maffttext2hex'
+
+		if 'maffthex2text' in kwargs:
+			self.maffthex2text = kwargs['maffthex2text']
+		else:
+			self.maffthex2text = 'hex2maffttext'
+		
+
+
 		if 'ncores' in kwargs:
 			self.ncores = kwargs['ncores']
 		else:
@@ -94,9 +106,11 @@ class treebuilder():
 		return outaln
 
 	@staticmethod
-	def mafft_hex2fasta( intext , outfile , hex2text_path = '/usr/lib/mafft/lib/mafft/hex2maffttext' ):
+	def mafft_hex2ascii( intext , outfile , hex2text_path = './mafft_tools/hex2maffttext' ):
 		if outfile == None:
+
 			outfile = intext.replace('.hex' , '.ASCII')
+			print('outfile for ascii :', outfile)
 		#% /usr/local/libexec/mafft/hex2maffttext input.hex > input.ASCII
 		cmd = f'{hex2text_path} {intext} > {outfile}'
 		print(cmd)
@@ -104,7 +118,7 @@ class treebuilder():
 		return outfile    
 
 	@staticmethod
-	def fasta2hex( intext , outfile  , maffttext2hex = '/usr/lib/mafft/lib/mafft/maffttext2hex' ):
+	def fasta2hex( intext , outfile  , maffttext2hex = './mafft_tools/maffttext2hex' ):
 		#% /usr/local/libexec/mafft/maffttext2hex input.hex > input.ASCII
 		if outfile == None:
 			outfile = intext+'.hex'
@@ -263,6 +277,7 @@ class treebuilder():
 		with open(encoded_fasta, 'r') as f:
 			if outfile == None:
 				outfile = encoded_fasta.replace('.fasta' , '.hex')
+				print('outfile for hex :', outfile)
 			with open(outfile , 'w') as g:
 				for line in f:
 					if line[0] == '>':
@@ -331,7 +346,7 @@ class treebuilder():
 		subprocess.run(raxml_cmd, shell=True)
 		return None
 
-	def madroot( treefile  , madroot_path = './madroot/mad' ):
+	def madroot( treefile  , madroot_path = 'mad' ):
 		mad_cmd = f'{madroot_path} {treefile} '
 		subprocess.run(mad_cmd, shell=True)
 		return treefile+'.rooted'
@@ -405,25 +420,26 @@ class treebuilder():
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
 		return aastr ,edge_probs , zgodnode , foldxout , r , t , angles
 
-	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False ):
+	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
 		#encode the structures
 		
-		outfasta = os.path.join(outdir,output_prefix, 'encoded.fasta')
-		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta , verbose = verbose )	
+		outfasta = os.path.join(outdir, 'encoded.fasta')
+		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta )	
 		#replace special characters
 		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
 		#convert to hex
 		print('converting to hex for mafft')
-		hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None )
-		# conver to ascii
+		hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None  )
+		# convert to ascii
 		print('converting to ascii for mafft')
-		asciifile = self.mafft_hex2fasta( hexfasta , outfile = None )
+		asciifile = self.mafft_hex2ascii( hexfasta , outfile = None , hex2text_path = self.maffthex2text )
+		print('asciifile:', asciifile)
 		#run mafft text aln with custom submat
 		print('running mafft')
-		mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft' )
+		mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft'  )
 		#convert the mafft aln to fasta
 		print('converting mafft aln to hex fasta')
-		mafftaln  = self.fasta2hex( mafftaln , outfile = None )
+		mafftaln  = self.fasta2hex( mafftaln , outfile = None , maffttext2hex = self.maffttext2hex )
 		#read the mafft aln
 		alnfasta = self.read_textaln( mafftaln )
 		#run raxml-ng
@@ -497,7 +513,7 @@ def main():
 	parser = argparse.ArgumentParser(description="CLI for running foldtree2 tree builder.")
 	parser.add_argument("--about", action="store_true", help="Show information about FoldTree2 and exit.")
 	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
-	
+	parser.add_argument("--modeldir" , required=False, default='./models', help="Directory containing the model files (if not specified, uses current directory)")
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
@@ -505,9 +521,9 @@ def main():
 	parser.add_argument("--output_prefix", default="encoded", help="Output file prefix for encoded sequences")
 
 	#paths to properties and executables
-	parser.add_argument("--aapropcsv", default=None, help="Path to amino acid properties CSV file for PDB2PyG conversion")
-	parser.add_argument("--maffttext2hex", default='/usr/local/libexec/mafft/maffttext2hex', help="Path to maffttext2hex executable")
-	parser.add_argument("--maffthex2text", default='/usr/local/libexec/mafft/hex2maffttext', help="Path to hex2maffttext executable")
+	parser.add_argument("--aapropcsv", default='./foldtree2/config/aaindex1.csv', help="Path to amino acid properties CSV file for PDB2PyG conversion")
+	parser.add_argument("--maffttext2hex", default='maffttext2hex', help="Path to maffttext2hex executable")
+	parser.add_argument("--maffthex2text", default='hex2maffttext', help="Path to hex2maffttext executable")
 
 	parser.add_argument("--ncores", type=int, default=mp.cpu_count(), help="Number of CPU cores to use for processing")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
@@ -516,9 +532,6 @@ def main():
 	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states (default: 40)")
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
-	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations")
-	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states")
-	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
 		print('No arguments provided. Use -h or --help for help.')
@@ -535,8 +548,9 @@ def main():
 		print('Model path is required. Use --model to specify the model path.')
 		sys.exit(1)
 
-	if not os.path.exists(args.model + '.pkl'):
-		print(f"Model file {args.model}.pkl does not exist. Please provide a valid model path.")
+	modelpath = os.path.join( args.modeldir, args.model )
+	if not os.path.exists(modelpath + '.pkl'):
+		print(f"Model file {modelpath}.pkl does not exist. Please provide a valid model path.")
 		sys.exit(1)
 		
 	if args.structures is None:
@@ -551,13 +565,19 @@ def main():
 	if args.outdir is not None:
 		if not os.path.exists(args.outdir):
 			os.makedirs(args.outdir)
+	if args.output_prefix is None:
+		args.output_prefix = 'encoded'
+	else:
+		if not args.output_prefix.endswith('_'):
+			args.output_prefix += '_'
 	
 	if args.mafftmat is None:
-		args.mafftmat = args.model + '_mafftmat.mtx'
+		args.mafftmat = os.path.join(args.modeldir, args.model + '_mafftmat.mtx')
 	if args.submat is None:
-		args.submat = args.model + '_submat.txt'
+		args.submat = os.path.join(args.modeldir, args.model + '_submat.txt')
 
 	
+
 	# Example usage:
 	# Run the script from the command line with:
 	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral
@@ -567,10 +587,12 @@ def main():
 	# perform the ancestral reconstruction, and output results accordingly.
 
 	# Create an instance of treebuilder
-	tb = treebuilder(model=args.model, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state)	
-	
+	tb = treebuilder(model=modelpath, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state , raxml_path=args.raxmlpath,
+	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores)
+
 	# Generate tree from structures using the provided options
-	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix, verbose=args.verbose , n_state=args.n_state)
+	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
+				 , verbose=args.verbose , n_state=args.n_state , aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
 
 if __name__ == "__main__":
 	main()

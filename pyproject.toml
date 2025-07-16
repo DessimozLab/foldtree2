@@ -56,10 +56,16 @@ ft2treebuilder = "foldtree2.ft2treebuilder:main"
 foldtree2 = "foldtree2.ft2treebuilder:main"
 makesubmat = "foldtree2.makesubmat:main"
 pdbs-to-graphs = "foldtree2.scripts.pdbs_to_graphs:main"
+hex2maffttext = "foldtree2.mafft_wrappers:hex2maffttext_main"
+maffttext2hex = "foldtree2.mafft_wrappers:maffttext2hex_main"
+mad = "foldtree2.mafft_wrappers:mad_main"
 
 [tool.setuptools.packages.find]
 where = ["." , "src", "scripts"]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["mafft_tools/*", "madroot/*"]
 
 [tool.setuptools]
 py-modules = ["ft2treebuilder", "makesubmat"]

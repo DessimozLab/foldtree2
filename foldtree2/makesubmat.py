@@ -25,7 +25,6 @@ def parse_args():
     parser.add_argument('--modelname', type=str, default='small5_geo_graph', help='Model name to load')
     parser.add_argument('--modeldir', type=str, default='models/', help='Directory containing model .pkl files')
     parser.add_argument('--datadir', type=str, default='../../datasets/', help='Data directory')
-    parser.add_argument('--outdir_base', type=str, default='../../results/foldtree2/', help='Base output directory')
     parser.add_argument('--download_structs', action='store_true', help='Download structure members')
     parser.add_argument('--nstructs', type=int, default=5, help='Number of structures to download per cluster representative')
     parser.add_argument('--align_structs', action='store_true', help='Align structures with foldseek')
@@ -39,12 +38,9 @@ def parse_args():
 
 def ensure_dirs(outdir_base):
     matdir = os.path.join(outdir_base, 'matrices')
-    treedir = os.path.join(outdir_base, 'trees')
     os.makedirs(outdir_base, exist_ok=True)
     os.makedirs(matdir, exist_ok=True)
-    os.makedirs(treedir, exist_ok=True)
-    return matdir, treedir
-
+    return matdir
 
 def load_model(modeldir, modelname):
     with open(os.path.join(modeldir, modelname + '.pkl'), 'rb') as f:
@@ -53,6 +49,13 @@ def load_model(modeldir, modelname):
 
 
 def read_reps(datadir):
+    #check if reps file exists
+    reps_file = os.path.join(datadir, 'afdbclusters/1-AFDBClusters-entryId_repId_taxId.tsv')
+    if not os.path.exists(reps_file):
+        print(f"Reps file {reps_file} from AFDB clusters not found. Please ensure the file exists.")
+        sys.exit(1)
+    
+    #read the reps file
     reps = pd.read_table(os.path.join(datadir, 'afdbclusters/1-AFDBClusters-entryId_repId_taxId.tsv'),
                         header=None, names=['entryId', 'repId', 'taxId'])
     return reps
@@ -70,9 +73,6 @@ def download_structs_fn(reps, datadir, n=5):
             AFDB_tools.grab_struct(uniID, structfolder=os.path.join(datadir, 'struct_align', rep, 'structs'))
 
 def align_structs_fn(reps, datadir):
-    if foldseek2tree is None:
-        print("foldseek2tree not available. Skipping alignment.")
-        return
     for rep in tqdm.tqdm(reps.repId.unique()):
         foldseek2tree.runFoldseek_allvall_EZsearch(
             infolder=os.path.join(datadir, 'struct_align', rep, 'structs'),
@@ -90,7 +90,9 @@ def encode_structures(encoder, modeldir, modelname, device, dataset):
                 d = d.to(device)
                 yield d
     encoder_loader = databatch2list(encoder_loader)
-    encoder.encode_structures_fasta(encoder_loader, modeldir + modelname + '_aln_encoded.fasta')
+    encoder.encode_structures_fasta(encoder_loader, os.path.join(modeldir, modelname + '_aln_encoded.fasta') , replace=True )
+    print("Encoding complete. Encoded FASTA saved.")
+    return os.path.join(modeldir, modelname + '_aln_encoded.fasta')
 
 def build_char_set(encoded_df):
     """Build the set of all characters in the encoded sequences."""
@@ -99,16 +101,21 @@ def build_char_set(encoded_df):
         char_set = char_set.union(set(seq))
     char_set = list(char_set)
     char_set.sort()
+    print(f"Character set: {char_set}")
+    print('ord', [ord(c) for c in char_set])
+    print('hex', [hex(ord(c)) for c in char_set])
+    print(f"Number of characters: {len(char_set)}")
     return char_set
 
 def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, fident_thresh=0.3):
     """Compute pair counts and background frequencies from alignments."""
     cols = 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln'.split(',')
-    submat = np.zeros((256,256))
+    submat = np.zeros((len(char_set),len(char_set)))
     background_freq = np.zeros(len(char_set))
+    char_position_map = {char: i for i, char in enumerate(char_set)}
     seqcount = 0
     for rep in tqdm.tqdm(alnfiles, desc="Processing alignments"):
-        submat_chunk = np.zeros((256,256))
+        submat_chunk = np.zeros((len(char_set),len(char_set)))
         aln_df = pd.read_table(rep)
         aln_df.columns = cols
         seqset = set()
@@ -141,18 +148,18 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, fident_thresh=0.3
                                     if q_char == '-':
                                         qaln_ft2.append(None)
                                     else:
-                                        qaln_ft2.append(ord(next(qz_iter)))
+                                        qaln_ft2.append(char_position_map[next(qz_iter)])
                                 for t_char in taln.strip():
                                     if t_char == '-':
                                         taln_ft2.append(None)
                                     else:
-                                        taln_ft2.append(ord(next(tz_iter)))
+                                        taln_ft2.append(char_position_map[next(tz_iter)])
                                 alnzip = [ [a, b] for a, b in zip(qaln_ft2, taln_ft2) if a is not None and b is not None ]
                                 alnzip = np.array(alnzip)
                                 if alnzip.size > 0:
                                     submat_chunk[alnzip[:,0], alnzip[:,1]] += 1
         submat += submat_chunk
-    return submat, background_freq, char_set
+    return submat, background_freq, char_set , char_position_map
 
 def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e):
     n = pair_counts.shape[0]
@@ -164,6 +171,32 @@ def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log
     epsilon = 1e-15
     log_odds_matrix = np.log(ratio + epsilon) / np.log(log_base)
     return log_odds_matrix
+
+def compute_raxml_compatible_matrix(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e, scaling_factor=1.0):
+    # Compute the log odds matrix as you already do
+    log_odds_matrix = compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount, log_base)
+    
+    # Exponentiate the log odds to get relative rates
+    preliminary_rates = np.exp(log_odds_matrix * scaling_factor)
+    
+    # Symmetrize the matrix to ensure reversibility
+    n = preliminary_rates.shape[0]
+    rate_matrix = np.zeros_like(preliminary_rates)
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                rate_matrix[i, j] = (preliminary_rates[i, j] + preliminary_rates[j, i]) / 2.0
+    # Set diagonal entries so that each row sums to zero
+    for i in range(n):
+        rate_matrix[i, i] = -np.sum(rate_matrix[i, :]) + rate_matrix[i, i]
+    
+    # Scale the matrix so that the expected substitution rate is 1
+    # Calculate the expected rate: sum_i πᵢ * (-Qᵢᵢ)
+    char_freqs = char_freqs / np.sum(char_freqs)
+    expected_rate = -np.sum(char_freqs * np.diag(rate_matrix))
+    rate_matrix = rate_matrix / expected_rate
+
+    return rate_matrix , char_freqs
 
 def output_mafft_matrix(submat, char_set, outpath):
     def formathex(hexnum):
@@ -181,14 +214,14 @@ def output_mafft_matrix(submat, char_set, outpath):
                     hexj = formathex(hex(ord(stringj)))
                     f.write(f'{hexi} {hexj} {submat[i,j]}\n')
 
-def output_raxml_matrix(log_odds, char_set, outpath):
+def output_raxml_matrix(rate_matrix, char_set, outpath):
     """Output a RAxML substitution matrix file."""
     with open(outpath, 'w') as f:
         f.write('x  ' + ' '.join(char_set) + '\n')
         for i, c1 in enumerate(char_set):
             row = [c1]
             for j, c2 in enumerate(char_set):
-                val = log_odds[i, j]
+                val = rate_matrix[i, j]
                 row.append(f"{val:.4f}")
             f.write('  '.join(row) + '\n')
 
@@ -200,64 +233,90 @@ def main():
     if args.submat is None:
         args.submat = args.modelname + '_submat.txt'
     
-    matdir, treedir = ensure_dirs(args.outdir_base)
-    
     encoder, decoder = load_model(args.modeldir, args.modelname)
     print(encoder)
     print(decoder)
 
     print(encoder.num_embeddings)
-    print( ' creating matrices in', matdir)
+    outdir_base = args.modeldir
+    matdir = ensure_dirs(outdir_base)
+
+    print( ' creating matrices in', outdir_base)
     print('modelname', args.modelname)
-
-    reps = read_reps(args.datadir)
-    print('reps', reps.head())
-
-    if args.download_structs:
+    reps = None
+    if args.download_structs and not os.path.exists(os.path.join(args.datadir, 'struct_align')):
+        #make struct align directory
+        os.makedirs(os.path.join(args.datadir, 'struct_align'), exist_ok=True)
+        print("Downloading structure representatives...")
+        reps = read_reps(args.datadir)
+        print('reps', reps.head())
         download_structs_fn(reps, args.datadir)
     if args.align_structs:
+        if reps is None:
+            reps = read_reps(args.datadir)
         align_structs_fn(reps, args.datadir)
-
     if not os.path.exists(os.path.join(args.datadir, 'struct_align')):
         print("No structure alignments found. Please run --download_structs and --align_structs first.")
         sys.exit(1)
-            
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     encoder = encoder.to(device)
     decoder = decoder.to(device)
+    encoder.device = device
     encoder.eval()
     decoder.eval()
     print(f"Using device: {device}")
-
     if args.encode_alns:
-        encode_structures(encoder, args.modeldir, args.modelname, device, args.dataset)
+        print("Encoding alignment structures...")
+        encoded_fasta = encode_structures(encoder, args.modeldir, args.modelname, device, args.dataset)
     else:
         print("Skipping encoding of alignments, using existing encoded FASTA.")
-        encoded_fasta = args.modeldir + args.modelname + '_aln_encoded.fasta'
+        encoded_fasta = os.path.join(args.modeldir, args.modelname + '_aln_encoded.fasta')
     if not os.path.exists(encoded_fasta):
         print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
         sys.exit(1)
     encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
     char_set = build_char_set(encoded_df)
     alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
-    pair_counts, background_freq, char_set = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set)
+    print(f"Found {len(alnfiles)} alignment files.")
+    if len(alnfiles) == 0:
+        print("No alignment files found. Please run --align_structs first.")
+        sys.exit(1)
+    print(f"Processing {len(alnfiles)} alignment files...")
+    pair_counts, background_freq, char_set, char_position_map = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set)
     print(f"Pair counts shape: {pair_counts.shape}, Background frequencies shape: {background_freq.shape}")
+    
     #save pair counts
-    pair_counts_path = os.path.join(args.outdir_base, 'matrices', args.modelname + '_pair_counts.pkl')
+    pair_counts_path = os.path.join(outdir_base, args.modelname + '_pair_counts.pkl')
     with open(pair_counts_path, 'wb') as f:
-        pickle.dump((pair_counts, char_set), f)
+        pickle.dump((pair_counts, char_set, char_position_map), f)
     print(f"Pair counts saved to {pair_counts_path}")
     # Compute log odds matrix
     print("Computing log odds matrix...")
     background_freq = background_freq / np.sum(background_freq)
     log_odds = compute_log_odds_from_counts(pair_counts, background_freq)
     # Save MAFFT matrix
-    mafftmat_path = os.path.join(args.outdir_base, 'matrices', args.mafftmat)
+    if args.mafftmat is None:
+        args.mafftmat = args.modelname + '_mafftmat.mtx'
+    if args.submat is None:
+        args.submat = args.modelname + '_submat.txt'
+
+    #save charmap 
+    charmap_path = os.path.join(outdir_base, args.modelname + '_charmap.pkl')
+    with open(charmap_path, 'wb') as f:
+        pickle.dump(char_position_map, f)
+    print(f"Character map saved to {charmap_path}")
+    print("Outputting matrices...")
+    # Save MAFFT matrix
+    mafftmat_path = os.path.join(outdir_base, args.mafftmat)
     output_mafft_matrix(pair_counts, char_set, mafftmat_path)
     print(f"MAFFT matrix written to {mafftmat_path}")
     # Save RAxML matrix
-    raxmlmat_path = os.path.join(args.outdir_base, 'matrices', args.submat)
-    output_raxml_matrix(log_odds, char_set, raxmlmat_path)
+    raxmlmat_path = os.path.join(outdir_base, args.submat)
+
+    # Compute RAxML-compatible matrix
+    raxml_matrix, char_freqs = compute_raxml_compatible_matrix(pair_counts, background_freq)
+    # Output RAxML matrix
+    output_raxml_matrix(raxml_matrix, char_set, raxmlmat_path)
     print(f"RAxML matrix written to {raxmlmat_path}")
 
 if __name__ == "__main__":

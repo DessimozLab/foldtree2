@@ -7,6 +7,8 @@ channels:
   - bioconda
 dependencies:
   - python=3.12
+  - raxml-ng
+  - mafft
   - numpy
   - pandas
   - tqdm

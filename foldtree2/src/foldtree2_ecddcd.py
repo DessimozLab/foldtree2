@@ -250,13 +250,14 @@ class mk1_Encoder(torch.nn.Module):
 			print('edge_index_dict keys:', edge_index_dict.keys())
 		return z_quantized, vq_loss
 
-	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False , **kwargs):
+	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = True , **kwargs):
 		"""
 		Write an encoded fasta for use with mafft and raxmlng. Only doable with alphabet size of less than 248.
 		0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
 		"""
 		#replace characters with special characters to avoid issues with fasta format
-		replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
+		replace_dict = {chr(0):chr(246) , '"':chr(248) , '#':chr(247), '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
+		
 		#check encoding size
 		if self.vector_quantizer.num_embeddings > 248:
 			raise ValueError('Encoding size too large for fasta encoding')
@@ -266,7 +267,7 @@ class mk1_Encoder(torch.nn.Module):
 			print(alphabet)
 		
 		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
+			for i,data in tqdm.tqdm(enumerate(dataloader) , desc='Encoding structures to FASTA' , total=len(dataloader)):
 				if 'debug' in kwargs and kwargs['debug'] == True:
 					print('res shape' ,  data['res'].x.shape[0] )
 				data = data.to(self.device)
@@ -341,7 +342,7 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'gat':
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = 'max' )
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = SoftmaxAggregation() ), #aggr = 'max' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage':
@@ -553,16 +554,26 @@ def load_model(file_path):
 	return model, optimizer, epoch
 
 def load_encoded_fasta(filename, alphabet=None, replace=None):
+	seqstr = ''
+	seqdict = {}
+
 	with open(filename, 'r') as f:
+
 		#read all chars of file into a string
-		for line in tqdm.tqdm(f):
-			if line[0] == '>':
+		for i,line in enumerate(tqdm.tqdm(f)):
+
+			if line[0] == '>' and i > 0:
 				seqdict[ID] = seqstr[:-1]
+				ID = line[1:].strip()
+				seqstr = ''
+			elif line[0] == '>' and i == 0:
 				ID = line[1:].strip()
 				seqstr = ''
 			else:
 				seqstr += line
-		del seqdict['']
+		if '' in seqdict:
+			del seqdict['']
+		
 	encoded_df = pd.DataFrame( seqdict.items() , columns=['protid', 'seq'] )
 	encoded_df['seqlen'] = encoded_df.seq.map( lambda x: len(x) )
 	#change index to protid
