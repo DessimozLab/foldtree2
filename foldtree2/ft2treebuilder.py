@@ -443,6 +443,7 @@ class treebuilder():
 		recon_x = out['aa'] if 'aa' in out else None
 		edge_probs = out['edge_probs'] if 'edge_probs' in out else None
 		print( edge_probs.shape)
+		
 		amino_map = decoder.decoders['sequence_transformer'].amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
@@ -490,12 +491,12 @@ class treebuilder():
 		if ancestral == True:
 			#not tested yet
 			ancestral_file = self.run_raxml_ng_ancestral_struct( alnfasta , treefile , self.submat , self.nchars , alnfasta.replace('.raxml_aln.fasta' , '') )
-			ancestral_fasta = ancestral2fasta( ancestral_file , outfasta )
-			ancestral_df = ancestralfasta2df( outfasta )
+			ancestral_fasta = self.ancestral2fasta( ancestral_file , outfasta )
+			ancestral_df = self.ancestralfasta2df( outfasta )
 			#decode the ancestral sequence
 			ords = ancestral_df.ord.values
 			for l in ords.shape[0]:
-				aastr ,edge_probs , zgodnode , foldxout , r , t , angles = decoder_reconstruction( ords[l] , verbose = verbose)	
+				res = decoder_reconstruction( ords[l] , verbose = verbose)	
 				ancestral_df.loc[l , 'aastr'] = aastr
 				ancestral_df.loc[l , 'edge_probs'] = edge_probs
 				ancestral_df.loc[l , 'zgodnode' ] = zgodnode
@@ -548,7 +549,7 @@ def main():
 	parser.add_argument("--charmaps", required=False, default=None, help="Path to the character maps for encoding (if not specified, uses default)"	)
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
-	parser.add_argument("--output_prefix", default="encoded", help="Output file prefix for encoded sequences")
+	parser.add_argument("--output_prefix", default=None, help="Output file prefix for encoded sequences")
 
 	#paths to properties and executables
 	parser.add_argument("--aapropcsv", default='./foldtree2/config/aaindex1.csv', help="Path to amino acid properties CSV file for PDB2PyG conversion")
