@@ -100,19 +100,32 @@ def build_char_set(encoded_df):
     for seq in encoded_df.seq:
         char_set = char_set.union(set(seq))
     char_set = list(char_set)
-    char_set.sort()
+    char_set.sort()  # Sort to ensure consistent order
     print(f"Character set: {char_set}")
     print('ord', [ord(c) for c in char_set])
     print('hex', [hex(ord(c)) for c in char_set])
     print(f"Number of characters: {len(char_set)}")
-    return char_set
+    char_position_map = {char: i for i, char in enumerate(char_set)}
+    print(f"Character position map: {char_position_map}")
+    raxml_chars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~""".split()
+    raxml_charset = [ raxml_chars[char_position_map[c]] for c in char_set ]
+    raxml_char_position_map = {c: i for i, c in enumerate(raxml_charset)}
+    print(f"RAxML character set: {raxml_charset}")
+    print(f"RAxML character position map: {raxml_char_position_map}")
+    if len(raxml_charset) != len(char_set):
+        print("Warning: RAxML character set length does not match original character set length.")
+    # Ensure the character set is sorted and unique
+    assert len(set(raxml_charset)) == len(raxml_charset), "RAxML character set contains duplicates."
+    assert len(set(char_set)) == len(char_set), "Original character set contains duplicates."
+    assert len(raxml_charset) == len(char_set), "RAxML character set length does not match original character set length."
+    # Return both the character set and the position map
+    return char_set, char_position_map , raxml_charset, raxml_char_position_map
 
-def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, fident_thresh=0.3):
+def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, char_position_map, fident_thresh=0.3):
     """Compute pair counts and background frequencies from alignments."""
     cols = 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln'.split(',')
     submat = np.zeros((len(char_set),len(char_set)))
     background_freq = np.zeros(len(char_set))
-    char_position_map = {char: i for i, char in enumerate(char_set)}
     seqcount = 0
     for rep in tqdm.tqdm(alnfiles, desc="Processing alignments"):
         submat_chunk = np.zeros((len(char_set),len(char_set)))
@@ -159,7 +172,7 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, fident_thresh=0.3
                                 if alnzip.size > 0:
                                     submat_chunk[alnzip[:,0], alnzip[:,1]] += 1
         submat += submat_chunk
-    return submat, background_freq, char_set , char_position_map
+    return submat, background_freq
 
 def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e):
     n = pair_counts.shape[0]
@@ -172,7 +185,7 @@ def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log
     log_odds_matrix = np.log(ratio + epsilon) / np.log(log_base)
     return log_odds_matrix
 
-def compute_raxml_compatible_matrix(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e, scaling_factor=1.0):
+def compute_raxml_compatible_matrix(pair_counts, char_freqs, raxml_charset, raxml_char_position_map, pseudocount=1e-20, log_base=np.e, scaling_factor=1.0):
     # Compute the log odds matrix as you already do
     log_odds_matrix = compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount, log_base)
     
@@ -196,34 +209,41 @@ def compute_raxml_compatible_matrix(pair_counts, char_freqs, pseudocount=1e-20, 
     expected_rate = -np.sum(char_freqs * np.diag(rate_matrix))
     rate_matrix = rate_matrix / expected_rate
 
-    return rate_matrix , char_freqs
+    return rate_matrix, char_freqs
 
-def output_mafft_matrix(submat, char_set, outpath):
+def output_mafft_matrix(submat, char_set, char_position_map, outpath):
     def formathex(hexnum):
         if len(hexnum) == 3:
             return hexnum[0:2] + '0' + hexnum[2]
         else:
             return hexnum
+    reverse_char_map = {v: k for k, v in char_position_map.items()}
     with open(outpath, 'w') as f:
         for i in range(len(char_set)):
             for j in range(len(char_set)):
                 if i <= j:
-                    stringi = char_set[i]
-                    stringj = char_set[j]
+                    stringi = reverse_char_map[i]
+                    stringj = reverse_char_map[j]
                     hexi = formathex(hex(ord(stringi)))
                     hexj = formathex(hex(ord(stringj)))
                     f.write(f'{hexi} {hexj} {submat[i,j]}\n')
 
-def output_raxml_matrix(rate_matrix, char_set, outpath):
-    """Output a RAxML substitution matrix file."""
-    with open(outpath, 'w') as f:
-        f.write('x  ' + ' '.join(char_set) + '\n')
-        for i, c1 in enumerate(char_set):
-            row = [c1]
-            for j, c2 in enumerate(char_set):
-                val = rate_matrix[i, j]
-                row.append(f"{val:.4f}")
-            f.write('  '.join(row) + '\n')
+def output_raxml_matrix( matrix, background_frequencies, outpath):
+	# Create the substitution matrix file
+	#lower triangular matrix
+	with open(outpath, "w") as f:
+		for i in range(matrix.shape[0]):
+			for j in range(matrix.shape[0]):
+				if j < i:
+					#format to 6 decimal places
+					f.write(f" {matrix[i,j]:.6f}")
+			f.write("\n")
+		# Add the frequencies
+		for i, freq in enumerate(background_frequencies):
+			f.write(f"{freq:.6f} ")
+		f.write("\n")
+	return outpath
+
 
 def main():
     args = parse_args()
@@ -275,21 +295,22 @@ def main():
         print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
         sys.exit(1)
     encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
-    char_set = build_char_set(encoded_df)
+    char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df)
     alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
     print(f"Found {len(alnfiles)} alignment files.")
     if len(alnfiles) == 0:
         print("No alignment files found. Please run --align_structs first.")
         sys.exit(1)
     print(f"Processing {len(alnfiles)} alignment files...")
-    pair_counts, background_freq, char_set, char_position_map = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set)
+    pair_counts, background_freq = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set , char_position_map, fident_thresh=args.fident_thresh)
     print(f"Pair counts shape: {pair_counts.shape}, Background frequencies shape: {background_freq.shape}")
     
     #save pair counts
     pair_counts_path = os.path.join(outdir_base, args.modelname + '_pair_counts.pkl')
     with open(pair_counts_path, 'wb') as f:
-        pickle.dump((pair_counts, char_set, char_position_map), f)
-    print(f"Pair counts saved to {pair_counts_path}")
+        pickle.dump((pair_counts, char_set, char_position_map , raxml_charset, raxml_char_position_map), f)
+    print(f"Pair counts and char positions saved to {pair_counts_path}")
+
     # Compute log odds matrix
     print("Computing log odds matrix...")
     background_freq = background_freq / np.sum(background_freq)
@@ -301,22 +322,20 @@ def main():
         args.submat = args.modelname + '_submat.txt'
 
     #save charmap 
-    charmap_path = os.path.join(outdir_base, args.modelname + '_charmap.pkl')
-    with open(charmap_path, 'wb') as f:
-        pickle.dump(char_position_map, f)
-    print(f"Character map saved to {charmap_path}")
     print("Outputting matrices...")
     # Save MAFFT matrix
     mafftmat_path = os.path.join(outdir_base, args.mafftmat)
-    output_mafft_matrix(pair_counts, char_set, mafftmat_path)
+    output_mafft_matrix(pair_counts, char_set, char_position_map, mafftmat_path)
     print(f"MAFFT matrix written to {mafftmat_path}")
     # Save RAxML matrix
     raxmlmat_path = os.path.join(outdir_base, args.submat)
 
     # Compute RAxML-compatible matrix
-    raxml_matrix, char_freqs = compute_raxml_compatible_matrix(pair_counts, background_freq)
+    raxml_matrix, char_freqs = compute_raxml_compatible_matrix(pair_counts, background_freq , raxml_charset, raxml_char_position_map, scaling_factor=1.0)
     # Output RAxML matrix
-    output_raxml_matrix(raxml_matrix, char_set, raxmlmat_path)
+    assert len(raxml_charset) == len(char_set), "RAxML character set length mismatch"
+    output_raxml_matrix(raxml_matrix, char_freqs, raxmlmat_path)
+    
     print(f"RAxML matrix written to {raxmlmat_path}")
 
 if __name__ == "__main__":

@@ -22,22 +22,41 @@ import ete3
 import sys
 
 class treebuilder():
-	def __init__ ( self , model , mafftmat = None , submat = None , n_state = None, raxml_path= None, **kwargs ):
-		
+	def __init__ ( self , model , mafftmat = None , submat = None , n_state = None, raxml_path= None, charmaps=None, **kwargs ):
+
 		#make fasta is shifted by 1 and goes from 1-248 included
 		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
-		#replace 0x22 or " which is necesary for nexus files and 0x23 or # which is also necesary
+		#replace 0x22 or " which is necesary for nexus files and 0x23 or # which is also necesary		
 		self.replace_dict = {chr(0):chr(246) , '"':chr(248) , '#':chr(247), '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
 		self.rev_replace_dict = { v:k for k,v in self.replace_dict.items() }
 		self.replace_dict_ord = { ord(k):ord(v) for k,v in self.replace_dict.items() }
-		self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
-		
 		self.raxml_path = raxml_path
-		#raxml alphabet
-		self.raxmlchars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~"""
-		self.raxmlchars = self.raxmlchars.split()
-		self.raxml_indices = {i:s for i,s in enumerate( self.raxmlchars ) }
-
+		if charmaps is None:
+			self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
+			self.raxml_path = raxml_path
+			#raxml alphabet
+			self.raxmlchars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~"""
+			self.raxmlchars = self.raxmlchars.split()
+			self.raxml_indices = {i:s for i,s in enumerate( self.raxmlchars ) }
+			self.alphabet = [ chr(c+1) if chr(c+1) not in self.replace_dict else self.replace_dict[chr(c+1)] for c in range(self.encoder.num_embeddings) ]
+			self.alphabet.sort()
+			assert len(self.alphabet) == self.encoder.num_embeddings, f"Alphabet length {len(self.alphabet)} does not match num_embeddings {self.encoder.num_embeddings}"
+			self.nchars = len(self.alphabet)
+			self.map = { c:i for i,c in enumerate(self.alphabet)}
+			self.revmap = { i:c for i,c in enumerate(self.alphabet)}
+		else:
+			print('loading charmaps from', charmaps)
+			with open(charmaps, 'rb') as f:
+				pair_counts, char_set, char_position_map , raxml_charset, raxml_char_position_map = pickle.load(f)
+			self.raxml_characters = raxml_charset
+			self.alphabet = char_set
+			self.nchars = len(self.alphabet)
+			self.map = char_position_map
+			self.revmap = { v:k for k,v in char_position_map.items() }
+			self.raxml_indices = raxml_char_position_map
+			self.rev_raxml_indices = { v:k for k,v in raxml_char_position_map.items() }
+			self.raxmlchars = raxml_charset
+		self.ordset = set([ ord(c) for c in self.alphabet ])
 		#load pickled model
 		self.model = model
 		with open( model + '.pkl', 'rb') as f:
@@ -57,15 +76,6 @@ class treebuilder():
 		self.encoder.eval()
 		self.decoder.eval()
 		
-		if n_state is not None:
-			self.encoder.num_embeddings = n_state
-		
-		self.alphabet = [ chr(c+1) if chr(c+1) not in self.replace_dict else self.replace_dict[chr(c+1)] for c in range(self.encoder.num_embeddings) ]
-		self.nchars = len(self.alphabet)
-		
-		
-		self.map = { c:i for i,c in enumerate(self.alphabet)}
-		self.revmap = { i:c for i,c in enumerate(self.alphabet)}
 
 		#load the mafftmat and submat matrices
 		#if mafftmat == None or submat == None:
@@ -182,7 +192,7 @@ class treebuilder():
 			outfolder = '/'.join( blob.split('/')[:-1] )
 			outfile = outfolder + 'encoded.fasta'
 		loader = self.struct_loader( structs , self.converter )
-		self.encoder.encode_structures_fasta( loader , outfile)
+		self.encoder.encode_structures_fasta( loader , outfile , replace = True)
 		return outfile
 
 	def encode_structblob_raxml(self , blob = None , outfile = None ):
@@ -210,7 +220,9 @@ class treebuilder():
 		alndf['seq_aln'] = alndf.ord_aln.map( lambda x: ''.join([ chr(c) if c !='-' else '-' for c in x ]) )	
 		alndf['remap_int'] = alndf.seq_aln.map(lambda x : [ self.map[c] if c in self.map else '-' for c in x ] )
 		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.raxml_indices[c] if c in self.raxml_indices else '-' for c in x ]) )
-		
+		#check that remap symbols only contains characters in raxml_indices
+		remap_set = set(alndf['remap_symbols'].values.flatten())
+		assert remap_set.issubset(set(self.raxml_indices.keys())), "Remapped symbols contain characters not in raxml_indices"
 		with open(outfile, 'w') as f:
 			for i in alndf.index:
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
@@ -310,12 +322,28 @@ class treebuilder():
 		alndf.index = alndf.protid
 		alndf.drop( 'protid' , axis = 1 , inplace = True)
 		alndf.drop( ''  , inplace = True)
-		alndf['ord_aln'] = alndf.hex_aln.map( lambda x: [ int(c,16) if c!='--' else '-' for c in x.split() ] )
-		alndf['seq_aln'] = alndf.ord_aln.map( lambda x: ''.join([ chr(c) if c !='-' else '-' for c in x ]) )	
-		alndf['remap_int'] = alndf.seq_aln.map(lambda x : [ self.map[c] if c in self.map else '-' for c in x ] )
-		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.raxml_indices[c] if c in self.raxml_indices else '-' for c in x ]) )
 		
-		print(alndf.head())
+		alndf['ord_aln'] = alndf.hex_aln.map( lambda x: [ int(c,16) if c!='--' else '-' for c in x.split() ] )
+		ord_set = set([ c for s in alndf.ord_aln.values.flatten() for c in s ])
+		#remove - from ord_set
+		ord_set.discard('-')
+		assert ord_set.issubset(self.ordset), "Sequence alignment contains characters not in alphabet"
+
+		alndf['seq_aln'] = alndf.ord_aln.map( lambda x: ''.join([ chr(c) if c !='-' else '-' for c in x ]) )
+		seqaln_set = set( [ c for s in alndf.seq_aln.values.flatten() for c in s ] )
+		#discard - from seqaln_set
+		seqaln_set.discard('-')
+		print(seqaln_set)
+		print('self.alphabet', self.alphabet)
+		assert seqaln_set.issubset(set(self.alphabet)), "Sequence alignment contains characters not in alphabet"
+
+		alndf['remap_int'] = alndf.seq_aln.map(lambda x : [ self.map[c] if c in self.map else '-' for c in x ] )
+		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.rev_raxml_indices[c] if c in self.rev_raxml_indices else '-' for c in x ]) )
+		remap_set = set([ c for s in alndf['remap_symbols'].values.flatten() for c in s ])
+		#remove - from remap_set
+		remap_set.discard('-')
+
+		assert remap_set.issubset(set(self.raxml_characters)), "Remapped symbols contain characters not in raxml_indices"
 		
 		if outfile is None:
 			outfile = aln_hexfile.replace('.hex' , '.raxml_aln.fasta')
@@ -327,7 +355,8 @@ class treebuilder():
 	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 ):
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
-			raxmlng_path = './raxml-ng'
+			raxmlng_path = 'raxml-ng' 
+		
 		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 
@@ -341,7 +370,7 @@ class treebuilder():
 	@staticmethod
 	def run_raxml_ng_ancestral_struct(fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G'
-		raxml_cmd ='./raxml-ng  --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix 
+		raxml_cmd ='raxml-ng  --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
 		return None
@@ -426,7 +455,7 @@ class treebuilder():
 		outfasta = os.path.join(outdir, 'encoded.fasta')
 		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta )	
 		#replace special characters
-		encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
+		#encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
 		#convert to hex
 		print('converting to hex for mafft')
 		hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None  )
@@ -516,6 +545,7 @@ def main():
 	parser.add_argument("--modeldir" , required=False, default='./models', help="Directory containing the model files (if not specified, uses current directory)")
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
+	parser.add_argument("--charmaps", required=False, default=None, help="Path to the character maps for encoding (if not specified, uses default)"	)
 	parser.add_argument("--structures", required=True, help="Glob pattern for input structure files (e.g. '/path/to/structures/*.pdb')")
 	parser.add_argument("--outdir", default=None, help="Output directory for results")
 	parser.add_argument("--output_prefix", default="encoded", help="Output file prefix for encoded sequences")
@@ -552,10 +582,13 @@ def main():
 	if not os.path.exists(modelpath + '.pkl'):
 		print(f"Model file {modelpath}.pkl does not exist. Please provide a valid model path.")
 		sys.exit(1)
-		
+
+
 	if args.structures is None:
 		print('Structures glob pattern is required. Use --structures to specify the glob pattern.')
 		sys.exit(1)
+
+
 
 	if args.structures[-1] == '/':
 		args.structures += '*.pdb'
@@ -575,7 +608,8 @@ def main():
 		args.mafftmat = os.path.join(args.modeldir, args.model + '_mafftmat.mtx')
 	if args.submat is None:
 		args.submat = os.path.join(args.modeldir, args.model + '_submat.txt')
-
+	if args.charmaps is None:
+		args.charmaps = os.path.join(args.modeldir, args.model + '_pair_counts.pkl')
 	
 
 	# Example usage:
@@ -588,7 +622,7 @@ def main():
 
 	# Create an instance of treebuilder
 	tb = treebuilder(model=modelpath, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state , raxml_path=args.raxmlpath,
-	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores)
+	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps)
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix

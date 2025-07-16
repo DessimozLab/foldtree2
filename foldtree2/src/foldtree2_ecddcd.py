@@ -267,7 +267,7 @@ class mk1_Encoder(torch.nn.Module):
 			print(alphabet)
 		
 		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader) , desc='Encoding structures to FASTA' , total=len(dataloader)):
+			for i,data in tqdm.tqdm(enumerate(dataloader) , desc='Encoding structures to FASTA' ):
 				if 'debug' in kwargs and kwargs['debug'] == True:
 					print('res shape' ,  data['res'].x.shape[0] )
 				data = data.to(self.device)
@@ -342,11 +342,11 @@ class HeteroGAE_Decoder(torch.nn.Module):
 				if flavor == 'gat':
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'mfconv':
-					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = SoftmaxAggregation() ), #aggr = 'max' )
+					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=10  , aggr = 'max' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage':
-					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) # , aggr = SoftmaxAggregation() ) 
+					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] , aggr = 'max' ) 
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
