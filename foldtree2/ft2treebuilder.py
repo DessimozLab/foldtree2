@@ -110,7 +110,7 @@ class treebuilder():
 	def run_mafft_textaln( infasta , outaln=None , matrix='mafft_submat.mtx' , mafft_path = 'mafft' ):
 		if outaln == None:
 			outaln = infasta+'aln.txt'
-		cmd = f'{mafft_path} --text --localpair --maxiterate 1000 --textmatrix {matrix} {infasta}  > {outaln}'
+		cmd = f'{mafft_path} --text --thread -1 --localpair --maxiterate 1000 --textmatrix {matrix} {infasta}  > {outaln}'
 		print(cmd)
 		subprocess.run(cmd, shell=True)
 		return outaln
@@ -336,7 +336,7 @@ class treebuilder():
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
+		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
 		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
