@@ -559,10 +559,10 @@ def main():
 		sys.exit(1)
 
 	modelpath = os.path.join( args.modeldir, args.model )
-	if not os.path.exists(modelpath + '.pkl'):
-		print(f"Model file {modelpath}.pkl does not exist. Please provide a valid model path.")
+	#check pth files exist
+	if not os.path.exists(modelpath + '_encoder.pth') or not os.path.exists(modelpath + '_decoder.pth'):
+		print(f"Model files not found in {args.modeldir}. Please ensure the model files are present.")
 		sys.exit(1)
-
 
 	if args.structures is None:
 		print('Structures glob pattern is required. Use --structures to specify the glob pattern.')

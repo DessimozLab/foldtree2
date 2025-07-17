@@ -34,6 +34,7 @@ def parse_args():
 	parser.add_argument('--submat', type=str, default=None, help='Output path for RAxML substitution matrix')
 	parser.add_argument('--dataset', type=str, default='structalignmk4.h5', help='Dataset name for structure encoding')
 	parser.add_argument('--fident_thresh', type=float, default=0.3, help ='Identity threshold for pair counts')
+	parser.add_argument('--rawcounts', action='store_true', help='Output raw pair counts to mafft matrix')
 	return parser.parse_args()
 
 def ensure_dirs(outdir_base):
@@ -337,7 +338,12 @@ def main():
 	print("Outputting matrices...")
 	# Save MAFFT matrix
 	mafftmat_path = os.path.join(outdir_base, args.mafftmat)
-	output_mafft_matrix(pair_counts, char_set, char_position_map, mafftmat_path)
+	if args.rawcounts:
+		print("Outputting raw pair counts to MAFFT matrix...")
+		output_mafft_matrix(pair_counts, char_set, char_position_map, mafftmat_path)
+	else:
+		print("Outputting log odds matrix to MAFFT matrix...")
+		output_mafft_matrix(log_odds, char_set, char_position_map, mafftmat_path)
 	print(f"MAFFT matrix written to {mafftmat_path}")
 	# Save RAxML matrix
 	raxmlmat_path = os.path.join(outdir_base, args.submat)
