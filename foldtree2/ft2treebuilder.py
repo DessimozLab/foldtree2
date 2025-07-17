@@ -336,7 +336,7 @@ class treebuilder():
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
+		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
 		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
