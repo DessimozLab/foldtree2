@@ -253,7 +253,19 @@ def main():
     if args.submat is None:
         args.submat = args.modelname + '_submat.txt'
     
-    encoder, decoder = load_model(args.modeldir, args.modelname)
+
+
+    model = os.path.join(args.modeldir, args.modelname)
+	encoder = torch.load(model + '_encoder.pth', map_location=torch.device('cpu') , weights_only=False)
+	decoder = torch.load(model + '_decoder.pth', map_location=torch.device('cpu') , weights_only=False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    encoder = encoder.to(device)
+    decoder = decoder.to(device)
+    encoder.device = device
+
+    encoder.eval()
+    decoder.eval()
+    print(f"Using device: {device}")
     print(encoder)
     print(decoder)
 

@@ -59,8 +59,8 @@ class treebuilder():
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		#load pickled model
 		self.model = model
-		with open( model + '.pkl', 'rb') as f:
-			self.encoder, self.decoder = pickle.load(f)
+		self.encoder = torch.load(model + '_encoder.pth', map_location=torch.device('cpu') , weights_only=False)
+		self.decoder = torch.load(model + '_decoder.pth', map_location=torch.device('cpu') , weights_only=False)
 
 		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
@@ -70,7 +70,7 @@ class treebuilder():
 		#detect if we are using a GPU
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.encoder = self.encoder.to(self.device)
-		self.decoder = self.decoder.to(self.device)     
+		self.decoder = self.decoder.to(self.device)
 		self.encoder.device = self.device
 		
 		self.encoder.eval()
@@ -352,14 +352,12 @@ class treebuilder():
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
 		return outfile
 
-	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 ):
+	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8):
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
-			raxmlng_path = 'raxml-ng' 
-		
-		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
+			raxmlng_path = 'raxml-ng'
+		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix 
 		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
-
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
 		return output_prefix + '.raxml.bestTree'
@@ -443,7 +441,7 @@ class treebuilder():
 		recon_x = out['aa'] if 'aa' in out else None
 		edge_probs = out['edge_probs'] if 'edge_probs' in out else None
 		print( edge_probs.shape)
-		
+
 		amino_map = decoder.decoders['sequence_transformer'].amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
@@ -556,7 +554,7 @@ def main():
 	parser.add_argument("--maffttext2hex", default='maffttext2hex', help="Path to maffttext2hex executable")
 	parser.add_argument("--maffthex2text", default='hex2maffttext', help="Path to hex2maffttext executable")
 
-	parser.add_argument("--ncores", type=int, default=mp.cpu_count(), help="Number of CPU cores to use for processing")
+	parser.add_argument("--ncores", type=int, default=8, help="Number of CPU cores to use for processing")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
