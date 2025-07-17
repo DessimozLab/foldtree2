@@ -222,7 +222,6 @@ class treebuilder():
 		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.raxml_indices[c] if c in self.raxml_indices else '-' for c in x ]) )
 		#check that remap symbols only contains characters in raxml_indices
 		remap_set = set(alndf['remap_symbols'].values.flatten())
-		assert remap_set.issubset(set(self.raxml_indices.keys())), "Remapped symbols contain characters not in raxml_indices"
 		with open(outfile, 'w') as f:
 			for i in alndf.index:
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
@@ -322,29 +321,10 @@ class treebuilder():
 		alndf.index = alndf.protid
 		alndf.drop( 'protid' , axis = 1 , inplace = True)
 		alndf.drop( ''  , inplace = True)
-		
 		alndf['ord_aln'] = alndf.hex_aln.map( lambda x: [ int(c,16) if c!='--' else '-' for c in x.split() ] )
-		ord_set = set([ c for s in alndf.ord_aln.values.flatten() for c in s ])
-		#remove - from ord_set
-		ord_set.discard('-')
-		assert ord_set.issubset(self.ordset), "Sequence alignment contains characters not in alphabet"
-
 		alndf['seq_aln'] = alndf.ord_aln.map( lambda x: ''.join([ chr(c) if c !='-' else '-' for c in x ]) )
-		seqaln_set = set( [ c for s in alndf.seq_aln.values.flatten() for c in s ] )
-		#discard - from seqaln_set
-		seqaln_set.discard('-')
-		print(seqaln_set)
-		print('self.alphabet', self.alphabet)
-		assert seqaln_set.issubset(set(self.alphabet)), "Sequence alignment contains characters not in alphabet"
-
 		alndf['remap_int'] = alndf.seq_aln.map(lambda x : [ self.map[c] if c in self.map else '-' for c in x ] )
 		alndf['remap_symbols'] = alndf['remap_int'].map( lambda x : ''.join([ self.rev_raxml_indices[c] if c in self.rev_raxml_indices else '-' for c in x ]) )
-		remap_set = set([ c for s in alndf['remap_symbols'].values.flatten() for c in s ])
-		#remove - from remap_set
-		remap_set.discard('-')
-
-		assert remap_set.issubset(set(self.raxml_characters)), "Remapped symbols contain characters not in raxml_indices"
-		
 		if outfile is None:
 			outfile = aln_hexfile.replace('.hex' , '.raxml_aln.fasta')
 		with open(outfile, 'w') as f:
@@ -356,7 +336,7 @@ class treebuilder():
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix 
+		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads '+str(self.ncores)+' --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
 		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
@@ -365,10 +345,11 @@ class treebuilder():
 	#ancestral reconstruction
 	#raxml-ng --ancestral --msa ali.fa --tree best.tre --model HKY --prefix ASR
 
-	@staticmethod
-	def run_raxml_ng_ancestral_struct(fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
+	def run_raxml_ng_ancestral_struct(self, fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G'
-		raxml_cmd ='raxml-ng  --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix 
+		if raxmlng_path == None:
+			raxmlng_path = 'raxml-ng'
+		raxml_cmd = raxmlng_path + ' --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
 		return None
