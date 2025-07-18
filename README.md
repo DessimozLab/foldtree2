@@ -67,44 +67,10 @@ makesubmat --modelname <model_name> --modeldir models/ --datadir <data_dir> --ou
 ### 3. Build Phylogenetic Trees
 Run the tree builder to infer a phylogenetic tree from encoded alignments:
 ```bash
-foldtree2 --model ./models/small/small \
-  --mafftmat ./models/small/small_mafft_submat.mtx \
-  --submat ./models/small/small_custom_matrix.txt \
+foldtree2 --model mergeddecoder_foldtree2_test \
   --structures <YOURSTRUCTUREFOLDER> \
   --outdir <RESULTSFOLDER> \
-  --n_state 35
 ```
-
-- `--model`: Path to the trained model
-- `--mafftmat`: Path to the MAFFT substitution matrix
-- `--submat`: Path to the RAxML substitution matrix
-- `--structures`: Folder containing your structure files
-- `--outdir`: Output directory for results
-- `--n_state`: Number of states (alphabet size)
-
-### 4. Additional Utilities
-FoldTree2 also includes several specialized utilities:
-
-#### Phylogenetic Tree Inference with RAxML-NG
-```bash
-raxml-ng --help
-```
-
-#### Tree Rooting with MAD (Minimal Ancestor Deviation)
-```bash
-mad --help
-```
-
-#### MAFFT Text Format Conversion
-Convert between hexadecimal and text formats for MAFFT alignments:
-```bash
-# Convert hex to text
-hex2maffttext input.hex output.txt
-
-# Convert text to hex
-maffttext2hex input.txt output.hex
-```
-
 
 ## Training Custom Models
 
