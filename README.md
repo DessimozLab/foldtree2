@@ -30,18 +30,31 @@ pip install .
 This will install all required dependencies as specified in `pyproject.toml` and `setup.py`.
 
 
+## Command Line Tools
+
+FoldTree2 provides several command-line tools that are automatically installed and available system-wide:
+
+- **`foldtree2`** / **`ft2treebuilder`**: Main phylogenetic tree inference pipeline
+- **`pdbs-to-graphs`**: Convert PDB files to graph representations
+- **`makesubmat`**: Generate structure-based substitution matrices
+- **`raxml-ng`**: Maximum likelihood phylogenetic inference (bundled RAxML-NG)
+- **`mad`**: Minimal Ancestor Deviation tree rooting
+- **`hex2maffttext`** / **`maffttext2hex`**: MAFFT format conversion utilities
+
+All tools include help documentation accessible with the `--help` flag.
+
 ## Usage
 
 ### 1. Convert PDBs to Graphs
 Convert a directory of PDB files into a graph HDF5 dataset:
 ```bash
-python scripts/pdbs_to_graphs.py <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
+pdbs-to-graphs <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
 ```
 
 ### 2. Generate Substitution Matrices and Alignments
 Generate structure-based substitution matrices and alignments:
 ```bash
-python makesubmat.py --modelname <model_name> --modeldir models/ --datadir <data_dir> --outdir_base <results_dir> --dataset <input_graphs.h5> --encode_alns
+makesubmat --modelname <model_name> --modeldir models/ --datadir <data_dir> --outdir_base <results_dir> --dataset <input_graphs.h5> --encode_alns
 ```
 
 - `--modelname`: Name of the model to use (e.g., `small`)
@@ -54,7 +67,7 @@ python makesubmat.py --modelname <model_name> --modeldir models/ --datadir <data
 ### 3. Build Phylogenetic Trees
 Run the tree builder to infer a phylogenetic tree from encoded alignments:
 ```bash
-python ft2treebuilder.py --model ./models/small/small \
+foldtree2 --model ./models/small/small \
   --mafftmat ./models/small/small_mafft_submat.mtx \
   --submat ./models/small/small_custom_matrix.txt \
   --structures <YOURSTRUCTUREFOLDER> \
@@ -69,6 +82,29 @@ python ft2treebuilder.py --model ./models/small/small \
 - `--outdir`: Output directory for results
 - `--n_state`: Number of states (alphabet size)
 
+### 4. Additional Utilities
+FoldTree2 also includes several specialized utilities:
+
+#### Phylogenetic Tree Inference with RAxML-NG
+```bash
+raxml-ng --help
+```
+
+#### Tree Rooting with MAD (Minimal Ancestor Deviation)
+```bash
+mad --help
+```
+
+#### MAFFT Text Format Conversion
+Convert between hexadecimal and text formats for MAFFT alignments:
+```bash
+# Convert hex to text
+hex2maffttext input.hex output.txt
+
+# Convert text to hex
+maffttext2hex input.txt output.hex
+```
+
 
 ## Training Custom Models
 
@@ -77,7 +113,7 @@ FoldTree2 supports training custom graph neural network models using datasets ge
 ### 1. Prepare Your Dataset
 First, convert your PDB files to a graph HDF5 dataset as described above:
 ```bash
-python scripts/pdbs_to_graphs.py <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
+pdbs-to-graphs <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
 ```
 
 ### 2. Train a Model
