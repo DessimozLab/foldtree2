@@ -68,10 +68,13 @@ class treebuilder():
 			self.converter = PDB2PyG()
 
 		#detect if we are using a GPU
-		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-		self.encoder = self.encoder.to(self.device)
-		self.decoder = self.decoder.to(self.device)
-		self.encoder.device = self.device
+		if 'device' in kwargs and kwargs['device'] is not None:
+			self.device = torch.device(kwargs['device'])
+		else:
+			self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+			self.encoder = self.encoder.to(self.device)
+			self.decoder = self.decoder.to(self.device)
+			self.encoder.device = self.device
 		
 		self.encoder.eval()
 		self.decoder.eval()
@@ -540,6 +543,7 @@ def main():
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states (default: 40)")
+	parser.add_argument("--device", default=None, help="Device to run the model on (default: None, uses CPU or GPU if available)")
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
 
@@ -602,7 +606,7 @@ def main():
 
 	# Create an instance of treebuilder
 	tb = treebuilder(model=modelpath, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state , raxml_path=args.raxmlpath,
-	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps)
+	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device)
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
