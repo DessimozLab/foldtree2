@@ -332,7 +332,7 @@ class treebuilder():
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
 		return outfile
 
-	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8):
+	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8 , bs =False):
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
