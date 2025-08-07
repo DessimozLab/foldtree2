@@ -72,12 +72,14 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				contactdecoder_hidden = 10,
 				nheads = 3 ,
 				Xdecoder_hidden=30, 
+				anglesdecoder_hidden=30,
 				RTdecoder_hidden=30,
 				metadata={}, 
 				flavor = None,
 				dropout= .001,
 				output_fft = False,
 				output_rt = False,
+				output_angles = False,
 				normalize = True,
 				residual = True,
 				contact_mlp = True ):
@@ -149,7 +151,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(Xdecoder_hidden[1], lastlin),
 				#torch.nn.Tanh(),
-				DynamicTanh(lastlin , channels_last = True),
+				#DynamicTanh(lastlin , channels_last = True),
 				
 				)
 		
@@ -189,13 +191,29 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			#feed into refinement network
 			self.rt_mlp = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
-				torch.nn.Linear(2*lastlin, RTdecoder_hidden[0]),
+				torch.nn.Linear(lastlin, RTdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
 				torch.nn.Linear(RTdecoder_hidden[1], 7) )
 		else:
 			self.rt_mlp = None
+
+		if output_angles == True:
+			if type(anglesdecoder_hidden) is not list:
+				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
+			self.angles_mlp = torch.nn.Sequential(
+				torch.nn.Dropout(dropout),
+				torch.nn.Linear(lastlin, anglesdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1] ) ,
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[1], 3) ,
+				torch.nn.Tanh()
+
+			)
+		else:
+			self.angles_mlp = None
 
 
 	def forward(self, data , contact_pred_index, **kwargs):	
@@ -226,8 +244,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			z = z + inz
 		if self.normalize == True:
 			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
-		decoder_in =  torch.cat( [inz,  z] , axis = 1)
-		# amino acid prediction removed
+		#decoder_in =  torch.cat( [inz,  z] , axis = 1)
+		#amino acid prediction removed
 
 		#decode godnode
 		fft2_pred = None
@@ -241,11 +259,15 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.rt_mlp is not None:
 			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
 		
+		angles = None
+		if self.angles_mlp is not None:
+			angles = self.angles_mlp( z )
+			#tanh is -1 to 1, multiply by pi to get angles in radians
+			angles = angles * np.pi
 
 		if contact_pred_index is None:
-		
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None }
-		
+			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles }
+
 		else:
 			if self.contact_mlp is None:
 				edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
@@ -261,8 +283,187 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred }
+		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles }
+
+
+class Transformer_Geo_Decoder(torch.nn.Module):
+	def __init__(
+		self,
+		in_channels={'res': 10, 'godnode4decoder': 5, 'foldx': 23},
+		hidden_channels={'res_backbone_res': [128, 128, 128]},
+		concat_positions=False,
+		nheads=4,
+		layers=2,
+		Xdecoder_hidden=[128, 64, 32],
+		FFT2decoder_hidden=[64, 32],
+		contactdecoder_hidden=[64, 32],
+		anglesdecoder_hidden=[64, 32],
+		RTdecoder_hidden=[64, 32],
+		metadata={},
+		dropout=0.001,
+		output_fft=False,
+		output_rt=False,
+		output_angles=False,
+		normalize=True,
+		residual=True,
+		contact_mlp=True,
+		**kwargs
+	):
+		super().__init__()
+		L.seed_everything(42)
+		self.concat_positions = concat_positions
+		self.normalize = normalize
+		self.residual = residual
+		self.output_fft = output_fft
+		self.output_rt = output_rt
+		self.output_angles = output_angles
+		self.contact_mlp_flag = contact_mlp
+		self.metadata = metadata
+
+		input_dim = in_channels['res']
+		if concat_positions:
+			input_dim += 256
+		d_model = hidden_channels[('res', 'backbone', 'res')][0] if ('res', 'backbone', 'res') in hidden_channels else list(hidden_channels.values())[0][0]
+
+		self.input_proj = torch.nn.Sequential(
+			torch.nn.Dropout(dropout),
+			nn.Linear(input_dim, d_model),
+			torch.nn.GELU(),
+			nn.Linear(d_model, d_model),
+			torch.nn.Tanh(),
+		)
+
+		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
+		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
+
+		self.dropout = torch.nn.Dropout(p=dropout)
+
+		# Output head for residue embeddings
+		self.lin = torch.nn.Sequential(
+			torch.nn.Dropout(dropout),
+			DynamicTanh(d_model, channels_last=True),
+			torch.nn.Linear(d_model, Xdecoder_hidden[0]),
+			torch.nn.GELU(),
+			torch.nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
+			torch.nn.GELU(),
+			torch.nn.Linear(Xdecoder_hidden[1], input_dim if residual else Xdecoder_hidden[-1]),
+		)
+
+		# RT decoder
+		if output_rt:
+			self.rt_mlp = torch.nn.Sequential(
+				torch.nn.Dropout(dropout),
+				torch.nn.Linear(input_dim if residual else Xdecoder_hidden[-1], RTdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(RTdecoder_hidden[1], 7),
+			)
+		else:
+			self.rt_mlp = None
+
+		# Angles decoder
+		if output_angles:
+			self.angles_mlp = torch.nn.Sequential(
+				torch.nn.Dropout(dropout),
+				torch.nn.Linear(input_dim if residual else Xdecoder_hidden[-1], anglesdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[1], 3),
+				torch.nn.Tanh(),
+			)
+		else:
+			self.angles_mlp = None
 		
+		#attention based aggregation for godnode
+		# Attention-based aggregation for godnode/global state
+		self.godnodedecoder = None
+		if output_fft:
+			# Use attention pooling to aggregate residue embeddings into a fixed-size godnode embedding
+			self.godnode_attn_pool = AttentionPooling(d_model, d_model)
+			self.godnodedecoder = torch.nn.Sequential(
+				torch.nn.Linear(d_model, FFT2decoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(FFT2decoder_hidden[1], in_channels.get('fft2i', 0) + in_channels.get('fft2r', 0))
+			)
+		self.sigmoid = nn.Sigmoid()
+
+	def forward(self, data, contact_pred_index=None, **kwargs):
+		x = data.x_dict['res']
+		if self.concat_positions:
+			x = torch.cat([x, data['positions'].x], dim=1)
+		inz = x.clone()
+		x = self.input_proj(x)
+		# Transformer expects (seq_len, batch, d_model), so add batch dim if needed
+		batch = data['res'].batch if hasattr(data['res'], 'batch') else None
+		if batch is not None:
+			num_graphs = batch.max().item() + 1
+			x_split = [x[batch == i] for i in range(num_graphs)]
+			max_len = max([xi.shape[0] for xi in x_split])
+			padded = []
+			for xi in x_split:
+				pad_len = max_len - xi.shape[0]
+				if pad_len > 0:
+					xi = torch.cat([xi, torch.zeros(pad_len, xi.shape[1], device=xi.device, dtype=xi.dtype)], dim=0)
+				padded.append(xi)
+			x = torch.stack(padded, dim=1)  # (seq_len, batch, d_model)
+		else:
+			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
+
+		x_layers = []
+		out = x
+		for i in range(self.transformer_encoder.num_layers):
+			out = self.transformer_encoder.layers[i](out)
+			out = F.gelu(out)
+		z = self.lin(out)
+		if self.residual:
+			z = z + inz
+		if self.normalize:
+			z = z / (torch.norm(z, dim=1, keepdim=True) + 1e-10)
+
+		# decode godnode
+		fft2_pred = None
+		zgodnode = None
+		
+		if self.output_fft and self.godnodedecoder is not None:
+			# Attention-based pooling over residue embeddings to get a godnode embedding
+			# x: (seq_len, batch, d_model) or (seq_len, 1, d_model)
+			if x.dim() == 3:
+				# Pool over the first dimension (seq_len)
+				# If batch > 1, pool each graph separately
+				if x.shape[1] == 1:
+					# Single graph
+					zgodnode = self.godnode_attn_pool(x[:, 0, :])
+					zgodnode = zgodnode.unsqueeze(0)  # (1, d_model)
+				else:
+					zgodnode = torch.stack([self.godnode_attn_pool(x[:, i, :]) for i in range(x.shape[1])], dim=0)
+			else:
+				# x is (seq_len, d_model)
+				zgodnode = self.godnode_attn_pool(x)
+				zgodnode = zgodnode.unsqueeze(0)
+			# Decode the godnode embedding to get FFT2 prediction
+			zgodnode = zgodnode.squeeze(0)  # (d_model,)
+			if zgodnode.dim() == 1:
+				zgodnode = zgodnode.unsqueeze(0)  # Ensure it's (1, d_model)
+			if zgodnode.shape[0] != self.godnodedecoder[0].in_features:
+				raise ValueError(f"zgodnode shape mismatch: expected {self.godnodedecoder[0].in_features}, got {zgodnode.shape[0]}")
+			# Pass through the godnode decoder
+			fft2_pred = self.godnodedecoder(zgodnode)
+			
+		rt_pred = None
+		if self.rt_mlp is not None:
+			rt_pred = self.rt_mlp(z)
+
+		angles = None
+		if self.angles_mlp is not None:
+			angles = self.angles_mlp(z)
+			angles = angles * np.pi
+
+		return {  'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles}
+
 class HeteroGAE_AA_Decoder(torch.nn.Module):
 	def __init__(self, in_channels={'res': 10},
 			  	 xdim=20, concat_positions=True, 
@@ -804,11 +1005,13 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['sequence_transformer'] = Transformer_AA_Decoder(**configs['sequence_transformer'])
 			elif task == 'contacts':
 				self.decoders['contacts'] = HeteroGAE_geo_Decoder(**configs['contacts'])
-			elif task == 'geometry':
-				self.decoders['geometry'] = HeteroGAE_geo_Decoder(**configs['contacts'])
+			elif task == 'contacts_transformer':
+				self.decoders['contacts_transformer'] = Transformer_Foldx_Decoder(**configs['contacts_transformer'])
 			elif task == 'foldx':
 				self.decoders['foldx'] = HeteroGAE_geo_Decoder(**configs['foldx'])
-			
+			elif task == 'pinn':
+				#throw an error if pinn decoder is not implemented
+				raise NotImplementedError("PINN decoder is not implemented yet.")
 
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
