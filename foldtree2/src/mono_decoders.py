@@ -758,8 +758,6 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 			pooled = pooled / (torch.norm(pooled, dim=-1, keepdim=True) + 1e-10)
 		foldx_out = self.lin(pooled)
 		return { 'foldx_out' : foldx_out }
-
-
 class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=100, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3
 			,PINNdecoder_hidden = [10, 10 , 10], 

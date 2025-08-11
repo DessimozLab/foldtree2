@@ -6,7 +6,7 @@ channels:
   - nvidia
   - bioconda
 dependencies:
-  - python=3.12
+  - python=3.9
   - raxml-ng
   - mafft
   - numpy
