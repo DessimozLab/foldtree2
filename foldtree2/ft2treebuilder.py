@@ -492,7 +492,11 @@ class treebuilder():
 			with open( outfasta.replace('.fasta' , '.aastr.fasta') , 'w') as f:
 				for i in ancestral_df.index:
 					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
-			
+			ancestral_fasta = outfasta.replace('.fasta' , '.aastr.fasta')
+		else:
+			ancestral_fasta = None
+		#return in dictionary form
+		return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
 def print_about():
 	ascii_art = r'''
 	+-------------------------------+
