@@ -18,8 +18,8 @@ import argparse
 parser = argparse.ArgumentParser(description='Run scaling experiment with configurable parameters')
 parser.add_argument('--dataset', '-d', type=str, default='structs_training_godnodemk5.h5',
 					help='Path to the dataset file (default: structs_training_godnodemk5.h5)')
-parser.add_argument('--hidden-size', '-hs', type=int, default=50,
-					help='Hidden layer size (default: 50)')
+parser.add_argument('--hidden-sizes', '-hs', type=int, nargs='+', default=[256],
+					help='List of hidden layer sizes to test (default: 256)')
 parser.add_argument('--dataset-fractions', '-df', type=float, nargs='+', default=[ 0.25, 0.5, 0.75, 1.0],
 					help='Dataset size fractions to test (default: 0.25 0.5 0.75 1.0)')
 parser.add_argument('--epochs', '-e', type=int, default=50,
@@ -33,11 +33,11 @@ parser.add_argument('--batch-size', '-bs', type=int, default=10,
 parser.add_argument('--output-dir', '-o', type=str, default='./scaling_experiment/',
 					help='Directory to save experiment results (default: ./scaling_experiment/)')
 parser.add_argument('--model-name', type=str, default='scaling_experiment_model',
-                    help='Model name for saving (default: scaling_experiment_model)')
+					help='Model name for saving (default: scaling_experiment_model)')
 parser.add_argument('--num-embeddings', type=int, default=40,
-                    help='Number of embeddings for the encoder (default: 40)')
+					help='Number of embeddings for the encoder (default: 40)')
 parser.add_argument('--embedding-dim', type=int, default=20,
-                    help='Embedding dimension for the encoder (default: 20)')
+					help='Embedding dimension for the encoder (default: 20)')
 parser.add_argument('--overwrite', action='store_true', help='Overwrite saved model if exists, otherwise continue training')
 parser.add_argument('--geometry', action='store_true', help='Train the model with geometry')
 parser.add_argument('--fapeloss', action='store_true', help='Train the model with FAPE loss')
@@ -56,17 +56,16 @@ concat_positions = args.concat_positions
 transformer = args.transformer
 output_foldx = args.output_foldx
 if transformer:
-    concat_positions = True
+	concat_positions = True
 
 # Use args for configuration
-experiment_dir = args.output_dir
-os.makedirs(experiment_dir, exist_ok=True)
 modelname = args.model_name
 batch_size = args.batch_size
 learning_rate = args.learning_rate
 num_epochs = args.epochs
 num_embeddings = args.num_embeddings
 embedding_dim = args.embedding_dim
+hidden_sizes = args.hidden_sizes
 
 # Fixed hyperparameters (based on original script)
 edgeweight = .01
@@ -102,9 +101,9 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 
 # Set device
 if args.device:
-    device = torch.device(args.device)
+	device = torch.device(args.device)
 else:
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 # Results storage
@@ -129,14 +128,14 @@ def init_weights(m):
 		torch.nn.init.xavier_uniform_(m.weight)
 
 def run_experiment(hidden_size, dataset_fraction):
-    print(f"\n=== Starting experiment with hidden_size={hidden_size}, dataset_fraction={dataset_fraction} ===")
-    
-    # Create dataset subset
-    subset_size = int(len(full_dataset) * dataset_fraction)
-    indices = torch.randperm(len(full_dataset))[:subset_size]
-    subset_dataset = torch.utils.data.Subset(full_dataset, indices)
-    
-    train_loader = DataLoader(
+	print(f"\n=== Starting experiment with hidden_size={hidden_size}, dataset_fraction={dataset_fraction} ===")
+	
+	# Create dataset subset
+	subset_size = int(len(full_dataset) * dataset_fraction)
+	indices = torch.randperm(len(full_dataset))[:subset_size]
+	subset_dataset = torch.utils.data.Subset(full_dataset, indices)
+	
+	train_loader = DataLoader(
 		subset_dataset, 
 		batch_size=batch_size, 
 		shuffle=True,
@@ -259,6 +258,7 @@ def run_experiment(hidden_size, dataset_fraction):
 		total_vq = 0
 		total_fft2_loss = 0
 		total_loss = 0
+		total_loss_angle = 0
 		for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
 			data = data.to(device)
 			optimizer.zero_grad()
@@ -279,4 +279,49 @@ def run_experiment(hidden_size, dataset_fraction):
 				F = torch.complex(data['fourier2dr'].x, data['fourier2di'].x)
 				mag_loss = torch.mean(torch.abs((torch.abs(F_hat) - torch.abs(F))))
 				phase_loss = torch.mean(torch.abs((torch.angle(F_hat) - torch.angle(F))))
-				ff
+				# Calculate total FFT2 loss
+				if fft2_x is not None:
+					fftf2loss = mag_loss + phase_loss
+				else:
+					fftf2loss = torch.tensor(0.0, device=device)
+			# Angles loss (if available)
+			angles_loss = torch.tensor(0.0, device=device)
+			if 'angles' in out and out['angles'] is not None and 'bondangles' in data:
+				angles = out['angles']
+				angles_loss = F.smooth_l1_loss(angles, data['bondangles'].x)
+			# VQ loss
+			vq_loss = vqloss if isinstance(vqloss, torch.Tensor) else torch.tensor(vqloss, device=device)
+			# Total loss
+			loss = xweight * xloss + edgeweight * edgeloss + vqweight * vq_loss + angleweight * angles_loss + fft2loss
+			loss.backward()
+			if clip_grad:
+				torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
+				torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+			optimizer.step()
+			total_loss_x += xloss.item()
+			total_loss_edge += edgeloss.item()
+			total_vq += vq_loss.item()
+			total_fft2_loss += fft2loss.item()
+			total_loss_angle += angles_loss.item()
+		
+		# Logging
+		writer.add_scalar('Loss/train_aa', total_loss_x / len(train_loader), epoch)
+		writer.add_scalar('Loss/train_edge', total_loss_edge / len(train_loader), epoch)
+		writer.add_scalar('Loss/train_vq', total_vq / len(train_loader), epoch)
+		writer.add_scalar('Loss/train_fft2', total_fft2_loss / len(train_loader), epoch)
+		writer.add_scalar('Loss/train_angle', total_loss_angle / len(train_loader), epoch)
+		writer.add_scalar('Loss/train_total', total_loss / len(train_loader), epoch)
+		
+		# Print progress
+		if (epoch+1) % 5 == 0 or epoch == 0:
+			print(f"Epoch {epoch+1}: AA Loss: {total_loss_x/len(train_loader):.4f}, "
+				  f"Edge Loss: {total_loss_edge/len(train_loader):.4f}, "
+				  f"VQ Loss: {total_vq/len(train_loader):.4f}, "
+				  f"FFT2 Loss: {total_fft2_loss/len(train_loader):.4f}, "
+				  f"Angle Loss: {total_loss_angle/len(train_loader):.4f}")
+		
+		# Scheduler step
+		scheduler.step(total_loss)
+	
+	writer.close()
+	print(f"Experiment with hidden_size={hidden_size}, dataset_fraction={dataset_fraction} completed.")

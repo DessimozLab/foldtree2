@@ -156,10 +156,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				)
 		
 		if output_fft == True:
-			#todo implement siren layer to output spatial frequencies
-			#massage output to distmat
-			#take fft2 of distmat
-			#calc spatial and fft losses
+
 			
 			self.godnodedecoder = torch.nn.Sequential(
 					torch.nn.Linear(in_channels['godnode4decoder'] , FFT2decoder_hidden[0]),
