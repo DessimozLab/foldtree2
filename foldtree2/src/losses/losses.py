@@ -152,14 +152,15 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	pos_loss = -torch.log(pos + EPS).squeeze()
 	pos_loss = (pos_loss * pos_weights).unsqueeze(1)
 
+	if 'edge_logits' in res and res['edge_logits'] is not None:
+		#apply recon loss disto
+		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits') 
 
 	if offdiag == True:
 		nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
 		nres = torch.clamp(nres, max=nclamp)
 		nres = nres / nclamp
 		pos_loss = (pos_loss.squeeze() * nres.float()).unsqueeze(1)
-	
-
 	if plddt == True:
 		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
 		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
@@ -168,8 +169,6 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D
 		pos_loss = pos_loss[mask]
-
-
 	pos_loss = pos_loss.mean()
 	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
 	
@@ -182,8 +181,6 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		neg = res[key]
 
 	neg_loss = -torch.log((1 - neg) + EPS).squeeze()
-	
-		
 	if offdiag == True:
 		nres = torch.abs(neg_edge_index[0] - neg_edge_index[1])
 		nres = torch.clamp(nres, max=nclamp)
@@ -200,7 +197,12 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		neg_loss = neg_loss[mask]
 	
 	neg_loss = neg_loss.mean()
-	return poslossmod*pos_loss + neglossmod*neg_loss, torch.tensor(0.0)
+
+	if 'edge_logits' in res and res['edge_logits'] is not None:
+		#apply recon loss disto
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits') 
+
+	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):
@@ -220,6 +222,89 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	'''
 	kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 	return beta*kl_loss
+
+
+def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag = False , nclamp = 30 , key = None) -> Tensor:
+
+	'''
+	Calculates a reconstruction loss based on predicted and true coordinates, with optional filtering by pLDDT confidence and off-diagonal weighting.
+
+	Args:
+		data (dict): Dictionary containing input features, including 'coords' and optionally 'plddt'.
+		res (dict): Dictionary containing model outputs, indexed by `key`.
+		edge_index (Tensor): Tensor of shape [2, num_edges] specifying pairs of indices for which to compute the loss.
+		plddt (bool, optional): If True, only considers edges where both residues have pLDDT > 0.5. Default is True.
+		offdiag (bool, optional): If True, weights the loss by the sequence separation between residue pairs. Default is False.
+		nclamp (int, optional): Maximum sequence separation to clamp when weighting off-diagonal loss. Default is 30.
+		key (str, optional): Key to select the relevant output from `res`.
+
+	Returns:
+		Tensor: Scalar tensor representing the mean reconstruction loss over selected edges.
+	'''
+	#remove the diagonal
+	logits = res[key]
+	#turn pos edge index into a binary matrix
+	disto_loss = distogram_loss( logits, data['coords'].x , edge_index )
+	if plddt == True:
+		c1 = data['plddt'].x[edge_index[0]].view(-1,1)
+		c2 = data['plddt'].x[edge_index[1]].view(-1,1)
+		#both have to be above .5, binary and operation
+		c1 = c1 > .5
+		c2 = c2 > .5
+		mask = c1 & c2
+		disto_loss = disto_loss.view(-1,1)[ mask]
+	if offdiag == True:
+		#subtract the indices
+		nres = edge_index[0] - edge_index[1]
+		nres = torch.abs(nres)
+		nres = torch.clamp(nres, max = nclamp)
+		nres = nres / nclamp
+		disto_loss = disto_loss.view(-1,1) * nres.view(-1,1).float()
+	disto_loss = disto_loss.mean()
+	return disto_loss
+
+def distogram_loss(
+	logits,
+	coords,
+	edge_index,
+	min_bin=2.3125,
+	max_bin=21.6875,
+	no_bins=64,
+	eps=1e-6,
+):
+	"""
+	Computes distogram loss for a set of logits and coordinates.
+	Args:
+		logits: (B, Npairs, no_bins) logits for samples
+		coords: (B, N, 3) coordinates for samples
+		edge_index: (2, Npairs) indices for pairs
+		mask: (B, Npairs) mask for pairs (optional)
+	Returns:
+		Scalar loss averaged over batch
+	"""
+	boundaries = torch.linspace(
+		min_bin,
+		max_bin,
+		no_bins - 1,
+		device=logits.device,
+	) ** 2  # (no_bins-1,)
+
+	idx0, idx1 = edge_index[0], edge_index[1]
+	dists = torch.sum(
+		(coords[ idx0  , :] - coords[ idx1 , :]) ** 2,
+		dim=-1,
+		keepdim=True,
+	)  # ( Npairs, 1)
+
+	true_bins = torch.sum(dists > boundaries, dim=-1)  # (B, Npairs)
+
+	errors = F.cross_entropy(
+		logits,  # (Npairs, no_bins)
+		true_bins,
+		reduction="none",
+	)  # (B, Npairs)
+
+	return errors
 
 
 #alphafold inspired losses using FAPE or LDDT with quaternions or rotation matrices

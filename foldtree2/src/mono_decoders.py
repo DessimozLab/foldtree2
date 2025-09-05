@@ -82,6 +82,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				output_angles = False,
 				normalize = True,
 				residual = True,
+				output_edge_logits = False,
+				ncat = 64,
 				contact_mlp = True ):
 		super(HeteroGAE_geo_Decoder, self).__init__()
 		# Setting the seed
@@ -212,9 +214,22 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		else:
 			self.angles_mlp = None
 
+		if output_edge_logits == True:
+			self.output_edge_logits = True
+			self.edge_logits_mlp = torch.nn.Sequential(
+				torch.nn.Linear(2*lastlin, 128),
+				torch.nn.GELU(),
+				torch.nn.Linear(128, 64),
+				torch.nn.GELU(),
+				torch.nn.Linear(64, ncat),
+				torch.nn.LogSoftmax(dim=1)
+			)
+		else:
+			self.output_edge_logits = False
+			self.edge_logits_mlp = None
 
-	def forward(self, data , contact_pred_index, **kwargs):	
-		
+	def forward(self, data , contact_pred_index, **kwargs):
+
 		#apply batch norm to res
 
 		xdata, edge_index = data.x_dict, data.edge_index_dict
@@ -257,13 +272,15 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
 		
 		angles = None
+		edge_logits = None
+
 		if self.angles_mlp is not None:
 			angles = self.angles_mlp( z )
-			#tanh is -1 to 1, multiply by pi to get angles in radians
-			angles = angles * np.pi
+			#tanh is -1 to 1, multiply by 2pi to get angles in radians
+			angles = angles * 2 * np.pi
 
 		if contact_pred_index is None:
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles }
+			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits }
 
 		else:
 			if self.contact_mlp is None:
@@ -271,7 +288,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			else:
 				edge_scores = self.contact_mlp( torch.concat( [z[contact_pred_index[0]], z[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
 				edge_probs = self.sigmoid(edge_scores)
-
+			if self.edge_logits_mlp is not None:
+				edge_logits = self.edge_logits_mlp( torch.concat( [z[contact_pred_index[0]], z[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
+		
 		if 'init' in kwargs and kwargs['init'] == True:
 			# Initialize weights explicitly (Xavier initialization)
 			for conv in self.convs:
@@ -280,7 +299,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles }
+		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles }
 
 
 class Transformer_Geo_Decoder(torch.nn.Module):
