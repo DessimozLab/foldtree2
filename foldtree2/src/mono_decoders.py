@@ -217,12 +217,14 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if output_edge_logits == True:
 			self.output_edge_logits = True
 			self.edge_logits_mlp = torch.nn.Sequential(
-				torch.nn.Linear(2*lastlin, 128),
+				torch.nn.Linear(2*lastlin, 256),
 				torch.nn.GELU(),
-				torch.nn.Linear(128, 64),
+				torch.nn.Linear(256,256),
 				torch.nn.GELU(),
-				torch.nn.Linear(64, ncat),
-				torch.nn.LogSoftmax(dim=1)
+				torch.nn.Linear(256,128),
+				torch.nn.GELU(),
+				torch.nn.Linear(128, ncat),
+				torch.nn.Sigmoid()
 			)
 		else:
 			self.output_edge_logits = False
