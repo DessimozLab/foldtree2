@@ -200,7 +200,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits') 
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits' , no_bins=16) 
 
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
@@ -224,7 +224,7 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	return beta*kl_loss
 
 
-def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag = False , nclamp = 30 , key = None) -> Tensor:
+def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag = False , nclamp = 30 ,no_bins = 16 , key = None) -> Tensor:
 
 	'''
 	Calculates a reconstruction loss based on predicted and true coordinates, with optional filtering by pLDDT confidence and off-diagonal weighting.
@@ -244,7 +244,7 @@ def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag =
 	#remove the diagonal
 	logits = res[key]
 	#turn pos edge index into a binary matrix
-	disto_loss = distogram_loss( logits, data['coords'].x , edge_index )
+	disto_loss = distogram_loss( logits, data['coords'].x , edge_index  , no_bins = no_bins)
 	if plddt == True:
 		c1 = data['plddt'].x[edge_index[0]].view(-1,1)
 		c2 = data['plddt'].x[edge_index[1]].view(-1,1)
@@ -269,7 +269,7 @@ def distogram_loss(
 	edge_index,
 	min_bin=2.3125,
 	max_bin=21.6875,
-	no_bins=64,
+	no_bins=16,
 	eps=1e-6,
 ):
 	"""

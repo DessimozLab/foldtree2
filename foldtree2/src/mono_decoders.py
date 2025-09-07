@@ -83,7 +83,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				normalize = True,
 				residual = True,
 				output_edge_logits = False,
-				ncat = 64,
+				ncat = 16,
 				contact_mlp = True ):
 		super(HeteroGAE_geo_Decoder, self).__init__()
 		# Setting the seed
