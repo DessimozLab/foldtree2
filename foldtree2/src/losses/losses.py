@@ -5,7 +5,6 @@ from torch_geometric.utils import negative_sampling
 
 EPS = 1e-8
 
-
 def jensen_shannon_regularization(encodings):
     # 1) Compute the average distribution p
     p = encodings.mean(dim=0)
@@ -56,7 +55,6 @@ def jaccard_distance_multiset(A: torch.Tensor,
 	jaccard_similarity = min_sum / (max_sum + eps)
 
 	return jaccard_similarity
-
 
 def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1,  plddt = True  , offdiag = False , nclamp = 30 , key = None) -> Tensor:
 	r"""Given latent variables :obj:`z`, computes the binary cross
@@ -201,7 +199,6 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
 		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits' , no_bins=16) 
-
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
 #amino acid onehot loss for x reconstruction
