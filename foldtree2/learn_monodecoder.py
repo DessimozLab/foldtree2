@@ -16,7 +16,7 @@ import pickle
 import argparse
 import sys
 import time
-import foldtree2.src.se3encoder as se3e
+import foldtree2.src.se3_strcut_decoder as se3e
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -513,9 +513,13 @@ for epoch in range(args.epochs):
     if (epoch + 1) % 10 == 0:
         with open(os.path.join(modeldir, f"{modelname}_epoch{epoch+1}.pkl"), 'wb') as f:
             pickle.dump((encoder, decoder), f)
-
+        #save pth 
+        torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_epoch{epoch+1}.pth"))
+        torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_epoch{epoch+1}.pth"))
 # Save final model
 with open(os.path.join(modeldir, modelname + '.pkl'), 'wb') as f:
     pickle.dump((encoder, decoder), f)
+torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_final.pth"))
+torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pth"))
 
-print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')}")
+print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')} and .pth files: {os.path.join(modeldir, f'{modelname}_encoder_final.pth')} , {os.path.join(modeldir, f'{modelname}_decoder_final.pth')}")")

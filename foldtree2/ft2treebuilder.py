@@ -373,7 +373,7 @@ class treebuilder():
 		return outfasta
 
 	def ancestralfasta2df( outfasta ):
-		aln_data = {}
+		aln_data = {}Save
 		with open(outfasta, 'r') as f:
 			for line in f:
 				if line[0] == '>':
