@@ -49,6 +49,7 @@ datadir = '../../datasets/foldtree2/'
 from foldtree2.src.losses import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
+from foldtree2.src.se3_struct_decoder import *
 
 from  torch_geometric.utils import to_undirected
 #encoder super class
@@ -1069,7 +1070,9 @@ class MultiMonoDecoder(torch.nn.Module):
 			elif task == 'pinn':
 				#throw an error if pinn decoder is not implemented
 				raise NotImplementedError("PINN decoder is not implemented yet.")
-
+			elif task == 'geometry_transformer':
+				#throw an error if geometry_transformer decoder is not implemented
+				self.decoders['geometry_transformer'] = Transformer_Geometry_Decoder(**configs['geometry_transformer'])
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():
