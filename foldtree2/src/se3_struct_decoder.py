@@ -3,6 +3,13 @@ from se3_transformer_pytorch import SE3Transformer
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 
+
+def derive_rt_from_coords(coords):
+	#comput the R and T from one residue to the next using pytorch
+	# coords: (N, 3)
+	assert coords.dim() == 2 and coords.size(1) == 3, "coords must be of shape (N, 3)"
+	
+	
 class se3_denoiser(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
 	num_embeddings, commitment_cost, metadata={}, edge_dim=1,
@@ -76,13 +83,36 @@ class se3_denoiser(torch.nn.Module):
 		x_dict['res'] = self.dropout(x_dict['res'])
 		mask  = torch.ones( x_dict['res'].shape).bool().cuda()
 		#proj to transformer input dim
-		x_dict['res'] = self.input2transformer(x_dict['res'])
+		x = self.input2transformer(x_dict['res'])
+		coords = x_dict['coords'].view(-1, 3)
+		# Transformer expects (seq_len, batch, d_model), so add batch dim if needed
+		batch = x_dict['res'].batch if hasattr(x_dict['res'], 'batch') else None
+		if batch is not None:
+			num_graphs = batch.max().item() + 1
+			x_split = [x[batch == i] for i in range(num_graphs)]
+			coords_split = [coords[batch == i] for i in range(num_graphs)]
+			max_len = max([xi.shape[0] for xi in x_split])
+			x_padded = []
+			coords_padded = []
+			for xi, ci in zip(x_split, coords_split):
+				pad_len = max_len - xi.shape[0]
+				if pad_len > 0:
+					xi = torch.cat([xi, torch.zeros(pad_len, xi.shape[1], device=xi.device, dtype=xi.dtype)], dim=0)
+					ci = torch.cat([ci, torch.zeros(pad_len, ci.shape[1], device=ci.device, dtype=ci.dtype)], dim=0)
+				x_padded.append(xi)
+				coords_padded.append(ci)
+			x = torch.stack(x_padded, dim=1)         # (seq_len, batch, d_model)
+			coords = torch.stack(coords_padded, dim=1) # (seq_len, batch, 3)
+		else:
+			x = x.unsqueeze(1)         # (seq_len, 1, d_model)
+			coords = coords.unsqueeze(1) # (seq_len, 1, 3)
 
-
-		out = self.se3(x_dict , coords , mask)
+		# SE3 transformer
+		out = self.se3(x, coords, mask)
 		z = out.type0 # invariant type 0    - (1, 128)
 		newcoords = out.type1 # equivariant type 1  - (1, 128, 3)
 		#derive rt from newcoords
+
 
 		angles = self.out_angles(z)
 
@@ -197,11 +227,18 @@ class struct_transformer_decoder(torch.nn.Module):
 			out = self.transformer_encoder.layers[i](out)
 			out = F.gelu(out)		
 
-		angles = self.angle_out(out)
-		R = self.out_R(x)
-		T = self.out_T(x)
-		z = self.out_dense(x)
+		if self.angle_out is not None:
+			angles = self.angle_out(out)
+		else:
+			angles = None
+					
+		if self.out_R is not None:
+			R = self.out_R(x)
+		else:
+			R = None
+			T = None
 
+		z = self.out_dense(x)
 		return {'angles': angles, 'R': R, 'T': T, 'z': z}
 
 	
