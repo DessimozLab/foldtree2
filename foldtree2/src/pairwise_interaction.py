@@ -150,15 +150,17 @@ class AttentionAggregation(nn.Module):
 		return out.squeeze(0) if out.shape[0] == 1 else out
 
 class signature_transformer(torch.nn.Module):
-	def __init__(self, in_channels, hidden_channels, out_channels, dropout_p=0.05,
+	def __init__(self, encoder, hidden_channels, out_channels, dropout_p=0.05,
 			  decoder_hidden=100,
 			  n_signatures=256,
 			  nheads=8,
 			  nlayers=3,
-			  embedding_model=''
 			  ):
 		super(signature_transformer, self).__init__()
-		self.embedding_model = embedding_model
+
+		self.encoder = encoder
+
+
 		print("Using embedding model:", self.embedding_model)
 
 		self.wmg = WeightedMinHashGenerator(num_perm=n_signatures, seed=42)
@@ -173,11 +175,8 @@ class signature_transformer(torch.nn.Module):
 		self.in_channels = in_channels
 		self.out_channels = out_channels
 		self.hidden_channels = hidden_channels
-
-		#trainable embedding
-		self.embedding = torch.nn.Embedding(n_signatures, in_channels)
-
-		#use encoder embedding? 
+		#trainable embedding. clone the encoder embedding if provided
+		self.embedding = encoder.vector_quantizer.embeddings.detach().clone()
 
 		self.input2transformer = torch.nn.Sequential(
 			torch.nn.Linear(in_channels, hidden_channels[0] * 2),
