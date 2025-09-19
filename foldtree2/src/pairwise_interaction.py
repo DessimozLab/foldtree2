@@ -10,6 +10,8 @@ import glob
 import h5py
 from scipy import sparse
 from copy import deepcopy
+import pickle
+
 import pebble
 import time
 import torch
@@ -37,7 +39,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import Tensor
 import torch.nn as nn
 import traceback
-from datasketch import WeightedMinHashGenerator, MinHashLSHForest
+from datasketch import WeightedMinHashGenerator, MinHashLSHForest, WeightedMinHash
 import numpy as np
 import pandas as pd
 from Bio import PDB
@@ -121,8 +123,7 @@ class EncodedFastaDataset(torch.utils.data.Dataset):
 	def get_by_identifier(self, identifier):
 		idx = self.id_to_idx[identifier]
 		return self.__getitem__(idx)
-
-
+	
 class AttentionAggregation(nn.Module):
 	"""
 	Trainable attention-based aggregation for transformer outputs.
@@ -153,14 +154,17 @@ class signature_transformer(torch.nn.Module):
 			  decoder_hidden=100,
 			  n_signatures=256,
 			  nheads=8,
-			  nlayers=3
+			  nlayers=3,
+			  embedding_model=''
 			  ):
 		super(signature_transformer, self).__init__()
+		self.embedding_model = embedding_model
+		print("Using embedding model:", self.embedding_model)
 
+		self.wmg = WeightedMinHashGenerator(num_perm=n_signatures, seed=42)
 		#save all arguments to constructor
 		self.args = locals()
 		self.args.pop('self')
-		
 		# Setting the seed
 		L.seed_everything(42)
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
@@ -172,6 +176,8 @@ class signature_transformer(torch.nn.Module):
 
 		#trainable embedding
 		self.embedding = torch.nn.Embedding(n_signatures, in_channels)
+
+		#use encoder embedding? 
 
 		self.input2transformer = torch.nn.Sequential(
 			torch.nn.Linear(in_channels, hidden_channels[0] * 2),
@@ -206,7 +212,6 @@ class signature_transformer(torch.nn.Module):
 		self.attn_agg = AttentionAggregation(self.hidden_channels, self.decoder_hidden)
 
 		
-		
 	def forward(self, data, **kwargs):
 		#data is a an item from EncodedFastaDataset
 		x_dict = data.x_dict
@@ -236,141 +241,122 @@ class signature_transformer(torch.nn.Module):
 		for i in range(self.transformer_encoder.num_layers):
 			out = self.transformer_encoder.layers[i](out)
 			out = F.gelu(out)		
-		
+		# Aggregate transformer outputs
 		#copy z
 		z = out.clone().detach()  # (batch, hidden_channels)
 		out = self.attn_agg(out)  # (batch, decoder_hidden)
 		vec = self.vec_out(out)  # (batch, out_channels)
-
 		return {'jaccard_vec': vec, 'z': z}
 
+	def vec2weighted_minhash(self, vec):
+		"""
+		Convert a weighted vector to a Weighted MinHash signature.
+		Args:
+			vec (torch.Tensor): Input vector of shape (N,).
+		Returns:
+			np.ndarray: MinHash signature as a numpy array.
+		"""
 
-class HeteroGAE_Pairwise_Decoder(torch.nn.Module):
-	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23}, xdim=100, hidden_channels={'res_backbone_res': [20, 20, 20]}, layers = 3
-			,PINNdecoder_hidden = [10, 10 , 10], 
-			contactdecoder_hidden = [10,10,10], 
-			nheads = 8 , Xdecoder_hidden=30, metadata={}  ,
-			 flavor = None, dropout= .1 , num_hashes = 100 , sample_size = 1000):
-		super(HeteroGAE_Decoder, self).__init__()
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False
-
-		self.convs = torch.nn.ModuleList()
-		in_channels_orig = copy.deepcopy(in_channels )
-		self.wmg = WeightedMinHashGenerator( num_hashes = num_hashes , sample_size = sample_size , seed = 42)
-		self.num_hashes = num_hashes
-		self.sample_size = sample_size
-
-		self.metadata = metadata
-		self.hidden_channels = hidden_channels
-		self.in_channels = in_channels
-		self.nlayers = layers
-		self.embeding_dim = xdim
-		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
-		self.dropout = torch.nn.Dropout(p=dropout)		
-		self.jk = JumpingKnowledge(mode='cat')
-		
-		for i in range(layers):
-			layer = {}          
-			for k,edge_type in enumerate( hidden_channels.keys() ):
-				edgestr = '_'.join(edge_type)
-				datain = edge_type[0]
-				dataout = edge_type[2]
-				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
-					layer[edge_type] = torch.nn.Sequential( TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
-				if flavor == 'sage':
-					layer[edge_type] = torch.nn.Sequential( SAGEConv( (-1, -1) , hidden_channels[edge_type][i]) , torch.nn.LayerNorm(hidden_channels[edge_type][i]) )
-				if ( 'res','backbone','res') == edge_type and i > 0:
-					in_channels['res'] = hidden_channels[( 'res','backbone','res')][i-1] + in_channels['godnode4decoder']
+		mh = self.wmg.minhash(vec.cpu().numpy())
+		return mh.hashvalues
+	
+	def pull_hashes(self, identifiers, sigfile='signatures.h5'):
+		"""
+		Pull precomputed MinHash signatures from an HDF5 file.
+		Args:
+			identifiers (list): List of sequence identifiers.
+			sigfile (str): Path to the HDF5 file containing signatures.
+		Returns:
+			dict: Dictionary mapping identifiers to their MinHash signatures.
+		"""
+		signatures = {}
+		with h5py.File(sigfile, 'r') as hf:
+			for identifier in identifiers:
+				if identifier in hf:
+					signatures[identifier] = WeightedMinHash(  seed = 42 , hashvalues = hf[identifier][:])
 				else:
-					if k == 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k == 0 and i > 0:
-						in_channels[dataout] = hidden_channels[edge_type][i-1]
-					if k > 0 and i > 0:                    
-						in_channels[dataout] = hidden_channels[edge_type][i]
-					if k > 0 and i == 0:
-						in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv( layer  , aggr='max')
-			self.convs.append( conv )
-		self.sigmoid = nn.Sigmoid()
-		self.lin = torch.nn.Sequential(
-				torch.nn.LayerNorm(self.hidden_channels[('res', 'backbone', 'res')][-1] *  layers),
-				torch.nn.Linear( self.hidden_channels[('res', 'backbone', 'res')][-1] , Xdecoder_hidden),
-		)
-		
-		self.godnodedecoder = torch.nn.Sequential(
-				NormTanh(in_channels['godnode4decoder']),
-				torch.nn.Linear(in_channels['godnode4decoder'] , PINNdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[1], PINNdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				NormTanh(),
-				torch.nn.Linear(PINNdecoder_hidden[2], self.embeding_dim),
-				)
+					raise KeyError(f"Identifier {identifier} not found in {sigfile}")
+		return signatures
 	
-		self.pair_foldx = torch.nn.Sequential(
-				torch.nn.LayerNorm(self.embeding_dim*2),
-				torch.nn.Linear(self.embeding_dim*2 , PINNdecoder_hidden[0]),
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[0], PINNdecoder_hidden[1] ) ,
-				torch.nn.GELU(),
-				torch.nn.Linear(PINNdecoder_hidden[1], PINNdecoder_hidden[2] ) ,
-				torch.nn.GELU(),
-				torch.nn.LayerNorm(PINNdecoder_hidden[2]),
-				torch.nn.Linear(PINNdecoder_hidden[2], foldxdim),
-				)
+	def create_interactome(self, encoded_fasta = None , encoded_dataset = None, sigfile='signatures.h5', lshfile='lsh_forest.pkl', top_k=10):
+		''' 
+		Create a pairwise interaction dataframe using precomputed MinHash signatures and LSH forest.
+		run through each entry in df, query lsh forest for top_k nearest neighbors
+		pull hashes, compute weighted jaccard similarity, and store pairwise scores in dataframe
+		compile networkx graph and return graph and dataframe
+		Args:
+			df (pd.DataFrame): DataFrame with 'protA' and 'protB' columns.
+			sigfile (str): Path to the HDF5 file containing signatures.
+			lshfile (str): Path to the pickle file containing the LSH forest.
+			top_k (int): Number of nearest neighbors to query.
+		'''	
+		if encoded_dataset is None and encoded_fasta is not None:
+			raise ValueError("Must provide encoded_dataset if not providing encoded_fasta")
+		if encoded_dataset is None:
+			encoded_dataset = EncodedFastaDataset(encoded_fasta)
 
-	def forward(self, x1data, **kwargs):
-		#only useful for generating embeddings in eval mode
-		#check if model is in eval mode
-		if self.training:
-			raise ValueError('forward1 only useful in eval mode')
-		x1data, x1edge_index = x1data.x_dict, x1data.edge_index_dict
-		#z = self.bn(z)
-		#copy z for later concatenation
-		inz1 = x1data['res'].copy()
-		inzs = [ inz1 ]
-		xdatas = [ x1data ]
-		indices = [ x1edge_index ]
-		decoder_inputs = []
-		godnodes = []
-		for inz,xdata,edge_index in zip(inzs,xdatas,indices):
-			xsave = []
-			for i,layer in enumerate(self.convs):
-				xdata = layer(xdata, edge_index)
-				for key in layer.convs.keys():
-					key = key[2]
-					xdata[key] = F.gelu(xdata[key])
-				xsave.append(xdata['res'])
-			xdata['res'] = self.jk(xsave)
-			z = self.lin(xdata['res'])
-			decoder_in =  torch.cat( [inz,  z] , axis = 1)
-			decoder_inputs.append(decoder_in)
-			xdata['godnode4decoder'] = self.godnodedecoder( xdata['godnode4decoder'] )
-			godnodes.append(xdata['godnode4decoder'])
-		z1 = decoder_inputs[0]
-		g1 = godnodes[0]
-		return z1 , g1
-	
-	def hash_foldome(self , dataloader , name = 'foldome'):
-		Forest = MinHashLSHForest(num_perm=self.wmg.sample_size)
-		#open hdf5 to store hash vals
-		with h5py.File(name+'_embeddings.h5', 'w') as foldome:
-			for data in tqdm.tqdm(dataloader):
-				z1, g1 = self.forward(data)
-				g1_hash = self.wmg.minhash(g1)
-				Forest.add(data['identifier'] , g1_hash)
-				foldome.create_dataset(data['identifier'] + '/hash' , data = g1_hash)
-				foldome.create_dataset(data['identifier'] + '/z' , data = z1)
-				foldome.create_dataset(data['identifier'] + '/godnode' , data = g1)
-		Forest.index()
-		#store the forest
-		with open(name+'_forest.pkl', 'wb') as f:
-			pickle.dump(Forest, f)
-		return name+'_embeddings.h5', name+'_forest.pkl'
+		#hash proteome if sigfile or lshfile do not exist
+		if not os.path.exists(sigfile) or not os.path.exists(lshfile):
+			print("Signatures or LSH file not found, hashing proteome...")
+			self.hash_proteome( encoded_dataset=encoded_dataset, sigout=sigfile, lshout=lshfile )
+		
+		#load lsh forest
+		with open(lshfile, 'rb') as f:
+			lsh = pickle.load(f)
+		records = []
+		#pull all unique identifiers from df
+		for item in encoded_dataset:
+			identifier = item['identifier']
+			#query lsh forest for top_k nearest neighbors
+			neighbors = lsh.query(self.sig2weighted_minhash(self.forward(item)['jaccard_vec'])), top_k)
+			#pull hashes for neighbors
+			sigs = self.pull_hashes([identifier] + neighbors, sigfile=sigfile)
+			q_hash = sigs[identifier]
+			#compute weighted jaccard similarity for each neighbor
+			for neighbor in neighbors:
+				records.append({'protA': identifier, 'protB': neighbor, 'score': q_hash.jaccard(sigs[neighbor])})
+		interactome_df = pd.DataFrame(records)
+		#build networkx graph
+		G = nx.from_pandas_edgelist(interactome_df, 'protA', 'protB', edge_attr='score')
+		return interactome_df, G
+
+	def hash_proteome( encoded_fasta = None, encoded_dataset = None, num_perm=256 , sigout='signatures.h5' , lshout='lsh_forest.pkl' ):
+		"""
+		Hash all sequences in the encoded dataset using Weighted MinHash.
+		Args:
+			encoded_dataset (EncodedFastaDataset): Dataset of encoded sequences.
+			num_perm (int): Number of permutations for MinHash.
+		Returns:
+			pd.DataFrame: DataFrame with identifiers and their MinHash signatures.	
+		"""
+		#create hdf5 file to store the signatures
+		if encoded_dataset is None and encoded_fasta is not None:
+			raise ValueError("Must provide encoded_dataset if not providing encoded_fasta")
+		if encoded_dataset is None:
+			encoded_dataset = EncodedFastaDataset(encoded_fasta)
+		with torch.no_grad():
+			lsh = MinHashLSHForest(num_perm=self.n_signatures, seed=42, l=10)
+			# Compute MinHash signatures for all sequences
+			records = []
+			for item in encoded_dataset:
+				identifier = item['identifier']
+				weights = self.forward(item)['jaccard_vec'].cpu().numpy()
+				mh = self.wmg.minhash(weights)
+				signature = mh.hashvalues
+				lsh.insert(identifier, signature)
+				records.append({'identifier': identifier, 'signature': signature , 'vec': weights })
+			lsh.index()
+			signature_df = pd.DataFrame(records).set_index('identifier')
+		#dump signatures to hdf5
+		with h5py.File(sigout, 'w') as hf:
+			for idx, row in signature_df.iterrows():
+				hf.create_dataset(idx, data=row['signature'])
+				hf.create_dataset(f"{idx}_vec", data=row['vec'])
+
+		#dump lsh to pickle
+		with open(lshout, 'wb') as f:
+			pickle.dump(lsh, f)
+		
+		return signature_df, lsh
+
+
