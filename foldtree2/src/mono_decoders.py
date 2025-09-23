@@ -232,6 +232,10 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(256,128),
 				torch.nn.GELU(),
+				torch.nn.Linear(128,128),
+				torch.nn.GELU(),
+				torch.nn.Linear(128,128),
+				torch.nn.GELU(),
 				torch.nn.Linear(128, ncat),
 				torch.nn.Sigmoid()
 			)
