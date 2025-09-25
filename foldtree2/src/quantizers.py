@@ -169,6 +169,12 @@ class VectorQuantizerEMA(nn.Module):
 		embeddings = self.embeddings(indices)
 		return embeddings
 
+	def ord_to_embedding(self, s):
+		# Convert characters back to indices
+		indices = torch.tensor([c for c in s], dtype=torch.long, device=self.embeddings.weight.device)
+		# Retrieve embeddings from the codebook
+		embeddings = self.embeddings(indices)
+		return embeddings
 
 class VectorQuantizer(nn.Module):
 	def __init__(self, num_embeddings, embedding_dim, commitment_cost):
