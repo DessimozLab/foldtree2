@@ -207,7 +207,7 @@ class signature_transformer(torch.nn.Module):
 			torch.nn.Linear(self.decoder_hidden[0], self.decoder_hidden[1]),
 			torch.nn.GELU(),
 			torch.nn.Linear(self.decoder_hidden[1], self.decoder_hidden[2]),
-			torch.nn.Tanh()
+			torch.nn.Sigmoid()
 		)
 		self.attn_agg = AttentionAggregation(self.decoder_hidden[2], self.out_channels)
 
