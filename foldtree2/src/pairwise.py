@@ -152,18 +152,14 @@ class AttentionAggregation(nn.Module):
 class signature_transformer(torch.nn.Module):
 	def __init__(self, encoder, hidden_channels, out_channels, dropout_p=0.05,
 			  decoder_hidden=100,
-			  n_signatures=256,
 			  nheads=8,
-			  nlayers=3,
+			  nlayers=3, **kwargs
 			  ):
 		super(signature_transformer, self).__init__()
 
 		self.encoder = encoder
-
-
-		print("Using embedding model:", self.embedding_model)
-
-		self.wmg = WeightedMinHashGenerator(num_perm=n_signatures, seed=42)
+		print("Using encoder model:", self.encoder)
+		self.wmg = WeightedMinHashGenerator(out_channels, seed=42)
 		#save all arguments to constructor
 		self.args = locals()
 		self.args.pop('self')
@@ -171,54 +167,59 @@ class signature_transformer(torch.nn.Module):
 		L.seed_everything(42)
 		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False		
-		self.in_channels = in_channels
+		torch.backends.cudnn.benchmark = False
+
+		self.in_channels = encoder.out_channels + 256 #256 for positional encoding
 		self.out_channels = out_channels
+		self.decoder_hidden = decoder_hidden if isinstance(decoder_hidden, list) else [decoder_hidden, decoder_hidden, decoder_hidden]
 		self.hidden_channels = hidden_channels
 		#trainable embedding. clone the encoder embedding if provided
-		self.embedding = encoder.vector_quantizer.embeddings.detach().cpu().clone()
+		self.embedding = copy.deepcopy(encoder.vector_quantizer.embeddings)
 
 		self.input2transformer = torch.nn.Sequential(
-			torch.nn.Linear(in_channels, hidden_channels[0] * 2),
+			torch.nn.Linear(self.in_channels, hidden_channels[0]),
 			torch.nn.GELU(),
-			torch.nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
+			torch.nn.Linear(hidden_channels[0], hidden_channels[1]),
 			torch.nn.GELU(),
-			torch.nn.Linear(hidden_channels[0], hidden_channels[0]),
+			torch.nn.Linear(hidden_channels[1], hidden_channels[2]),
 		)
 
 		# vanilla pytorch transformer encoder layer
 		self.transformer_encoder = torch.nn.TransformerEncoder(
 			torch.nn.TransformerEncoderLayer(
-				d_model=hidden_channels,
+				d_model=hidden_channels[2],
 				nhead=nheads,
-				dim_feedforward=hidden_channels[0] * 2,
+				dim_feedforward=hidden_channels[2] * 2,
 				activation='gelu'
 			),
 			num_layers=nlayers
 		)
-
-		self.bn = torch.nn.BatchNorm1d(in_channels)
+		#batch norm and dropout
+		self.encoder_norms = torch.nn.ModuleList([torch.nn.LayerNorm(hidden_channels[2]) for _ in range(nlayers)])
+		self.bn = torch.nn.BatchNorm1d(self.in_channels - 256 ) #batch norm on embedding dim only
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		
+
+
 		self.vec_out = torch.nn.Sequential(
-			torch.nn.Linear(self.decoder_hidden, self.out_channels),
+			torch.nn.Linear(hidden_channels[2], self.decoder_hidden[0]),
 			torch.nn.GELU(),
-			torch.nn.Linear(self.decoder_hidden, self.out_channels),
+			torch.nn.Linear(self.decoder_hidden[0], self.decoder_hidden[1]),
 			torch.nn.GELU(),
-			torch.nn.Linear(self.decoder_hidden, self.out_channels),
+			torch.nn.Linear(self.decoder_hidden[1], self.decoder_hidden[2]),
 			torch.nn.Tanh()
 		)
-		self.attn_agg = AttentionAggregation(self.hidden_channels, self.decoder_hidden)
+		self.attn_agg = AttentionAggregation(self.decoder_hidden[2], self.out_channels)
 
-		
+	
 	def forward(self, data, **kwargs):
 		#data is a an item from EncodedFastaDataset
 		x_dict = data.x_dict
 		edge_index_dict = data.edge_index_dict
-		batch = data.batch if hasattr(data, 'batch') else None
+		batch = data['res'].batch
 		x = x_dict['zdiscrete']
 		#embed the input sequences with the trainable embedding
-		x = self.embedding[x]
+		x = self.embedding(x)
 		x = self.bn(x)
 		x = self.dropout(x)
 		#add positional encoding
@@ -226,7 +227,6 @@ class signature_transformer(torch.nn.Module):
 		# proj to transformer input dim
 		x = self.input2transformer(x)
 		# Transformer expects (seq_len, batch, d_model), so add batch dim if needed
-		batch = x.batch if hasattr(x, 'batch') else None
 		if batch is not None:
 			num_graphs = batch.max().item() + 1
 			x_split = [x[batch == i] for i in range(num_graphs)]
@@ -243,12 +243,27 @@ class signature_transformer(torch.nn.Module):
 		out = x
 		for i in range(self.transformer_encoder.num_layers):
 			out = self.transformer_encoder.layers[i](out)
-			out = F.gelu(out)		
+			#layer norm and dropout
+			out = self.dropout(out)
+			out = F.gelu(out)
+			out = self.encoder_norms[i](out)
+
 		# Aggregate transformer outputs
 		#copy z
 		z = out.clone().detach()  # (batch, hidden_channels)
-		out = self.attn_agg(out)  # (batch, decoder_hidden)
+
+		# Apply attention-based aggregation on each batch element
+		if batch is not None:
+			agg_out = []
+			for i in range(num_graphs):
+				agg_out.append(self.attn_agg(out[:, i, :]))
+			out = torch.stack(agg_out, dim=0)  # (num_graphs, decoder_hidden)
+			
+		else:
+			out = self.attn_agg(out)  # (1, decoder_hidden)
+		# Project to output space
 		vec = self.vec_out(out)  # (batch, out_channels)
+		
 		return {'jaccard_vec': vec, 'z': z}
 
 	def vec2weighted_minhash(self, vec):
@@ -311,7 +326,7 @@ class signature_transformer(torch.nn.Module):
 		for item in encoded_dataset:
 			identifier = item['identifier']
 			#query lsh forest for top_k nearest neighbors
-			neighbors = lsh.query(self.sig2weighted_minhash(self.forward(item)['jaccard_vec'])), top_k)
+			neighbors = lsh.query(self.sig2weighted_minhash(self.forward(item)['jaccard_vec']), top_k=top_k)
 			#pull hashes for neighbors
 			sigs = self.pull_hashes([identifier] + neighbors, sigfile=sigfile)
 			q_hash = sigs[identifier]
