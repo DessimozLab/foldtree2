@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 from Bio import PDB
 from Bio.PDB import PDBParser
+from foldtree2.src.chebconv import StableChebConv
 from scipy.spatial.distance import cdist
 EPS = 1e-15
 datadir = '../../datasets/foldtree2/'
@@ -127,6 +128,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage' :
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
+				if flavor == 'cheb':
+					layer[edge_type] = StableChebConv( (-1, -1) , hidden_channels[edge_type][i], out_channels = hidden_channels[edge_type][i] , K = 5  )
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -144,6 +147,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			lastlin = in_channels_orig['res']
 		else:
 			lastlin = Xdecoder_hidden[-1]
+
+		self.lastlin = lastlin
 
 		self.lin = torch.nn.Sequential(
 				torch.nn.Dropout(dropout),
@@ -226,19 +231,15 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if output_edge_logits == True:
 			self.output_edge_logits = True
 			self.edge_logits_mlp = torch.nn.Sequential(
-				torch.nn.Linear(2*lastlin, 256),
+				torch.nn.Linear(2*lastlin, 512),
+				torch.nn.GELU(),
+				torch.nn.Linear(512,512),
+				torch.nn.GELU(),
+				torch.nn.Linear(512,256),
 				torch.nn.GELU(),
 				torch.nn.Linear(256,256),
 				torch.nn.GELU(),
-				torch.nn.Linear(256,128),
-				torch.nn.GELU(),
-				torch.nn.Linear(128,64),
-				torch.nn.GELU(),
-				torch.nn.Linear(64,64),
-				torch.nn.GELU(),
-				torch.nn.Linear(64,64),
-				torch.nn.GELU(),
-				torch.nn.Linear(64, ncat),
+				torch.nn.Linear(256,ncat),
 				torch.nn.Sigmoid()
 			)
 		else:
@@ -300,7 +301,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			angles = angles * 2 * np.pi
 
 		if contact_pred_index is None:
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits }
+			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'z': z  }
 
 		else:
 			if self.contact_mlp is None:
@@ -319,7 +320,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles }
+		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'z': z  }
 
 
 class HeteroGAE_AA_Decoder(torch.nn.Module):
@@ -690,6 +691,8 @@ class MultiMonoDecoder(torch.nn.Module):
 	def __init__(self,  configs):
 		super().__init__()
 		self.decoders = torch.nn.ModuleDict()
+		self.configs = configs
+		#initialize decoders based on configs
 		for task in configs.keys():
 			print(f"Initializing decoder for task: {task}")
 			print( task == 'sequence' , task == 'sequence_transformer' , task == 'contacts' , task == 'geometry' , task == 'foldx')
