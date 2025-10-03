@@ -22,10 +22,11 @@ import foldtree2.src.foldtree2_ecddcd as ft2
 
 def parse_args():
 	parser = argparse.ArgumentParser(description="Generate substitution matrices and run alignments.")
-	parser.add_argument('--modelname', type=str, default='small5_geo_graph', help='Model name to load')
+	parser.add_argument('--modelname', type=str, default=None, help='Model name to load')
 	parser.add_argument('--modeldir', type=str, default='models/', help='Directory containing model .pkl files')
 	parser.add_argument('--datadir', type=str, default='../../datasets/', help='Data directory')
 	parser.add_argument('--download_structs', action='store_true', help='Download structure members')
+	parser.add_argument('--convert_to_pyg', action='store_true', help='Convert PDBs to PyG format')
 	parser.add_argument('--nstructs', type=int, default=5, help='Number of structures to download per cluster representative')
 	parser.add_argument('--align_structs', action='store_true', help='Align structures with foldseek')
 	parser.add_argument('--encode_alns', action='store_true', help='Encode alignments')
@@ -35,6 +36,7 @@ def parse_args():
 	parser.add_argument('--dataset', type=str, default='structalignmk4.h5', help='Dataset name for structure encoding')
 	parser.add_argument('--fident_thresh', type=float, default=0.3, help ='Identity threshold for pair counts')
 	parser.add_argument('--rawcounts', action='store_true', help='Output raw pair counts to mafft matrix')
+
 	return parser.parse_args()
 
 def ensure_dirs(outdir_base):
@@ -47,7 +49,6 @@ def load_model(modeldir, modelname):
 	with open(os.path.join(modeldir, modelname + '.pkl'), 'rb') as f:
 		encoder, decoder = pickle.load(f)
 	return encoder, decoder
-
 
 def read_reps(datadir):
 	#check if reps file exists
@@ -80,9 +81,36 @@ def align_structs_fn(reps, datadir):
 			outpath=os.path.join(datadir, 'struct_align', rep, 'allvall.csv')
 		)
 
+def find_recursive_pdbs(folder):
+	#find all pdb files in folder and subfolders
+	pdbfiles = []
+	for root, dirs, files in os.walk(folder):
+		for file in files:
+			if file.endswith('.pdb') or file.endswith('.ent') or file.endswith('.pdb.gz'):
+				pdbfiles.append(os.path.join(root, file))
+	return pdbfiles
+
+def convert_to_pyg(dataset, out_h5, foldxdir=None ):
+	converter = PDB2PyG()
+	pdbfiles = find_recursive_pdbs(dataset)
+	print(f"Found {len(pdbfiles)} PDB files for conversion.")
+	if len(pdbfiles) == 0:
+		print("No PDB files found. Please check the dataset path.")
+		sys.exit(1)
+	converter.store_pyg(pdbfiles, filename=out_h5, foldxdir=foldxdir,  verbose=False)
+
 def encode_structures(encoder, modeldir, modelname, device, dataset):
 	from torch_geometric.data import DataLoader
-	struct_dat = StructureDataset(dataset)
+	if os.path.exists(os.path.join( dataset )):
+		print(f"Using existing dataset at {dataset}")
+		struct_dat = StructureDataset(dataset)
+	else:
+		#convert pdbs to pyg
+		print(f"Converting PDB files in {os.path.dirname(dataset)} to PyG format...")
+		convert_to_pyg(os.path.dirname(dataset), dataset)
+		struct_dat = StructureDataset(dataset)
+	
+	print(f"Loaded {len(struct_dat)} structures from {dataset}")
 	encoder_loader = DataLoader(struct_dat, batch_size=1, shuffle=False)
 	def databatch2list(loader):
 		for data in loader:
@@ -253,22 +281,18 @@ def main():
 		args.mafftmat = args.modelname + '_mafftmat.mtx'
 	if args.submat is None:
 		args.submat = args.modelname + '_submat.txt'
-	
-
-
+	if args.modelname is None:
+		print("Error: --modelname must be specified.")
+		sys.exit(1)
 	model = os.path.join(args.modeldir, args.modelname)
-	encoder = torch.load(model + '_encoder.pth', map_location=torch.device('cpu') , weights_only=False)
-	decoder = torch.load(model + '_decoder.pth', map_location=torch.device('cpu') , weights_only=False)
+	encoder = torch.load(model + '.pt', map_location=torch.device('cpu') , weights_only=False)
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	encoder = encoder.to(device)
-	decoder = decoder.to(device)
 	encoder.device = device
 
 	encoder.eval()
-	decoder.eval()
 	print(f"Using device: {device}")
 	print(encoder)
-	print(decoder)
 
 	print(encoder.num_embeddings)
 	outdir_base = args.modeldir
@@ -284,6 +308,10 @@ def main():
 		reps = read_reps(args.datadir)
 		print('reps', reps.head())
 		download_structs_fn(reps, args.datadir)
+	if args.convert_to_pyg:
+		print("Converting PDB files to PyG format...")
+		convert_to_pyg(os.path.join(args.datadir, 'struct_align'), args.dataset)
+		print(f"Converted PDB files saved to {args.dataset}")
 	if args.align_structs:
 		if reps is None:
 			reps = read_reps(args.datadir)
@@ -293,10 +321,8 @@ def main():
 		sys.exit(1)
 	device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 	encoder = encoder.to(device)
-	decoder = decoder.to(device)
 	encoder.device = device
 	encoder.eval()
-	decoder.eval()
 	print(f"Using device: {device}")
 	if args.encode_alns:
 		print("Encoding alignment structures...")
