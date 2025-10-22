@@ -94,7 +94,7 @@ def grab_struct(uniID, structfolder, rejected = None, overwrite=False):
 	#try:https://alphafold.ebi.ac.uk/files/AF-Q8VCK6-F1-model_v4.pdb
 
 	prefix = 'https://alphafold.ebi.ac.uk/files/AF-'
-	post = '-F1-model_v4.pdb'
+	post = '-F1-model_v6.pdb'
 	url = prefix+uniID.upper().strip()+post
 
 

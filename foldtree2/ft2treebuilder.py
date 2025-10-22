@@ -59,8 +59,7 @@ class treebuilder():
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		#load pickled model
 		self.model = model
-		self.encoder = torch.load(model + '_encoder.pth', map_location=torch.device('cpu') , weights_only=False)
-		self.decoder = torch.load(model + '_decoder.pth', map_location=torch.device('cpu') , weights_only=False)
+		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
 
 		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
@@ -73,11 +72,9 @@ class treebuilder():
 		else:
 			self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 			self.encoder = self.encoder.to(self.device)
-			self.decoder = self.decoder.to(self.device)
 			self.encoder.device = self.device
 		
 		self.encoder.eval()
-		self.decoder.eval()
 		
 
 		#load the mafftmat and submat matrices
@@ -566,17 +563,16 @@ def main():
 		print('Model path is required. Use --model to specify the model path.')
 		sys.exit(1)
 
-	modelpath = os.path.join( args.modeldir, args.model )
+	modelpath = os.path.join( args.modeldir, args.model + '.pt' )
+	print('Using model path:', modelpath)
 	#check pth files exist
-	if not os.path.exists(modelpath + '_encoder.pth') or not os.path.exists(modelpath + '_decoder.pth'):
+	if not os.path.exists(modelpath):
 		print(f"Model files not found in {args.modeldir}. Please ensure the model files are present.")
 		sys.exit(1)
 
 	if args.structures is None:
 		print('Structures glob pattern is required. Use --structures to specify the glob pattern.')
 		sys.exit(1)
-
-
 
 	if args.structures[-1] == '/':
 		args.structures += '*.pdb'
@@ -599,7 +595,6 @@ def main():
 	if args.charmaps is None:
 		args.charmaps = os.path.join(args.modeldir, args.model + '_pair_counts.pkl')
 	
-
 	# Example usage:
 	# Run the script from the command line with:
 	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral

@@ -30,24 +30,24 @@ writer = SummaryWriter()
 parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoders for sequence and geometry prediction')
 parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
                     help='Path to the dataset file (default: structs_traininffttest.h5)')
-parser.add_argument('--hidden-size', '-hs', type=int, default=100,
-                    help='Hidden layer size (default: 100)')
-parser.add_argument('--epochs', '-e', type=int, default=20,
-                    help='Number of epochs for training (default: 20)')
+parser.add_argument('--hidden-size', '-hs', type=int, default=256,
+                    help='Hidden layer size (default: 256)')
+parser.add_argument('--epochs', '-e', type=int, default=100,
+                    help='Number of epochs for training (default: 100)')
 parser.add_argument('--device', type=str, default=None,
                     help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
-parser.add_argument('--learning-rate', '-lr', type=float, default=0.0001,
-                    help='Learning rate (default: 0.0001)')
-parser.add_argument('--batch-size', '-bs', type=int, default=5,
-                    help='Batch size (default: 5)')
+parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
+                    help='Learning rate (default: 1e-4)')
+parser.add_argument('--batch-size', '-bs', type=int, default=20,
+                    help='Batch size (default: 20)')
 parser.add_argument('--output-dir', '-o', type=str, default='./models/',
                     help='Directory to save models/results (default: ./models/)')
 parser.add_argument('--model-name', type=str, default='monodecoder_model',
                     help='Model name for saving (default: monodecoder_model)')
 parser.add_argument('--num-embeddings', type=int, default=40,
                     help='Number of embeddings for the encoder (default: 40)')
-parser.add_argument('--embedding-dim', type=int, default=20,
-                    help='Embedding dimension for the encoder (default: 20)')
+parser.add_argument('--embedding-dim', type=int, default=128,
+                    help='Embedding dimension for the encoder (default: 128)')
 parser.add_argument('--se3-transformer', action='store_true',
                     help='Use SE3Transformer instead of GNN')
 parser.add_argument('--overwrite', action='store_true',
@@ -135,7 +135,7 @@ if os.path.exists(args.output_dir) and args.overwrite:
 # Data setup
 datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
-converter = pdbgraph.PDB2PyG(aapropcsv='config/aaindex1.csv')
+converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
 struct_dat = pdbgraph.StructureDataset(dataset_path)
 train_loader = DataLoader(struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=4)
 data_sample = next(iter(train_loader))
@@ -154,10 +154,12 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.00001
-xweight = .1
+edgeweight = 0.05
+logitweight = 0.08
+xweight = 0.1
 fft2weight = 0.01
-vqweight = 0.000001
+vqweight = 0.001
+angles_weight = 0.001
 
 # Create output directory
 modeldir = args.output_dir
@@ -209,7 +211,7 @@ else:
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=args.EMA,
-            nheads=5,
+            nheads=8,
             dropout_p=0.01,
             reset_codes=False,
             flavor='transformer',
@@ -237,40 +239,57 @@ else:
     else:
         # MultiMonoDecoder for sequence and geometry
         mono_configs = {
-      
             'sequence_transformer': {
                 'in_channels': {'res': args.embedding_dim},
                 'xdim': 20,
                 'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3 , ('res','backbonerev','res'): [hidden_size]*3},
-                'layers': 1,
+                'hidden_channels': {
+                    ('res','backbone','res'): [hidden_size*2], 
+                    ('res','backbonerev','res'): [hidden_size*2]
+                },
+                'layers': 2,
                 'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
                 'amino_mapper': converter.aaindex,
                 'flavor': 'sage',
-                'nheads': 1,
+                'nheads': 4,
                 'dropout': 0.005,
                 'normalize': False,
                 'residual': False
             },
+            
             'contacts': {
-                'in_channels': {'res': args.embedding_dim , 'godnode4decoder': ndim_godnode, 'foldx': 23 ,  'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': False,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*4, ('res','backbonerev','res'): [hidden_size]*4, ('res','informs','godnode4decoder'): [hidden_size]*4 , ('godnode4decoder','informs','res'): [hidden_size]*4},
-                'layers': 3,
+                'in_channels': {
+                    'res': args.embedding_dim, 
+                    'godnode4decoder': ndim_godnode, 
+                    'foldx': 23,
+                    'fft2r': ndim_fft2r, 
+                    'fft2i': ndim_fft2i
+                },
+                'concat_positions': True,
+                'hidden_channels': {
+                    ('res','backbone','res'): [hidden_size]*8, 
+                    ('res','backbonerev','res'): [hidden_size]*8, 
+                    ('res','informs','godnode4decoder'): [hidden_size]*8, 
+                    ('godnode4decoder','informs','res'): [hidden_size]*8
+                },
+                'layers': 4,
                 'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],
-                'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
+                'contactdecoder_hidden': [hidden_size//4, hidden_size//8],
+                'anglesdecoder_hidden': [hidden_size//2, hidden_size//2],
                 'nheads': 1,
-                'Xdecoder_hidden': [hidden_size, hidden_size,  hidden_size ],
+                'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
                 'metadata': converter.metadata,
-                'flavor': 'mfconv',
+                'flavor': 'sage',
                 'dropout': 0.005,
                 'output_fft': False,
-                'output_rt':False,
+                'output_rt': False,
+                'output_angles': False,
                 'normalize': True,
                 'residual': False,
-                'contact_mlp': True
-
-            }
+                'contact_mlp': False,
+                'ncat': 16,
+                'output_edge_logits': True
+            },
         }
         if args.output_foldx:
             mono_configs['foldx'] = {
@@ -338,7 +357,7 @@ print("Decoder:", decoder)
 
 # Training setup
 optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.000001)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=3, min_lr=1e-6)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
 
 # Function to analyze gradient norms
 def analyze_gradient_norms(model, top_k=3):
@@ -408,7 +427,9 @@ for epoch in range(args.epochs):
     total_loss_x = 0
     total_loss_edge = 0
     total_vq = 0
-    total_fft2_loss = 0
+    total_angles_loss = 0
+    total_loss_fft2 = 0
+    total_logit_loss = 0
     
     for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
         data = data.to(device)
@@ -425,10 +446,14 @@ for epoch in range(args.epochs):
         recon_x = out['aa'] if 'aa' in out else None
         fft2_x = out['fft2pred'] if 'fft2pred' in out else None
         
-        # Edge loss
+        # Edge loss: use contactPoints if available
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
+        logitloss = torch.tensor(0.0, device=device)
         if edge_index is not None:
-            edgeloss, _ = recon_loss_diag(data, edge_index, decoder, plddt=False, offdiag=False, key='edge_probs')
+            edgeloss, logitloss = recon_loss_diag(
+                data, edge_index, decoder, 
+                plddt=False, offdiag=False, key='edge_probs'
+            )
         else:
             edgeloss = torch.tensor(0.0, device=device)
         
@@ -437,21 +462,23 @@ for epoch in range(args.epochs):
         
         # FFT2 loss if available
         if fft2_x is not None:
-            #create complex tensor from real and imaginary parts
-            F_hat = torch.complex(fft2_x[:, :ndim_fft2r], fft2_x[:, ndim_fft2r:])
-            F = torch.complex(data['fourier2dr'].x, data['fourier2di'].x)
-            mag_loss = torch.mean(torch.abs((torch.abs(F_hat) - torch.abs(F))))
-            phase_loss = torch.mean(torch.abs((torch.angle(F_hat) - torch.angle(F))))
-            fft2loss = mag_loss + phase_loss
-            #fft2loss = F.smooth_l1_loss(
-            #    torch.cat([data['fourier2dr'].x, data['fourier2di'].x], dim=1),
-            #    fft2_x
-            #)
+            fft2loss = F.smooth_l1_loss(
+                torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), 
+                fft2_x
+            )
         else:
             fft2loss = torch.tensor(0.0, device=device)
+        
+        # Angles loss
+        angles_loss = torch.tensor(0.0, device=device)
+        if 'angles' in out and out['angles'] is not None:
+            angles = out['angles']
+            angles_loss = F.smooth_l1_loss(angles, data['bondangles'].x)
     
         # Total loss
-        loss = xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + fft2weight * fft2loss
+        loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                fft2loss * fft2weight + angles_loss * angles_weight + 
+                logitloss * logitweight)
         
         # Backward and optimize
         loss.backward()
@@ -464,24 +491,32 @@ for epoch in range(args.epochs):
         
         # Accumulate metrics
         total_loss_x += xloss.item()
+        total_logit_loss += logitloss.item()
         total_loss_edge += edgeloss.item()
+        total_loss_fft2 += fft2loss.item()
+        total_angles_loss += angles_loss.item()
         total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
-        total_fft2_loss += fft2loss.item() if isinstance(fft2loss, torch.Tensor) else float(fft2loss)
     
     # Calculate average losses
     avg_loss_x = total_loss_x / len(train_loader)
     avg_loss_edge = total_loss_edge / len(train_loader)
     avg_loss_vq = total_vq / len(train_loader)
-    avg_loss_fft2 = total_fft2_loss / len(train_loader)
-    avg_total_loss = avg_loss_x + avg_loss_edge + avg_loss_vq + avg_loss_fft2
+    avg_loss_fft2 = total_loss_fft2 / len(train_loader)
+    avg_angles_loss = total_angles_loss / len(train_loader)
+    avg_logit_loss = total_logit_loss / len(train_loader)
+    avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
+                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss)
     
     # Update learning rate
-    scheduler.step(avg_total_loss)
+    scheduler.step(avg_loss_x)
     
     # Print metrics
-    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, Edge Loss: {avg_loss_edge:.4f}, "
-          f"VQ Loss: {avg_loss_vq:.4f}, FFT2 Loss: {avg_loss_fft2:.4f}")
-    print(f"Total Loss: {avg_total_loss:.4f}, LR: {optimizer.param_groups[0]['lr']:.6f}")
+    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
+          f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
+          f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
+          f"Logit Loss: {avg_logit_loss:.4f}")
+    print(f"Total Loss: {avg_total_loss:.4f}, "
+          f"LR: {optimizer.param_groups[0]['lr']:.6f}")
     
     #if avg_loss_edge > avg_loss_x:
     #    edgeweight *= 1.5
@@ -499,6 +534,8 @@ for epoch in range(args.epochs):
     writer.add_scalar('Loss/Edge', avg_loss_edge, epoch)
     writer.add_scalar('Loss/VQ', avg_loss_vq, epoch)
     writer.add_scalar('Loss/FFT2', avg_loss_fft2, epoch)
+    writer.add_scalar('Loss/Angles', avg_angles_loss, epoch)
+    writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
     writer.add_scalar('Loss/Total', avg_total_loss, epoch)
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
     
@@ -511,15 +548,16 @@ for epoch in range(args.epochs):
     
     # Save checkpoint every 10 epochs
     if (epoch + 1) % 10 == 0:
-        with open(os.path.join(modeldir, f"{modelname}_epoch{epoch+1}.pkl"), 'wb') as f:
-            pickle.dump((encoder, decoder), f)
+        #with open(os.path.join(modeldir, f"{modelname}_epoch{epoch+1}.pkl"), 'wb') as f:
+        #    pickle.dump((encoder, decoder), f)
         #save pth 
-        torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_epoch{epoch+1}.pth"))
-        torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_epoch{epoch+1}.pth"))
-# Save final model
-with open(os.path.join(modeldir, modelname + '.pkl'), 'wb') as f:
-    pickle.dump((encoder, decoder), f)
-torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_final.pth"))
-torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pth"))
+        torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_epoch{epoch+1}.pt"))
+        torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_epoch{epoch+1}.pt"))
 
-print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')} and .pth files: {os.path.join(modeldir, f'{modelname}_encoder_final.pth')} , {os.path.join(modeldir, f'{modelname}_decoder_final.pth')}")")
+# Save final model
+#with open(os.path.join(modeldir, modelname + '.pkl'), 'wb') as f:
+#    pickle.dump((encoder, decoder), f)
+torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_final.pt"))
+torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pt"))
+
+print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')}")

@@ -4,6 +4,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
 from foldtree2.src import foldtree2_ecddcd as ft2
+from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
 import tqdm
@@ -21,26 +22,26 @@ writer = SummaryWriter()
 
 # Argument parsing
 parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoder for sequence and geometry prediction (Lightning version)')
-parser.add_argument('--dataset', '-d', type=str, default='structs_training_godnodemk5.h5',
-                    help='Path to the dataset file (default: structs_training_godnodemk5.h5)')
-parser.add_argument('--hidden-size', '-hs', type=int, default=100,
-                    help='Hidden layer size (default: 100)')
-parser.add_argument('--epochs', '-e', type=int, default=20,
-                    help='Number of epochs for training (default: 20)')
+parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
+                    help='Path to the dataset file (default: structs_traininffttest.h5)')
+parser.add_argument('--hidden-size', '-hs', type=int, default=256,
+                    help='Hidden layer size (default: 256)')
+parser.add_argument('--epochs', '-e', type=int, default=100,
+                    help='Number of epochs for training (default: 100)')
 parser.add_argument('--device', type=str, default=None,
                     help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
-parser.add_argument('--learning-rate', '-lr', type=float, default=0.0001,
-                    help='Learning rate (default: 0.0001)')
-parser.add_argument('--batch-size', '-bs', type=int, default=5,
-                    help='Batch size (default: 5)')
+parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
+                    help='Learning rate (default: 1e-4)')
+parser.add_argument('--batch-size', '-bs', type=int, default=20,
+                    help='Batch size (default: 20)')
 parser.add_argument('--output-dir', '-o', type=str, default='./models/',
                     help='Directory to save models/results (default: ./models/)')
 parser.add_argument('--model-name', type=str, default='lightning_monodecoder',
                     help='Model name for saving (default: lightning_monodecoder)')
 parser.add_argument('--num-embeddings', type=int, default=40,
                     help='Number of embeddings for the encoder (default: 40)')
-parser.add_argument('--embedding-dim', type=int, default=20,
-                    help='Embedding dimension for the encoder (default: 20)')
+parser.add_argument('--embedding-dim', type=int, default=128,
+                    help='Embedding dimension for the encoder (default: 128)')
 parser.add_argument('--overwrite', action='store_true', help='Overwrite saved model if exists, otherwise continue training')
 parser.add_argument('--output-fft', action='store_true', help='Train the model with FFT output')
 parser.add_argument('--output-rt', action='store_true', help='Train the model with rotation and translation output')
@@ -75,7 +76,7 @@ torch.backends.cudnn.benchmark = False
 
 # Data setup
 dataset_path = args.dataset
-converter = pdbgraph.PDB2PyG(aapropcsv='config/aaindex1.csv')
+converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
 struct_dat = pdbgraph.StructureDataset(dataset_path)
 train_loader = DataLoader(struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=4)
 data_sample = next(iter(train_loader))
@@ -94,10 +95,12 @@ ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
 # Loss weights
-edgeweight = 0.001
-xweight = .1
-fft2weight = 0.001
-vqweight = 0.01
+edgeweight = 0.05
+logitweight = 0.08
+xweight = 0.1
+fft2weight = 0.01
+vqweight = 0.001
+angles_weight = 0.001
 
 # Create output directory
 modeldir = args.output_dir
@@ -115,16 +118,16 @@ else:
     hidden_size = args.hidden_size
     encoder = ft2.mk1_Encoder(
         in_channels=ndim,
-        hidden_channels=[hidden_size, hidden_size, hidden_size],
+        hidden_channels=[hidden_size, hidden_size],
         out_channels=args.embedding_dim,
-        metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
+        metadata={'edge_types': [('res', 'contactPoints', 'res')]},
         num_embeddings=args.num_embeddings,
         commitment_cost=0.9,
         edge_dim=1,
         encoder_hidden=hidden_size,
         EMA=True,
-        nheads=5,
-        dropout_p=0.005,
+        nheads=8,
+        dropout_p=0.01,
         reset_codes=False,
         flavor='transformer',
         fftin=True
@@ -133,42 +136,55 @@ else:
     mono_configs = {
         'sequence_transformer': {
             'in_channels': {'res': args.embedding_dim},
-            'xdim': 20,  # 20 amino acids
+            'xdim': 20,
             'concat_positions': True,
-            'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3},
-            'layers': 3,
+            'hidden_channels': {
+                ('res', 'backbone', 'res'): [hidden_size*2],
+                ('res', 'backbonerev', 'res'): [hidden_size*2]
+            },
+            'layers': 2,
             'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-            'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
-            'contactdecoder_hidden': [hidden_size//2, hidden_size//2],
-            'nheads': 5,
             'amino_mapper': converter.aaindex,
             'flavor': 'sage',
+            'nheads': 4,
             'dropout': 0.005,
-            'normalize': True,
-            'residual': False,
-            'contact_mlp': True
+            'normalize': False,
+            'residual': False
         },
+        
         'contacts': {
-            'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 
-                           'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+            'in_channels': {
+                'res': args.embedding_dim, 
+                'godnode4decoder': ndim_godnode, 
+                'foldx': 23,
+                'fft2r': ndim_fft2r, 
+                'fft2i': ndim_fft2i
+            },
             'concat_positions': True,
-            'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3, 
-                               ('res','informs','godnode4decoder'): [hidden_size]*3, 
-                               ('godnode4decoder','informs','res'): [hidden_size]*3},
-            'layers': 3,
-            'FFT2decoder_hidden': [hidden_size*2, hidden_size*2],
-            'contactdecoder_hidden': [hidden_size, hidden_size//2],
-            'nheads': 2,
+            'hidden_channels': {
+                ('res', 'backbone', 'res'): [hidden_size]*8,
+                ('res', 'backbonerev', 'res'): [hidden_size]*8,
+                ('res', 'informs', 'godnode4decoder'): [hidden_size]*8,
+                ('godnode4decoder', 'informs', 'res'): [hidden_size]*8
+            },
+            'layers': 4,
+            'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],
+            'contactdecoder_hidden': [hidden_size//4, hidden_size//8],
+            'anglesdecoder_hidden': [hidden_size//2, hidden_size//2],
+            'nheads': 1,
             'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
             'metadata': converter.metadata,
             'flavor': 'sage',
             'dropout': 0.005,
-            'output_fft': args.output_fft,
-            'output_rt': args.output_rt,
+            'output_fft': False,
+            'output_rt': False,
+            'output_angles': False,
             'normalize': True,
             'residual': False,
-            'contact_mlp': True
-        }
+            'contact_mlp': False,
+            'ncat': 16,
+            'output_edge_logits': True
+        },
     }
     decoder = MultiMonoDecoder(configs=mono_configs)
 
@@ -179,8 +195,15 @@ print("Encoder:", encoder)
 print("Decoder:", decoder)
 
 # Training setup
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=10)
+optimizer = torch.optim.AdamW(
+    list(encoder.parameters()) + list(decoder.parameters()), 
+    lr=args.learning_rate
+)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, 
+    factor=0.5, 
+    patience=2
+)
 
 # Function to analyze gradient norms
 def analyze_gradient_norms(model, top_k=3):
@@ -239,7 +262,9 @@ for epoch in range(args.epochs):
     total_loss_x = 0
     total_loss_edge = 0
     total_vq = 0
-    total_fft2_loss = 0
+    total_angles_loss = 0
+    total_loss_fft2 = 0
+    total_logit_loss = 0
     total_loss = 0
     for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
         data = data.to(device)
@@ -252,25 +277,38 @@ for epoch in range(args.epochs):
         # Get outputs
         recon_x = out['aa'] if 'aa' in out else None
         fft2_x = out['fft2pred'] if 'fft2pred' in out else None
-        # Edge loss
+        # Edge loss: use contactPoints if available
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
+        logitloss = torch.tensor(0.0, device=device)
         if edge_index is not None:
-            edgeloss, _ = ft2.recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
+            edgeloss, logitloss = recon_loss_diag(
+                data, edge_index, decoder, 
+                plddt=False, offdiag=False, key='edge_probs'
+            )
         else:
             edgeloss = torch.tensor(0.0, device=device)
+        
         # Amino acid reconstruction loss
-        xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+        xloss = aa_reconstruction_loss(data['AA'].x, recon_x)
         # FFT2 loss if available
         if fft2_x is not None:
-            F_hat = torch.complex(fft2_x[:, :ndim_fft2r], fft2_x[:, ndim_fft2r:])
-            F = torch.complex(data['fourier2dr'].x, data['fourier2di'].x)
-            mag_loss = torch.mean(torch.abs((torch.abs(F_hat) - torch.abs(F))))
-            phase_loss = torch.mean(torch.abs((torch.angle(F_hat) - torch.angle(F))))
-            fft2loss = mag_loss + phase_loss
+            fft2loss = F.smooth_l1_loss(
+                torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), 
+                fft2_x
+            )
         else:
             fft2loss = torch.tensor(0.0, device=device)
+        
+        # Angles loss
+        angles_loss = torch.tensor(0.0, device=device)
+        if 'angles' in out and out['angles'] is not None:
+            angles = out['angles']
+            angles_loss = F.smooth_l1_loss(angles, data['bondangles'].x)
+        
         # Total loss
-        loss = xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + fft2weight * fft2loss
+        loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                fft2loss * fft2weight + angles_loss * angles_weight + 
+                logitloss * logitweight)
         # Backward and optimize
         loss.backward()
         if clip_grad:
@@ -279,22 +317,30 @@ for epoch in range(args.epochs):
         optimizer.step()
         # Accumulate metrics
         total_loss_x += xloss.item()
+        total_logit_loss += logitloss.item()
         total_loss_edge += edgeloss.item()
-        total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
-        total_fft2_loss += fft2loss.item() if isinstance(fft2loss, torch.Tensor) else float(fft2loss)
+        total_loss_fft2 += fft2loss.item()
+        total_angles_loss += angles_loss.item()
+        total_vq += (vqloss.item() if isinstance(vqloss, torch.Tensor) 
+                     else float(vqloss))
         total_loss += loss.item()
     # Calculate average losses
     avg_loss_x = total_loss_x / len(train_loader)
     avg_loss_edge = total_loss_edge / len(train_loader)
     avg_loss_vq = total_vq / len(train_loader)
-    avg_loss_fft2 = total_fft2_loss / len(train_loader)
+    avg_loss_fft2 = total_loss_fft2 / len(train_loader)
+    avg_angles_loss = total_angles_loss / len(train_loader)
+    avg_logit_loss = total_logit_loss / len(train_loader)
     avg_total_loss = total_loss / len(train_loader)
     # Update learning rate
-    scheduler.step(avg_total_loss)
+    scheduler.step(avg_loss_x)
     # Print metrics
-    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, Edge Loss: {avg_loss_edge:.4f}, "
-          f"VQ Loss: {avg_loss_vq:.4f}, FFT2 Loss: {avg_loss_fft2:.4f}")
-    print(f"Total Loss: {avg_total_loss:.4f}, LR: {optimizer.param_groups[0]['lr']:.6f}")
+    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
+          f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
+          f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
+          f"Logit Loss: {avg_logit_loss:.4f}")
+    print(f"Total Loss: {avg_total_loss:.4f}, "
+          f"LR: {optimizer.param_groups[0]['lr']:.6f}")
     # Gradient analysis
     print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
     print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
@@ -303,6 +349,8 @@ for epoch in range(args.epochs):
     writer.add_scalar('Loss/Edge', avg_loss_edge, epoch)
     writer.add_scalar('Loss/VQ', avg_loss_vq, epoch)
     writer.add_scalar('Loss/FFT2', avg_loss_fft2, epoch)
+    writer.add_scalar('Loss/Angles', avg_angles_loss, epoch)
+    writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
     writer.add_scalar('Loss/Total', avg_total_loss, epoch)
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
     # Save best model

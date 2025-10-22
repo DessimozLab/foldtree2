@@ -43,63 +43,119 @@ FoldTree2 provides several command-line tools that are automatically installed a
 
 All tools include help documentation accessible with the `--help` flag.
 
-## Usage
+## Quick Start: Using Pretrained Models
 
-### 1. Convert PDBs to Graphs
-Convert a directory of PDB files into a graph HDF5 dataset:
-```bash
-pdbs-to-graphs <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
-```
+For most users, FoldTree2 provides pretrained models that can be used directly to infer phylogenetic trees from protein structures.
 
-### 2. Generate Substitution Matrices and Alignments
-Generate structure-based substitution matrices and alignments:
-```bash
-makesubmat --modelname <model_name> --modeldir models/ --datadir <data_dir> --outdir_base <results_dir> --dataset <input_graphs.h5> --encode_alns
-```
+### Basic Workflow
+Build phylogenetic trees from a folder of PDB structures using pretrained models:
 
-- `--modelname`: Name of the model to use (e.g., `small`)
-- `--modeldir`: Directory containing model `.pkl` files
-- `--datadir`: Directory with datasets and alignment files
-- `--outdir_base`: Output directory for results
-- `--dataset`: HDF5 file with graph data (from step 1)
-- `--encode_alns`: Encode alignments using the model
-
-### 3. Build Phylogenetic Trees
-Run the tree builder to infer a phylogenetic tree from encoded alignments:
 ```bash
 foldtree2 --model mergeddecoder_foldtree2_test \
   --structures <YOURSTRUCTUREFOLDER> \
-  --outdir <RESULTSFOLDER> \
+  --outdir <RESULTSFOLDER>
 ```
 
-## Training Custom Models
+This single command will:
+1. Convert PDB files to graph representations
+2. Use pretrained models to encode structural features
+3. Generate structure-based substitution matrices
+4. Create structural alignments
+5. Infer a maximum likelihood phylogenetic tree
 
-FoldTree2 supports training custom graph neural network models using datasets generated with `pdbgraph`.
+### Available Pretrained Models
+- `mergeddecoder_foldtree2_test`: General-purpose model for diverse protein structures
+- `small`: Lightweight model for smaller datasets
+- Additional models may be available in the `models/` directory
 
-### 1. Prepare Your Dataset
-First, convert your PDB files to a graph HDF5 dataset as described above:
+### Output Files
+The pipeline generates several output files in your results directory:
+- **Phylogenetic tree**: `.tre` files in Newick format
+- **Alignments**: `.aln` files showing structural alignments
+- **Substitution matrices**: Custom matrices based on structural similarity
+- **Log files**: Detailed information about the inference process
+
+## Advanced Usage: Training Custom Models
+
+For advanced users who want to train their own models or work with specialized datasets, FoldTree2 provides a complete training pipeline.
+
+### 1. Prepare Training Data
+Convert your PDB files to a graph HDF5 dataset suitable for training:
 ```bash
-pdbs-to-graphs <input_pdb_dir> <output_graphs.h5> --aapropcsv config/aaindex1.csv
+pdbs-to-graphs <input_pdb_dir> <training_graphs.h5> --aapropcsv config/aaindex1.csv
 ```
 
-### 2. Train a Model
-You can train a model using the provided training scripts (e.g., `learn.py` or `learn_lightning.py`). These scripts expect a graph HDF5 file as input.
+### 2. Train Custom Models
+FoldTree2 provides several training scripts with different features:
 
-Example command:
+#### Standard Training
 ```bash
-python learn.py --dataset <output_graphs.h5> --modelname <my_model> --epochs 50 --batch_size 8 --outdir ./models/
-```
+python learn_monodecoder.py \
+  --dataset <training_graphs.h5> \
+  --modelname <my_custom_model> \
+  --epochs 100 \
+  --batch-size 20 \
+  --hidden-size 256 \
+  --embedding-dim 128 \
+  --outdir ./models/
 
-- `--dataset`: Path to your HDF5 graph dataset (from pdbgraph)
+```
+See the complete list of options with `--help`.
+
+#### Lightning-based Training (Recommended)
+For advanced features like distributed training, automatic checkpointing, and logging:
+```bash
+python learn_lightning.py \
+  --dataset <training_graphs.h5> \
+  --modelname <my_lightning_model> \
+  --epochs 100 \
+  --batch-size 20 \
+  --learning-rate 1e-4 \
+  --outdir ./models/ \
+  --clip-grad
+```
+See the complete list of options with `--help`.
+
+#### Key Training Parameters
+- `--dataset`: Path to your HDF5 graph dataset
 - `--modelname`: Name for your trained model
-- `--epochs`: Number of training epochs
-- `--batch_size`: Batch size for training
-- `--outdir`: Directory to save the trained model and logs
+- `--epochs`: Number of training epochs (default: 100)
+- `--batch-size`: Training batch size (default: 20)
+- `--hidden-size`: Hidden layer dimensions (default: 256)
+- `--embedding-dim`: Embedding dimensions (default: 128)
+- `--learning-rate`: Learning rate (default: 1e-4)
+- `--clip-grad`: Enable gradient clipping for stability
 
-You can also use `learn_lightning.py` for PyTorch Lightning-based training, which supports advanced features like logging, checkpoints, and multi-GPU training.
+### 3. Generate Custom Substitution Matrices
+Create structure-based substitution matrices using your trained model:
+```bash
+makesubmat \
+  --modelname <my_custom_model> \
+  --modeldir ./models/ \
+  --datadir <data_dir> \
+  --outdir_base <results_dir> \
+  --dataset <input_graphs.h5> \
+  --encode_alns
+```
 
-### 3. Use Your Trained Model
-After training, your model will be saved as a `.pkl` file in the specified output directory. You can use this model in the FoldTree2 pipeline for encoding alignments and building trees, as shown in the workflow above.
+This script has utilities to download structures from the AFDB cluster database, align clusters as reference alignments using Foldseek, encode structures and derive substitution matrices.
+
+See the complete list of options with `--help`.
+
+### 4. Use Your Custom Model
+Once trained, use your custom model in the main pipeline:
+```bash
+foldtree2 --model <my_custom_model> \
+  --structures <YOURSTRUCTUREFOLDER> \
+  --outdir <RESULTSFOLDER>
+```
+
+### Training Tips
+- **GPU Acceleration**: Training is significantly faster with CUDA-enabled GPUs
+- **Dataset Size**: Larger, more diverse datasets generally produce better models
+- **Hyperparameter Tuning**: Experiment with different learning rates, batch sizes, and architectures
+- **Monitoring**: Use TensorBoard logs to monitor training progress
+- **Checkpointing**: Save model checkpoints regularly to resume training if interrupted
 
 ## Requirements
 - Python 3.7+

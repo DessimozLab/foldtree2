@@ -129,7 +129,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				if flavor == 'sage' :
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if flavor == 'cheb':
-					layer[edge_type] = StableChebConv( (-1, -1) , hidden_channels[edge_type][i], out_channels = hidden_channels[edge_type][i] , K = 5  )
+					layer[edge_type] = StableChebConv(in_channels = (-1, -1) ,hidden_channels = hidden_channels[edge_type][i], K=5)
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
