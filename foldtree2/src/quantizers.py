@@ -21,6 +21,13 @@ def kl_divergence_regularization(encodings):
 	kl_divergence = torch.sum(probabilities * torch.log(probabilities * probabilities.size(0) + 1e-10))
 	return kl_divergence
 
+def cosine_anneal(start, end, t, T):
+    """Cosine from start->end over T steps at step t (0-indexed)."""
+    if T <= 0: return end
+    c = 0.5 * (1 + math.cos(math.pi * min(max(t/T, 0.0), 1.0)))
+    return end + (start - end) * c
+
+
 class VectorQuantizerEMA(nn.Module):
 	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99):
 		super(VectorQuantizerEMA, self).__init__()
