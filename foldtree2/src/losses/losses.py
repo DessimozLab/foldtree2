@@ -186,20 +186,65 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		neg_loss = (neg_loss.squeeze() * nres.float()).unsqueeze(1)
 	
 	if plddt == True:
-		c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
-		c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
+		c1 = data['plddt'].x[neg_edge_index[0]].unsqueeze(1)
+		c2 = data['plddt'].x[neg_edge_index[1]].unsqueeze(1)
 		c1 = c1 > .5
 		c2 = c2 > .5
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D	
 		neg_loss = neg_loss[mask]
+
 	
 	neg_loss = neg_loss.mean()
-
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits' , no_bins=16) 
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits' , no_bins=16)
+
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
+
+def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor
+
+	for interaction_type in []:
+		# Remove the diagonal
+		pos_edge_index = data[f'{interaction_type}_edge_index']
+		res = decoder(data, pos_edge_index)
+
+		if key == None:
+			pos = res[1]
+		if key != None:
+			pos = res[key]
+		# Calculate distance from diagonal for positive edges
+		diag_dist = torch.abs(pos_edge_index[0] - pos_edge_index[1]).float()
+		# Normalize the distance weights to [1, 2] range - far edges get 2x weight
+		pos_weights = 1.0 + (diag_dist / diag_dist.max())
+		# Ensure consistent shapes for multiplication
+		pos_loss = -torch.log(pos + EPS).squeeze()
+		pos_loss = (pos_loss * pos_weights).unsqueeze(1)
+		if offdiag == True:
+			nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
+			nres = torch.clamp(nres, max=nclamp)
+			nres = nres / nclamp
+			pos_loss = (pos_loss.squeeze() * nres.float()).unsqueeze(1)
+		if plddt == True:
+			c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
+			c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
+			c1 = c1 > .5
+			c2 = c2 > .5
+			mask = c1 & c2
+			mask = mask.squeeze(1)  # Ensure mask is 1D
+			pos_loss = pos_loss[mask]
+		pos_loss = pos_loss.mean()
+		neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
+		
+		neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
+		res = decoder(data, neg_edge_index)
+
+		if key == None:
+			neg = res[1]
+		if key != None:
+			neg = res[key]
+		neg_loss = -torch.log((1 - neg) + EPS).squeeze()
+
 
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):

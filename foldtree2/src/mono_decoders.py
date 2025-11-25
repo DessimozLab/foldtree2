@@ -82,6 +82,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				output_fft = False,
 				output_rt = False,
 				output_angles = False,
+				output_ss = False,
 				normalize = True,
 				residual = True,
 				output_edge_logits = False,
@@ -171,9 +172,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			torch.nn.Tanh()
 		)
 		
-		if output_fft == True:
-
-			
+		if output_fft == True:	
 			self.godnodedecoder = torch.nn.Sequential(
 					torch.nn.Linear(in_channels['godnode4decoder'] , FFT2decoder_hidden[0]),
 					torch.nn.GELU(),
@@ -211,6 +210,22 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				torch.nn.Linear(RTdecoder_hidden[1], 7) )
 		else:
 			self.rt_mlp = None
+
+		if output_ss == True:
+			self.output_ss = True
+			self.ss_mlp = torch.nn.Sequential(
+				torch.nn.Linear(lastlin, 128),
+				torch.nn.GELU(),
+				torch.nn.Linear(128,64),
+				torch.nn.GELU(),
+				torch.nn.Linear(64,3),
+				torch.nn.LogSoftmax(dim=1)
+			)
+		else:
+			self.output_ss = False
+			self.ss_mlp = None
+
+
 
 		if output_angles == True:
 			if type(anglesdecoder_hidden) is not list:

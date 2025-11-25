@@ -142,21 +142,27 @@ class mk1_Encoder(torch.nn.Module):
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		self.jk = JumpingKnowledge(mode='cat')
 		self.fftin = fftin
+		self.in_channels = in_channels
 
-		if self.fftin == True:
-			in_channels = in_channels + 2 * 80
-
-		self.ffin = torch.nn.Sequential(
-			torch.nn.Linear(in_channels, hidden_channels[0] * 2 ),
+		self.inmlp = torch.nn.Sequential(
+			torch.nn.Linear(self.in_channels, hidden_channels[0] * 2 ),
 			torch.nn.GELU(),
 			torch.nn.Linear(hidden_channels[0] * 2 , hidden_channels[0]),
 			torch.nn.GELU(),
-			#DynamicTanh(hidden_channels[0] , channels_last = True),
 			)
+
+		if self.fftin == True:
+			self.ffin = torch.nn.Sequential(
+				torch.nn.Linear(2 * 80 , hidden_channels[0] * 2 ),
+				torch.nn.GELU(),
+				torch.nn.Linear(hidden_channels[0] * 2 , hidden_channels[0]),
+				torch.nn.GELU())
+		else:
+			self.ffin = None
 
 		for i in range(1,len(hidden_channels)):
 			if flavor == 'gat':
-				self.convs.append(
+				[self.convs.append(
 					torch.nn.ModuleDict({
 						'_'.join(edge_type): GATv2Conv(hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,
@@ -217,13 +223,16 @@ class mk1_Encoder(torch.nn.Module):
 		x_dict['res'] = self.bn(x_dict['res'])
 		if 'debug' in kwargs and kwargs['debug'] == True:
 			print( x_dict['res'].shape , 'x_dict[res] shape')
-		
-		if self.fftin == True:
-			x_dict['res'] = torch.cat([x_dict['res'], data['fourier1dr'].x , data['fourier1di'].x ], dim=1)
-		x = self.dropout(x_dict['res'])
+		xin = self.dropout(x_dict['res'])
 		x_save= []
 		# Apply the first layer
-		x = self.ffin(x)
+		x = self.inmlp(xin)		
+		#add fourier features if present
+		if self.fftin == True:
+			data['fourier1dr'].x = self.dropout(data['fourier1dr'].x)
+			data['fourier1di'].x = self.dropout(data['fourier1di'].x)
+			x+= self.ffin(torch.cat([data['fourier1dr'].x, data['fourier1di'].x], dim=1))
+
 		for i, convs in enumerate(self.convs):
 			# Apply the graph convolutions and average over all edge types
 			if edge_attr_dict is not None:

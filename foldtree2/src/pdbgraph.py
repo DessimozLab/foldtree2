@@ -23,6 +23,7 @@ from torch_geometric.utils import negative_sampling
 import os
 import urllib.request
 from urllib.error import HTTPError
+import prody as pr
 import pytorch_lightning as L
 import scipy.sparse
 import tqdm
@@ -43,6 +44,28 @@ from scipy.spatial.distance import cdist
 EPS = 1e-15
 datadir = '../../datasets/foldtree2/'
 
+
+## prody functions to load pdb and get interactions
+def load_structure(pdb_path: str,
+				   model_index: int = 0,
+				   atomsel: str = 'protein and not altloc B-Z') -> pr.AtomGroup:
+	res = pr.addMissingAtoms(pdb_path, method='openbabel')
+	print(res)
+	ag = pr.parsePDB(res)
+
+	#ag.addMissingAtoms()
+	atoms = ag.select('protein')
+	return atoms
+
+def get_interaction_object(ag: pr.AtomGroup ) -> pr.Interactions:
+	interaction_obj = pr.Interactions()
+	all_interactions = interaction_obj.calcProteinInteractions(ag)
+	return all_interactions , interaction_obj
+
+def interaction_matrix_energy(ag):
+	return pr.Interactions.buildInteractionMatrixEnergy(ag)
+
+
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
 	def __init__(self , aapropcsv = './foldtree2/config/aaindex1.csv'):
@@ -59,15 +82,10 @@ class PDB2PyG:
 		self.aaproperties = aaproperties
 		self.onehot = onehot
 		self.colmap = colmap
-		#self.aaproperties =  pl.from_pandas(aaproperties)
 		self.metadata = { 'edge_types': [ ('res','backbone', 'res') ,   ('res','contactPoints', 'res') , ('res','hbond', 'res') ] }
 		#self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
-		
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
-
-
-
 
 	@staticmethod
 	def read_pdb(filename):
@@ -242,7 +260,9 @@ class PDB2PyG:
 		if verbose:
 			print(output.shape)
 		mat =  pydssp.get_hbond_map(output[0])
-		return mat
+		ss = pydssp.assign(output[0], out_type='onehot')
+		return mat , ss
+	
 
 	#add the amino acid properties to the angles dataframe
 	#one hot encode the amino acid properties
@@ -435,9 +455,13 @@ class PDB2PyG:
 		else:
 			fft_2d = fft_2d[:, :1300]
 
-		fft1r, fft1i , fft2r , fft2i = np.real(fft_1d), np.real(np.sqrt(np.imag(fft_1d)**2)), np.real(fft_2d), np.real(np.sqrt(np.imag(fft_2d)**2))
-
-		return fft1r, fft1i, fft2r , fft2i
+		#fft1r, fft1i , fft2r , fft2i = np.real(fft_1d), np.real(np.sqrt(np.imag(fft_1d)**2)), np.real(fft_2d), np.real(np.sqrt(np.imag(fft_2d)**2))
+		#output the angle and magnitude
+		fft_m = np.abs(fft_1d)
+		fft_a = np.angle(fft_1d)
+		fft2_m = np.abs(fft_2d)
+		fft2_a = np.angle(fft_2d)
+		return fft_m, fft_a, fft2_m , fft2_a
 
 	@staticmethod
 	def read_foldx_file(file = None , foldxdir = None , pdb = None):
@@ -451,9 +475,32 @@ class PDB2PyG:
 			values = [ float( n ) for n in lines[ 1 : ] ]
 		return pdb, values
 
+	@staticmethod
+	def get_prody_interactions(
+		pdb_path: str,
+		model_index: int = 0,
+		interaction_types = ['SBs', 'RIB', 'HBs', 'PiCat', 'HPh', 'DiBs']):
+
+		try:
+			ag = load_structure(pdb_path, model_index)
+			allinteractions, interactionobj = get_interaction_object(ag)
+			matrices = {}
+			for interaction_type in interaction_types:
+				params = {tp:0 for tp in interaction_types}
+				params[interaction_type] = 1
+				interaction_matrix = interactionobj.buildInteractionMatrix(**params)
+				sparse_matrix = scipy.sparse.csr_matrix(interaction_matrix)
+				matrices[interaction_type] = sparse_matrix
+			ematrix = interactionobj.buildInteractionMatrixEnergy()#energy_list_type='CS' )
+			sparse_ematrix = scipy.sparse.csr_matrix(ematrix)
+			matrices['Energy'] = sparse_ematrix
+			return matrices
+		except Exception as e:
+			#print exception and return none
+			print( 'prody error:' ,  str( e ))
+			return None
 	#create features from a monomer pdb file
-	
-	def create_features(self, monomerpdb, distance = 8, verbose = False , foldxdir = None):
+	def create_features(self, monomerpdb, distance = 8, verbose = False , foldxdir = None , add_prody = False):
 		if type(monomerpdb) == str:    
 			chain = self.read_pdb(monomerpdb)[0]
 		else:
@@ -496,13 +543,17 @@ class PDB2PyG:
 			plt.imshow(contact_points)
 			plt.colorbar()
 			plt.show()
-		hbond_mat = np.array(self.ret_hbonds(chain, verbose))
+		
+		hbond_mat , ss  = self.ret_hbonds(chain, verbose)
+		hbond_mat = np.array(hbond_mat)
+
 		if verbose:
 			print('hbond' , hbond_mat.shape)
 			plt.imshow(hbond_mat)
 			plt.colorbar()
 			plt.show()
-
+			plt.spy(ss)
+			plt.show()
 		#return the angles, amino acid properties, contact points, and hydrogen bonds
 		#backbone is just the amino acid chain
 		backbone , backbone_rev = self.get_backbone(chain)
@@ -535,7 +586,6 @@ class PDB2PyG:
 
 		#change the contac matrices to sparse matrices
 		contact_points = sparse.csr_matrix(contact_points)
-		#springmat = sparse.csr_matrix(springmat)
 		
 		backbone = sparse.csr_matrix(backbone)
 		backbone_rev = sparse.csr_matrix(backbone)
@@ -561,7 +611,17 @@ class PDB2PyG:
 		else:
 			foldx_vals = None
 
-		return angles, contact_points, 0 , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev
+		prodymats = None
+		if add_prody == True:
+			prodymats = self.get_prody_interactions(monomerpdb)
+			for key in prodymats:
+				if verbose:
+					print(f'prody {key}' , prodymats[key].shape)
+					plt.imshow(prodymats[key].toarray())
+					plt.colorbar()
+					plt.show()
+
+		return angles, contact_points, ss , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev , prodymats
 
 	def extract_pdb_coordinates(self, pdb_file, atom_type="CA"):
 		"""
@@ -662,12 +722,12 @@ class PDB2PyG:
 		data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
 		return data
 		
-	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False):
+	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False , add_prody = False):
 		data = HeteroData()
 		#transform a structure chain into a pytorch geometric graph
 		#get the adjacency matrices
 		#try:
-		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir)
+		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir, add_prody = add_prody)
 		try:
 			fft1r, fft1i, fft2r , fft2i  = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
 			#transform the ffts into tensors
@@ -682,7 +742,7 @@ class PDB2PyG:
 		#except:
 		#	return None
 		if xdata is not None:
-			angles, contact_points, springmat , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords , window , window_rev = xdata
+			angles, contact_points, ss , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords , window , window_rev , prodymats = xdata
 		else:
 			return None
 		if len(angles) ==0:
@@ -730,9 +790,9 @@ class PDB2PyG:
 		
 		data[ 'fourier2dr'].x = torch.tensor(fft2r, dtype=torch.float32)
 		data[ 'fourier2di'].x = torch.tensor(fft2i, dtype=torch.float32)
-		
-		
+		data['ss'].x = torch.tensor(ss, dtype=torch.float32)
 
+		#add god node with feature 1
 		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
 		#get the edge features
@@ -742,10 +802,16 @@ class PDB2PyG:
 		data['res','hbond', 'res'].edge_attr = torch.tensor(hbond_mat.data, dtype=torch.float)
 		data['res','window', 'res'].edge_attr = torch.tensor(window.data, dtype=torch.float32)
 		data['res','windowrev', 'res'].edge_attr = torch.tensor(window_rev.data, dtype=torch.float32)
+		
+		if prodymats is not None:
+			for key in prodymats:
+				edge_index = self.sparse2pairs(prodymats[key])
+				data['res', f'prody_{key}', 'res'].edge_index = torch.tensor(edge_index, dtype=torch.long)
+				data['res', f'prody_{key}', 'res'].edge_attr = torch.tensor(prodymats[key].data, dtype=torch.float32)
+			
 
 		#fully_connected = sparse.csr_matrix(np.ones((len(angles), len(angles))))
-		#data['res','fullyconnected','res'].edge_index = torch.tensor(self.sparse2pairs(fully_connected), dtype=torch.long)
-		#data['res','springMat', 'res'].edge_attr = torch.tensor(springmat.data, dtype=torch.float32)
+		
 		
 		backbone = self.sparse2pairs(backbone)
 		backbone_rev = self.sparse2pairs(backbone_rev)
@@ -753,7 +819,7 @@ class PDB2PyG:
 		hbond_mat = self.sparse2pairs(hbond_mat)
 		window = self.sparse2pairs(window)
 		window_rev = self.sparse2pairs(window_rev)
-		#springmat = self.sparse2pairs(springmat)
+		
 
 		#get the adjacency matrices into tensors
 		data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
@@ -800,21 +866,22 @@ class PDB2PyG:
 
 		return data
 
-	def process_single_pdb(args, **kwargs):
+	def process_single_pdb(self,pdb,**keywargs):
 		"""Process a single PDB file."""
-		pdb_file, foldxdir, include_chain = args
 		# Create a new instance of PDB2PyG for this process
-		converter = PDB2PyG()
-		hetero_data = converter.struct2pyg(pdb_file, foldxdir=foldxdir, include_chain=include_chain)
-		return (hetero_data, pdb_file, None)
-		#except Exception as e:
-		#	return (None, pdb_file, str(e))
+		try:
+			converter = PDB2PyG()	
+			hetero_data = converter.struct2pyg(pdb,  **keywargs)
+			return (hetero_data, pdb, None)
+		except Exception as e:
+			return (None, pdb, str(e))
 
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg_mp(self, pdbfiles, filename, foldxdir=None, verbose=True, ncpu=4):
+	def store_pyg_mp(self, pdbfiles, filename, verbose=True, ncpu=4, **kwargs):
 		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
 		# Prepare arguments for multiprocessing
-		args_list = [(pdb_file, foldxdir) for pdb_file in pdbfiles]
+		args_list = [pdb_file for pdb_file in pdbfiles]
+		print(kwargs)
 		# Process files in parallel and write to HDF5 as they complete
 		with h5py.File(filename, mode='w') as f:
 			structs_group = f.create_group('structs')
@@ -822,7 +889,7 @@ class PDB2PyG:
 				failed_files = []
 				successful_count = 0
 				# Submit all tasks and get futures
-				futures = [pool.schedule(self.process_single_pdb, args=(arg,), timeout=1000) for arg in args_list]
+				futures = [pool.schedule(self.process_single_pdb, args=(arg,), kwargs=kwargs, timeout=100) for arg in args_list]
 				# Process results as they complete
 				for future in tqdm.tqdm(futures, total=len(pdbfiles), desc="Processing and storing PDB files"):
 					try:
@@ -898,14 +965,14 @@ class PDB2PyG:
 
 	
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, verbose = True ):
+	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, add_prody = False, verbose = True ):
 		with h5py.File(filename , mode = 'w') as f:
 			for pdbfile in  tqdm.tqdm( pdbfiles ):                    
 				if verbose:
 					print(pdbfile)
 				hetero_data = None
 				try:
-					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain )
+					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain , verbose = verbose , add_prody = add_prody)
 					if hetero_data:
 						identifier = hetero_data.identifier
 						f.create_group(identifier)
@@ -919,7 +986,6 @@ class PDB2PyG:
 							edge_group = f.create_group(f'structs/{identifier}/edge/{edge_type[0]}_{edge_type[1]}_{edge_type[2]}')
 							if hetero_data[edge_type].edge_index is not None:
 								edge_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
-							
 							# If there are edge features, save them too
 							if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
 								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
