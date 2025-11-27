@@ -125,12 +125,12 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					layer[edge_type] =  GATv2Conv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False	)
 				if flavor == 'mfconv':
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'max' )
-				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
+				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder') or edge_type == ('godnode4decoder','informs','res'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
 				if flavor == 'sage' :
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if flavor == 'cheb':
-					layer[edge_type] = StableChebConv(in_channels = (-1, -1) ,hidden_channels = hidden_channels[edge_type][i], K=5)
+					layer[edge_type] = StableChebConv(-1 , hidden_channels[edge_type][i] , K=5)
 				if k == 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 				if k == 0 and i > 0:
@@ -140,7 +140,6 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				if k > 0 and i == 0:
 					in_channels[dataout] = hidden_channels[edge_type][i]
 			conv = HeteroConv( layer  , aggr='max')
-			
 			self.convs.append( conv )
 			self.norms.append( GraphNorm(finalout) )
 		self.sigmoid = nn.Sigmoid()
@@ -307,6 +306,10 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.rt_mlp is not None:
 			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
 		
+		ss_pred = None
+		if self.ss_mlp is not None:
+			ss_pred = self.ss_mlp( z )
+
 		angles = None
 		edge_logits = None
 
@@ -316,7 +319,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			angles = angles * 2 * np.pi
 
 		if contact_pred_index is None:
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'z': z  }
+			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
 
 		else:
 			if self.contact_mlp is None:
@@ -335,7 +338,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'z': z  }
+		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'ss_pred': ss_pred , 'z': z , }
 
 
 class HeteroGAE_AA_Decoder(torch.nn.Module):

@@ -202,8 +202,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
-def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor
-
+def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor:
 	for interaction_type in []:
 		# Remove the diagonal
 		pos_edge_index = data[f'{interaction_type}_edge_index']

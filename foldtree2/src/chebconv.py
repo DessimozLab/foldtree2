@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import remove_self_loops, add_self_loops, get_laplacian
+        
+from torch_geometric.typing import OptPairTensor
+from torch import Tensor
+from typing import Union
 
 class StableChebConv(MessagePassing):
     r"""
@@ -22,10 +26,12 @@ class StableChebConv(MessagePassing):
         bias (bool, optional): If False, no bias term is added. Default: True.
         step_size (float, optional): Initial value for the learnable step size $\eta$. Default: 0.1.
     """
-    def __init__(self, in_channels: int, out_channels: int, K: int,
+    def __init__(self, in_channels: int , out_channels: int, K: int,
                  normalization: str = 'sym', spectral_norm: bool = False,
-                 bias: bool = True, step_size: float = 0.1, **kwargs):
-        super(StableChebConv, self).__init__(aggr='add', **kwargs)
+                 bias: bool = True, step_size: float = 0.1, explain = False , **kwargs):
+        #super(MessagePassing, self).__init__( **kwargs)#aggr='add', **kwargs)
+        super(StableChebConv, self).__init__()
+
         assert K > 0, "K (Chebyshev polynomial order) must be at least 1."
         assert normalization in [None, 'sym', 'rw'], "Invalid normalization. Use None, 'sym', or 'rw'."
         self.in_channels = in_channels
@@ -33,7 +39,8 @@ class StableChebConv(MessagePassing):
         self.K = K
         self.normalization = normalization
         self.spectral_norm = spectral_norm
-
+        self.explain = explain
+        self.needs_init = (in_channels == -1 or out_channels == -1)
         # Lazy initialization placeholders
         self.weight = None  # will be Parameter or UninitializedParameter
         self.bias = None
@@ -68,6 +75,10 @@ class StableChebConv(MessagePassing):
             self.weight = Parameter(torch.Tensor(self.K, out_channels, out_channels))
         else:
             # Use standard [K, in, out] weight matrix for each Cheb term
+            if type(in_channels) is tuple:
+                #change to tuple of ints
+                print( in_channels)
+                in_channels = ( int(in_channels[0]) , int(in_channels[1]) )
             self.weight = Parameter(torch.Tensor(self.K, in_channels, out_channels))
         # Initialize skip connection linear if needed (for dimension mismatch):
         if in_channels != out_channels:
@@ -94,88 +105,127 @@ class StableChebConv(MessagePassing):
         # Initialize step size parameter (small positive):
         self._step_param.data.fill_(0.1)  # or retain existing data as set in __init__
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
-                edge_weight: torch.Tensor = None,
-                batch: torch.Tensor = None,
-                lambda_max: torch.Tensor = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Tensor,
+        edge_weight: Tensor = None,
+        batch: Tensor = None,
+        lambda_max: Tensor = None,
+    ) -> Tensor:
         """Apply the stable Chebyshev convolution on input features `x`."""
+
+        # Handle OptPairTensor: (x_src, x_dst) or plain Tensor
+        if isinstance(x, Tensor):
+            x_src, x_dst = x, None
+        else:
+            x_src, x_dst = x
+        x_target = x_dst if x_dst is not None else x_src
+
         # Lazy initialization: infer in/out channels from input on first run
-        if self.in_channels == -1 or self.out_channels == -1:
-            N, Fin = x.size(0), x.size(1)
+        needs_init = (
+            self.in_channels == -1
+            or self.out_channels == -1
+            or self.weight is None
+        )
+        if needs_init:
+            print("Lazy initialization of StableChebConv parameters.")
+            print(x_src)
+            Fin = x_src.size(1)
             if self.in_channels == -1:
                 self.in_channels = Fin
             if self.out_channels == -1:
-                self.out_channels = self.in_channels  # default to same dim if out not specified
+                self.out_channels = self.in_channels  # default to same dim
             # Now initialize weights with determined dimensions
-            self._init_weights(self.in_channels, self.out_channels, bias=(self.bias is not None))
-        
+            self._init_weights(
+                self.in_channels,
+                self.out_channels,
+                bias=(self.bias is not None),
+            )
+            # Move newly created parameters to same device as input
+            self.to(x_src.device)
+
         # Validate lambda_max if needed:
-        if self.normalization != 'sym':
+        if self.normalization != "sym":
             if lambda_max is None:
-                raise ValueError("`lambda_max` must be provided for normalization = {}.".format(self.normalization))
+                raise ValueError(
+                    "`lambda_max` must be provided for normalization = {}.".format(
+                        self.normalization
+                    )
+                )
         # Default lambda_max for symmetric normalization:
         if lambda_max is None:
-            lambda_max = torch.tensor(2.0, dtype=x.dtype, device=x.device)
+            lambda_max = torch.tensor(2.0, dtype=x_src.dtype, device=x_src.device)
 
-        # Compute the normalized/scaled Laplacian edge weights (norm) for propagation:
-        edge_index, norm = self._compute_norm(edge_index, x.size(0), edge_weight, self.normalization,
-                                              lambda_max=lambda_max, dtype=x.dtype, batch=batch)
-        # Chebyshev polynomial propagation (similar to ChebConv):
-        Tx_0 = x  # T0 * x
+        # Compute normalized/scaled Laplacian edge weights (norm) for propagation:
+        edge_index, norm = self._compute_norm(
+            edge_index,
+            x_src.size(0),
+            edge_weight,
+            self.normalization,
+            lambda_max=lambda_max,
+            dtype=x_src.dtype,
+            batch=batch,
+        )
+
+        # Chebyshev polynomial propagation:
+        Tx_0 = x_src  # T0 * x
+
         # Prepare weight matrices (enforce antisymmetry if applicable):
         if hasattr(self, "_antisym") and self._antisym:
-            # Enforce antisymmetric weights: W_k = weight_k - weight_k^T for each k
-            # weight shape: [K, out, out]
-            W = self.weight  # shape (K, F, F)
-            # Compute antisymmetric part: (W - W^T)
+            W = self.weight
             W_asym = W - W.transpose(1, 2)
-            # Optionally apply spectral norm on each W_asym[k]:
             if self.spectral_norm:
-                # Normalize each matrix to spectral norm 1 (if singular value > 1)
                 W_list = []
                 for k in range(self.K):
                     Wk = W_asym[k]
-                    # Compute largest singular value (spectral norm):
-                    # Use power iteration or SVD (here SVD for simplicity)
                     try:
                         sigma_max = torch.linalg.svdvals(Wk)[0]
                     except RuntimeError:
-                        sigma_max = torch.svd(Wk, compute_uv=False)[1][0]  # fallback for older PyTorch
+                        sigma_max = torch.svd(Wk, compute_uv=False)[1][0]
                     if sigma_max > 0:
                         Wk = Wk / sigma_max
                     W_list.append(Wk)
                 W_effective = torch.stack(W_list, dim=0)
             else:
-                W_effective = 0.5 * W_asym  # use 1/2 * (W - W^T) to center distribution
+                W_effective = 0.5 * W_asym
         else:
-            # No antisym enforcement (either in!=out or not intended): use weights directly
             W_effective = self.weight
 
+        # Ensure weights are on same device as features
+        W_effective = W_effective.to(x_src.device)
+
         # Compute convolution output using Chebyshev basis:
-        # Start with T0 * X:
         out = Tx_0.matmul(W_effective[0])
         if self.K > 1:
-            # Compute T1 * X = \hat{L} * X:
-            Tx_1 = self.propagate(edge_index, x=Tx_0, norm=norm)  # shape [N, Fin]
+            Tx_1 = self.propagate(edge_index, x=Tx_0, norm=norm)
             out += Tx_1.matmul(W_effective[1])
-            # Higher-order terms:
             for k in range(2, self.K):
                 Tx_2 = 2 * self.propagate(edge_index, x=Tx_1, norm=norm) - Tx_0
                 out += Tx_2.matmul(W_effective[k])
                 Tx_0, Tx_1 = Tx_1, Tx_2
 
+        # If we had separate target features, restrict output to target nodes
+        if x_dst is not None:
+            out = out[: x_dst.size(0)]
+
         # Add bias if present:
         if self.bias is not None:
-            out += self.bias
+            out = out + self.bias.to(out.device)
 
         # Compute positive step size and combine with skip connection:
         step = F.softplus(self._step_param)  # positive scalar
+        
         if self.lin_skip is not None:
-            # Use linear projection for skip if dimensions differ
-            out = self.lin_skip(x) + step * out
+        
+            print(x_target)
+            print(x_target.shape)
+            
+            out = self.lin_skip(x_target) + step * out
         else:
-            out = x + step * out
+            out = x_target + step * out
         return out
+
 
     def message(self, x_j: torch.Tensor, norm: torch.Tensor) -> torch.Tensor:
         # Message computation: multiply neighbor feature x_j by norm (Laplacian weight)

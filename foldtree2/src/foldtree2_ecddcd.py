@@ -162,7 +162,7 @@ class mk1_Encoder(torch.nn.Module):
 
 		for i in range(1,len(hidden_channels)):
 			if flavor == 'gat':
-				[self.convs.append(
+				self.convs.append(
 					torch.nn.ModuleDict({
 						'_'.join(edge_type): GATv2Conv(hidden_channels[i-1], 
 						hidden_channels[i] , heads = nheads , dropout = dropout_p,

@@ -722,12 +722,12 @@ class PDB2PyG:
 		data['res','contactPointsComplex', 'res'].edge_index = torch.tensor(contacts, dtype=torch.long)
 		return data
 		
-	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False , add_prody = False):
+	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False , add_prody = False , **kwargs):
 		data = HeteroData()
 		#transform a structure chain into a pytorch geometric graph
 		#get the adjacency matrices
 		#try:
-		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir, add_prody = add_prody)
+		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir, add_prody = add_prody , **kwargs)
 		try:
 			fft1r, fft1i, fft2r , fft2i  = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
 			#transform the ffts into tensors
