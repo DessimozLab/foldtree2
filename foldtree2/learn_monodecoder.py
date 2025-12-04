@@ -18,16 +18,15 @@ import sys
 import time
 import foldtree2.src.se3_strcut_decoder as se3e
 import warnings
+import yaml
+import json
+from datetime import datetime
 warnings.filterwarnings("ignore", category=UserWarning)
-
-#mfnew_128mk2.pkl ok
-
-
-from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter()
 
 # Add argparse for CLI configuration
 parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoders for sequence and geometry prediction')
+parser.add_argument('--config', '-c', type=str, default=None,
+                    help='Path to config file (YAML or JSON). Command-line args override config file values.')
 parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
                     help='Path to the dataset file (default: structs_traininffttest.h5)')
 parser.add_argument('--hidden-size', '-hs', type=int, default=256,
@@ -66,17 +65,60 @@ parser.add_argument('--clip-grad', action='store_true',
                     help='Enable gradient clipping during training')
 parser.add_argument('--burn-in', type=int, default=0,
                     help='Burn-in period for training (default: 0, no burn-in)')
-parser.add_argument('--EMA', action='store_true', help='Use Exponential Moving Average for encoder cordebook')
+parser.add_argument('--EMA', action='store_true', help='Use Exponential Moving Average for encoder codebook')
+parser.add_argument('--tensorboard-dir', type=str, default='./runs/',
+                    help='Directory for TensorBoard logs (default: ./runs/)')
+parser.add_argument('--run-name', type=str, default=None,
+                    help='Name for this training run (default: auto-generated from timestamp)')
+parser.add_argument('--save-config', type=str, default=None,
+                    help='Save current configuration to file (YAML format)')
+parser.add_argument('--lr-warmup-steps', type=int, default=0,
+                    help='Number of steps for learning rate warmup (default: 0, no warmup)')
+parser.add_argument('--lr-schedule', type=str, default='plateau', choices=['plateau', 'cosine', 'linear', 'none'],
+                    help='Learning rate schedule: plateau (ReduceLROnPlateau), cosine, linear decay, or none (default: plateau)')
+parser.add_argument('--lr-min', type=float, default=1e-6,
+                    help='Minimum learning rate for cosine/linear schedules (default: 1e-6)')
 
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:
     print('No arguments provided. Use -h for help.')
     print('Example command: python learn_monodecoder.py -d structs_traininffttest.h5 -o ./models/ -lr 0.0001 -e 20 -bs 5')
+    print('Example with config: python learn_monodecoder.py --config my_config.yaml')
     print('Available arguments:')
     parser.print_help()
     sys.exit(0)
 
+# Parse arguments first to check for config file
 args = parser.parse_args()
+
+# Load config file if provided
+if args.config:
+    print(f"Loading configuration from {args.config}")
+    config_path = args.config
+    if config_path.endswith('.yaml') or config_path.endswith('.yml'):
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+    elif config_path.endswith('.json'):
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    else:
+        raise ValueError("Config file must be YAML (.yaml/.yml) or JSON (.json)")
+    
+    # Set defaults from config file, but allow CLI args to override
+    for key, value in config.items():
+        # Only set from config if not explicitly provided via CLI
+        if hasattr(args, key):
+            # Check if the argument was provided via CLI (not default)
+            cli_value = getattr(args, key)
+            default_value = parser.get_default(key)
+            if cli_value == default_value:
+                # Use config value since CLI didn't override
+                setattr(args, key, value)
+                print(f"  {key}: {value} (from config)")
+            else:
+                print(f"  {key}: {cli_value} (from CLI, overriding config)")
+else:
+    print("No config file provided, using command-line arguments and defaults")
 
 # Set seeds for reproducibility
 torch.manual_seed(args.seed)
@@ -126,6 +168,22 @@ print(f"  Gradient Clipping: {'Enabled' if args.clip_grad else 'Disabled'}")
 print(f"  Burn-in Period: {args.burn_in} epochs")
 print(f"  Random Seed: {args.seed}")
 print(f"  Exponential Moving Average: {'Enabled' if args.EMA else 'Disabled'}")
+print(f"  TensorBoard Directory: {args.tensorboard_dir}")
+print(f"  Run Name: {args.run_name if args.run_name else 'auto-generated'}")
+print(f"  LR Schedule: {args.lr_schedule}")
+print(f"  LR Warmup Steps: {args.lr_warmup_steps}")
+if args.lr_schedule in ['cosine', 'linear']:
+    print(f"  LR Min: {args.lr_min}")
+
+# Save configuration if requested
+if args.save_config:
+    config_dict = vars(args).copy()
+    # Remove non-serializable or irrelevant fields
+    config_dict.pop('save_config', None)
+    config_dict.pop('config', None)
+    with open(args.save_config, 'w') as f:
+        yaml.dump(config_dict, f, default_flow_style=False)
+    print(f"Configuration saved to {args.save_config}")
 
 if os.path.exists(args.output_dir) and args.overwrite:
     #remove existing model
@@ -165,6 +223,22 @@ angles_weight = 0.001
 modeldir = args.output_dir
 os.makedirs(modeldir, exist_ok=True)
 modelname = args.model_name
+
+# Setup TensorBoard
+if args.run_name:
+    run_name = args.run_name
+else:
+    # Auto-generate run name with timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_name = f"{modelname}_{timestamp}"
+
+tensorboard_log_dir = os.path.join(args.tensorboard_dir, run_name)
+os.makedirs(tensorboard_log_dir, exist_ok=True)
+print(f"TensorBoard logs will be saved to: {tensorboard_log_dir}")
+print(f"To view: tensorboard --logdir={args.tensorboard_dir}")
+
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter(log_dir=tensorboard_log_dir)
 
 
 # Initialize or load model
@@ -357,7 +431,39 @@ print("Decoder:", decoder)
 
 # Training setup
 optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.000001)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
+
+# Learning rate scheduler setup
+total_steps = len(train_loader) * args.epochs
+warmup_steps = args.lr_warmup_steps
+
+if args.lr_schedule == 'plateau':
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
+elif args.lr_schedule == 'cosine':
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=args.lr_min)
+elif args.lr_schedule == 'linear':
+    # Linear decay from learning_rate to lr_min
+    lambda_lr = lambda step: max(args.lr_min / args.learning_rate, 1.0 - (step - warmup_steps) / (total_steps - warmup_steps))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_lr)
+else:  # 'none'
+    scheduler = None
+
+# Learning rate warmup function
+def get_warmup_lr(current_step, warmup_steps, base_lr):
+    """Linear warmup from 0 to base_lr over warmup_steps"""
+    if warmup_steps == 0 or current_step >= warmup_steps:
+        return base_lr
+    return base_lr * (current_step / warmup_steps)
+
+def set_lr(optimizer, lr):
+    """Set learning rate for all parameter groups"""
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+print(f"Learning rate schedule: {args.lr_schedule}")
+print(f"Warmup steps: {warmup_steps}")
+print(f"Total training steps: {total_steps}")
+if args.lr_schedule in ['cosine', 'linear']:
+    print(f"Min learning rate: {args.lr_min}")
 
 # Function to analyze gradient norms
 def analyze_gradient_norms(model, top_k=3):
@@ -380,6 +486,8 @@ def analyze_gradient_norms(model, top_k=3):
 # Write model parameters to file
 with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Date: {time.strftime("%Y-%m-%d %H:%M:%S")}\n')
+    f.write(f'Run name: {run_name}\n')
+    f.write(f'TensorBoard log dir: {tensorboard_log_dir}\n')
     f.write(f'Encoder: {encoder}\n')
     f.write(f'Decoder: {decoder}\n')
     f.write(f'Learning rate: {args.learning_rate}\n')
@@ -388,6 +496,22 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Embedding dimension: {args.embedding_dim}\n')
     f.write(f'Number of embeddings: {args.num_embeddings}\n')
     f.write(f'Loss weights - Edge: {edgeweight}, X: {xweight}, FFT2: {fft2weight}, VQ: {vqweight}\n')
+
+# Save configuration to TensorBoard
+config_text = "\n".join([f"{k}: {v}" for k, v in vars(args).items()])
+writer.add_text('Configuration', config_text, 0)
+
+# Log hyperparameters
+hparams_dict = {
+    'learning_rate': args.learning_rate,
+    'batch_size': args.batch_size,
+    'hidden_size': args.hidden_size,
+    'embedding_dim': args.embedding_dim,
+    'num_embeddings': args.num_embeddings,
+    'epochs': args.epochs,
+    'seed': args.seed,
+}
+metrics_dict = {}
 
 # Training loop
 encoder.train()
@@ -398,6 +522,8 @@ burn_in = args.burn_in  # Use burn-in period if specified
 best_loss = float('inf')
 done_burn = False
 after_burn_in = args.epochs - burn_in if burn_in else args.epochs
+global_step = 0  # Track global training steps for warmup
+
 print(f"Total epochs: {args.epochs}, Burn-in epochs: {burn_in}, After burn-in epochs: {after_burn_in}")
 for epoch in range(args.epochs):
     if burn_in and epoch < burn_in:
@@ -433,6 +559,12 @@ for epoch in range(args.epochs):
     
     for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
         data = data.to(device)
+        
+        # Learning rate warmup
+        if warmup_steps > 0 and global_step < warmup_steps:
+            warmup_lr = get_warmup_lr(global_step, warmup_steps, args.learning_rate)
+            set_lr(optimizer, warmup_lr)
+        
         optimizer.zero_grad()
         
         # Forward through encoder
@@ -489,6 +621,13 @@ for epoch in range(args.epochs):
             
         optimizer.step()
         
+        # Step the scheduler (for step-based schedulers)
+        if scheduler is not None and args.lr_schedule in ['cosine', 'linear']:
+            if global_step >= warmup_steps:
+                scheduler.step()
+        
+        global_step += 1
+        
         # Accumulate metrics
         total_loss_x += xloss.item()
         total_logit_loss += logitloss.item()
@@ -507,8 +646,9 @@ for epoch in range(args.epochs):
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss)
     
-    # Update learning rate
-    scheduler.step(avg_loss_x)
+    # Update learning rate scheduler (for epoch-based schedulers)
+    if scheduler is not None and args.lr_schedule == 'plateau':
+        scheduler.step(avg_loss_x)
     
     # Print metrics
     print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
@@ -539,6 +679,29 @@ for epoch in range(args.epochs):
     writer.add_scalar('Loss/Total', avg_total_loss, epoch)
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
     
+    # Log loss weights
+    writer.add_scalar('Weights/Edge', edgeweight, epoch)
+    writer.add_scalar('Weights/X', xweight, epoch)
+    writer.add_scalar('Weights/FFT2', fft2weight, epoch)
+    writer.add_scalar('Weights/VQ', vqweight, epoch)
+    
+    # Log gradient norms
+    encoder_grad_norms = analyze_gradient_norms(encoder, top_k=1)
+    decoder_grad_norms = analyze_gradient_norms(decoder, top_k=1)
+    if encoder_grad_norms['highest']:
+        writer.add_scalar('Gradients/Encoder_Max', encoder_grad_norms['highest'][0][1], epoch)
+    if encoder_grad_norms['lowest']:
+        writer.add_scalar('Gradients/Encoder_Min', encoder_grad_norms['lowest'][0][1], epoch)
+    if decoder_grad_norms['highest']:
+        writer.add_scalar('Gradients/Decoder_Max', decoder_grad_norms['highest'][0][1], epoch)
+    if decoder_grad_norms['lowest']:
+        writer.add_scalar('Gradients/Decoder_Min', decoder_grad_norms['lowest'][0][1], epoch)
+    
+    # Update metrics for hparams logging
+    metrics_dict['best_loss'] = best_loss
+    metrics_dict['final_aa_loss'] = avg_loss_x
+    metrics_dict['final_edge_loss'] = avg_loss_edge
+    
     # Save best model
     if avg_total_loss < best_loss:
         best_loss = avg_total_loss
@@ -560,4 +723,12 @@ for epoch in range(args.epochs):
 torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_final.pt"))
 torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pt"))
 
+# Log final hyperparameters and metrics
+writer.add_hparams(hparams_dict, metrics_dict)
+
+# Close TensorBoard writer
+writer.close()
+
 print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')}")
+print(f"TensorBoard logs saved to: {tensorboard_log_dir}")
+print(f"View with: tensorboard --logdir={args.tensorboard_dir}")

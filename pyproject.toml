@@ -48,7 +48,8 @@ dependencies = [
   "toyplot",
   "statsmodels",
   "pydssp",
-  "ete3"
+  "ete3",
+  "pyyaml"
 ]
 
 [project.scripts]

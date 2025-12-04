@@ -72,6 +72,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				layers = 3,
 				FFT2decoder_hidden = 10,
 				contactdecoder_hidden = 10,
+				ssdecoder_hidden = 10,
 				nheads = 3 ,
 				Xdecoder_hidden=30, 
 				anglesdecoder_hidden=30,

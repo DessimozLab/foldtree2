@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import numpy as np
+import math
 
 
 
@@ -29,15 +30,28 @@ def cosine_anneal(start, end, t, T):
 
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99 , epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99, use_commitment_scheduling=False, commitment_warmup_steps=5000, commitment_schedule='cosine', commitment_start=0.1, commitment_end=None):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
-		self.commitment_cost = commitment_cost
+		self.commitment_cost_final = commitment_cost
 		self.decay = decay
 		self.epsilon = epsilon
 		self.reset_threshold = reset_threshold
 		self.reset = reset
+
+		# Commitment cost scheduling parameters
+		self.use_commitment_scheduling = use_commitment_scheduling
+		self.commitment_warmup_steps = commitment_warmup_steps
+		self.commitment_schedule = commitment_schedule  # 'cosine', 'linear', or 'none'
+		self.commitment_start = commitment_start  # Starting commitment cost
+		self.commitment_end = commitment_end if commitment_end is not None else commitment_cost
+		self.current_step = 0
+		# Set initial commitment cost based on whether scheduling is enabled
+		if self.use_commitment_scheduling:
+			self.commitment_cost = self.commitment_start  # Will be updated during training
+		else:
+			self.commitment_cost = commitment_cost  # Use constant value
 
 		# Regularization weights
 		self.diversityweight = diversityweight
@@ -58,7 +72,36 @@ class VectorQuantizerEMA(nn.Module):
 		self.prior_momentum = prior_momentum
 		self.register_buffer('running_prior', torch.ones(num_embeddings) / num_embeddings)
 
+	def update_commitment_cost(self):
+		"""
+		Update commitment cost based on the current training step using the specified schedule.
+		Called automatically during forward pass when training.
+		"""
+		if self.current_step >= self.commitment_warmup_steps:
+			self.commitment_cost = self.commitment_end
+			return
+		
+		t = self.current_step
+		T = self.commitment_warmup_steps
+		start = self.commitment_start
+		end = self.commitment_end
+		
+		if self.commitment_schedule == 'cosine':
+			# Cosine annealing from start to end
+			c = 0.5 * (1 + math.cos(math.pi * t / T))
+			self.commitment_cost = end + (start - end) * c
+		elif self.commitment_schedule == 'linear':
+			# Linear interpolation from start to end
+			self.commitment_cost = start + (end - start) * (t / T)
+		else:  # 'none' or any other value - use final value immediately
+			self.commitment_cost = end
+
 	def forward(self, x):
+		# Update commitment cost schedule during training (only if scheduling is enabled)
+		if self.training and self.use_commitment_scheduling:
+			self.update_commitment_cost()
+			self.current_step += 1
+		
 		flat_x = x.view(-1, self.embedding_dim)
 
 		# Distance and encoding
@@ -137,6 +180,21 @@ class VectorQuantizerEMA(nn.Module):
 				self.embeddings.weight[unused_embeddings] = torch.randn((num_resets, self.embedding_dim), device=self.embeddings.weight.device)
 			# Reset usage counts for the reset embeddings
 			self.embedding_usage_count[unused_embeddings] = 0
+
+	def get_commitment_cost(self):
+		"""
+		Get the current commitment cost value.
+		Useful for logging and monitoring during training.
+		"""
+		return self.commitment_cost
+	
+	def reset_commitment_schedule(self):
+		"""
+		Reset the commitment cost schedule to start from the beginning.
+		Useful if you want to restart the warmup schedule during training.
+		"""
+		self.current_step = 0
+		self.commitment_cost = self.commitment_start
 
 	def discretize_z(self, x):
 		# Flatten input
