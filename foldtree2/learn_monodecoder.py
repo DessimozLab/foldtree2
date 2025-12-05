@@ -23,6 +23,19 @@ import json
 from datetime import datetime
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# Try to import transformers schedulers, fall back to PyTorch schedulers
+try:
+    from transformers import (
+        get_linear_schedule_with_warmup,
+        get_cosine_schedule_with_warmup,
+        get_cosine_with_hard_restarts_schedule_with_warmup,
+        get_polynomial_decay_schedule_with_warmup
+    )
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    print("Warning: transformers library not available. Using PyTorch schedulers only.")
+    TRANSFORMERS_AVAILABLE = False
+
 # Add argparse for CLI configuration
 parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoders for sequence and geometry prediction')
 parser.add_argument('--config', '-c', type=str, default=None,
@@ -74,10 +87,30 @@ parser.add_argument('--save-config', type=str, default=None,
                     help='Save current configuration to file (YAML format)')
 parser.add_argument('--lr-warmup-steps', type=int, default=0,
                     help='Number of steps for learning rate warmup (default: 0, no warmup)')
-parser.add_argument('--lr-schedule', type=str, default='plateau', choices=['plateau', 'cosine', 'linear', 'none'],
-                    help='Learning rate schedule: plateau (ReduceLROnPlateau), cosine, linear decay, or none (default: plateau)')
+parser.add_argument('--lr-warmup-ratio', type=float, default=0.0,
+                    help='Warmup ratio (fraction of total steps). Overrides --lr-warmup-steps if > 0 (default: 0.0)')
+parser.add_argument('--lr-schedule', type=str, default='plateau', 
+                    choices=['plateau', 'cosine', 'linear', 'cosine_restarts', 'polynomial', 'none'],
+                    help='Learning rate schedule (default: plateau)')
 parser.add_argument('--lr-min', type=float, default=1e-6,
                     help='Minimum learning rate for cosine/linear schedules (default: 1e-6)')
+parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, default=1,
+                    help='Number of gradient accumulation steps (default: 1, no accumulation)')
+parser.add_argument('--num-cycles', type=int, default=3,
+                    help='Number of cycles for cosine_restarts scheduler (default: 3)')
+
+# Commitment cost scheduling
+parser.add_argument('--commitment-cost', type=float, default=0.9,
+                    help='Final commitment cost for VQ-VAE (default: 0.9)')
+parser.add_argument('--use-commitment-scheduling', action='store_true',
+                    help='Enable commitment cost scheduling (warmup from low to final value)')
+parser.add_argument('--commitment-schedule', type=str, default='cosine',
+                    choices=['cosine', 'linear', 'none'],
+                    help='Commitment cost schedule type (default: cosine)')
+parser.add_argument('--commitment-warmup-steps', type=int, default=5000,
+                    help='Number of steps to warmup commitment cost (default: 5000)')
+parser.add_argument('--commitment-start', type=float, default=0.1,
+                    help='Starting commitment cost when using scheduling (default: 0.1)')
 
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:
@@ -172,8 +205,18 @@ print(f"  TensorBoard Directory: {args.tensorboard_dir}")
 print(f"  Run Name: {args.run_name if args.run_name else 'auto-generated'}")
 print(f"  LR Schedule: {args.lr_schedule}")
 print(f"  LR Warmup Steps: {args.lr_warmup_steps}")
-if args.lr_schedule in ['cosine', 'linear']:
+print(f"  LR Warmup Ratio: {args.lr_warmup_ratio}")
+print(f"  Gradient Accumulation Steps: {args.gradient_accumulation_steps}")
+if args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial']:
     print(f"  LR Min: {args.lr_min}")
+if args.lr_schedule == 'cosine_restarts':
+    print(f"  Num Cycles: {args.num_cycles}")
+print(f"  Commitment Cost: {args.commitment_cost}")
+print(f"  Use Commitment Scheduling: {args.use_commitment_scheduling}")
+if args.use_commitment_scheduling:
+    print(f"  Commitment Schedule: {args.commitment_schedule}")
+    print(f"  Commitment Warmup Steps: {args.commitment_warmup_steps}")
+    print(f"  Commitment Start: {args.commitment_start}")
 
 # Save configuration if requested
 if args.save_config:
@@ -264,15 +307,19 @@ else:
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.8,
+            commitment_cost=args.commitment_cost,
             edge_dim=1,
             encoder_hidden=hidden_size,
-            EMA= args.EMA,
+            EMA=args.EMA,
             nheads=5,
             dropout_p=0.005,
             reset_codes=False,
             flavor='transformer',
-            fftin=True
+            fftin=True,
+            use_commitment_scheduling=args.use_commitment_scheduling,
+            commitment_warmup_steps=args.commitment_warmup_steps,
+            commitment_schedule=args.commitment_schedule,
+            commitment_start=args.commitment_start
         )
     else:
         encoder = ft2.mk1_Encoder(
@@ -281,7 +328,7 @@ else:
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
-            commitment_cost=0.9,
+            commitment_cost=args.commitment_cost,
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=args.EMA,
@@ -289,7 +336,11 @@ else:
             dropout_p=0.01,
             reset_codes=False,
             flavor='transformer',
-            fftin=True
+            fftin=True,
+            use_commitment_scheduling=args.use_commitment_scheduling,
+            commitment_warmup_steps=args.commitment_warmup_steps,
+            commitment_schedule=args.commitment_schedule,
+            commitment_start=args.commitment_start
         )
 
     if args.hetero_gae:
@@ -433,37 +484,82 @@ print("Decoder:", decoder)
 optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.000001)
 
 # Learning rate scheduler setup
-total_steps = len(train_loader) * args.epochs
-warmup_steps = args.lr_warmup_steps
+total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps  # Adjust for gradient accumulation
+
+# Calculate warmup steps
+if args.lr_warmup_ratio > 0:
+    warmup_steps = int(total_steps * args.lr_warmup_ratio)
+    print(f"Using warmup ratio {args.lr_warmup_ratio:.2%}, calculated warmup_steps: {warmup_steps}")
+else:
+    warmup_steps = args.lr_warmup_steps
+
+# Initialize scheduler
+scheduler = None
+scheduler_step_mode = 'epoch'  # 'step' or 'epoch'
 
 if args.lr_schedule == 'plateau':
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
-elif args.lr_schedule == 'cosine':
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=args.lr_min)
-elif args.lr_schedule == 'linear':
-    # Linear decay from learning_rate to lr_min
-    lambda_lr = lambda step: max(args.lr_min / args.learning_rate, 1.0 - (step - warmup_steps) / (total_steps - warmup_steps))
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_lr)
-else:  # 'none'
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+    scheduler_step_mode = 'epoch'
+    
+elif args.lr_schedule == 'cosine' and TRANSFORMERS_AVAILABLE:
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps
+    )
+    scheduler_step_mode = 'step'
+    
+elif args.lr_schedule == 'linear' and TRANSFORMERS_AVAILABLE:
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps
+    )
+    scheduler_step_mode = 'step'
+    
+elif args.lr_schedule == 'cosine_restarts' and TRANSFORMERS_AVAILABLE:
+    scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+        num_cycles=args.num_cycles
+    )
+    scheduler_step_mode = 'step'
+    
+elif args.lr_schedule == 'polynomial' and TRANSFORMERS_AVAILABLE:
+    scheduler = get_polynomial_decay_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+        power=2.0
+    )
+    scheduler_step_mode = 'step'
+    
+elif args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial'] and not TRANSFORMERS_AVAILABLE:
+    # Fallback to PyTorch schedulers
+    print(f"Warning: transformers not available, falling back to PyTorch CosineAnnealingLR for {args.lr_schedule}")
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, 
+        T_max=total_steps - warmup_steps, 
+        eta_min=args.lr_min
+    )
+    scheduler_step_mode = 'step'
+    
+elif args.lr_schedule == 'none':
     scheduler = None
+    print("No learning rate scheduling (constant LR)")
+else:
+    print(f"Unknown scheduler: {args.lr_schedule}, using no scheduling")
 
-# Learning rate warmup function
-def get_warmup_lr(current_step, warmup_steps, base_lr):
-    """Linear warmup from 0 to base_lr over warmup_steps"""
-    if warmup_steps == 0 or current_step >= warmup_steps:
-        return base_lr
-    return base_lr * (current_step / warmup_steps)
-
-def set_lr(optimizer, lr):
-    """Set learning rate for all parameter groups"""
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-print(f"Learning rate schedule: {args.lr_schedule}")
-print(f"Warmup steps: {warmup_steps}")
-print(f"Total training steps: {total_steps}")
-if args.lr_schedule in ['cosine', 'linear']:
-    print(f"Min learning rate: {args.lr_min}")
+print(f"\nScheduler Configuration:")
+print(f"  Schedule type: {args.lr_schedule}")
+print(f"  Scheduler step mode: {scheduler_step_mode}")
+print(f"  Warmup steps: {warmup_steps}")
+print(f"  Total training steps: {total_steps}")
+print(f"  Gradient accumulation steps: {args.gradient_accumulation_steps}")
+print(f"  Effective batch size: {args.batch_size * args.gradient_accumulation_steps}")
+if args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial']:
+    print(f"  Min learning rate: {args.lr_min}")
 
 # Function to analyze gradient norms
 def analyze_gradient_norms(model, top_k=3):
@@ -496,6 +592,16 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Embedding dimension: {args.embedding_dim}\n')
     f.write(f'Number of embeddings: {args.num_embeddings}\n')
     f.write(f'Loss weights - Edge: {edgeweight}, X: {xweight}, FFT2: {fft2weight}, VQ: {vqweight}\n')
+    f.write(f'LR Schedule: {args.lr_schedule}\n')
+    f.write(f'LR Warmup Steps: {warmup_steps}\n')
+    f.write(f'Gradient Accumulation Steps: {args.gradient_accumulation_steps}\n')
+    f.write(f'Effective Batch Size: {args.batch_size * args.gradient_accumulation_steps}\n')
+    f.write(f'Commitment Cost: {args.commitment_cost}\n')
+    f.write(f'Use Commitment Scheduling: {args.use_commitment_scheduling}\n')
+    if args.use_commitment_scheduling:
+        f.write(f'Commitment Schedule: {args.commitment_schedule}\n')
+        f.write(f'Commitment Warmup Steps: {args.commitment_warmup_steps}\n')
+        f.write(f'Commitment Start: {args.commitment_start}\n')
 
 # Save configuration to TensorBoard
 config_text = "\n".join([f"{k}: {v}" for k, v in vars(args).items()])
@@ -522,9 +628,18 @@ burn_in = args.burn_in  # Use burn-in period if specified
 best_loss = float('inf')
 done_burn = False
 after_burn_in = args.epochs - burn_in if burn_in else args.epochs
-global_step = 0  # Track global training steps for warmup
+global_step = 0  # Track global training steps for warmup and scheduling
+accumulation_step = 0  # Track steps within gradient accumulation
 
-print(f"Total epochs: {args.epochs}, Burn-in epochs: {burn_in}, After burn-in epochs: {after_burn_in}")
+print(f"\nTraining Configuration:")
+print(f"  Total epochs: {args.epochs}")
+print(f"  Burn-in epochs: {burn_in}")
+print(f"  After burn-in epochs: {after_burn_in}")
+print(f"  Gradient accumulation steps: {args.gradient_accumulation_steps}")
+print(f"  Steps per epoch: {len(train_loader)}")
+print(f"  Effective steps per epoch: {len(train_loader) // args.gradient_accumulation_steps}")
+print()
+
 for epoch in range(args.epochs):
     if burn_in and epoch < burn_in:
         print(f"Burn-in epoch {epoch+1}/{args.epochs}: Adjusting loss weights")
@@ -557,15 +672,8 @@ for epoch in range(args.epochs):
     total_loss_fft2 = 0
     total_logit_loss = 0
     
-    for data in tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
+    for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
         data = data.to(device)
-        
-        # Learning rate warmup
-        if warmup_steps > 0 and global_step < warmup_steps:
-            warmup_lr = get_warmup_lr(global_step, warmup_steps, args.learning_rate)
-            set_lr(optimizer, warmup_lr)
-        
-        optimizer.zero_grad()
         
         # Forward through encoder
         z, vqloss = encoder(data)
@@ -612,29 +720,36 @@ for epoch in range(args.epochs):
                 fft2loss * fft2weight + angles_loss * angles_weight + 
                 logitloss * logitweight)
         
-        # Backward and optimize
+        # Scale loss for gradient accumulation
+        loss = loss / args.gradient_accumulation_steps
+        
+        # Backward
         loss.backward()
         
-        if clip_grad:
-            torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+        accumulation_step += 1
+        
+        # Optimize after accumulating gradients
+        if accumulation_step % args.gradient_accumulation_steps == 0:
+            if clip_grad:
+                torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
             
-        optimizer.step()
-        
-        # Step the scheduler (for step-based schedulers)
-        if scheduler is not None and args.lr_schedule in ['cosine', 'linear']:
-            if global_step >= warmup_steps:
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            # Step the scheduler (for step-based schedulers)
+            if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
+            
+            global_step += 1
         
-        global_step += 1
-        
-        # Accumulate metrics
-        total_loss_x += xloss.item()
-        total_logit_loss += logitloss.item()
-        total_loss_edge += edgeloss.item()
-        total_loss_fft2 += fft2loss.item()
-        total_angles_loss += angles_loss.item()
-        total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
+        # Accumulate metrics (scale back up since loss was scaled down)
+        total_loss_x += xloss.item() * args.gradient_accumulation_steps
+        total_logit_loss += logitloss.item() * args.gradient_accumulation_steps
+        total_loss_edge += edgeloss.item() * args.gradient_accumulation_steps
+        total_loss_fft2 += fft2loss.item() * args.gradient_accumulation_steps
+        total_angles_loss += angles_loss.item() * args.gradient_accumulation_steps
+        total_vq += (vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)) * args.gradient_accumulation_steps
     
     # Calculate average losses
     avg_loss_x = total_loss_x / len(train_loader)
@@ -647,16 +762,24 @@ for epoch in range(args.epochs):
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss)
     
     # Update learning rate scheduler (for epoch-based schedulers)
-    if scheduler is not None and args.lr_schedule == 'plateau':
-        scheduler.step(avg_loss_x)
+    if scheduler is not None and scheduler_step_mode == 'epoch':
+        if args.lr_schedule == 'plateau':
+            scheduler.step(avg_loss_x)
+        else:
+            scheduler.step()
     
     # Print metrics
     print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
           f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
           f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
           f"Logit Loss: {avg_logit_loss:.4f}")
-    print(f"Total Loss: {avg_total_loss:.4f}, "
-          f"LR: {optimizer.param_groups[0]['lr']:.6f}")
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"Total Loss: {avg_total_loss:.4f}, LR: {current_lr:.6f}")
+    
+    # Print commitment cost if using scheduling
+    if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
+        current_commitment = encoder.vector_quantizer.get_commitment_cost()
+        print(f"Commitment Cost: {current_commitment:.4f}")
     
     #if avg_loss_edge > avg_loss_x:
     #    edgeweight *= 1.5
@@ -678,6 +801,11 @@ for epoch in range(args.epochs):
     writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
     writer.add_scalar('Loss/Total', avg_total_loss, epoch)
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
+    
+    # Log commitment cost if using scheduling
+    if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
+        current_commitment = encoder.vector_quantizer.get_commitment_cost()
+        writer.add_scalar('Training/Commitment_Cost', current_commitment, epoch)
     
     # Log loss weights
     writer.add_scalar('Weights/Edge', edgeweight, epoch)

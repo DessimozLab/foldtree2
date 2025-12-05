@@ -11,7 +11,6 @@ import glob
 import h5py
 from scipy import sparse
 from copy import deepcopy
-import pickle
 
 import pebble
 import time
@@ -40,7 +39,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from torch import Tensor
 import torch.nn as nn
 import traceback
-from datasketch import WeightedMinHashGenerator, MinHashLSHForest, WeightedMinHash
+import faiss
 import numpy as np
 import pandas as pd
 from Bio import PDB
@@ -176,15 +175,15 @@ class signature_transformer(torch.nn.Module):
 			  nlayers=3,
 			  attn_aggregate=False,
 			  embedding_dim=128,
+			  aggregation_strategy='mean',  # 'mean', 'max', 'attention', or 'concat_stats'
 			 **kwargs
 			  ):
 		super(signature_transformer, self).__init__()
 
 		self.encoder = encoder
 		self.decoder = decoder
+		self.aggregation_strategy = aggregation_strategy
 
-
-		self.wmg = WeightedMinHashGenerator(out_channels, seed=42)
 		#save all arguments to constructor
 		self.args = locals()
 		self.args.pop('self')
@@ -239,13 +238,24 @@ class signature_transformer(torch.nn.Module):
 		)
 		else:
 			self.attn_agg = None
+			# Adjust input dimension for concat_stats strategy
+			if aggregation_strategy == 'concat_stats':
+				input_dim = self.hidden_channels[2] * 4
+			else:
+				input_dim = self.hidden_channels[2]
 			self.vec_out = torch.nn.Sequential(
-			torch.nn.Linear(self.hidden_channels[2], self.decoder_hidden[1]),
+			torch.nn.Linear(input_dim, self.decoder_hidden[1]),
 			torch.nn.GELU(),
 			torch.nn.Linear(self.decoder_hidden[1], self.decoder_hidden[2]),
 			torch.nn.GELU(),
 			torch.nn.Linear(self.decoder_hidden[2], self.out_channels),
 		)
+		
+		# Global aggregation module for final vector output (separate from attn_agg)
+		if aggregation_strategy == 'attention' and not attn_aggregate:
+			self.global_attn_agg = AttentionAggregation(self.hidden_channels[2], self.out_channels)
+		else:
+			self.global_attn_agg = None
 		self.n_signatures = out_channels
 		#final sigmoid
 		self.sigmoid = torch.nn.Sigmoid()
@@ -285,137 +295,189 @@ class signature_transformer(torch.nn.Module):
 		# Aggregate transformer outputs
 		#copy z
 		z = out.clone().detach()  # (batch, hidden_channels)
-		# Apply attention-based aggregation on each batch element
+		# Apply aggregation strategy on each batch element
 		if batch is not None:
 			agg_out = []
 			for i in range(num_graphs):
+				seq_out = out[:, i, :]  # (seq_len, hidden_channels)
 				if self.attn_agg is not None:
-					agg_out.append(self.attn_agg(out[:, i, :]))
-				else:
-					agg_out.append(out[:, i, :].mean(dim=0))  # (hidden_channels)
-			out = torch.stack(agg_out, dim=0)  # (num_graphs, decoder_hidden)
+					agg_out.append(self.attn_agg(seq_out))
+				elif self.aggregation_strategy == 'max':
+					agg_out.append(seq_out.max(dim=0)[0])
+				elif self.aggregation_strategy == 'attention' and self.global_attn_agg is not None:
+					agg_out.append(self.global_attn_agg(seq_out))
+				elif self.aggregation_strategy == 'concat_stats':
+					stats = torch.cat([
+						seq_out.mean(dim=0),
+						seq_out.max(dim=0)[0],
+						seq_out.min(dim=0)[0],
+						seq_out.std(dim=0)
+					], dim=-1)
+					agg_out.append(stats)
+				else:  # 'mean' (default)
+					agg_out.append(seq_out.mean(dim=0))
+			out = torch.stack(agg_out, dim=0)  # (num_graphs, decoder_hidden or hidden_channels)
 			
 		else:
 			if self.attn_agg is not None:
 				out = self.attn_agg(out)  # (1, decoder_hidden)
-			else:
-				out = out.mean(dim=0)  # (1, decoder_hidden)
+			elif self.aggregation_strategy == 'max':
+				out = out.max(dim=0)[0]  # (hidden_channels)
+			elif self.aggregation_strategy == 'attention' and self.global_attn_agg is not None:
+				out = self.global_attn_agg(out)  # (out_channels)
+			elif self.aggregation_strategy == 'concat_stats':
+				out = torch.cat([
+					out.mean(dim=0),
+					out.max(dim=0)[0],
+					out.min(dim=0)[0],
+					out.std(dim=0)
+				], dim=-1)
+			else:  # 'mean' (default)
+				out = out.mean(dim=0)  # (hidden_channels)
 		# Project to output space
 		vec = self.vec_out(out)  # (batch, out_channels)
 		if self.normalize:
 			vec = vec / (vec.norm(p=2, dim=1, keepdim=True) + EPS)
-		return {'jaccard_vec': vec, 'z': z}
+		return {'jaccard_vec': vec, 'z': z }
 
-	def vec2weighted_minhash(self, vec):
+	def vec2numpy(self, vec):
 		"""
-		Convert a weighted vector to a Weighted MinHash signature.
+		Convert a torch tensor vector to numpy array for FAISS.
 		Args:
-			vec (torch.Tensor): Input vector of shape (N,).
+			vec (torch.Tensor): Input vector of shape (N,) or (1, N).
 		Returns:
-			np.ndarray: MinHash signature as a numpy array.
+			np.ndarray: Vector as numpy array with shape (1, N).
 		"""
-
-		mh = self.wmg.minhash(vec.cpu().numpy())
-		return mh.hashvalues
+		vec_np = vec.cpu().numpy()
+		if vec_np.ndim == 1:
+			vec_np = vec_np.reshape(1, -1)
+		return vec_np.astype('float32')
 	
-	def pull_hashes(self, identifiers, sigfile='signatures.h5'):
+	def pull_vectors(self, identifiers, vecfile='vectors.h5'):
 		"""
-		Pull precomputed MinHash signatures from an HDF5 file.
+		Pull precomputed vectors from an HDF5 file.
 		Args:
 			identifiers (list): List of sequence identifiers.
-			sigfile (str): Path to the HDF5 file containing signatures.
+			vecfile (str): Path to the HDF5 file containing vectors.
 		Returns:
-			dict: Dictionary mapping identifiers to their MinHash signatures.
+			dict: Dictionary mapping identifiers to their vectors.
 		"""
-		signatures = {}
-		with h5py.File(sigfile, 'r') as hf:
+		vectors = {}
+		with h5py.File(vecfile, 'r') as hf:
 			for identifier in identifiers:
-				if identifier in hf:
-					signatures[identifier] = WeightedMinHash(  seed = 42 , hashvalues = hf[identifier][:])
+				if f"{identifier}_vec" in hf:
+					vectors[identifier] = hf[f"{identifier}_vec"][:]
 				else:
-					raise KeyError(f"Identifier {identifier} not found in {sigfile}")
-		return signatures
+					raise KeyError(f"Identifier {identifier} not found in {vecfile}")
+		return vectors
 	
-	def create_interactome(self, encoded_fasta = None , encoded_dataset = None, sigfile='signatures.h5', lshfile='lsh_forest.pkl', top_k=10):
+	def create_interactome(self, encoded_fasta = None , encoded_dataset = None, vecfile='vectors.h5', indexfile='faiss_index.bin', top_k=10):
 		''' 
-		Create a pairwise interaction dataframe using precomputed MinHash signatures and LSH forest.
-		run through each entry in df, query lsh forest for top_k nearest neighbors
-		pull hashes, compute weighted jaccard similarity, and store pairwise scores in dataframe
-		compile networkx graph and return graph and dataframe
+		Create a pairwise interaction dataframe using precomputed vectors and FAISS index.
+		Run through each entry in dataset, query FAISS index for top_k nearest neighbors by cosine similarity,
+		pull vectors, compute cosine similarity, and store pairwise scores in dataframe.
+		Compile networkx graph and return graph and dataframe.
 		Args:
-			df (pd.DataFrame): DataFrame with 'protA' and 'protB' columns.
-			sigfile (str): Path to the HDF5 file containing signatures.
-			lshfile (str): Path to the pickle file containing the LSH forest.
+			encoded_fasta (str): Path to encoded FASTA file (if encoded_dataset not provided).
+			encoded_dataset (EncodedFastaDataset): Pre-loaded dataset.
+			vecfile (str): Path to the HDF5 file containing vectors.
+			indexfile (str): Path to the FAISS index file.
 			top_k (int): Number of nearest neighbors to query.
+		Returns:
+			tuple: (interactome_df, G) - DataFrame of pairwise scores and NetworkX graph.
 		'''	
 		if encoded_dataset is None and encoded_fasta is not None:
-			raise ValueError("Must provide encoded_dataset if not providing encoded_fasta")
-		if encoded_dataset is None:
 			encoded_dataset = EncodedFastaDataset(encoded_fasta)
+		elif encoded_dataset is None:
+			raise ValueError("Must provide either encoded_dataset or encoded_fasta")
 
-		#hash proteome if sigfile or lshfile do not exist
-		if not os.path.exists(sigfile) or not os.path.exists(lshfile):
-			print("Signatures or LSH file not found, hashing proteome...")
-			self.hash_proteome( encoded_dataset=encoded_dataset, sigout=sigfile, lshout=lshfile )
+		#build vector database if files don't exist
+		if not os.path.exists(vecfile) or not os.path.exists(indexfile):
+			print("Vector database not found, building index...")
+			self.build_vector_database(encoded_dataset=encoded_dataset, vecout=vecfile, indexout=indexfile)
 		
-		#load lsh forest
-		with open(lshfile, 'rb') as f:
-			lsh = pickle.load(f)
+		#load FAISS index and identifier mapping
+		index = faiss.read_index(indexfile)
+		with h5py.File(vecfile, 'r') as hf:
+			identifier_list = [k.replace('_vec', '') for k in hf.keys() if k.endswith('_vec')]
+		
 		records = []
-		#pull all unique identifiers from df
-		for item in encoded_dataset:
+		#query each sequence
+		for item in tqdm.tqdm(encoded_dataset, desc="Querying vectors"):
 			identifier = item['identifier']
-			#query lsh forest for top_k nearest neighbors
-			neighbors = lsh.query(self.sig2weighted_minhash(self.forward(item)['jaccard_vec']), top_k=top_k)
-			#pull hashes for neighbors
-			sigs = self.pull_hashes([identifier] + neighbors, sigfile=sigfile)
-			q_hash = sigs[identifier]
-			#compute weighted jaccard similarity for each neighbor
-			for neighbor in neighbors:
-				records.append({'protA': identifier, 'protB': neighbor, 'score': q_hash.jaccard(sigs[neighbor])})
+			#get query vector
+			query_vec = self.vec2numpy(self.forward(item)['jaccard_vec'])
+			#normalize for cosine similarity (FAISS inner product on normalized vectors = cosine similarity)
+			faiss.normalize_L2(query_vec)
+			#query FAISS index for top_k+1 nearest neighbors (includes self)
+			distances, indices = index.search(query_vec, top_k + 1)
+			#convert to lists and skip self-match
+			distances = distances[0]
+			indices = indices[0]
+			#record pairwise scores (distances are cosine similarities for normalized vectors)
+			for dist, idx in zip(distances, indices):
+				neighbor = identifier_list[idx]
+				if neighbor != identifier:  # skip self
+					records.append({'protA': identifier, 'protB': neighbor, 'score': float(dist)})
+					
 		interactome_df = pd.DataFrame(records)
 		#build networkx graph
 		G = nx.from_pandas_edgelist(interactome_df, 'protA', 'protB', edge_attr='score')
 		return interactome_df, G
 
-	def hash_proteome( encoded_fasta = None, encoded_dataset = None, num_perm=256 , sigout='signatures.h5' , lshout='lsh_forest.pkl' ):
+	def build_vector_database(self, encoded_fasta = None, encoded_dataset = None, vecout='vectors.h5', indexout='faiss_index.bin'):
 		"""
-		Hash all sequences in the encoded dataset using Weighted MinHash.
+		Build a FAISS vector database for all sequences in the encoded dataset.
 		Args:
+			encoded_fasta (str): Path to encoded FASTA file (if encoded_dataset not provided).
 			encoded_dataset (EncodedFastaDataset): Dataset of encoded sequences.
-			num_perm (int): Number of permutations for MinHash.
+			vecout (str): Path to save vectors in HDF5 format.
+			indexout (str): Path to save FAISS index.
 		Returns:
-			pd.DataFrame: DataFrame with identifiers and their MinHash signatures.	
+			tuple: (vectors_df, index) - DataFrame with identifiers and vectors, FAISS index.
 		"""
-		#create hdf5 file to store the signatures
 		if encoded_dataset is None and encoded_fasta is not None:
-			raise ValueError("Must provide encoded_dataset if not providing encoded_fasta")
-		if encoded_dataset is None:
 			encoded_dataset = EncodedFastaDataset(encoded_fasta)
+		elif encoded_dataset is None:
+			raise ValueError("Must provide either encoded_dataset or encoded_fasta")
+			
 		with torch.no_grad():
-			lsh = MinHashLSHForest(num_perm=self.n_signatures, seed=42, l=10)
-			# Compute MinHash signatures for all sequences
+			# Compute vectors for all sequences
 			records = []
-			for item in encoded_dataset:
+			vectors_list = []
+			identifiers_list = []
+			
+			for item in tqdm.tqdm(encoded_dataset, desc="Computing vectors"):
 				identifier = item['identifier']
-				weights = self.forward(item)['jaccard_vec'].cpu().numpy()
-				mh = self.wmg.minhash(weights)
-				signature = mh.hashvalues
-				lsh.insert(identifier, signature)
-				records.append({'identifier': identifier, 'signature': signature , 'vec': weights })
-			lsh.index()
-			signature_df = pd.DataFrame(records).set_index('identifier')
-		#dump signatures to hdf5
-		with h5py.File(sigout, 'w') as hf:
-			for idx, row in signature_df.iterrows():
-				hf.create_dataset(idx, data=row['signature'])
-				hf.create_dataset(f"{idx}_vec", data=row['vec'])
+				vec = self.forward(item)['jaccard_vec'].cpu().numpy().astype('float32')
+				if vec.ndim == 1:
+					vec = vec.reshape(1, -1)
+				vectors_list.append(vec[0])
+				identifiers_list.append(identifier)
+				records.append({'identifier': identifier, 'vec': vec[0]})
+				
+			vectors_df = pd.DataFrame(records).set_index('identifier')
+			
+			# Build FAISS index for cosine similarity (using inner product on normalized vectors)
+			vectors_array = np.vstack(vectors_list).astype('float32')
+			dimension = vectors_array.shape[1]
+			
+			# Normalize vectors for cosine similarity
+			faiss.normalize_L2(vectors_array)
+			
+			# Create FAISS index (IndexFlatIP for inner product = cosine similarity on normalized vectors)
+			index = faiss.IndexFlatIP(dimension)
+			index.add(vectors_array)
+			
+		# Save vectors to HDF5
+		with h5py.File(vecout, 'w') as hf:
+			for identifier, vec in zip(identifiers_list, vectors_list):
+				hf.create_dataset(f"{identifier}_vec", data=vec)
 
-		#dump lsh to pickle
-		with open(lshout, 'wb') as f:
-			pickle.dump(lsh, f)
+		# Save FAISS index
+		faiss.write_index(index, indexout)
 		
-		return signature_df, lsh
+		return vectors_df, index
 
 
 class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
@@ -437,13 +499,15 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 				normalize = True,
 				residual = True,
 				output_edge_logits = False,
-				ncat = 16,
-				contact_mlp = True,
-				jaccard_vec_dim = 128  # new: output dimension for jaccard vector
+		ncat = 16,
+		contact_mlp = True,
+		jaccard_vec_dim = 128,  # new: output dimension for jaccard vector
+		aggregation_strategy = 'mean'  # 'mean', 'max', 'attention', or 'concat_stats'
 				):
 		super(HeteroGAE_geo_Decoder_pairwise, self).__init__()
 		# Setting the seed
 		L.seed_everything(42)
+		self.aggregation_strategy = aggregation_strategy
 		
 		self.bn = torch.nn.BatchNorm1d(in_channels['res'])
 
@@ -598,12 +662,25 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 			self.output_edge_logits = False
 			self.edge_logits_mlp = None
 
-		# New: projection for jaccard vector output
-		self.jaccard_vec_proj = torch.nn.Sequential(
-			torch.nn.Linear(lastlin, jaccard_vec_dim),
-			torch.nn.GELU(),
-			torch.nn.Linear(jaccard_vec_dim, jaccard_vec_dim)
-		)
+		# New: projection for jaccard vector output with different aggregation strategies
+		if aggregation_strategy == 'attention':
+			self.global_attn_agg = AttentionAggregation(lastlin, jaccard_vec_dim)
+			self.jaccard_vec_proj = None
+		elif aggregation_strategy == 'concat_stats':
+			# Concatenate mean, max, min, std (4x the input)
+			self.jaccard_vec_proj = torch.nn.Sequential(
+				torch.nn.Linear(lastlin * 4, jaccard_vec_dim),
+				torch.nn.GELU(),
+				torch.nn.Linear(jaccard_vec_dim, jaccard_vec_dim)
+			)
+			self.global_attn_agg = None
+		else:  # 'mean' or 'max'
+			self.jaccard_vec_proj = torch.nn.Sequential(
+				torch.nn.Linear(lastlin, jaccard_vec_dim),
+				torch.nn.GELU(),
+				torch.nn.Linear(jaccard_vec_dim, jaccard_vec_dim)
+			)
+			self.global_attn_agg = None
 		self.jaccard_vec_dim = jaccard_vec_dim
 
 	def forward(self, data , contact_pred_index=None, **kwargs):
@@ -638,8 +715,31 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
 
 		# Project to jaccard vector (global embedding)
-		# Aggregate over sequence dimension (mean pooling)
-		jaccard_vec = self.jaccard_vec_proj(z.mean(dim=0, keepdim=True) if z.dim() == 2 else z.mean(dim=0))
+		# Aggregate over sequence dimension using specified strategy
+		if self.aggregation_strategy == 'attention':
+			# Attention-based aggregation
+			if z.dim() == 2:
+				z_agg = z.unsqueeze(1)  # (seq_len, 1, dim)
+			else:
+				z_agg = z
+			jaccard_vec = self.global_attn_agg(z_agg)
+		elif self.aggregation_strategy == 'max':
+			# Max pooling
+			z_agg = z.max(dim=0)[0] if z.dim() == 2 else z.max(dim=0)[0]
+			jaccard_vec = self.jaccard_vec_proj(z_agg)
+		elif self.aggregation_strategy == 'concat_stats':
+			# Concatenate mean, max, min, std
+			z_mean = z.mean(dim=0) if z.dim() == 2 else z.mean(dim=0)
+			z_max = z.max(dim=0)[0] if z.dim() == 2 else z.max(dim=0)[0]
+			z_min = z.min(dim=0)[0] if z.dim() == 2 else z.min(dim=0)[0]
+			z_std = z.std(dim=0) if z.dim() == 2 else z.std(dim=0)
+			z_concat = torch.cat([z_mean, z_max, z_min, z_std], dim=-1)
+			jaccard_vec = self.jaccard_vec_proj(z_concat)
+		else:  # 'mean' (default)
+			# Mean pooling
+			z_agg = z.mean(dim=0) if z.dim() == 2 else z.mean(dim=0)
+			jaccard_vec = self.jaccard_vec_proj(z_agg)
+		
 		if self.normalize:
 			jaccard_vec = jaccard_vec / (jaccard_vec.norm(p=2, dim=-1, keepdim=True) + 1e-10)
 		# jaccard_vec: (jaccard_vec_dim,)
