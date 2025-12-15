@@ -965,14 +965,14 @@ class PDB2PyG:
 
 	
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, add_prody = False, verbose = True ):
+	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, add_prody = False, verbose = True , **kwargs):
 		with h5py.File(filename , mode = 'w') as f:
 			for pdbfile in  tqdm.tqdm( pdbfiles ):                    
 				if verbose:
 					print(pdbfile)
 				hetero_data = None
 				try:
-					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain , verbose = verbose , add_prody = add_prody)
+					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain , verbose = verbose , add_prody = add_prody , **kwargs)
 					if hetero_data:
 						identifier = hetero_data.identifier
 						f.create_group(identifier)
