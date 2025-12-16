@@ -1,20 +1,38 @@
-from foldtree2.src.converter import pdbgraph
+from foldtree2.src import pdbgraph
 import os
+import glob
 import torch
+import numpy as np
 import argparse
     
 # command line arguments are an input directory with pdbs, a model file and an output directory
 if __name__ == '__main__':
-    converter = pdbgraph.PDB2PyG()import glob
-    #set device to gpu if available
+    # Setting the seed for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    # Initialize converter with config
+    converter = pdbgraph.PDB2PyG(
+        aapropcsv='foldtree2/config/aaindex1.csv'
+    )
+    
+    # Set device to gpu if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
     parser = argparse.ArgumentParser(description='Encode pdbs')
     parser.add_argument('input_dir', type=str, help='Input directory with pdbs')
-    parser.add_argument('input_glob', type=str, help='Input directory with pdbs')    
+    parser.add_argument('input_glob', type=str, help='Glob pattern for input pdbs')    
     parser.add_argument('output_h5', type=str, help='Output file with pytorch geometric graphs of pdbs')
-    parser.add_argument( 'foldxdir' , type = str , help = 'foldx directory with foldx output for all pdbs')
+    parser.add_argument('foldxdir', type=str, nargs='?', default=None, help='foldx directory with foldx output for all pdbs')
+    parser.add_argument('--distance', type=float, default=15, help='Distance threshold for contact map (default: 15)')
+    parser.add_argument('--add-prody', action='store_true', default=True, help='Add ProDy features (default: True)')
+    parser.add_argument('--verbose', action='store_true', default=False, help='Verbose output')
+    parser.add_argument('--multiprocessing', action='store_true', default=False, help='Use multiprocessing for parallel processing')
+    parser.add_argument('--ncpu', type=int, default=25, help='Number of CPUs for multiprocessing (default: 25)')
     
-    #add help for the arguments
+    # Add help for the arguments
     parser.description = "Encode PDB files into PyTorch geometric graphs with optional FoldX data integration."
     parser.epilog = ("Example usage:\n"
                      "  python encode_pdbs.py /path/to/pdbs '*.pdb' output.h5 /path/to/foldx")
@@ -22,13 +40,33 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if args.input_glob:
-        files = glob.glob( args.input_glob )
+        files = glob.glob(args.input_glob)
     else:
         files = glob.glob(os.path.join(args.input_dir, '*.pdb'))
+    
+    # Shuffle the data for randomization
+    np.random.shuffle(files)
+    
     output_h5 = args.output_h5
-    if args.foldxdir:
-        foldx = args.foldxdir
+    foldx = args.foldxdir
+    
+    # Create h5 dataset with pytorch geometric graphs
+    # Using the same parameters as in the notebook
+    if args.multiprocessing:
+        converter.store_pyg_mp(
+            files, 
+            filename=output_h5, 
+            foldxdir=foldx, 
+            verbose=args.verbose, 
+            add_prody=args.add_prody,
+            ncpu=args.ncpu
+        )
     else:
-        foldx = None
-    #create h5 dataset with pytorch geometric graphs
-    converter.store_pyg(pdbfiles, filename= output_h5, foldxdir = foldx , verbose = False)
+        converter.store_pyg(
+            files, 
+            filename=output_h5, 
+            foldxdir=foldx, 
+            verbose=args.verbose, 
+            add_prody=args.add_prody,
+            distance=args.distance
+        )
