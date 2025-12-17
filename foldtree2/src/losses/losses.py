@@ -193,8 +193,6 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D	
 		neg_loss = neg_loss[mask]
-
-	
 	neg_loss = neg_loss.mean()
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto

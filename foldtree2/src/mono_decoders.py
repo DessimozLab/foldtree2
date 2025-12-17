@@ -152,16 +152,11 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		self.lastlin = lastlin
 
 		self.lin = torch.nn.Sequential(
-				torch.nn.Dropout(dropout),
-				DynamicTanh(finalout*layers , channels_last = True),
 				torch.nn.Linear( finalout*layers , Xdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(  Xdecoder_hidden[0], Xdecoder_hidden[1]),
 				torch.nn.GELU(),
-				torch.nn.Linear(Xdecoder_hidden[1], lastlin),
-				#torch.nn.Tanh(),
-				#DynamicTanh(lastlin , channels_last = True),
-				
+				torch.nn.Linear(Xdecoder_hidden[1], lastlin),				
 				)
 		
 
@@ -178,9 +173,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					torch.nn.GELU(),
 					torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1] ) ,
 					torch.nn.GELU(),
-					#DynamicTanh(FFT2decoder_hidden[1] , channels_last = True),
 					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] +in_channels['fft2r'] ),
-					#SIRENLayer( in_channels['fft2i'] +in_channels['fft2r'] , in_channels['fft2i'] +in_channels['fft2r'] , omega_0 = 30 )
 				)
 		else:
 			self.godnodedecoder = None
@@ -214,6 +207,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if output_ss == True:
 			self.output_ss = True
 			self.ss_mlp = torch.nn.Sequential(
+				torch.nn.LayerNorm(lastlin),
 				torch.nn.Linear(lastlin, 128),
 				torch.nn.GELU(),
 				torch.nn.Linear(128,64),
@@ -231,7 +225,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			if type(anglesdecoder_hidden) is not list:
 				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
 			self.angles_mlp = torch.nn.Sequential(
-				torch.nn.Dropout(dropout),
+				#torch.nn.Dropout(dropout),
 				torch.nn.Linear(lastlin, anglesdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1] ) ,
@@ -246,16 +240,17 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if output_edge_logits == True:
 			self.output_edge_logits = True
 			self.edge_logits_mlp = torch.nn.Sequential(
+				#layernorm
+				torch.nn.LayerNorm(2*lastlin),
 				torch.nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(anglesdecoder_hidden[0],anglesdecoder_hidden[1]),
 				torch.nn.GELU(),
 				torch.nn.Linear(anglesdecoder_hidden[1],anglesdecoder_hidden[2]),
 				torch.nn.GELU(),
-				torch.nn.Linear(anglesdecoder_hidden[2],256),
+				torch.nn.Linear(anglesdecoder_hidden[2],ncat),
 				torch.nn.GELU(),
-				torch.nn.Linear(256,ncat),
-				torch.nn.LogSoftmax(dim=1)
+				torch.nn.Sigmoid()
 			)
 		else:
 			self.output_edge_logits = False
@@ -342,136 +337,268 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'ss_pred': ss_pred , 'z': z , }
 
 
-class HeteroGAE_AA_Decoder(torch.nn.Module):
-	def __init__(self, in_channels={'res': 10},
-			  	 xdim=20, concat_positions=True, 
-				 hidden_channels={'res_backbone_res': [20, 20, 20]}, 
-				 layers=3,
-				AAdecoder_hidden=[20, 20, 20], 
-				amino_mapper=None, 
-				flavor=None, 
-				dropout=0.001, 
-				normalize=True, 
-				residual=True , **kwargs):
-		
-		super(HeteroGAE_AA_Decoder, self).__init__()
+class CNN_geo_Decoder(torch.nn.Module):
+	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23 },
+				concat_positions = False, 
+				conv_channels = [64, 128, 256],
+				kernel_sizes = [3, 3, 3],
+				FFT2decoder_hidden = [10, 10],
+				contactdecoder_hidden = [10, 10],
+				ssdecoder_hidden = [10, 10],
+				Xdecoder_hidden=[30, 30], 
+				anglesdecoder_hidden=[30, 30],
+				RTdecoder_hidden=[30, 30],
+				metadata={}, 
+				dropout= .001,
+				output_fft = False,
+				output_rt = False,
+				output_angles = False,
+				output_ss = False,
+				normalize = True,
+				residual = True,
+				output_edge_logits = False,
+				ncat = 16,
+				contact_mlp = True,
+				pool_type = 'global_mean' ):
+		super(CNN_geo_Decoder, self).__init__()
+		# Setting the seed
 		L.seed_everything(42)
-
-		if concat_positions:
+		
+		if concat_positions == True:
 			in_channels['res'] = in_channels['res'] + 256
-
+		
+		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
-		self.convs = torch.nn.ModuleList()
-		self.norms = torch.nn.ModuleList()
+		
 		self.normalize = normalize
 		self.concat_positions = concat_positions
 		in_channels_orig = copy.deepcopy(in_channels)
-		self.hidden_channels = hidden_channels
-		self.in_channels = in_channels
-		self.amino_acid_indices = amino_mapper
-		self.nlayers = layers
+		self.metadata = metadata
+		self.output_fft = output_fft
 		self.dropout = torch.nn.Dropout(p=dropout)
-		self.jk = JumpingKnowledge(mode='cat')
 		self.residual = residual
-		finalout = list(hidden_channels.values())[-1][-1]
-		for i in range(layers):
-			layer = {}
-			for k, edge_type in enumerate(hidden_channels.keys()):
-				datain = edge_type[0]
-				dataout = edge_type[2]
-				if flavor == 'gat':
-					layer[edge_type] = GATv2Conv((-1, -1), hidden_channels[edge_type][i], heads=3, concat=False)
-				if flavor == 'mfconv':
-					layer[edge_type] = MFConv((-1, -1), hidden_channels[edge_type][i], max_degree=5, aggr='mean')
-				if flavor == 'transformer' or edge_type == ('res', 'informs', 'godnode4decoder'):
-					layer[edge_type] = TransformerConv((-1, -1), hidden_channels[edge_type][i], heads=3, concat=False)
-				if flavor == 'sage' :
-					layer[edge_type] = SAGEConv((-1, -1), hidden_channels[edge_type][i])
-				if k == 0 and i == 0:
-					in_channels[dataout] = hidden_channels[edge_type][i]
-				if k == 0 and i > 0:
-					in_channels[dataout] = hidden_channels[edge_type][i-1]
-				if k > 0 and i > 0:
-					in_channels[dataout] = hidden_channels[edge_type][i]
-				if k > 0 and i == 0:
-					in_channels[dataout] = hidden_channels[edge_type][i]
-			conv = HeteroConv(layer, aggr='mean')
-			self.convs.append(conv)
-			self.norms.append(GraphNorm(finalout))
-		if self.residual:
+		self.pool_type = pool_type
+		
+		# CNN layers
+		self.convs = torch.nn.ModuleList()
+		self.norms = torch.nn.ModuleList()
+		
+		input_dim = in_channels['res']
+		for i, (out_channels, kernel_size) in enumerate(zip(conv_channels, kernel_sizes)):
+			# 1D convolution for sequence-like data
+			self.convs.append(
+				torch.nn.Conv1d(input_dim if i == 0 else conv_channels[i-1], 
+								out_channels, 
+								kernel_size=kernel_size, 
+								padding=kernel_size//2)
+			)
+			self.norms.append(torch.nn.BatchNorm1d(out_channels))
+			
+		finalout = conv_channels[-1]
+		
+		if self.residual == True:
 			lastlin = in_channels_orig['res']
 		else:
-			lastlin = AAdecoder_hidden[-1]
+			lastlin = Xdecoder_hidden[-1]
 
-		self.in2model = torch.nn.Sequential(	
-			torch.nn.Dropout(dropout),
-			torch.nn.Linear(in_channels['res'], hidden_channels[('res', 'backbone', 'res')][0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(hidden_channels[('res', 'backbone', 'res')][0], hidden_channels[('res', 'backbone', 'res')][0]),
-			torch.nn.Tanh()
-		)
+		self.lastlin = lastlin
 
 		self.lin = torch.nn.Sequential(
-			torch.nn.Dropout(dropout),
-			#DynamicTanh(finalout * layers, channels_last=True),
-			torch.nn.Linear(finalout * layers, AAdecoder_hidden[0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[1], lastlin),
-			torch.nn.Tanh(),
-			#DynamicTanh(lastlin, channels_last=True),
-		)
+				torch.nn.Linear(finalout, Xdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(Xdecoder_hidden[1], lastlin),				
+				)
+		
+		if output_fft == True:	
+			self.godnodedecoder = torch.nn.Sequential(
+					torch.nn.Linear(in_channels['godnode4decoder'], FFT2decoder_hidden[0]),
+					torch.nn.GELU(),
+					torch.nn.Linear(FFT2decoder_hidden[0], FFT2decoder_hidden[1]),
+					torch.nn.GELU(),
+					torch.nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] + in_channels['fft2r']),
+				)
+		else:
+			self.godnodedecoder = None
 
-		self.aadecoder = torch.nn.Sequential(
-			torch.nn.Dropout(dropout),
-			#DynamicTanh(lastlin + in_channels_orig['res'], channels_last=True),
-			torch.nn.Linear(lastlin + in_channels_orig['res'], AAdecoder_hidden[0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
-			torch.nn.GELU(),
-			#torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			#torch.nn.GELU(),
-			#DynamicTanh(AAdecoder_hidden[1], channels_last=True),
-			torch.nn.Linear(AAdecoder_hidden[1], xdim),
-			torch.nn.LogSoftmax(dim=1)
-		)
+		if contact_mlp == True:
+			self.contact_mlp = torch.nn.Sequential(
+				torch.nn.Dropout(dropout),
+				torch.nn.Linear(2*lastlin, contactdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(contactdecoder_hidden[1], 1))
+		else:
+			self.contact_mlp = None
 
-	def forward(self, data, **kwargs):
-		xdata, edge_index = data.x_dict, data.edge_index_dict
-		xdata['res'] = self.dropout(xdata['res'])
-		if self.concat_positions:
-			xdata['res'] = torch.cat([xdata['res'], data['positions'].x], dim=1)
+		if output_rt == True:
+			if type(RTdecoder_hidden) is not list:
+				RTdecoder_hidden = [RTdecoder_hidden, RTdecoder_hidden]
+			self.rt_mlp = torch.nn.Sequential(
+				torch.nn.Dropout(dropout),
+				torch.nn.Linear(lastlin, RTdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(RTdecoder_hidden[1], 7))
+		else:
+			self.rt_mlp = None
 
+		if output_ss == True:
+			self.output_ss = True
+			self.ss_mlp = torch.nn.Sequential(
+				torch.nn.LayerNorm(lastlin),
+				torch.nn.Linear(lastlin, 128),
+				torch.nn.GELU(),
+				torch.nn.Linear(128, 64),
+				torch.nn.GELU(),
+				torch.nn.Linear(64, 3),
+				torch.nn.LogSoftmax(dim=1)
+			)
+		else:
+			self.output_ss = False
+			self.ss_mlp = None
 
-		xdata['res'] = self.in2model(xdata['res'])
+		if output_angles == True:
+			if type(anglesdecoder_hidden) is not list:
+				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
+			self.angles_mlp = torch.nn.Sequential(
+				torch.nn.Linear(lastlin, anglesdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[1], 3),
+				torch.nn.Tanh()
+			)
+		else:
+			self.angles_mlp = None
 
-		inz = xdata['res'].clone()
-		x_dict_list = []
-		for i, layer in enumerate(self.convs):
-			if i > 0:
-				prev = xdata['res'].clone()
-			xdata = layer(xdata, edge_index)
-			xdata['res'] = F.gelu(xdata['res'])
-			xdata['res'] = self.norms[i](xdata['res'])
-			if i > 0:
-				xdata['res'] = xdata['res'] + prev
-			x_dict_list.append(xdata['res'])
-		xdata['res'] = self.jk(x_dict_list)
-		z = self.lin(xdata['res'])
-		if self.residual:
+		if output_edge_logits == True:
+			self.output_edge_logits = True
+			self.edge_logits_mlp = torch.nn.Sequential(
+				torch.nn.LayerNorm(2*lastlin),
+				torch.nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], ncat),
+				torch.nn.GELU(),
+				torch.nn.Sigmoid()
+			)
+		else:
+			self.output_edge_logits = False
+			self.edge_logits_mlp = None
+
+		self.sigmoid = nn.Sigmoid()
+
+	def forward(self, data, contact_pred_index, **kwargs):
+		xdata, _ = data.x_dict, data.edge_index_dict
+		x = xdata['res']
+		x = self.dropout(x)
+		
+		if self.concat_positions == True:
+			x = torch.cat([x, data['positions'].x], dim=1)
+
+		# Copy for residual connection
+		inz = x.clone()
+		
+		# Handle batched data for CNN
+		batch = data['res'].batch if hasattr(data['res'], 'batch') and data['res'].batch is not None else None
+		
+		if batch is not None:
+			# Group by batch
+			num_graphs = batch.max().item() + 1
+			x_list = []
+			for i in range(num_graphs):
+				mask = batch == i
+				x_batch = x[mask]  # Shape: (seq_len, features)
+				
+				# Transpose for Conv1d: (features, seq_len)
+				x_batch = x_batch.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
+				
+				# Apply CNN layers
+				for j, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+					x_batch = conv(x_batch)
+					x_batch = F.gelu(x_batch)
+					x_batch = norm(x_batch)
+				
+				# Transpose back and remove batch dimension
+				x_batch = x_batch.squeeze(0).transpose(0, 1)  # (seq_len, features)
+				x_list.append(x_batch)
+			
+			# Concatenate back
+			x = torch.cat(x_list, dim=0)
+		else:
+			# Single graph case
+			x = x.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
+			
+			for conv, norm in zip(self.convs, self.norms):
+				x = conv(x)
+				x = F.gelu(x)
+				x = norm(x)
+			
+			x = x.squeeze(0).transpose(0, 1)  # (seq_len, features)
+
+		# Final linear transformation
+		z = self.lin(x)
+		
+		if self.residual == True:
 			z = z + inz
-		if self.normalize:
+		if self.normalize == True:
 			z = z / (torch.norm(z, dim=1, keepdim=True) + 1e-10)
-		decoder_in = torch.cat([inz, z], axis=1)
-		aa = self.aadecoder(decoder_in)
-		return { 'aa':aa }
 
-	def x_to_amino_acid_sequence(self, x_r):
-		indices = torch.argmax(x_r, dim=1)
-		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
-		return amino_acid_sequence
+		# Decode godnode
+		fft2_pred = None
+		if self.output_fft == True:
+			zgodnode = xdata['godnode4decoder']
+			fft2_pred = self.godnodedecoder(xdata['godnode4decoder'])
+		else:
+			zgodnode = None
+		
+		rt_pred = None
+		if self.rt_mlp is not None:
+			rt_pred = self.rt_mlp(torch.cat([inz, z], axis=1))
+		
+		ss_pred = None
+		if self.ss_mlp is not None:
+			ss_pred = self.ss_mlp(z)
+
+		angles = None
+		edge_logits = None
+
+		if self.angles_mlp is not None:
+			angles = self.angles_mlp(z)
+			angles = angles * 2 * np.pi
+
+		if contact_pred_index is None:
+			return {'edge_probs': None, 'zgodnode': None, 'fft2pred': fft2_pred, 
+					'rt_pred': None, 'angles': angles, 'edge_logits': edge_logits, 
+					'ss_pred': ss_pred, 'z': z}
+		else:
+			if self.contact_mlp is None:
+				edge_probs = self.sigmoid(torch.sum(z[contact_pred_index[0]] * z[contact_pred_index[1]], axis=1))
+			else:
+				edge_scores = self.contact_mlp(torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]]], axis=1)).squeeze()
+				edge_probs = self.sigmoid(edge_scores)
+			if self.edge_logits_mlp is not None:
+				edge_logits = self.edge_logits_mlp(torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]]], axis=1)).squeeze()
+
+		if 'init' in kwargs and kwargs['init'] == True:
+			# Initialize weights explicitly (Xavier initialization)
+			for conv in self.convs:
+				for param in conv.parameters():
+					if param.dim() > 1:
+						nn.init.xavier_uniform_(param)
+
+		return {'edge_probs': edge_probs, 'edge_logits': edge_logits, 'zgodnode': zgodnode, 
+				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
+				'ss_pred': ss_pred, 'z': z}
+
 
 class Transformer_AA_Decoder(torch.nn.Module):
 	def __init__(
@@ -516,17 +643,35 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
 		self.lin = torch.nn.Sequential(
+			#layernorm
+			torch.nn.LayerNorm(d_model),
 			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			#torch.nn.GELU(),
-			#DynamicTanh(AAdecoder_hidden[2], channels_last=True),
-			#torch.nn.Linear(AAdecoder_hidden[2], xdim),
-			#torch.nn.GELU(),
+			torch.nn.GELU(),
+			torch.nn.Linear(AAdecoder_hidden[2], xdim),
 			torch.nn.LogSoftmax(dim=1)
 		)
+
+		self.cnn_decoder = None
+		if use_cnn_decoder := kwargs.get('use_cnn_decoder', False):
+			self.prenorm = torch.nn.LayerNorm(d_model)
+			self.cnn_decoder = torch.nn.Sequential(
+				# Reshape to (batch, channels, seq_len) for 1D conv
+				#
+				# Add channel dimension and transpose for conv1d
+				# Conv1d expects (batch, channels, seq_len)
+				torch.nn.Conv1d(d_model, AAdecoder_hidden[0], kernel_size=3, padding=1),
+				torch.nn.GELU(),
+				torch.nn.Conv1d(AAdecoder_hidden[0], AAdecoder_hidden[1], kernel_size=3, padding=1),
+				torch.nn.GELU(),
+				torch.nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2], kernel_size=3, padding=1),
+				torch.nn.GELU(),
+				torch.nn.Conv1d(AAdecoder_hidden[2], xdim, kernel_size=1),
+				# Transpose back to (seq_len, batch, features) and apply softmax
+			)
 
 	def forward(self, data, **kwargs):
 		x = data.x_dict['res']
@@ -555,7 +700,15 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
 		
-		aa = self.lin(x)
+		if self.cnn_decoder is not None:
+			# Apply CNN decoder
+			x = self.prenorm(x)
+			x_cnn = x.permute(1, 2, 0)  # (batch, d_model, seq_len)
+			x_cnn = self.cnn_decoder(x_cnn)  # (batch, xdim, seq_len)
+			x_cnn = x_cnn.permute(2, 0, 1)  # (seq_len, batch, xdim)
+			aa = F.log_softmax(x_cnn, dim=-1)
+		else:
+			aa = self.lin(x)
 		
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch
@@ -729,6 +882,8 @@ class MultiMonoDecoder(torch.nn.Module):
 			elif task == 'geometry_transformer':
 				#throw an error if geometry_transformer decoder is not implemented
 				self.decoders['geometry_transformer'] = Transformer_Geometry_Decoder(**configs['geometry_transformer'])
+			elif task == 'geometry_cnn':
+				self.decoders['geometry_cnn'] = CNN_geo_Decoder(**configs['geometry_cnn'])
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():

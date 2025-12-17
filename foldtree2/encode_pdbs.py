@@ -22,8 +22,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     parser = argparse.ArgumentParser(description='Encode pdbs')
-    parser.add_argument('input_dir', type=str, help='Input directory with pdbs')
-    parser.add_argument('input_glob', type=str, help='Glob pattern for input pdbs')    
+    parser.add_argument('input_path', type=str, help='Input directory with pdbs or glob pattern (e.g., /path/to/pdbs or "/path/**/*.pdb")')
     parser.add_argument('output_h5', type=str, help='Output file with pytorch geometric graphs of pdbs')
     parser.add_argument('foldxdir', type=str, nargs='?', default=None, help='foldx directory with foldx output for all pdbs')
     parser.add_argument('--distance', type=float, default=15, help='Distance threshold for contact map (default: 15)')
@@ -31,21 +30,33 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true', default=False, help='Verbose output')
     parser.add_argument('--multiprocessing', action='store_true', default=False, help='Use multiprocessing for parallel processing')
     parser.add_argument('--ncpu', type=int, default=25, help='Number of CPUs for multiprocessing (default: 25)')
+    parser.add_argument('--nstructs', type=int, default=None, help='Number of structures to use (random subsample if specified)')
     
     # Add help for the arguments
     parser.description = "Encode PDB files into PyTorch geometric graphs with optional FoldX data integration."
     parser.epilog = ("Example usage:\n"
-                     "  python encode_pdbs.py /path/to/pdbs '*.pdb' output.h5 /path/to/foldx")
+                     "  python encode_pdbs.py /path/to/pdbs output.h5\n"
+                     "  python encode_pdbs.py '/path/**/*.pdb' output.h5 /path/to/foldx")
 
     args = parser.parse_args()
     
-    if args.input_glob:
-        files = glob.glob(args.input_glob)
+    # Handle input path - can be directory or glob pattern
+    if os.path.isdir(args.input_path):
+        # It's a directory, find all PDB files in it
+        files = glob.glob(os.path.join(args.input_path, '*.pdb'))
+        input_source = args.input_path
     else:
-        files = glob.glob(os.path.join(args.input_dir, '*.pdb'))
+        # It's a glob pattern
+        files = glob.glob(args.input_path, recursive=True)
+        input_source = args.input_path
     
+    print(f"Found {len(files)} PDB files from {input_source}")
     # Shuffle the data for randomization
     np.random.shuffle(files)
+    
+    # Subsample if nstructs is specified
+    if args.nstructs is not None:
+        files = files[:args.nstructs]
     
     output_h5 = args.output_h5
     foldx = args.foldxdir

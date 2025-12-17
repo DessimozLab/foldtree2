@@ -869,19 +869,16 @@ class PDB2PyG:
 	def process_single_pdb(self,pdb,**keywargs):
 		"""Process a single PDB file."""
 		# Create a new instance of PDB2PyG for this process
-		try:
-			converter = PDB2PyG()	
-			hetero_data = converter.struct2pyg(pdb,  **keywargs)
-			return (hetero_data, pdb, None)
-		except Exception as e:
-			return (None, pdb, str(e))
-
+		hetero_data = self.struct2pyg(pdb,  **keywargs)
+		return (hetero_data, pdb, None)
+	
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg_mp(self, pdbfiles, filename, verbose=True, ncpu=4, **kwargs):
+	def store_pyg_mp(self, pdbfiles, filename, ncpu=4, verbose = False, **kwargs):
 		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
 		# Prepare arguments for multiprocessing
 		args_list = [pdb_file for pdb_file in pdbfiles]
 		print(kwargs)
+		
 		# Process files in parallel and write to HDF5 as they complete
 		with h5py.File(filename, mode='w') as f:
 			structs_group = f.create_group('structs')
@@ -895,6 +892,10 @@ class PDB2PyG:
 					try:
 						result = future.result()
 					except Exception as e:
+						if verbose:
+							print(f"Error processing future: {str(e)}")
+							print(traceback.format_exc())
+
 						# Handle timeout or other exceptions
 						failed_files.append((args_list[futures.index(future)][0], f"Future exception: {str(e)}"))
 						continue
