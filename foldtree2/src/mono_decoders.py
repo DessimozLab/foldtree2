@@ -385,16 +385,25 @@ class CNN_geo_Decoder(torch.nn.Module):
 		self.norms = torch.nn.ModuleList()
 		
 		input_dim = in_channels['res']
-		for i, (out_channels, kernel_size) in enumerate(zip(conv_channels, kernel_sizes)):
+
+		# small input dimension to conv dim dnn first
+		self.input_lin = torch.nn.Sequential(
+			torch.nn.Linear(input_dim, conv_channels[0]),
+			torch.nn.GELU(),
+			torch.nn.Linear(conv_channels[0], conv_channels[0]),
+			torch.nn.GELU()
+		)
+
+		for i, (channels, kernel_size) in enumerate(zip(conv_channels, kernel_sizes)):
 			# 1D convolution for sequence-like data
 			self.convs.append(
-				torch.nn.Conv1d(input_dim if i == 0 else conv_channels[i-1], 
-								out_channels, 
+				torch.nn.Conv1d(channels if i == 0 else conv_channels[i-1], 
+								channels, 
 								kernel_size=kernel_size, 
 								padding=kernel_size//2)
 			)
-			self.norms.append(torch.nn.BatchNorm1d(out_channels))
-			
+			self.norms.append(torch.nn.BatchNorm1d(channels))
+		
 		finalout = conv_channels[-1]
 		
 		if self.residual == True:
@@ -504,6 +513,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 		if self.concat_positions == True:
 			x = torch.cat([x, data['positions'].x], dim=1)
 
+		# Initial linear transformation
+		x = self.input_lin(x)
+		
 		# Copy for residual connection
 		inz = x.clone()
 		
