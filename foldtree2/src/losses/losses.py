@@ -56,81 +56,6 @@ def jaccard_distance_multiset(A: torch.Tensor,
 
 	return jaccard_similarity
 
-def recon_loss(data , pos_edge_index: Tensor , decoder = None , poslossmod = 1 , neglossmod= 1,  plddt = True  , offdiag = False , nclamp = 30 , key = None) -> Tensor:
-	r"""Given latent variables :obj:`z`, computes the binary cross
-	entropy loss for positive edges :obj:`pos_edge_index` and negative
-	sampled edges.
-
-	Args:
-		z (torch.Tensor): The latent space :math:`\mathbf{Z}`.
-		pos_edge_index (torch.Tensor): The positive edges to train against.
-		neg_edge_index (torch.Tensor, optional): The negative edges to
-			train against. If not given, uses negative sampling to
-			calculate negative edges. (default: :obj:`None`)
-	"""
-	#remove the diagonal
-	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
-	res =decoder(data, pos_edge_index )
-
-	if key == None:
-		pos = res[1]
-	if key != None:
-		pos = res[key]
-	
-	#turn pos edge index into a binary matrix
-	pos_loss = -torch.log( pos + EPS)
-	if plddt == True:
-		c1 = data['plddt'].x[pos_edge_index[0]].view(-1,1)
-		c2 = data['plddt'].x[pos_edge_index[1]].view(-1,1)
-		#both have to be above .5, binary and operation
-		c1 = c1 > .5
-		c2 = c2 > .5
-		mask = c1 & c2
-		pos_loss = pos_loss.view(-1,1)[ mask]
-	if offdiag == True:
-		#subtract the indices
-		nres = pos_edge_index[0] - pos_edge_index[1]
-		nres = torch.abs(nres)
-		nres = torch.clamp(nres, max = nclamp)
-		nres = nres / nclamp
-		#sigmoid_modulation = torch.sigmoid(-(nres - nclamp / 2) / (nclamp / 10))
-		pos_loss = pos_loss.view(-1,1) * nres.view(-1,1).float()
-	
-	pos_loss = pos_loss.mean()
-	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
-	
-	#remove the diagonal
-	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
-	res = decoder(data ,  neg_edge_index )
-
-	if key == None:
-		neg = res[1]
-	if key != None:
-		neg = res[key]
-
-	neg_loss = -torch.log( ( 1 - neg) + EPS )
-	if plddt == False:
-		c1 = data['plddt'].x[pos_edge_index[0]].view(-1,1)
-		c2 = data['plddt'].x[pos_edge_index[1]].view(-1,1)
-		#both have to be above .5, binary and operation
-		c1 = c1 > .5
-		c2 = c2 > .5
-		mask = c1 & c2
-		neg_loss = neg_loss.view(-1,1)[mask]
-		
-	if offdiag == True:
-		#subtract the indices
-		nres = neg_edge_index[0] - neg_edge_index[1]
-		#take the absolute value
-		nres = torch.abs(nres)
-		nres = torch.clamp(nres, max = nclamp)
-		#divide by nclamp
-		nres = nres / nclamp
-		#sigmoid_modulation = torch.sigmoid(-(nres - nclamp / 2) / (nclamp / 10))
-		neg_loss = neg_loss.view(-1,1) * nres.view(-1,1).float()
-	neg_loss = neg_loss.mean()
-	return poslossmod*pos_loss + neglossmod*neg_loss  , torch.tensor(0.0)
-
 def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor:
 	# Remove the diagonal
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
@@ -157,8 +82,8 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	if plddt == True:
 		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1)
 		c2 = data['plddt'].x[pos_edge_index[1]].squeeze(1)
-		c1 = c1 > 30
-		c2 = c2 > 30
+		c1 = c1 > .30
+		c2 = c2 > .30
 		mask = c1 & c2
 		#mask = mask.squeeze(1)  # Ensure mask is 1D
 		pos_loss[mask] = 0
@@ -179,8 +104,8 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	if plddt == True:
 		c1 = data['plddt'].x[neg_edge_index[0]].squeeze(1)
 		c2 = data['plddt'].x[neg_edge_index[1]].squeeze(1)
-		c1 = c1 > 30
-		c2 = c2 > 30
+		c1 = c1 > .30
+		c2 = c2 > .30
 		mask = c1 & c2
 		#mask = mask.squeeze(1)  # Ensure mask is 1D	
 		neg_loss[mask] = 0
@@ -280,11 +205,11 @@ def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag =
 		c1 = data['plddt'].x[edge_index[0]].view(-1,1)
 		c2 = data['plddt'].x[edge_index[1]].view(-1,1)
 		#both have to be above .5, binary and operation
-		c1 = c1 > 30
-		c2 = c2 > 30
+		c1 = c1 > .30
+		c2 = c2 > .30
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D
-		disto_loss[ mask] = 0
+		disto_loss[mask] = 0
 	
 	disto_loss = disto_loss.mean()
 	return disto_loss
