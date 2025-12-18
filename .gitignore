@@ -93,6 +93,8 @@ checkpoints/
 models/
 wandb/
 lightning_logs/
+tmp/
+models/
 
 # Data files
 *.csv
@@ -102,6 +104,11 @@ lightning_logs/
 *.parquet
 *.npy
 *.npz
+*.svg
+*.png
+*.jpg
+*.pdb
+
 
 # Bioinformatics files
 *.pdb
@@ -118,7 +125,7 @@ lightning_logs/
 *.index
 *.dbtype
 *.lookup
-
+*.txt
 
 # HDF5 files
 *.h5

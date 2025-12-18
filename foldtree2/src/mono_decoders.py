@@ -498,6 +498,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 				torch.nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], ncat),
 				torch.nn.GELU(),
 				torch.nn.Sigmoid()
+				
 			)
 		else:
 			self.output_edge_logits = False
@@ -610,8 +611,6 @@ class CNN_geo_Decoder(torch.nn.Module):
 		return {'edge_probs': edge_probs, 'edge_logits': edge_logits, 'zgodnode': zgodnode, 
 				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
 				'ss_pred': ss_pred, 'z': z}
-
-
 class Transformer_AA_Decoder(torch.nn.Module):
 	def __init__(
 		self,
@@ -654,7 +653,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
-		self.lin = torch.nn.Sequential(
+		self.dnn_decoder = torch.nn.Sequential(
 			#layernorm
 			torch.nn.LayerNorm(d_model),
 			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
@@ -663,7 +662,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[2], xdim),
+			torch.nn.Linear(AAdecoder_hidden[2], 20),
 			torch.nn.LogSoftmax(dim=1)
 		)
 
@@ -681,7 +680,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2], kernel_size=3, padding=1),
 				torch.nn.GELU(),
-				torch.nn.Conv1d(AAdecoder_hidden[2], xdim, kernel_size=1),
+				torch.nn.Conv1d(AAdecoder_hidden[2], 20, kernel_size=1),
 				# Transpose back to (seq_len, batch, features) and apply softmax
 			)
 
@@ -712,26 +711,35 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
 		
-		if self.cnn_decoder is not None:
-			# Apply CNN decoder
-			x = self.prenorm(x)
-			x_cnn = x.permute(1, 2, 0)  # (batch, d_model, seq_len)
-			x_cnn = self.cnn_decoder(x_cnn)  # (batch, xdim, seq_len)
-			x_cnn = x_cnn.permute(2, 0, 1)  # (seq_len, batch, xdim)
-			aa = F.log_softmax(x_cnn, dim=-1)
-		else:
-			aa = self.lin(x)
-		
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch
 			aa_list = []
 			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
 				# Remove batch dimension and padding (assume original lengths from batch)
 				seq_len = (batch == i).sum().item()
-				aa_list.append(self.lin(xi[:seq_len, 0]))
+				if self.cnn_decoder is not None:
+					# Apply CNN decoder
+					xi = self.prenorm(xi.squeeze(1))  # (seq_len, d_model)
+					xi_cnn = xi.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
+					xi_cnn = self.cnn_decoder(xi_cnn)  # (1, 20, seq_len)
+					xi_cnn = xi_cnn.permute(2, 0, 1).squeeze(1)  # (seq_len, 20)
+					aa_list.append(F.log_softmax(xi_cnn[:seq_len, :], dim=-1))
+				else:
+					aa_list.append(self.dnn_decoder(xi[:seq_len, 0]))
 			aa = torch.cat(aa_list, dim=0)
-		return  {'aa': aa }
-
+			return  {'aa': aa }
+		else:
+			if self.cnn_decoder is not None:
+				# Apply CNN decoder
+				x = self.prenorm(x)
+				x_cnn = x.permute(1, 2, 0)  # (batch, d_model, seq_len)
+				x_cnn = self.cnn_decoder(x_cnn)  # (batch, xdim, seq_len)
+				x_cnn = x_cnn.permute(2, 0, 1)  # (seq_len, batch, xdim)
+				aa = F.log_softmax(x_cnn, dim=-1)
+			else:
+				aa = self.dnn_decoder(x)
+			return {'aa': aa}
+	
 	def x_to_amino_acid_sequence(self, x_r):
 		indices = torch.argmax(x_r, dim=1)
 		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)

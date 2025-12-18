@@ -46,17 +46,14 @@ def jaccard_distance_multiset(A: torch.Tensor,
 	# Ensure A and B have the same shape
 	if A.shape != B.shape:
 		raise ValueError("A and B must have the same shape.")
-
 	# Compute sum of minima and maxima along the chosen dimension
 	min_sum = torch.minimum(A, B).sum(dim=dim)
 	max_sum = torch.maximum(A, B).sum(dim=dim)
-
 	# Compute Jaccard similarity
 	jaccard_similarity = min_sum / (max_sum + eps)
-
 	return jaccard_similarity
 
-def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor:
+def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8) -> Tensor:
 	# Remove the diagonal
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
 	res = decoder(data, pos_edge_index)
@@ -71,13 +68,10 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	# Normalize the distance weights to [1, 2] range - far edges get 2x weight
 	# Ensure consistent shapes for multiplication
 	pos_loss = -torch.log(pos + EPS).squeeze()
-	if offdiag == True:
-		pos_weights = 1.0 + (diag_dist / diag_dist.max())
-		pos_loss = (pos_loss * pos_weights).unsqueeze(1)
-
+	
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits') 
+		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins) 
 
 	if plddt == True:
 		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1)
@@ -85,8 +79,8 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		c1 = c1 > .30
 		c2 = c2 > .30
 		mask = c1 & c2
-		#mask = mask.squeeze(1)  # Ensure mask is 1D
-		pos_loss[mask] = 0
+		mask = mask.squeeze(0)  # Ensure mask is 1D
+		pos_loss = pos_loss[mask]
 	
 	pos_loss = pos_loss.mean()
 	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
@@ -107,33 +101,25 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		c1 = c1 > .30
 		c2 = c2 > .30
 		mask = c1 & c2
-		#mask = mask.squeeze(1)  # Ensure mask is 1D	
-		neg_loss[mask] = 0
+		mask = mask.squeeze(0)  # Ensure mask is 1D	
+		neg_loss = neg_loss[mask]
 
 	neg_loss = neg_loss.mean()
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, offdiag=offdiag, key='edge_logits' , no_bins=16)
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins)
 
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
-def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False, offdiag=False, nclamp=30, key=None) -> Tensor:
+def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False,  nclamp=30, key=None) -> Tensor:
 	for interaction_type in []:
 		# Remove the diagonal
 		pos_edge_index = data[f'{interaction_type}_edge_index']
 		res = decoder(data, pos_edge_index)
-
-		if key == None:
-			pos = res[1]
-		if key != None:
-			pos = res[key]
 		# Calculate distance from diagonal for positive edges
-		diag_dist = torch.abs(pos_edge_index[0] - pos_edge_index[1]).float()
 		# Normalize the distance weights to [1, 2] range - far edges get 2x weight
-		pos_weights = 1.0 + (diag_dist / diag_dist.max())
 		# Ensure consistent shapes for multiplication
 		pos_loss = -torch.log(pos + EPS).squeeze()
-		pos_loss = (pos_loss * pos_weights).unsqueeze(1)
 		if offdiag == True:
 			nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
 			nres = torch.clamp(nres, max=nclamp)
@@ -142,8 +128,8 @@ def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, pl
 		if plddt == True:
 			c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
 			c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
-			c1 = c1 > .5
-			c2 = c2 > .5
+			c1 = c1 > .3
+			c2 = c2 > .3
 			mask = c1 & c2
 			mask = mask.squeeze(1)  # Ensure mask is 1D
 			pos_loss = pos_loss[mask]
@@ -159,16 +145,26 @@ def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, pl
 			neg = res[key]
 		neg_loss = -torch.log((1 - neg) + EPS).squeeze()
 
-
+cce_loss = torch.nn.CrossEntropyLoss()
 #amino acid onehot loss for x reconstruction
 def aa_reconstruction_loss(x, recon_x):
 	"""
 	compute the loss over the node feature reconstruction.
 	using categorical cross entropy
 	"""
-	x = torch.argmax(x, dim=1)
-	#recon_x = torch.argmax(recon_x, dim=1)
-	return F.cross_entropy(recon_x, x)
+	return cce_loss(recon_x, x)
+
+
+"""
+def angles_reconstruction_loss(true, pred):
+    delta = pred - true
+    return (1.0 - torch.cos(delta)).mean()
+"""
+
+def angles_reconstruction_loss(true, pred, beta=0.5):
+    delta = torch.atan2(torch.sin(pred - true), torch.cos(pred - true))
+    return F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
+
 
 def gaussian_loss(mu , logvar , beta= 1.5):
 	'''
@@ -180,7 +176,7 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	return beta*kl_loss
 
 
-def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag = False , nclamp = 30 ,no_bins = 16 , key = None) -> Tensor:
+def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , nclamp = 30 ,no_bins = 8 , key = None) -> Tensor:
 
 	'''
 	Calculates a reconstruction loss based on predicted and true coordinates, with optional filtering by pLDDT confidence and off-diagonal weighting.
@@ -209,8 +205,7 @@ def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , offdiag =
 		c2 = c2 > .30
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D
-		disto_loss[mask] = 0
-	
+		disto_loss = disto_loss[mask]
 	disto_loss = disto_loss.mean()
 	return disto_loss
 
@@ -222,7 +217,7 @@ def distogram_loss(
 	#max_bin=21.6875,
 	min_bin=5,
 	max_bin=50,
-	no_bins=16,
+	no_bins=8,
 	eps=1e-6,
 ):
 	"""
