@@ -6,26 +6,26 @@ from torch_geometric.utils import negative_sampling
 EPS = 1e-8
 
 def jensen_shannon_regularization(encodings):
-    # 1) Compute the average distribution p
-    p = encodings.mean(dim=0)
-    
-    # 2) Define uniform distribution u
-    K = p.size(0)
-    u = torch.ones_like(p) / K
-    
-    # 3) Compute the midpoint m = (p + u) / 2
-    m = 0.5 * (p + u)
-    
-    # 4) Use the definition of JSD(p || u):
-    # JSD(p || u) = 0.5 * KL(p || m) + 0.5 * KL(u || m)
-    # KL(x || y) = sum( x_i * log(x_i / y_i) )
-    eps = 1e-10
-    
-    kl_p_m = torch.sum(p * torch.log((p + eps) / (m + eps)))
-    kl_u_m = torch.sum(u * torch.log((u + eps) / (m + eps)))
-    
-    jsd = 0.5 * kl_p_m + 0.5 * kl_u_m
-    return jsd
+	# 1) Compute the average distribution p
+	p = encodings.mean(dim=0)
+	
+	# 2) Define uniform distribution u
+	K = p.size(0)
+	u = torch.ones_like(p) / K
+	
+	# 3) Compute the midpoint m = (p + u) / 2
+	m = 0.5 * (p + u)
+	
+	# 4) Use the definition of JSD(p || u):
+	# JSD(p || u) = 0.5 * KL(p || m) + 0.5 * KL(u || m)
+	# KL(x || y) = sum( x_i * log(x_i / y_i) )
+	eps = 1e-10
+	
+	kl_p_m = torch.sum(p * torch.log((p + eps) / (m + eps)))
+	kl_u_m = torch.sum(u * torch.log((u + eps) / (m + eps)))
+	
+	jsd = 0.5 * kl_p_m + 0.5 * kl_u_m
+	return jsd
 
 #jaccard distance multiset loss for protein pairs
 
@@ -157,13 +157,16 @@ def aa_reconstruction_loss(x, recon_x):
 
 """
 def angles_reconstruction_loss(true, pred):
-    delta = pred - true
-    return (1.0 - torch.cos(delta)).mean()
+	delta = pred - true
+	return (1.0 - torch.cos(delta)).mean()
 """
 
-def angles_reconstruction_loss(true, pred, beta=0.5):
-    delta = torch.atan2(torch.sin(pred - true), torch.cos(pred - true))
-    return F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
+def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None):
+	delta = torch.atan2(torch.sin(pred - true), torch.cos(pred - true))
+	loss = F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
+	if plddt_mask is not None:
+		loss = loss * plddt_mask
+	return loss.mean()
 
 
 def gaussian_loss(mu , logvar , beta= 1.5):
