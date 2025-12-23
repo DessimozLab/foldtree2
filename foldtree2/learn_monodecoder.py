@@ -5,7 +5,7 @@ import torch
 from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
-from foldtree2.src import foldtree2_ecddcd as ft2
+from foldtree2.src import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
@@ -322,7 +322,7 @@ else:
             commitment_start=args.commitment_start
         )
     else:
-        encoder = ft2.mk1_Encoder(
+        encoder = ecdr.mk1_Encoder(
             in_channels=ndim,
             hidden_channels=[hidden_size, hidden_size],
             out_channels=args.embedding_dim,
@@ -345,7 +345,7 @@ else:
 
     if args.hetero_gae:
         # HeteroGAE_Decoder config (example, adjust as needed)
-        decoder = ft2.HeteroGAE_Decoder(
+        decoder = ecdr.HeteroGAE_Decoder(
             in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
             concat_positions=False,
             hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},

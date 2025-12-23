@@ -1,4 +1,4 @@
-import foldtree2.src.foldtree2_ecddcd as ft2
+import foldtree2.src.encoder as ecdr
 from converter import pdbgraph
 import numpy as np
 import torch
@@ -66,7 +66,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 # Model setup
-encoder = ft2.mk1_Encoder(
+encoder = ecdr.mk1_Encoder(
     in_channels=ndim,
     hidden_channels=[hidden_size, hidden_size, hidden_size],
     out_channels=embedding_dim,
@@ -152,10 +152,10 @@ for epoch in range(num_epochs):
         fft2_x = out['fft2pred'] if 'fft2pred' in out else None
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
         if edge_index is not None:
-            edgeloss, _ = ft2.recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
+            edgeloss, _ = ecdr.recon_loss_diag(data, edge_index, decoder, plddt=True, offdiag=True, key='edge_probs')
         else:
             edgeloss = torch.tensor(0.0, device=device)
-        xloss = ft2.aa_reconstruction_loss(data['AA'].x, recon_x)
+        xloss = ecdr.aa_reconstruction_loss(data['AA'].x, recon_x)
         if fft2_x is not None:
             F_hat = torch.complex(fft2_x[:, :1], fft2_x[:, 1:])
             F = torch.complex(data['fourier2dr'].x, data['fourier2di'].x)

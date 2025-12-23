@@ -95,6 +95,10 @@ wandb/
 lightning_logs/
 tmp/
 models/
+**/checkpoints/
+***/logs/
+**/**__pycache__/
+
 
 # Data files
 *.csv

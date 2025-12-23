@@ -9,7 +9,7 @@ import multiprocessing as mp
 import pebble
 import argparse
 
-from foldtree2.src import foldtree2_ecddcd as ft2
+from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
 from foldtree2.src.pdbgraph import PDB2PyG
 

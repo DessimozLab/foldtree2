@@ -1,4 +1,4 @@
-import foldtree2.src.foldtree2_ecddcd as ft2
+import foldtree2.src.encoder as ft2
 from converter import pdbgraph
 import numpy as np
 import torch

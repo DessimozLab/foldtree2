@@ -3,7 +3,7 @@ import torch
 from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
-from foldtree2.src import foldtree2_ecddcd as ft2
+from foldtree2.src import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
