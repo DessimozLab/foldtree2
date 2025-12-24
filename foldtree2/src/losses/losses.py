@@ -53,7 +53,7 @@ def jaccard_distance_multiset(A: torch.Tensor,
 	jaccard_similarity = min_sum / (max_sum + eps)
 	return jaccard_similarity
 
-def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8) -> Tensor:
+def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3) -> Tensor:
 	# Remove the diagonal
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
 	res = decoder(data, pos_edge_index)
@@ -71,13 +71,13 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins) 
+		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins , plddt_thresh=plddt_thresh) 
 
 	if plddt == True:
 		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1)
 		c2 = data['plddt'].x[pos_edge_index[1]].squeeze(1)
-		c1 = c1 > .30
-		c2 = c2 > .30
+		c1 = c1 > plddt_thresh
+		c2 = c2 > plddt_thresh
 		mask = c1 & c2
 		mask = mask.squeeze(0)  # Ensure mask is 1D
 		pos_loss = pos_loss[mask]
@@ -98,8 +98,8 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	if plddt == True:
 		c1 = data['plddt'].x[neg_edge_index[0]].squeeze(1)
 		c2 = data['plddt'].x[neg_edge_index[1]].squeeze(1)
-		c1 = c1 > .30
-		c2 = c2 > .30
+		c1 = c1 > plddt_thresh
+		c2 = c2 > plddt_thresh
 		mask = c1 & c2
 		mask = mask.squeeze(0)  # Ensure mask is 1D	
 		neg_loss = neg_loss[mask]
@@ -107,11 +107,11 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	neg_loss = neg_loss.mean()
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins)
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins , plddt_thresh=plddt_thresh)
 
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
 
-def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False,  nclamp=30, key=None) -> Tensor:
+def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False,  nclamp=30, key=None , plddt_thresh=0.3) -> Tensor:
 	for interaction_type in []:
 		# Remove the diagonal
 		pos_edge_index = data[f'{interaction_type}_edge_index']
@@ -161,11 +161,14 @@ def angles_reconstruction_loss(true, pred):
 	return (1.0 - torch.cos(delta)).mean()
 """
 
-def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None):
+def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_thresh = 0.3):
 	delta = torch.atan2(torch.sin(pred - true), torch.cos(pred - true))
-	loss = F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
 	if plddt_mask is not None:
-		loss = loss * plddt_mask
+		mask = plddt_mask > plddt_thresh
+		mask = mask.squeeze(1)  # Ensure mask is 1D
+		delta = delta[mask]
+	loss = F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
+
 	return loss.mean()
 
 
@@ -179,7 +182,7 @@ def gaussian_loss(mu , logvar , beta= 1.5):
 	return beta*kl_loss
 
 
-def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , nclamp = 30 ,no_bins = 8 , key = None) -> Tensor:
+def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , nclamp = 30 ,no_bins = 8 , key = None , plddt_thresh=0.3) -> Tensor:
 
 	'''
 	Calculates a reconstruction loss based on predicted and true coordinates, with optional filtering by pLDDT confidence and off-diagonal weighting.
@@ -204,8 +207,8 @@ def recon_loss_disto(data , res , edge_index: Tensor,  plddt = True  , nclamp = 
 		c1 = data['plddt'].x[edge_index[0]].view(-1,1)
 		c2 = data['plddt'].x[edge_index[1]].view(-1,1)
 		#both have to be above .5, binary and operation
-		c1 = c1 > .30
-		c2 = c2 > .30
+		c1 = c1 > plddt_thresh
+		c2 = c2 > plddt_thresh
 		mask = c1 & c2
 		mask = mask.squeeze(1)  # Ensure mask is 1D
 		disto_loss = disto_loss[mask]
