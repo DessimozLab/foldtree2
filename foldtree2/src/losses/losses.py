@@ -154,7 +154,19 @@ def aa_reconstruction_loss(x, recon_x):
 	"""
 	return cce_loss(recon_x, x)
 
+def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 , plddt_mask = None):
+	"""
+	compute the loss over the node feature reconstruction.
+	using categorical cross entropy
+	"""
+	if mask_plddt:
+		mask = (plddt_mask > plddt_threshold).squeeze()
+		ss_loss = F.cross_entropy(recon_ss[mask], ss[mask])
+	else:	
+		ss_loss = F.cross_entropy(recon_ss, ss)
+	return ss_loss
 
+	
 """
 def angles_reconstruction_loss(true, pred):
 	delta = pred - true

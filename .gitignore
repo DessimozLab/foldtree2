@@ -131,6 +131,12 @@ models/
 *.dbtype
 *.lookup
 *.txt
+**raxml*
+*.ASCII
+*.hex
+*.nwk
+
+
 
 # HDF5 files
 *.h5
