@@ -923,6 +923,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		dropout=0.001,
 		normalize=True,
 		residual=True,
+		output_ss=False,
 		**kwargs
 	):
 		super(Transformer_AA_Decoder, self).__init__()
@@ -951,18 +952,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
-		self.dnn_decoder = torch.nn.Sequential(
-			#layernorm
-			torch.nn.LayerNorm(d_model),
-			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			torch.nn.GELU(),
-			torch.nn.Linear(AAdecoder_hidden[2], 20),
-			torch.nn.LogSoftmax(dim=1)
-		)
+		
 
 		self.cnn_decoder = None
 		if use_cnn_decoder := kwargs.get('use_cnn_decoder', False):
@@ -981,6 +971,32 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				torch.nn.Conv1d(AAdecoder_hidden[2], 20, kernel_size=1),
 				# Transpose back to (seq_len, batch, features) and apply softmax
 			)
+			
+		else:
+			self.dnn_decoder = torch.nn.Sequential(
+			#layernorm
+			torch.nn.LayerNorm(d_model),
+			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
+			torch.nn.GELU(),
+			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
+			torch.nn.GELU(),
+			torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+			torch.nn.GELU(),
+			torch.nn.Linear(AAdecoder_hidden[2], 20),
+			torch.nn.LogSoftmax(dim=1)
+			)
+		
+		if output_ss:
+			# Secondary structure head 
+			self.ss_head = torch.nn.Sequential(
+				torch.nn.Linear(d_model, AAdecoder_hidden[0]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[1], 3),
+				torch.nn.LogSoftmax(dim=1)
+			)
+		
 
 	def forward(self, data, **kwargs):
 		x = data.x_dict['res']
@@ -1008,35 +1024,47 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
-		
+		ss = None
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch
 			aa_list = []
+			ss_list = []
 			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
 				# Remove batch dimension and padding (assume original lengths from batch)
 				seq_len = (batch == i).sum().item()
 				if self.cnn_decoder is not None:
 					# Apply CNN decoder
 					xi = self.prenorm(xi.squeeze(1))  # (seq_len, d_model)
+					if self.ss_head is not None:
+						ss_list.append(self.ss_head(xi[:seq_len, :]))
 					xi_cnn = xi.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
 					xi_cnn = self.cnn_decoder(xi_cnn)  # (1, 20, seq_len)
 					xi_cnn = xi_cnn.permute(2, 0, 1).squeeze(1)  # (seq_len, 20)
 					aa_list.append(F.log_softmax(xi_cnn[:seq_len, :], dim=-1))
 				else:
 					aa_list.append(self.dnn_decoder(xi[:seq_len, 0]))
+					if self.ss_head is not None:
+						ss_list.append(self.ss_head(xi[:seq_len, 0]))
 			aa = torch.cat(aa_list, dim=0)
-			return  {'aa': aa }
+			if self.ss_head is not None:
+				ss = torch.cat(ss_list, dim=0)
+			return {'aa': aa, 'ss_pred': ss }
+			
 		else:
 			if self.cnn_decoder is not None:
 				# Apply CNN decoder
 				x = self.prenorm(x)
+				if self.ss_head is not None:
+					ss=self.ss_head(x)
 				x_cnn = x.permute(1, 2, 0)  # (batch, d_model, seq_len)
 				x_cnn = self.cnn_decoder(x_cnn)  # (batch, xdim, seq_len)
 				x_cnn = x_cnn.permute(2, 0, 1)  # (seq_len, batch, xdim)
 				aa = F.log_softmax(x_cnn, dim=-1)
 			else:
 				aa = self.dnn_decoder(x)
-			return {'aa': aa}
+			if self.ss_head is not None:
+				ss = self.ss_head(x)
+			return {'aa': aa, 'ss_pred': ss}
 	
 	def x_to_amino_acid_sequence(self, x_r):
 		indices = torch.argmax(x_r, dim=1)
@@ -1374,7 +1402,14 @@ class MultiMonoDecoder(torch.nn.Module):
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():
-			results.update(decoder(data, contact_pred_index=contact_pred_index, **kwargs))
+			#if a decoder returns a value for a key that already exists in results that is none
+			#and existing value is not none, keep the existing value
+			#otherwise, update the results with the new value
+			for key, value in decoder(data, contact_pred_index=contact_pred_index, **kwargs).items():
+				if key in results and results[key] is not None and value is None:
+					continue
+				else:
+					results[key] = value
 		return results
 
 
