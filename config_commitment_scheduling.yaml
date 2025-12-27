@@ -1,0 +1,69 @@
+# Commitment cost scheduling demonstration config
+# This config focuses on commitment cost scheduling for VQ-VAE training
+# Best for: Understanding how commitment cost affects codebook learning
+# To use: python learn_monodecoder.py --config config_commitment_scheduling.yaml
+
+# Dataset and data loading
+dataset: structs_traininffttest.h5
+batch_size: 20
+gradient_accumulation_steps: 1  # No gradient accumulation
+
+# Model architecture
+hidden_size: 256
+embedding_dim: 128
+num_embeddings: 40
+se3_transformer: false
+hetero_gae: false
+
+# Training parameters
+epochs: 100
+learning_rate: 0.0001
+clip_grad: true
+burn_in: 0
+EMA: true  # Must use EMA for commitment scheduling
+
+# Learning rate scheduling - Keep simple for this demo
+lr_schedule: plateau
+lr_warmup_ratio: 0.0
+lr_warmup_steps: 0
+lr_min: 1.0e-06
+num_cycles: 1
+
+# Commitment cost scheduling - THE FOCUS OF THIS CONFIG
+commitment_cost: 1.0  # Final commitment cost (high value for strong regularization)
+use_commitment_scheduling: true  # Enable scheduling
+commitment_schedule: cosine  # Smooth cosine warmup
+commitment_warmup_steps: 10000  # Warmup over 10k steps (~50 epochs with batch_size=20)
+commitment_start: 0.05  # Start with very low commitment cost
+
+# Output options
+output_fft: false
+output_rt: false
+output_foldx: false
+
+# Directories and naming
+output_dir: ./models/
+model_name: monodecoder_commitment_scheduled
+tensorboard_dir: ./runs/
+run_name: commitment_scheduling_demo
+
+# System settings
+device: null
+seed: 42
+overwrite: false
+
+# What is commitment cost scheduling?
+# - Commitment cost is the weight on the encoder loss in VQ-VAE
+# - High commitment cost forces encoder to commit to discrete codes quickly
+# - Low commitment cost allows encoder to explore code space more freely
+# 
+# Benefits of scheduling:
+# 1. Start LOW (0.05): Let encoder explore and learn good representations
+# 2. Gradually INCREASE: Slowly encourage commitment to discrete codes
+# 3. End HIGH (1.0): Strong regularization for final stable codebook
+#
+# This prevents the encoder from getting stuck in bad local minima early in training
+# and results in better codebook utilization and reconstruction quality.
+#
+# Monitor in TensorBoard: Training/Commitment_Cost shows the schedule over time
+

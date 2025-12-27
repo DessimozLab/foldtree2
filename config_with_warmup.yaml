@@ -1,0 +1,69 @@
+# Advanced configuration file for learn_monodecoder.py
+# This file demonstrates learning rate scheduling with warmup and gradient accumulation
+# To use: python learn_monodecoder.py --config config_with_warmup.yaml
+# Command-line arguments will override values in this file
+
+# Dataset and data loading
+dataset: structs_traininffttest.h5
+batch_size: 5  # Smaller batch size with gradient accumulation
+
+# Model architecture
+hidden_size: 256
+embedding_dim: 128
+num_embeddings: 40
+se3_transformer: false
+hetero_gae: false
+
+# Training parameters
+epochs: 100
+learning_rate: 0.0001
+clip_grad: true  # Enable gradient clipping for stability
+burn_in: 0
+EMA: true  # Use Exponential Moving Average for encoder codebook
+
+# Learning rate scheduling with warmup
+lr_schedule: cosine  # Options: plateau, cosine, linear, cosine_restarts, polynomial, none
+lr_warmup_ratio: 0.1  # 10% of total training for warmup (overrides lr_warmup_steps if > 0)
+lr_warmup_steps: 0    # Alternative: specify absolute number of warmup steps
+lr_min: 1.0e-06       # Minimum LR for decay schedules
+num_cycles: 3         # For cosine_restarts scheduler
+
+# Gradient accumulation
+gradient_accumulation_steps: 4  # Accumulate gradients over 4 steps
+# Effective batch size = batch_size * gradient_accumulation_steps = 5 * 4 = 20
+
+# Commitment cost scheduling (for VQ-VAE encoder)
+commitment_cost: 0.9  # Final commitment cost value
+use_commitment_scheduling: true  # Enable commitment cost warmup
+commitment_schedule: cosine  # Options: cosine, linear, none
+commitment_warmup_steps: 5000  # Number of steps to warmup commitment cost
+commitment_start: 0.1  # Starting commitment cost (will warmup to commitment_cost)
+
+# Output options
+output_fft: false
+output_rt: false
+output_foldx: false
+
+# Directories and naming
+output_dir: ./models/
+model_name: monodecoder_warmup_model
+tensorboard_dir: ./runs/
+run_name: cosine_warmup_experiment  # Custom name for this run
+
+# System settings
+device: null  # Set to null for auto-detection, or specify like "cuda:0" or "cuda:1"
+seed: 42
+
+# Model persistence
+overwrite: false  # Set to true to overwrite existing models
+
+# Configuration notes:
+# - This config uses cosine annealing with 10% warmup period for learning rate
+# - Commitment cost scheduling gradually increases the VQ penalty during training
+# - Starting with low commitment cost (0.1) allows encoder to explore initially
+# - Gradually increasing to final value (0.9) stabilizes codebook usage over time
+# - Gradient accumulation allows training with larger effective batch sizes
+# - With batch_size=5 and gradient_accumulation_steps=4, effective batch size is 20
+# - Requires transformers library: pip install transformers
+# - Will automatically fallback to PyTorch schedulers if transformers not available
+

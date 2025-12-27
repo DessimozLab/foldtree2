@@ -1,0 +1,61 @@
+# Example configuration file for learn_monodecoder.py
+# This file contains all training hyperparameters and settings
+# To use: python learn_monodecoder.py --config example_config.yaml
+# Command-line arguments will override values in this file
+
+# Dataset and data loading
+dataset: structs_traininffttest.h5
+batch_size: 20
+
+# Model architecture
+hidden_size: 256
+embedding_dim: 128
+num_embeddings: 40
+se3_transformer: false
+hetero_gae: false
+
+# Training parameters
+epochs: 100
+learning_rate: 0.0001
+clip_grad: false
+burn_in: 0
+EMA: false
+
+# Learning rate scheduling
+lr_schedule: plateau  # Options: plateau, cosine, linear, cosine_restarts, polynomial, none
+lr_warmup_steps: 0    # Number of steps for linear warmup (0 = no warmup)
+lr_warmup_ratio: 0.0  # Alternative: warmup as fraction of total steps (overrides lr_warmup_steps if > 0)
+lr_min: 1.0e-06       # Minimum LR for cosine/linear/polynomial schedules
+num_cycles: 3         # Number of cycles for cosine_restarts scheduler
+
+# Gradient accumulation
+gradient_accumulation_steps: 1  # Accumulate gradients over N steps (1 = no accumulation)
+                                # Effective batch size = batch_size * gradient_accumulation_steps
+
+# Commitment cost scheduling (for VQ-VAE encoder)
+commitment_cost: 0.9  # Final commitment cost value
+use_commitment_scheduling: false  # Enable commitment cost warmup from low to final value
+commitment_schedule: cosine  # Options: cosine, linear, none
+commitment_warmup_steps: 5000  # Number of steps to warmup commitment cost
+commitment_start: 0.1  # Starting commitment cost when using scheduling
+
+# Output options
+output_fft: false
+output_rt: false
+output_foldx: false
+
+# Directories and naming
+output_dir: ./models/
+model_name: monodecoder_model
+tensorboard_dir: ./runs/
+run_name: null  # Set to null for auto-generated timestamp name
+
+# System settings
+device: null  # Set to null for auto-detection, or specify like "cuda:0"
+seed: 0
+
+# Model persistence
+overwrite: false  # Set to true to overwrite existing models
+
+# Note: You can save your current command-line configuration to a file using:
+# python learn_monodecoder.py [your args] --save-config my_config.yaml

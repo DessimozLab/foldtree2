@@ -13,10 +13,6 @@ dependencies:
   - pandas
   - tqdm
   - matplotlib
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=12.1  # Remove or adjust if not using GPU
   - torch-geometric
   - scipy
   - h5py
@@ -25,7 +21,11 @@ dependencies:
   - jupyterlab
   - ipykernel
   - pip
+  - nvidia::cuda-toolkit  # Installs CUDA 12.x tools; ensure system has CUDA 13 driver
   - pip:
+      - torch --index-url https://download.pytorch.org/whl/cu130
+      - torchvision --index-url https://download.pytorch.org/whl/cu130
+      - torchaudio --index-url https://download.pytorch.org/whl/cu130
       - biopython
       - einops
       - pebble
@@ -36,6 +36,11 @@ dependencies:
       - toyplot
       - pydssp
       - ete3
+      - prody
+      - transformers
+      - scikit-learn
+      - colour
+      - ipywidgets
 
 # To use: conda env create -f foldtree2.yml
 # To activate: conda activate foldtree2

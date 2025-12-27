@@ -1,0 +1,59 @@
+# Cosine schedule with hard restarts configuration
+# Best for: Training that benefits from periodic LR resets (helps escape local minima)
+# To use: python learn_monodecoder.py --config config_cosine_restarts.yaml
+
+# Dataset and data loading
+dataset: structs_traininffttest.h5
+batch_size: 8
+gradient_accumulation_steps: 3  # Effective batch size = 24
+
+# Model architecture
+hidden_size: 256
+embedding_dim: 128
+num_embeddings: 40
+se3_transformer: false
+hetero_gae: false
+
+# Training parameters
+epochs: 150
+learning_rate: 0.0002  # Higher initial LR works well with restarts
+clip_grad: true
+burn_in: 0
+EMA: true
+
+# Learning rate scheduling - Cosine with hard restarts
+lr_schedule: cosine_restarts
+lr_warmup_ratio: 0.05  # 5% warmup period
+lr_warmup_steps: 0
+lr_min: 1.0e-06
+num_cycles: 5  # 5 restart cycles over training
+
+# Commitment cost scheduling
+commitment_cost: 0.95
+use_commitment_scheduling: true
+commitment_schedule: cosine
+commitment_warmup_steps: 3000  # Shorter warmup for restarts
+commitment_start: 0.2  # Higher start for stability with restarts
+
+# Output options
+output_fft: false
+output_rt: false
+output_foldx: false
+
+# Directories and naming
+output_dir: ./models/
+model_name: monodecoder_restarts_model
+tensorboard_dir: ./runs/
+run_name: cosine_restarts_experiment
+
+# System settings
+device: null
+seed: 42
+overwrite: false
+
+# Notes:
+# - Cosine with restarts periodically resets LR to initial value
+# - Each cycle gets progressively longer
+# - Good for finding better local minima during training
+# - num_cycles=5 means 5 restarts over the entire training
+

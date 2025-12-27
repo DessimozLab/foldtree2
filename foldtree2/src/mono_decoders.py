@@ -50,7 +50,6 @@ datadir = '../../datasets/foldtree2/'
 from foldtree2.src.losses import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
-from foldtree2.src.se3_struct_decoder import *
 
 from  torch_geometric.utils import to_undirected
 #encoder super class
@@ -765,6 +764,7 @@ class CNN_geo_MuonDecoder(torch.nn.Module):
 			if not isinstance(anglesdecoder_hidden, list):
 				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
 			self.head['angles_mlp'] = nn.Sequential(
+				nn.LayerNorm(lastlin),
 				nn.Linear(lastlin, anglesdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
@@ -940,19 +940,25 @@ class Transformer_AA_Decoder(torch.nn.Module):
 
 		print( d_model , nheads , layers , dropout)
 
-		self.input_proj = torch.nn.Sequential( 
-			#DynamicTanh(input_dim, channels_last=True),
+		self.input_proj = torch.nn.Sequential( 			
 			torch.nn.Dropout(dropout),
 			nn.Linear(input_dim, d_model), 
 			torch.nn.GELU(),
 			nn.Linear(d_model, d_model),
+			torch.nn.GELU(),
+			#torch.nn.LayerNorm(d_model),
 			torch.nn.Tanh(),
 		)
 
 		encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nheads, dropout=dropout)
 		self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
 
-		
+		if self.residual:
+			self.dmodel2input = torch.nn.Sequential(
+				torch.nn.Linear(d_model, input_dim),
+				torch.nn.GELU(),
+				torch.nn.Linear(input_dim, input_dim),
+			)
 
 		self.cnn_decoder = None
 		if use_cnn_decoder := kwargs.get('use_cnn_decoder', False):
@@ -975,7 +981,6 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		else:
 			self.dnn_decoder = torch.nn.Sequential(
 			#layernorm
-			torch.nn.LayerNorm(d_model),
 			torch.nn.Linear(d_model, AAdecoder_hidden[0]),
 			torch.nn.GELU(),
 			torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
@@ -987,13 +992,16 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			)
 		
 		if output_ss:
-			# Secondary structure head 
+			# Secondary structure head
+			
 			self.ss_head = torch.nn.Sequential(
 				torch.nn.Linear(d_model, AAdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 				torch.nn.GELU(),
-				torch.nn.Linear(AAdecoder_hidden[1], 3),
+				torch.nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+				torch.nn.GELU(),
+				torch.nn.Linear(AAdecoder_hidden[2], 3),
 				torch.nn.LogSoftmax(dim=1)
 			)
 		
@@ -1024,6 +1032,12 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
 		
 		x = self.transformer_encoder(x)  # (N, batch, d_model)
+
+		if self.residual:
+			x = x + self.dmodel2input(x).unsqueeze(1) if batch is not None else x + self.dmodel2input(x).unsqueeze(1)
+		if self.normalize:
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-10)
+
 		ss = None
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch

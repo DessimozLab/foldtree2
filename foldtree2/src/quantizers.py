@@ -30,7 +30,7 @@ def cosine_anneal(start, end, t, T):
 
 
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99, use_commitment_scheduling=False, commitment_warmup_steps=5000, commitment_schedule='cosine', commitment_start=0.1, commitment_end=None):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99, use_commitment_scheduling=False, commitment_warmup_steps=5000, commitment_schedule='cosine', commitment_start=0.1, commitment_end=None , **kwargs	):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -52,6 +52,11 @@ class VectorQuantizerEMA(nn.Module):
 			self.commitment_cost = self.commitment_start  # Will be updated during training
 		else:
 			self.commitment_cost = commitment_cost  # Use constant value
+
+		if kwargs.get('restart_interval') is not None:
+			self.restart_interval = kwargs['restart_interval']
+		else:
+			self.restart_interval = commitment_warmup_steps // 5  # Default to 5 restarts
 
 		# Regularization weights
 		self.diversityweight = diversityweight
@@ -93,6 +98,15 @@ class VectorQuantizerEMA(nn.Module):
 		elif self.commitment_schedule == 'linear':
 			# Linear interpolation from start to end
 			self.commitment_cost = start + (end - start) * (t / T)
+		elif self.commitment_schedule == 'cosine_with_restart':
+			# Cosine annealing with restarts
+			if self.restart_interval is not None:
+				restart_interval = self.restart_interval
+			else:
+				restart_interval = T // 5  # 5 restarts
+			t_mod = t % restart_interval
+			c = 0.5 * (1 + math.cos(math.pi * t_mod / restart_interval))
+			self.commitment_cost = end + (start - end) * c
 		else:  # 'none' or any other value - use final value immediately
 			self.commitment_cost = end
 

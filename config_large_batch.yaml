@@ -1,0 +1,60 @@
+# Large batch training with aggressive gradient accumulation
+# Best for: When you want to train with very large effective batch sizes
+# To use: python learn_monodecoder.py --config config_large_batch.yaml
+
+# Dataset and data loading
+dataset: structs_traininffttest.h5
+batch_size: 4  # Small per-GPU batch size
+gradient_accumulation_steps: 16  # Effective batch size = 64
+
+# Model architecture
+hidden_size: 256
+embedding_dim: 128
+num_embeddings: 40
+se3_transformer: false
+hetero_gae: false
+
+# Training parameters
+epochs: 200
+learning_rate: 0.0003  # Higher LR for larger batch size
+clip_grad: true
+burn_in: 10  # Use burn-in for stability
+EMA: true
+
+# Learning rate scheduling - Polynomial decay with warmup
+lr_schedule: polynomial
+lr_warmup_ratio: 0.15  # Longer warmup for large batch training
+lr_warmup_steps: 0
+lr_min: 1.0e-06
+num_cycles: 1  # Not used for polynomial
+
+# Commitment cost scheduling
+commitment_cost: 1.0  # Higher for large batch stability
+use_commitment_scheduling: true
+commitment_schedule: cosine
+commitment_warmup_steps: 8000  # Longer warmup for large batches
+commitment_start: 0.15  # Higher start for large batch training
+
+# Output options
+output_fft: false
+output_rt: false
+output_foldx: true  # Enable Foldx energy prediction
+
+# Directories and naming
+output_dir: ./models/
+model_name: monodecoder_large_batch_model
+tensorboard_dir: ./runs/
+run_name: large_batch_polynomial_experiment
+
+# System settings
+device: null
+seed: 42
+overwrite: false
+
+# Notes:
+# - Effective batch size of 64 (4 * 16) simulates large-batch training
+# - Polynomial decay provides smooth LR reduction
+# - Longer warmup (15%) helps with large batch stability
+# - Higher initial LR compensates for larger batch size
+# - Useful when GPU memory is limited but you want large batch benefits
+
