@@ -23,66 +23,9 @@ from foldtree2.src.quantizers import *
 # Note: datadir is defined but may not be used throughout the module
 datadir = '../../datasets/foldtree2/'
 #encoder super class
-class Encoder(torch.nn.Module):
-	def __init__() :
-		super(Encoder, self).__init__()
-		#save all arguments to constructor
-		self.args = locals()
-		self.args.pop('self')
-		# Setting the seed
-		L.seed_everything(42)
-		# Ensure that all operations are deterministic on GPU (if used) for reproducibility
-		torch.backends.cudnn.deterministic = True
-		torch.backends.cudnn.benchmark = False
-		self.vector_quantizer = None
-		
-	def forward(self, x_dict, edge_index_dict):
-		raise NotImplementedError('forward method not implemented')
-
-	def structlist_loader(self, structlist, batch_size = 1):
-		#load a list of structures into a dataloader
-		dataloader = DataLoader(structlist, batch_size=batch_size, shuffle=False)
-		return dataloader	
-
-	def encode_structures_fasta(self, dataloader, filename = 'structalign.strct.fasta' , verbose = False , alphabet = None , replace = False):
-		#write an encoded fasta for use with mafft and iqtree. only doable with alphabet size of less that 248
-		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
-		replace_dict = { '>' : chr(249), '=' : chr(250), '<' : chr(251), '-' : chr(252), ' ' : chr(253) , '\r' : chr(254), '\n' : chr(255) }
-		#check encoding size
-		if self.vector_quantizer.num_embeddings > 248:
-			raise ValueError('Encoding size too large for fasta encoding')
-		
-		if alphabet is not None:
-			print('using alphabet')
-			print(alphabet)
-		
-		with open( filename , 'w') as f:
-			for i,data in tqdm.tqdm(enumerate(dataloader)):
-				data = data.to(self.device)
-				z,qloss = self.forward(data.x_dict , data.edge_index_dict)
-				strdata = self.vector_quantizer.discretize_z(z)
-				identifier = data.identifier
-				f.write(f'>{identifier}\n')
-				outstr = ''
-				for char in strdata[0]:
-					#start at 0x01
-					if alphabet is not None:
-						char = alphabet[char]
-					else:
-						char = chr(char+1)
-					
-					if replace and char in replace_dict:
-						char = replace_dict[char]
-					outstr += char
-					f.write(char)
-
-				f.write('\n')
-
-				if verbose == True:
-					print(identifier, outstr)
-		return filename
 
 
+'''
 class mk1_Encoder(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
 	num_embeddings, commitment_cost, metadata={} , edge_dim = 1,
@@ -295,8 +238,9 @@ class mk1_Encoder(torch.nn.Module):
 				f.write('\n')
 		return filename 
 
+'''
 
-class mk1_MuonEncoder(torch.nn.Module):
+class mk1_Encoder(torch.nn.Module):
 	"""
 	Muon-compatible encoder with modular architecture.
 	Separates input, body, and head modules for compatibility with Muon optimizer.
@@ -311,7 +255,7 @@ class mk1_MuonEncoder(torch.nn.Module):
 				reset_codes=True, nheads=3, flavor='sage', fftin=False,
 				use_commitment_scheduling=False, commitment_warmup_steps=5000,
 				commitment_schedule='cosine', commitment_start=0.1, concat_positions=False , **kwargs):
-		super(mk1_MuonEncoder, self).__init__()
+		super(mk1_Encoder, self).__init__()
 
 		# Save all arguments to constructor
 		self.args = locals()
@@ -345,6 +289,8 @@ class mk1_MuonEncoder(torch.nn.Module):
 		self.input['dropout'] = nn.Dropout(p=dropout_p)
 		
 		self.input['inmlp'] = nn.Sequential(
+			nn.Dropout(dropout_p),
+			nn.LayerNorm(self.in_channels),
 			nn.Linear(self.in_channels, hidden_channels[0] * 2),
 			nn.GELU(),
 			nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
@@ -353,6 +299,8 @@ class mk1_MuonEncoder(torch.nn.Module):
 		
 		if self.fftin:
 			self.input['ffin'] = nn.Sequential(
+				nn.Dropout(dropout_p),
+				nn.LayerNorm(2 * 80),
 				nn.Linear(2 * 80, hidden_channels[0] * 2),
 				nn.GELU(),
 				nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),

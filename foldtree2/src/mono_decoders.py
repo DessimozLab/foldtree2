@@ -65,6 +65,7 @@ class SIRENLayer(nn.Module):
     def forward(self, x):
         return torch.sin(self.omega_0 * self.linear(x))
 
+'''
 class HeteroGAE_geo_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23 },
 			   	concat_positions = False, hidden_channels={'res_backbone_res': [20, 20, 20]},
@@ -334,8 +335,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 							nn.init.xavier_uniform_(param)
 
 		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'ss_pred': ss_pred , 'z': z , }
+'''
 
-
+'''
 class CNN_geo_Decoder(torch.nn.Module):
 	def __init__(self, in_channels = {'res':10 , 'godnode4decoder':5 , 'foldx':23 },
 				concat_positions = False, 
@@ -611,8 +613,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
 				'ss_pred': ss_pred, 'z': z}
 
+'''
 
-class CNN_geo_MuonDecoder(torch.nn.Module):
+class CNN_geo_Decoder(torch.nn.Module):
 	"""
 	Muon-compatible CNN geometry decoder with modular architecture.
 	Separates input, body, and head modules for compatibility with Muon optimizer.
@@ -643,7 +646,7 @@ class CNN_geo_MuonDecoder(torch.nn.Module):
 				ncat=16,
 				contact_mlp=True,
 				pool_type='global_mean'):
-		super(CNN_geo_MuonDecoder, self).__init__()
+		super(CNN_geo_Decoder, self).__init__()
 		
 		# Setting the seed
 		L.seed_everything(42)
@@ -764,7 +767,6 @@ class CNN_geo_MuonDecoder(torch.nn.Module):
 			if not isinstance(anglesdecoder_hidden, list):
 				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
 			self.head['angles_mlp'] = nn.Sequential(
-				nn.LayerNorm(lastlin),
 				nn.Linear(lastlin, anglesdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
@@ -908,6 +910,7 @@ class CNN_geo_MuonDecoder(torch.nn.Module):
 				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
 				'ss_pred': ss_pred, 'z': z}
 
+'''
 
 class Transformer_AA_Decoder(torch.nn.Module):
 	def __init__(
@@ -1085,8 +1088,10 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
 		return amino_acid_sequence
 
+'''
 
-class Transformer_AA_MuonDecoder(torch.nn.Module):
+
+class Transformer_AA_Decoder(torch.nn.Module):
 	"""
 	Muon-compatible Transformer amino acid decoder with modular architecture.
 	Separates input, body, and head modules for compatibility with Muon optimizer.
@@ -1110,7 +1115,7 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 		residual=True,
 		**kwargs
 	):
-		super(Transformer_AA_MuonDecoder, self).__init__()
+		super(Transformer_AA_Decoder, self).__init__()
 		L.seed_everything(42)
 
 		self.concat_positions = concat_positions
@@ -1134,6 +1139,7 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 			nn.Linear(input_dim, d_model),
 			nn.GELU(),
 			nn.Linear(d_model, d_model),
+			nn.GELU(),
 			nn.Tanh(),
 		)
 
@@ -1150,24 +1156,18 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 			encoder_layer, 
 			num_layers=layers
 		)
+		
+		if self.residual:
+			self.body['dmodel2input'] = nn.Sequential(
+				nn.Linear(d_model, input_dim),
+				nn.GELU(),
+				nn.Linear(input_dim, input_dim),
+			)
 
 		# ===================== HEAD MODULE =====================
 		# Amino acid prediction heads
 		self.head = nn.ModuleDict()
 		
-		# DNN decoder for amino acid prediction
-		self.head['dnn_decoder'] = nn.Sequential(
-			nn.LayerNorm(d_model),
-			nn.Linear(d_model, AAdecoder_hidden[0]),
-			nn.GELU(),
-			nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
-			nn.GELU(),
-			nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
-			nn.GELU(),
-			nn.Linear(AAdecoder_hidden[2], 20),
-			nn.LogSoftmax(dim=1)
-		)
-
 		# Optional CNN decoder
 		if use_cnn_decoder := kwargs.get('use_cnn_decoder', False):
 			self.head['prenorm'] = nn.LayerNorm(d_model)
@@ -1180,6 +1180,31 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 				nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2], kernel_size=3, padding=1),
 				nn.GELU(),
 				nn.Conv1d(AAdecoder_hidden[2], 20, kernel_size=1),
+			)
+		else:
+			# DNN decoder for amino acid prediction
+			self.head['dnn_decoder'] = nn.Sequential(
+				nn.Linear(d_model, AAdecoder_hidden[0]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[2], 20),
+				nn.LogSoftmax(dim=1)
+			)
+		
+		# Optional secondary structure prediction head
+		if output_ss := kwargs.get('output_ss', False):
+			self.head['ss_head'] = nn.Sequential(
+				nn.Linear(d_model, AAdecoder_hidden[0]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
+				nn.GELU(),
+				nn.Linear(AAdecoder_hidden[2], 3),
+				nn.LogSoftmax(dim=1)
 			)
 
 	def forward(self, data, **kwargs):
@@ -1217,10 +1242,22 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 		# Apply transformer
 		x = self.body['transformer_encoder'](x)  # (seq_len, batch, d_model)
 		
+		# Apply residual connection
+		if self.residual and 'dmodel2input' in self.body:
+			if batch is not None:
+				x = x + self.body['dmodel2input'](x)
+			else:
+				x = x + self.body['dmodel2input'](x)
+		
+		# Apply normalization
+		if self.normalize:
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-10)
+		
 		# ===================== HEAD PROCESSING =====================
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch
 			aa_list = []
+			ss_list = []
 			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
 				# Remove batch dimension and padding
 				seq_len = (batch == i).sum().item()
@@ -1228,26 +1265,36 @@ class Transformer_AA_MuonDecoder(torch.nn.Module):
 				if 'cnn_decoder' in self.head:
 					# Apply CNN decoder
 					xi = self.head['prenorm'](xi.squeeze(1))  # (seq_len, d_model)
+					if 'ss_head' in self.head:
+						ss_list.append(self.head['ss_head'](xi[:seq_len, :]))
 					xi_cnn = xi.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
 					xi_cnn = self.head['cnn_decoder'](xi_cnn)  # (1, 20, seq_len)
 					xi_cnn = xi_cnn.permute(2, 0, 1).squeeze(1)  # (seq_len, 20)
 					aa_list.append(F.log_softmax(xi_cnn[:seq_len, :], dim=-1))
 				else:
 					aa_list.append(self.head['dnn_decoder'](xi[:seq_len, 0]))
+					if 'ss_head' in self.head:
+						ss_list.append(self.head['ss_head'](xi[:seq_len, 0]))
 			
 			aa = torch.cat(aa_list, dim=0)
-			return {'aa': aa}
+			ss = torch.cat(ss_list, dim=0) if ss_list else None
+			return {'aa': aa, 'ss_pred': ss}
 		else:
+			ss = None
 			if 'cnn_decoder' in self.head:
 				# Apply CNN decoder
 				x = self.head['prenorm'](x)
+				if 'ss_head' in self.head:
+					ss = self.head['ss_head'](x)
 				x_cnn = x.permute(1, 2, 0)  # (batch, d_model, seq_len)
 				x_cnn = self.head['cnn_decoder'](x_cnn)  # (batch, 20, seq_len)
 				x_cnn = x_cnn.permute(2, 0, 1)  # (seq_len, batch, 20)
 				aa = F.log_softmax(x_cnn, dim=-1)
 			else:
 				aa = self.head['dnn_decoder'](x)
-			return {'aa': aa}
+				if 'ss_head' in self.head:
+					ss = self.head['ss_head'](x)
+			return {'aa': aa, 'ss_pred': ss}
 	
 	def x_to_amino_acid_sequence(self, x_r):
 		indices = torch.argmax(x_r, dim=1)
