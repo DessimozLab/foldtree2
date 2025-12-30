@@ -41,6 +41,7 @@ dependencies:
       - scikit-learn
       - colour
       - ipywidgets
+      - tensorboard
 
 # To use: conda env create -f foldtree2.yml
 # To activate: conda activate foldtree2

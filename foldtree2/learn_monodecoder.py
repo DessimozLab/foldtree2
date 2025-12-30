@@ -6,7 +6,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
 from foldtree2.src import encoder as ecdr
-from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss
+from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
 import tqdm
@@ -16,12 +16,20 @@ import pickle
 import argparse
 import sys
 import time
-import foldtree2.src.se3_strcut_decoder as se3e
 import warnings
 import yaml
 import json
 from datetime import datetime
+from torch.cuda.amp import autocast, GradScaler
 warnings.filterwarnings("ignore", category=UserWarning)
+
+# Try to import Muon optimizer
+try:
+    from muon import MuonWithAuxAdam
+    MUON_AVAILABLE = True
+except ImportError:
+    print("Warning: Muon optimizer not available. Install with: pip install git+https://github.com/KellerJordan/Muon")
+    MUON_AVAILABLE = False
 
 # Try to import transformers schedulers, fall back to PyTorch schedulers
 try:
@@ -98,6 +106,22 @@ parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, d
                     help='Number of gradient accumulation steps (default: 1, no accumulation)')
 parser.add_argument('--num-cycles', type=int, default=3,
                     help='Number of cycles for cosine_restarts scheduler (default: 3)')
+parser.add_argument('--use-muon', action='store_true',
+                    help='Use Muon optimizer for modular encoder/decoder (requires Muon package)')
+parser.add_argument('--use-muon-encoder', action='store_true',
+                    help='Use Muon-compatible encoder (mk1_MuonEncoder)')
+parser.add_argument('--use-muon-decoders', action='store_true',
+                    help='Use Muon-compatible decoders in MultiMonoDecoder')
+parser.add_argument('--muon-lr', type=float, default=0.02,
+                    help='Learning rate for Muon optimizer (default: 0.02)')
+parser.add_argument('--adamw-lr', type=float, default=3e-4,
+                    help='Learning rate for AdamW when using Muon (default: 3e-4)')
+parser.add_argument('--mixed-precision', action='store_true', default=True,
+                    help='Use mixed precision training (default: True)')
+parser.add_argument('--mask-plddt', action='store_true',
+                    help='Mask low pLDDT residues in loss calculations')
+parser.add_argument('--plddt-threshold', type=float, default=0.3,
+                    help='pLDDT threshold for masking (default: 0.3)')
 
 # Commitment cost scheduling
 parser.add_argument('--commitment-cost', type=float, default=0.9,
@@ -254,13 +278,14 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
-# Loss weights
-edgeweight = 0.05
-logitweight = 0.08
-xweight = 0.1
+# Loss weights (matching notebook)
+edgeweight = 0.25
+logitweight = 0.25
+xweight = 1
 fft2weight = 0.01
-vqweight = 0.001
-angles_weight = 0.001
+vqweight = 0.1
+angles_weight = 0.05
+ss_weight = 0.25
 
 # Create output directory
 modeldir = args.output_dir
@@ -321,10 +346,11 @@ else:
             commitment_schedule=args.commitment_schedule,
             commitment_start=args.commitment_start
         )
-    else:
-        encoder = ecdr.mk1_Encoder(
+    elif args.use_muon_encoder and MUON_AVAILABLE:
+        print("Using Muon-compatible mk1_MuonEncoder")
+        encoder = ecdr.mk1_MuonEncoder(
             in_channels=ndim,
-            hidden_channels=[hidden_size, hidden_size],
+            hidden_channels=[hidden_size, hidden_size, hidden_size],
             out_channels=args.embedding_dim,
             metadata={'edge_types': [('res','contactPoints','res')]},
             num_embeddings=args.num_embeddings,
@@ -332,15 +358,39 @@ else:
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=args.EMA,
-            nheads=8,
+            nheads=16,
             dropout_p=0.01,
             reset_codes=False,
             flavor='transformer',
             fftin=True,
             use_commitment_scheduling=args.use_commitment_scheduling,
             commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule=args.commitment_schedule,
-            commitment_start=args.commitment_start
+            commitment_schedule='cosine_with_restart',
+            commitment_start=args.commitment_start,
+            concat_positions=True
+        )
+    else:
+        print("Using standard mk1_Encoder")
+        encoder = ecdr.mk1_Encoder(
+            in_channels=ndim,
+            hidden_channels=[hidden_size, hidden_size, hidden_size],
+            out_channels=args.embedding_dim,
+            metadata={'edge_types': [('res','contactPoints','res')]},
+            num_embeddings=args.num_embeddings,
+            commitment_cost=args.commitment_cost,
+            edge_dim=1,
+            encoder_hidden=hidden_size,
+            EMA=args.EMA,
+            nheads=16,
+            dropout_p=0.01,
+            reset_codes=False,
+            flavor='transformer',
+            fftin=True,
+            use_commitment_scheduling=args.use_commitment_scheduling,
+            commitment_warmup_steps=args.commitment_warmup_steps,
+            commitment_schedule='cosine_with_restart',
+            commitment_start=args.commitment_start,
+            concat_positions=True
         )
 
     if args.hetero_gae:
@@ -363,59 +413,98 @@ else:
         )
     else:
         # MultiMonoDecoder for sequence and geometry
-        mono_configs = {
-            'sequence_transformer': {
-                'in_channels': {'res': args.embedding_dim},
-                'xdim': 20,
-                'concat_positions': True,
-                'hidden_channels': {
-                    ('res','backbone','res'): [hidden_size*2], 
-                    ('res','backbonerev','res'): [hidden_size*2]
+        if args.use_muon_decoders and MUON_AVAILABLE:
+            print("Using Muon-compatible decoders")
+            mono_configs = {
+                'sequence_transformer': {
+                    'decoder_type': 'Transformer_AA_MuonDecoder',
+                    'in_channels': {'res': args.embedding_dim},
+                    'xdim': 20,
+                    'concat_positions': True,
+                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+                    'layers': 2,
+                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+                    'amino_mapper': converter.aaindex,
+                    'flavor': 'sage',
+                    'nheads': 5,
+                    'dropout': 0.001,
+                    'normalize': False,
+                    'residual': False,
+                    'use_cnn_decoder': True,
+                    'output_ss': True
                 },
-                'layers': 2,
-                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                'amino_mapper': converter.aaindex,
-                'flavor': 'sage',
-                'nheads': 4,
-                'dropout': 0.005,
-                'normalize': False,
-                'residual': False
-            },
-            
-            'contacts': {
-                'in_channels': {
-                    'res': args.embedding_dim, 
-                    'godnode4decoder': ndim_godnode, 
-                    'foldx': 23,
-                    'fft2r': ndim_fft2r, 
-                    'fft2i': ndim_fft2i
+                
+                'geometry_cnn': {
+                    'decoder_type': 'CNN_geo_MuonDecoder',
+                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+                    'concat_positions': True,
+                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
+                    'kernel_sizes': [3, 3, 3],
+                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
+                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
+                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'metadata': converter.metadata,
+                    'dropout': 0.001,
+                    'output_fft': False,
+                    'output_rt': False,
+                    'output_angles': True,
+                    'output_ss': False,
+                    'normalize': True,
+                    'residual': False,
+                    'output_edge_logits': True,
+                    'ncat': 8,
+                    'contact_mlp': False,
+                    'pool_type': 'global_mean'
                 },
-                'concat_positions': True,
-                'hidden_channels': {
-                    ('res','backbone','res'): [hidden_size]*8, 
-                    ('res','backbonerev','res'): [hidden_size]*8, 
-                    ('res','informs','godnode4decoder'): [hidden_size]*8, 
-                    ('godnode4decoder','informs','res'): [hidden_size]*8
+            }
+        else:
+            print("Using standard decoders")
+            mono_configs = {
+                'sequence_transformer': {
+                    'in_channels': {'res': args.embedding_dim},
+                    'xdim': 20,
+                    'concat_positions': True,
+                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+                    'layers': 2,
+                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+                    'amino_mapper': converter.aaindex,
+                    'flavor': 'sage',
+                    'nheads': 5,
+                    'dropout': 0.001,
+                    'normalize': False,
+                    'residual': False,
+                    'use_cnn_decoder': True,
+                    'output_ss': True
                 },
-                'layers': 4,
-                'FFT2decoder_hidden': [hidden_size, hidden_size, hidden_size],
-                'contactdecoder_hidden': [hidden_size//4, hidden_size//8],
-                'anglesdecoder_hidden': [hidden_size//2, hidden_size//2],
-                'nheads': 1,
-                'Xdecoder_hidden': [hidden_size, hidden_size, hidden_size],
-                'metadata': converter.metadata,
-                'flavor': 'sage',
-                'dropout': 0.005,
-                'output_fft': False,
-                'output_rt': False,
-                'output_angles': False,
-                'normalize': True,
-                'residual': False,
-                'contact_mlp': False,
-                'ncat': 16,
-                'output_edge_logits': True
-            },
-        }
+                
+                'geometry_cnn': {
+                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+                    'concat_positions': True,
+                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
+                    'kernel_sizes': [3, 3, 3],
+                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
+                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
+                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
+                    'metadata': converter.metadata,
+                    'dropout': 0.001,
+                    'output_fft': False,
+                    'output_rt': False,
+                    'output_angles': True,
+                    'output_ss': False,
+                    'normalize': True,
+                    'residual': False,
+                    'output_edge_logits': True,
+                    'ncat': 8,
+                    'contact_mlp': False,
+                    'pool_type': 'global_mean'
+                },
+            }
         if args.output_foldx:
             mono_configs['foldx'] = {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
@@ -480,8 +569,94 @@ decoder = decoder.to(device)
 print("Encoder:", encoder)
 print("Decoder:", decoder)
 
-# Training setup
-optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate , weight_decay=0.000001)
+# Training setup - Optimizer
+if args.use_muon and MUON_AVAILABLE:
+    print("Using Muon optimizer")
+    hidden_weights = []
+    hidden_gains_biases = []
+    nonhidden_params = []
+    
+    # Helper function to check if a model has modular structure
+    def has_modular_structure(model):
+        return hasattr(model, 'input') and hasattr(model, 'body') and hasattr(model, 'head')
+    
+    # Process encoder
+    if has_modular_structure(encoder):
+        print("Using modular encoder structure")
+        hidden_weights += [p for p in encoder.body.parameters() if p.ndim >= 2]
+        hidden_gains_biases += [p for p in encoder.body.parameters() if p.ndim < 2]
+        nonhidden_params += [*encoder.head.parameters(), *encoder.input.parameters()]
+    else:
+        print("Encoder is not modular - using AdamW for all encoder parameters")
+        nonhidden_params += list(encoder.parameters())
+    
+    # Process decoder
+    if hasattr(decoder, 'decoders'):
+        print(f"Using MultiMonoDecoder with {len(decoder.decoders)} sub-decoders")
+        for name, subdecoder in decoder.decoders.items():
+            if has_modular_structure(subdecoder):
+                print(f"  - {name}: modular structure detected")
+                hidden_weights += [p for p in subdecoder.body.parameters() if p.ndim >= 2]
+                hidden_gains_biases += [p for p in subdecoder.body.parameters() if p.ndim < 2]
+                nonhidden_params += [*subdecoder.head.parameters(), *subdecoder.input.parameters()]
+            else:
+                print(f"  - {name}: non-modular, using AdamW")
+                nonhidden_params += list(subdecoder.parameters())
+    elif has_modular_structure(decoder):
+        print("Using modular single decoder structure")
+        hidden_weights += [p for p in decoder.body.parameters() if p.ndim >= 2]
+        hidden_gains_biases += [p for p in decoder.body.parameters() if p.ndim < 2]
+        nonhidden_params += [*decoder.head.parameters(), *decoder.input.parameters()]
+    else:
+        print("Decoder is not modular - using AdamW for all decoder parameters")
+        nonhidden_params += list(decoder.parameters())
+    
+    print(f"\nParameter groups for Muon optimizer:")
+    print(f"  Hidden weights (Muon):           {len(hidden_weights)} tensors")
+    print(f"  Hidden gains/biases (AdamW):     {len(hidden_gains_biases)} tensors")
+    print(f"  Non-hidden params (AdamW):       {len(nonhidden_params)} tensors")
+    
+    param_groups = [
+        dict(params=hidden_weights, use_muon=True,
+            lr=args.muon_lr, weight_decay=0.01),
+        dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
+            lr=args.adamw_lr, betas=(0.9, 0.95), weight_decay=0.01),
+    ]
+    optimizer = MuonWithAuxAdam(param_groups)
+else:
+    print("Using AdamW optimizer")
+    optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate, weight_decay=0.000001)
+
+# Define scheduler function with process group initialization
+def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_steps, **kwargs):
+    if scheduler_type == 'linear' and TRANSFORMERS_AVAILABLE:
+        return get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps), 'step'
+    elif scheduler_type == 'cosine' and TRANSFORMERS_AVAILABLE:
+        return get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps), 'step'
+    elif scheduler_type == 'cosine_restarts' and TRANSFORMERS_AVAILABLE:
+        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, num_cycles=kwargs.get('num_cycles', 3)), 'step'
+    elif scheduler_type == 'polynomial' and TRANSFORMERS_AVAILABLE:
+        return get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, lr_end=0.0, power=1.0), 'step'
+    elif scheduler_type == 'plateau':
+        # Initialize process group if not already initialized (required for ReduceLROnPlateau)
+        import torch.distributed as dist
+        if not dist.is_available() or not dist.is_initialized():
+            try:
+                # Initialize single-process group for non-distributed training
+                import os as dist_os
+                dist_os.environ.setdefault('MASTER_ADDR', 'localhost')
+                dist_os.environ.setdefault('MASTER_PORT', '12355')
+                dist_os.environ.setdefault('RANK', '0')
+                dist_os.environ.setdefault('WORLD_SIZE', '1')
+                dist.init_process_group(backend='gloo', init_method='env://')
+                print("Initialized process group for ReduceLROnPlateau scheduler")
+            except Exception as e:
+                print(f"Note: Could not initialize process group (running in single-process mode): {e}")
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2), 'epoch'
+    elif scheduler_type == 'none':
+        return None, None
+    else:
+        raise ValueError(f"Unknown scheduler type: {scheduler_type}")
 
 # Learning rate scheduler setup
 total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps  # Adjust for gradient accumulation
@@ -493,63 +668,15 @@ if args.lr_warmup_ratio > 0:
 else:
     warmup_steps = args.lr_warmup_steps
 
-# Initialize scheduler
-scheduler = None
-scheduler_step_mode = 'epoch'  # 'step' or 'epoch'
+# Initialize scheduler using the new function
+scheduler, scheduler_step_mode = get_scheduler(
+    optimizer,
+    scheduler_type=args.lr_schedule,
+    num_warmup_steps=warmup_steps,
+    num_training_steps=total_steps,
+    num_cycles=args.num_cycles
+)
 
-if args.lr_schedule == 'plateau':
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
-    scheduler_step_mode = 'epoch'
-    
-elif args.lr_schedule == 'cosine' and TRANSFORMERS_AVAILABLE:
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps
-    )
-    scheduler_step_mode = 'step'
-    
-elif args.lr_schedule == 'linear' and TRANSFORMERS_AVAILABLE:
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps
-    )
-    scheduler_step_mode = 'step'
-    
-elif args.lr_schedule == 'cosine_restarts' and TRANSFORMERS_AVAILABLE:
-    scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps,
-        num_cycles=args.num_cycles
-    )
-    scheduler_step_mode = 'step'
-    
-elif args.lr_schedule == 'polynomial' and TRANSFORMERS_AVAILABLE:
-    scheduler = get_polynomial_decay_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps,
-        power=2.0
-    )
-    scheduler_step_mode = 'step'
-    
-elif args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial'] and not TRANSFORMERS_AVAILABLE:
-    # Fallback to PyTorch schedulers
-    print(f"Warning: transformers not available, falling back to PyTorch CosineAnnealingLR for {args.lr_schedule}")
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, 
-        T_max=total_steps - warmup_steps, 
-        eta_min=args.lr_min
-    )
-    scheduler_step_mode = 'step'
-    
-elif args.lr_schedule == 'none':
-    scheduler = None
-    print("No learning rate scheduling (constant LR)")
-else:
-    print(f"Unknown scheduler: {args.lr_schedule}, using no scheduling")
 
 print(f"\nScheduler Configuration:")
 print(f"  Schedule type: {args.lr_schedule}")
@@ -623,133 +750,172 @@ metrics_dict = {}
 encoder.train()
 decoder.train()
 clip_grad = args.clip_grad  # Enable gradient clipping
-burn_in = args.burn_in  # Use burn-in period if specified
-
 best_loss = float('inf')
-done_burn = False
-after_burn_in = args.epochs - burn_in if burn_in else args.epochs
 global_step = 0  # Track global training steps for warmup and scheduling
-accumulation_step = 0  # Track steps within gradient accumulation
+
+# Initialize GradScaler for mixed precision training
+if args.mixed_precision:
+    scaler = GradScaler()
+    print("Mixed Precision Training Enabled")
+else:
+    scaler = None
+    print("Mixed Precision Training Disabled")
 
 print(f"\nTraining Configuration:")
 print(f"  Total epochs: {args.epochs}")
-print(f"  Burn-in epochs: {burn_in}")
-print(f"  After burn-in epochs: {after_burn_in}")
 print(f"  Gradient accumulation steps: {args.gradient_accumulation_steps}")
 print(f"  Steps per epoch: {len(train_loader)}")
 print(f"  Effective steps per epoch: {len(train_loader) // args.gradient_accumulation_steps}")
+print(f"  Mask pLDDT: {args.mask_plddt}")
+if args.mask_plddt:
+    print(f"  pLDDT threshold: {args.plddt_threshold}")
+print(f"  Using device: {device}")
 print()
 
 for epoch in range(args.epochs):
-    if burn_in and epoch < burn_in:
-        print(f"Burn-in epoch {epoch+1}/{args.epochs}: Adjusting loss weights")
-        edgeweight = 0
-        xweight = 1
-        fft2weight = 0
-        vqweight = 0.001
-        #change learning rate
-        for param_group in optimizer.param_groups:
-            param_group['lr'] =   args.learning_rate * 10 
-            print(f"Using learning rate {param_group['lr']:.6f} during burn-in")
-        done_burn = True
-    if done_burn and epoch >= burn_in:
-        done_burn = False
-        # After burn-in, use normal weights
-        print(f"Training epoch {epoch+1}/{args.epochs}: Using adjusted loss weights")
-        xweight = 1  # Normal weight for amino acid reconstruction
-        edgeweight = 0.001  # Normal weight for edge loss
-        fft2weight = 0.001  # Normal weight for FFT2 loss
-        vqweight = 0.001  # Normal weight for VQ loss
-        #change learning rate
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = args.learning_rate
-            print(f"Using learning rate {param_group['lr']:.6f} after burn-in")
-
     total_loss_x = 0
     total_loss_edge = 0
     total_vq = 0
     total_angles_loss = 0
     total_loss_fft2 = 0
     total_logit_loss = 0
+    total_ss_loss = 0
     
     for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
         data = data.to(device)
         
-        # Forward through encoder
-        z, vqloss = encoder(data)
-        data['res'].x = z
-        
-        # Forward through decoder
-        out = decoder(data, None)
-        
-        # Get outputs
-        recon_x = out['aa'] if 'aa' in out else None
-        fft2_x = out['fft2pred'] if 'fft2pred' in out else None
-        
-        # Edge loss: use contactPoints if available
-        edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res'))
-        logitloss = torch.tensor(0.0, device=device)
-        if edge_index is not None:
-            edgeloss, logitloss = recon_loss_diag(
-                data, edge_index, decoder, 
-                plddt=False, offdiag=False, key='edge_probs'
-            )
+        # Forward pass with autocast for mixed precision
+        if args.mixed_precision:
+            with autocast():
+                z, vqloss = encoder(data)
+                data['res'].x = z
+                
+                # Forward pass through decoder
+                out = decoder(data, None)
+                edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+
+                # Edge reconstruction loss
+                logitloss = torch.tensor(0.0, device=device)
+                edgeloss = torch.tensor(0.0, device=device)
+                if edge_index is not None:
+                    edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
+                
+                # Amino acid reconstruction loss
+                xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+                
+                # FFT2 loss
+                fft2loss = torch.tensor(0.0, device=device)
+                if 'fft2pred' in out and out['fft2pred'] is not None:
+                    fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+
+                # Angles loss
+                angles_loss = torch.tensor(0.0, device=device)
+                if out.get('angles') is not None:
+                    angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+
+                # Secondary structure loss
+                ss_loss = torch.tensor(0.0, device=device)
+                if out.get('ss_pred') is not None:
+                    if args.mask_plddt:
+                        mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
+                        ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+                    else:
+                        ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+
+                # Total loss
+                loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                        fft2weight * fft2loss + angles_weight * angles_loss + 
+                        ss_weight * ss_loss + logitweight * logitloss)
+                
+                # Scale loss by gradient accumulation steps
+                loss = loss / args.gradient_accumulation_steps
         else:
+            # Non-mixed precision path
+            z, vqloss = encoder(data)
+            data['res'].x = z
+            
+            out = decoder(data, None)
+            edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+
+            logitloss = torch.tensor(0.0, device=device)
             edgeloss = torch.tensor(0.0, device=device)
-        
-        # Amino acid reconstruction loss
-        xloss = aa_reconstruction_loss(data['AA'].x, recon_x)
-        
-        # FFT2 loss if available
-        if fft2_x is not None:
-            fft2loss = F.smooth_l1_loss(
-                torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), 
-                fft2_x
-            )
-        else:
+            if edge_index is not None:
+                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
+            
+            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+            
             fft2loss = torch.tensor(0.0, device=device)
+            if 'fft2pred' in out and out['fft2pred'] is not None:
+                fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+
+            angles_loss = torch.tensor(0.0, device=device)
+            if out.get('angles') is not None:
+                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+
+            ss_loss = torch.tensor(0.0, device=device)
+            if out.get('ss_pred') is not None:
+                if args.mask_plddt:
+                    mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
+                    ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+                else:
+                    ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+
+            loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                    fft2weight * fft2loss + angles_weight * angles_loss + 
+                    ss_weight * ss_loss + logitweight * logitloss)
+            
+            loss = loss / args.gradient_accumulation_steps
         
-        # Angles loss
-        angles_loss = torch.tensor(0.0, device=device)
-        if 'angles' in out and out['angles'] is not None:
-            angles = out['angles']
-            angles_loss = F.smooth_l1_loss(angles, data['bondangles'].x)
-    
-        # Total loss
-        loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                fft2loss * fft2weight + angles_loss * angles_weight + 
-                logitloss * logitweight)
+        # Backward pass with gradient scaling
+        if args.mixed_precision:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
         
-        # Scale loss for gradient accumulation
-        loss = loss / args.gradient_accumulation_steps
-        
-        # Backward
-        loss.backward()
-        
-        accumulation_step += 1
-        
-        # Optimize after accumulating gradients
-        if accumulation_step % args.gradient_accumulation_steps == 0:
+        # Only update weights every gradient_accumulation_steps
+        if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
             if clip_grad:
+                if args.mixed_precision:
+                    scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
                 torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
             
-            optimizer.step()
+            # Step optimizer with scaler
+            if args.mixed_precision:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
             optimizer.zero_grad()
             
-            # Step the scheduler (for step-based schedulers)
+            # Step scheduler if it's a step-based scheduler
             if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
             
             global_step += 1
         
-        # Accumulate metrics (scale back up since loss was scaled down)
-        total_loss_x += xloss.item() * args.gradient_accumulation_steps
-        total_logit_loss += logitloss.item() * args.gradient_accumulation_steps
-        total_loss_edge += edgeloss.item() * args.gradient_accumulation_steps
-        total_loss_fft2 += fft2loss.item() * args.gradient_accumulation_steps
-        total_angles_loss += angles_loss.item() * args.gradient_accumulation_steps
-        total_vq += (vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)) * args.gradient_accumulation_steps
+        # Accumulate losses (unscaled for reporting)
+        total_loss_x += xloss.item()
+        total_logit_loss += logitloss.item()
+        total_loss_edge += edgeloss.item()
+        total_loss_fft2 += fft2loss.item()
+        total_angles_loss += angles_loss.item()
+        total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
+        total_ss_loss += ss_loss.item()
+    
+    # Clean up any remaining gradients at epoch end
+    if len(train_loader) % args.gradient_accumulation_steps != 0:
+        if clip_grad:
+            if args.mixed_precision:
+                scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+        if args.mixed_precision:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
+        optimizer.zero_grad()
     
     # Calculate average losses
     avg_loss_x = total_loss_x / len(train_loader)
@@ -758,8 +924,9 @@ for epoch in range(args.epochs):
     avg_loss_fft2 = total_loss_fft2 / len(train_loader)
     avg_angles_loss = total_angles_loss / len(train_loader)
     avg_logit_loss = total_logit_loss / len(train_loader)
+    avg_ss_loss = total_ss_loss / len(train_loader)
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
-                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss)
+                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
     
     # Update learning rate scheduler (for epoch-based schedulers)
     if scheduler is not None and scheduler_step_mode == 'epoch':
@@ -772,7 +939,7 @@ for epoch in range(args.epochs):
     print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
           f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
           f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
-          f"Logit Loss: {avg_logit_loss:.4f}")
+          f"SS Loss: {avg_ss_loss:.4f}, Logit Loss: {avg_logit_loss:.4f}")
     current_lr = optimizer.param_groups[0]['lr']
     print(f"Total Loss: {avg_total_loss:.4f}, LR: {current_lr:.6f}")
     
@@ -798,6 +965,7 @@ for epoch in range(args.epochs):
     writer.add_scalar('Loss/VQ', avg_loss_vq, epoch)
     writer.add_scalar('Loss/FFT2', avg_loss_fft2, epoch)
     writer.add_scalar('Loss/Angles', avg_angles_loss, epoch)
+    writer.add_scalar('Loss/SS', avg_ss_loss, epoch)
     writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
     writer.add_scalar('Loss/Total', avg_total_loss, epoch)
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)

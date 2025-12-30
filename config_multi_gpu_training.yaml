@@ -1,0 +1,116 @@
+# Configuration for Multi-GPU training with learn_lightning.py
+# This config matches the learn_monodecoder.py logic but enables multi-GPU distributed training
+# Usage: python foldtree2/learn_lightning.py --config config_multi_gpu_training.yaml
+
+# Dataset configuration
+dataset: "structs_train_final.h5"
+output_dir: "./models/multi_gpu_training"
+run_name: "multi_gpu_muon_training"
+
+# Multi-GPU settings
+gpus: 4  # Number of GPUs to use (set to number available on your system)
+strategy: "ddp"  # Distributed Data Parallel - recommended for multi-GPU
+# Options: 'auto', 'ddp', 'ddp_spawn', 'dp'
+# - ddp: Distributed Data Parallel (fastest, recommended)
+# - ddp_spawn: DDP with spawn (slower but more stable)
+# - dp: DataParallel (legacy, not recommended)
+
+# Training hyperparameters
+epochs: 1000
+batch_size: 15  # Per-GPU batch size (effective batch = batch_size * gpus)
+gradient_accumulation_steps: 1
+seed: 0
+
+# Model architecture
+hidden_size: 100
+num_embeddings: 40
+embedding_dim: 128
+
+# Encoder configuration
+use_muon_encoder: false  # Standard mk1_Encoder
+EMA: true
+
+# Decoder configuration
+use_muon_decoders: false  # Standard decoders
+hetero_gae: false  # Use MultiMonoDecoder
+
+# Optimizer settings (Muon optimizer)
+use_muon: true
+muon_lr: 0.02      # Muon learning rate for hidden weights
+adamw_lr: 0.0001   # AdamW learning rate (1e-4)
+
+# Mixed precision training (essential for multi-GPU efficiency)
+mixed_precision: true
+
+# pLDDT masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Learning rate scheduling
+lr_schedule: "plateau"
+lr_warmup_steps: 20
+lr_warmup_ratio: 0.05  # Overrides lr_warmup_steps
+
+# Gradient settings
+clip_grad: true
+
+# Commitment cost scheduling
+use_commitment_scheduling: true
+commitment_cost: 0.9
+commitment_schedule: "cosine_with_restart"
+commitment_warmup_steps: 1000
+commitment_start: 0.5
+
+# TensorBoard logging
+tensorboard_dir: "./runs/"
+
+# Additional settings
+se3_transformer: false
+output_fft: false
+output_rt: false
+
+# Notes for Multi-GPU Training:
+# 
+# 1. EFFECTIVE BATCH SIZE:
+#    - Total batch size = batch_size * gpus * gradient_accumulation_steps
+#    - Example: 15 * 4 * 1 = 60 samples per optimization step
+#
+# 2. LEARNING RATE SCALING:
+#    - When using multiple GPUs, you may want to scale the learning rate
+#    - Common practice: lr_new = lr_base * sqrt(num_gpus) or lr_new = lr_base * num_gpus
+#    - Current config uses base rates from notebook
+#
+# 3. DDP vs DP:
+#    - DDP (Distributed Data Parallel): Recommended, most efficient
+#      * Each GPU has its own process
+#      * Gradients synchronized via all-reduce
+#      * Supports multi-node training
+#    - DP (DataParallel): Legacy, single-process
+#      * Uses threading, has GIL overhead
+#      * Only single-node
+#
+# 4. SYNCHRONIZATION:
+#    - DDP synchronizes gradients automatically after each backward pass
+#    - All GPUs see the same model parameters
+#    - Batch norm statistics are synced across GPUs
+#
+# 5. MONITORING:
+#    - TensorBoard logs from rank 0 (main process) only
+#    - Each GPU processes different data batches
+#    - Loss reported is averaged across all GPUs
+#
+# 6. RUNNING THE SCRIPT:
+#    Single GPU (for testing):
+#      python foldtree2/learn_lightning.py --config config_multi_gpu_training.yaml --gpus 1
+#    
+#    Multi-GPU (4 GPUs):
+#      python foldtree2/learn_lightning.py --config config_multi_gpu_training.yaml --gpus 4
+#    
+#    Specific GPUs (e.g., GPU 0 and 1):
+#      CUDA_VISIBLE_DEVICES=0,1 python foldtree2/learn_lightning.py --config config_multi_gpu_training.yaml --gpus 2
+#
+# 7. TROUBLESHOOTING:
+#    - Out of memory: Reduce batch_size or hidden_size
+#    - NCCL errors: Try strategy='ddp_spawn' or check network configuration
+#    - Hanging: Ensure all GPUs are visible and working (nvidia-smi)
+#    - Different results: Set seed and use deterministic mode

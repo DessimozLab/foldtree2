@@ -1,0 +1,85 @@
+# Configuration for 1000 epoch training - matching test_monodecoders.ipynb
+# Based on the exact parameters used in the notebook
+# Usage: python foldtree2/learn_monodecoder.py --config config_notebook_1k_epochs.yaml
+
+# Dataset configuration
+dataset: "structs_train_final.h5"
+output_dir: "./models/notebook_1k_training"
+run_name: "notebook_replication_1k_epochs"
+
+# Training hyperparameters (from notebook)
+epochs: 1000
+batch_size: 15
+gradient_accumulation_steps: 1
+seed: 0
+
+# Model architecture (from notebook)
+hidden_size: 100
+num_embeddings: 40
+embedding_dim: 128
+
+# Encoder configuration (mk1_Encoder from notebook)
+use_muon_encoder: false  # Notebook uses standard mk1_Encoder
+EMA: true
+
+# Decoder configuration (MultiMonoDecoder from notebook)
+use_muon_decoders: false  # Notebook uses standard decoders
+hetero_gae: false  # Use MultiMonoDecoder
+
+# Optimizer settings (from notebook - Muon optimizer)
+use_muon: true
+muon_lr: 0.02      # Muon learning rate for hidden weights
+adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
+
+# Mixed precision training
+mixed_precision: true
+
+# pLDDT masking (from notebook)
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Learning rate scheduling (from notebook)
+lr_schedule: "plateau"  # Notebook uses plateau scheduler
+lr_warmup_steps: 20
+lr_warmup_ratio: 0.05  # This overrides lr_warmup_steps
+
+# Gradient settings (from notebook)
+clip_grad: true
+
+# Loss weights (from notebook cell)
+# Note: These are initial weights - notebook has weight schedulers (currently commented out)
+# edgeweight = 0.1
+# logitweight = 0.1
+# xweight = 1
+# fft2weight = 0.01
+# vqweight = 0.1
+# angles_weight = 0.1
+# ss_weight = 0.1
+
+# Commitment cost scheduling (from notebook encoder config)
+use_commitment_scheduling: true
+commitment_cost: 0.9
+commitment_schedule: "cosine_with_restart"
+commitment_warmup_steps: 1000
+commitment_start: 0.5
+
+# TensorBoard logging
+tensorboard_dir: "./runs/"
+
+# Additional settings
+se3_transformer: false
+output_fft: false
+output_rt: false
+
+# Notes:
+# - The notebook uses loss weight schedulers (currently commented out in training loop)
+# - To enable loss weight scheduling in the future, you would need to add that feature
+# - Scheduler types used in notebook for loss weights:
+#   - x_scheduler: linear
+#   - logit_scheduler: linear
+#   - edgeweight_scheduler: cosine_restarts (3 cycles)
+#   - ss_scheduler: linear with power=2.0
+#   - vq_scheduler: cosine_restarts (10 cycles)
+#   - fft2_scheduler: cosine_restarts (5 cycles)
+#   - angles_scheduler: linear
+# - All with warmup_steps=20

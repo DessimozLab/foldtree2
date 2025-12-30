@@ -1,0 +1,55 @@
+# Configuration for training with Muon optimizer
+# Example: python foldtree2/learn_monodecoder.py --config config_muon_training.yaml
+
+# Dataset and model configuration
+dataset: "structs_traininffttest.h5"
+output_dir: "./models/muon_test"
+run_name: "muon_mixed_precision_test"
+
+# Training hyperparameters
+epochs: 100
+batch_size: 20
+gradient_accumulation_steps: 1
+
+# Muon optimizer settings
+use_muon: true
+use_muon_encoder: true
+use_muon_decoders: true
+muon_lr: 0.02
+adamw_lr: 0.0003
+
+# Mixed precision training
+mixed_precision: true
+
+# pLDDT masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Learning rate scheduling
+lr_schedule: "plateau"  # Options: plateau, cosine, linear, cosine_restarts, polynomial, none
+
+# Gradient settings
+clip_grad: true
+
+# Encoder configuration
+num_embeddings: 40
+embedding_dim: 128
+EMA: true
+hidden_size: 256
+
+# Commitment cost scheduling
+use_commitment_scheduling: true
+commitment_schedule: "cosine_with_restart"
+commitment_warmup_steps: 5000
+commitment_cost: 0.9
+commitment_start: 0.1
+
+# Model architecture
+se3_transformer: false
+hetero_gae: false
+
+# Random seed
+seed: 42
+
+# TensorBoard
+tensorboard_dir: "./runs/"
