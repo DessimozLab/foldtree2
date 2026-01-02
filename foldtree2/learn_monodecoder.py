@@ -136,6 +136,22 @@ parser.add_argument('--commitment-warmup-steps', type=int, default=5000,
 parser.add_argument('--commitment-start', type=float, default=0.1,
                     help='Starting commitment cost when using scheduling (default: 0.1)')
 
+# Loss weight arguments
+parser.add_argument('--edge-weight', type=float, default=0.25,
+                    help='Weight for edge reconstruction loss (default: 0.25)')
+parser.add_argument('--logit-weight', type=float, default=0.25,
+                    help='Weight for logit loss (default: 0.25)')
+parser.add_argument('--x-weight', type=float, default=5.0,
+                    help='Weight for coordinate reconstruction loss (default: 5.0)')
+parser.add_argument('--fft2-weight', type=float, default=0.01,
+                    help='Weight for FFT2 loss (default: 0.01)')
+parser.add_argument('--vq-weight', type=float, default=0.1,
+                    help='Weight for VQ-VAE loss (default: 0.1)')
+parser.add_argument('--angles-weight', type=float, default=0.05,
+                    help='Weight for angles reconstruction loss (default: 0.05)')
+parser.add_argument('--ss-weight', type=float, default=0.25,
+                    help='Weight for secondary structure loss (default: 0.25)')
+
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:
     print('No arguments provided. Use -h for help.')
@@ -241,6 +257,14 @@ if args.use_commitment_scheduling:
     print(f"  Commitment Schedule: {args.commitment_schedule}")
     print(f"  Commitment Warmup Steps: {args.commitment_warmup_steps}")
     print(f"  Commitment Start: {args.commitment_start}")
+print(f"Loss Weights:")
+print(f"  Edge Weight: {args.edge_weight}")
+print(f"  Logit Weight: {args.logit_weight}")
+print(f"  X Weight: {args.x_weight}")
+print(f"  FFT2 Weight: {args.fft2_weight}")
+print(f"  VQ Weight: {args.vq_weight}")
+print(f"  Angles Weight: {args.angles_weight}")
+print(f"  SS Weight: {args.ss_weight}")
 
 # Save configuration if requested
 if args.save_config:
@@ -278,14 +302,14 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
-# Loss weights (matching notebook)
-edgeweight = 0.25
-logitweight = 0.25
-xweight = 1
-fft2weight = 0.01
-vqweight = 0.1
-angles_weight = 0.05
-ss_weight = 0.25
+# Loss weights (from args, with defaults matching notebook)
+edgeweight = args.edge_weight
+logitweight = args.logit_weight
+xweight = args.x_weight
+fft2weight = args.fft2_weight
+vqweight = args.vq_weight
+angles_weight = args.angles_weight
+ss_weight = args.ss_weight
 
 # Create output directory
 modeldir = args.output_dir
@@ -323,76 +347,27 @@ else:
     print("Creating new model...")
     # Model setup
     hidden_size = args.hidden_size
-    
-    # Encoder
-    if args.se3_transformer:
-        encoder = se3e.se3_Encoder(
-            in_channels=ndim,
-            hidden_channels=[hidden_size//2, hidden_size//2],
-            out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
-            num_embeddings=args.num_embeddings,
-            commitment_cost=args.commitment_cost,
-            edge_dim=1,
-            encoder_hidden=hidden_size,
-            EMA=args.EMA,
-            nheads=5,
-            dropout_p=0.005,
-            reset_codes=False,
-            flavor='transformer',
-            fftin=True,
-            use_commitment_scheduling=args.use_commitment_scheduling,
-            commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule=args.commitment_schedule,
-            commitment_start=args.commitment_start
-        )
-    elif args.use_muon_encoder and MUON_AVAILABLE:
-        print("Using Muon-compatible mk1_MuonEncoder")
-        encoder = ecdr.mk1_MuonEncoder(
-            in_channels=ndim,
-            hidden_channels=[hidden_size, hidden_size, hidden_size],
-            out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res')]},
-            num_embeddings=args.num_embeddings,
-            commitment_cost=args.commitment_cost,
-            edge_dim=1,
-            encoder_hidden=hidden_size,
-            EMA=args.EMA,
-            nheads=16,
-            dropout_p=0.01,
-            reset_codes=False,
-            flavor='transformer',
-            fftin=True,
-            use_commitment_scheduling=args.use_commitment_scheduling,
-            commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule='cosine_with_restart',
-            commitment_start=args.commitment_start,
-            concat_positions=True
-        )
-    else:
-        print("Using standard mk1_Encoder")
-        encoder = ecdr.mk1_Encoder(
-            in_channels=ndim,
-            hidden_channels=[hidden_size, hidden_size, hidden_size],
-            out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res')]},
-            num_embeddings=args.num_embeddings,
-            commitment_cost=args.commitment_cost,
-            edge_dim=1,
-            encoder_hidden=hidden_size,
-            EMA=args.EMA,
-            nheads=16,
-            dropout_p=0.01,
-            reset_codes=False,
-            flavor='transformer',
-            fftin=True,
-            use_commitment_scheduling=args.use_commitment_scheduling,
-            commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule='cosine_with_restart',
-            commitment_start=args.commitment_start,
-            concat_positions=True
-        )
-
+    encoder = ecdr.mk1_Encoder(
+        in_channels=ndim,
+        hidden_channels=[hidden_size, hidden_size, hidden_size],
+        out_channels=args.embedding_dim,
+        metadata={'edge_types': [('res','contactPoints','res')]},
+        num_embeddings=args.num_embeddings,
+        commitment_cost=args.commitment_cost,
+        edge_dim=1,
+        encoder_hidden=hidden_size,
+        EMA=args.EMA,
+        nheads=16,
+        dropout_p=0.01,
+        reset_codes=False,
+        flavor='transformer',
+        fftin=True,
+        use_commitment_scheduling=args.use_commitment_scheduling,
+        commitment_warmup_steps=args.commitment_warmup_steps,
+        commitment_schedule='cosine_with_restart',
+        commitment_start=args.commitment_start,
+        concat_positions=True
+    )
     if args.hetero_gae:
         # HeteroGAE_Decoder config (example, adjust as needed)
         decoder = ecdr.HeteroGAE_Decoder(
@@ -413,98 +388,50 @@ else:
         )
     else:
         # MultiMonoDecoder for sequence and geometry
-        if args.use_muon_decoders and MUON_AVAILABLE:
-            print("Using Muon-compatible decoders")
-            mono_configs = {
-                'sequence_transformer': {
-                    'decoder_type': 'Transformer_AA_MuonDecoder',
-                    'in_channels': {'res': args.embedding_dim},
-                    'xdim': 20,
-                    'concat_positions': True,
-                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-                    'layers': 2,
-                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                    'amino_mapper': converter.aaindex,
-                    'flavor': 'sage',
-                    'nheads': 5,
-                    'dropout': 0.001,
-                    'normalize': False,
-                    'residual': False,
-                    'use_cnn_decoder': True,
-                    'output_ss': True
-                },
-                
-                'geometry_cnn': {
-                    'decoder_type': 'CNN_geo_MuonDecoder',
-                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                    'concat_positions': True,
-                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
-                    'kernel_sizes': [3, 3, 3],
-                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
-                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
-                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'metadata': converter.metadata,
-                    'dropout': 0.001,
-                    'output_fft': False,
-                    'output_rt': False,
-                    'output_angles': True,
-                    'output_ss': False,
-                    'normalize': True,
-                    'residual': False,
-                    'output_edge_logits': True,
-                    'ncat': 8,
-                    'contact_mlp': False,
-                    'pool_type': 'global_mean'
-                },
-            }
-        else:
-            print("Using standard decoders")
-            mono_configs = {
-                'sequence_transformer': {
-                    'in_channels': {'res': args.embedding_dim},
-                    'xdim': 20,
-                    'concat_positions': True,
-                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-                    'layers': 2,
-                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                    'amino_mapper': converter.aaindex,
-                    'flavor': 'sage',
-                    'nheads': 5,
-                    'dropout': 0.001,
-                    'normalize': False,
-                    'residual': False,
-                    'use_cnn_decoder': True,
-                    'output_ss': True
-                },
-                
-                'geometry_cnn': {
-                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                    'concat_positions': True,
-                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
-                    'kernel_sizes': [3, 3, 3],
-                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
-                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
-                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'metadata': converter.metadata,
-                    'dropout': 0.001,
-                    'output_fft': False,
-                    'output_rt': False,
-                    'output_angles': True,
-                    'output_ss': False,
-                    'normalize': True,
-                    'residual': False,
-                    'output_edge_logits': True,
-                    'ncat': 8,
-                    'contact_mlp': False,
-                    'pool_type': 'global_mean'
-                },
-            }
+        print("Using standard decoders")
+        mono_configs = {
+            'sequence_transformer': {
+                'in_channels': {'res': args.embedding_dim},
+                'xdim': 20,
+                'concat_positions': True,
+                'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+                'layers': 2,
+                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+                'amino_mapper': converter.aaindex,
+                'flavor': 'sage',
+                'nheads': 5,
+                'dropout': 0.001,
+                'normalize': False,
+                'residual': False,
+                'use_cnn_decoder': True,
+                'output_ss': False
+            },
+            
+            'geometry_cnn': {
+                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+                'concat_positions': False,
+                'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
+                'kernel_sizes': [3, 3, 3],
+                'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
+                'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
+                'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
+                'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
+                'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
+                'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
+                'metadata': converter.metadata,
+                'dropout': 0.001,
+                'output_fft': False,
+                'output_rt': False,
+                'output_angles': True,
+                'output_ss': True,
+                'normalize': True,
+                'residual': False,
+                'output_edge_logits': True,
+                'ncat': 8,
+                'contact_mlp': False,
+                'pool_type': 'global_mean'
+            },
+        }
         if args.output_foldx:
             mono_configs['foldx'] = {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
@@ -521,43 +448,6 @@ else:
                 'normalize': True,
                 'residual': False
             }
-
-
-
-        '''
-
-        'sequence_transformer': {
-                'in_channels': {'res': args.embedding_dim},
-                'xdim': 20,
-                'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3 , ('res','backbonerev','res'): [hidden_size]*3},
-                'layers': 1,
-                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                'amino_mapper': converter.aaindex,
-                'flavor': 'sage',
-                'nheads': 2,
-                'dropout': 0.005,
-                'normalize': False,
-                'residual': False
-            },
-            
-        'sequence': {
-            'in_channels': {'res': args.embedding_dim},
-            'xdim': 20,  # 20 amino acids
-            'concat_positions': True,
-            'hidden_channels': {('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
-            'layers': 5,
-            'AAdecoder_hidden': [hidden_size, hidden_size//2, hidden_size//2],
-            'amino_mapper': converter.aaindex,
-            'flavor': 'sage',
-            'nheads' : 1,
-            'dropout': 0.005,
-            'normalize': True,
-            'residual': False
-        },
-        '''
-        
-
         # Initialize decoder
         #tasks = ['sequence_transformer', 'contacts']
         tasks = ['sequence', 'contacts']
@@ -1002,9 +892,18 @@ for epoch in range(args.epochs):
     if avg_total_loss < best_loss:
         best_loss = avg_total_loss
         print(f"Saving best model with loss: {best_loss:.4f}")
-        with open(os.path.join(modeldir, modelname + '_best.pkl'), 'wb') as f:
-            pickle.dump((encoder, decoder), f)
-    
+        #save as pth
+        encoder_path = os.path.join(modeldir, f"{modelname}_best_encoder.pt")
+        decoder_path = os.path.join(modeldir, f"{modelname}_best_decoder.pt")
+        torch.save(encoder, encoder_path)
+        torch.save(decoder, decoder_path)
+
+        #save state dict
+        encoder_path = os.path.join(modeldir, f"{modelname}_best_encoder_state.pth")
+        decoder_path = os.path.join(modeldir, f"{modelname}_best_decoder_state.pth")
+        torch.save(encoder.state_dict(), encoder_path)
+        torch.save(decoder.state_dict(), decoder_path)
+
     # Save checkpoint every 10 epochs
     if (epoch + 1) % 10 == 0:
         #with open(os.path.join(modeldir, f"{modelname}_epoch{epoch+1}.pkl"), 'wb') as f:

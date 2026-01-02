@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from torch_geometric.utils import negative_sampling
+from torch_geometric.utils import negative_sampling , batched_negative_sampling
 
 EPS = 1e-8
 
@@ -53,6 +53,8 @@ def jaccard_distance_multiset(A: torch.Tensor,
 	jaccard_similarity = min_sum / (max_sum + eps)
 	return jaccard_similarity
 
+
+'''
 def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3) -> Tensor:
 	# Remove the diagonal
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
@@ -83,7 +85,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		pos_loss = pos_loss[mask]
 	
 	pos_loss = pos_loss.mean()
-	neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
+	neg_edge_index = batched_negative_sampling(pos_edge_index , data['res'].batch , force_undirected = True)
 	
 	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
 	res = decoder(data, neg_edge_index)
@@ -110,6 +112,114 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins , plddt_thresh=plddt_thresh)
 
 	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
+
+
+'''
+
+
+def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3) -> Tensor:
+	# Remove the diagonal
+	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
+	res = decoder(data, pos_edge_index)
+
+	if key == None:
+		pos = res[1]
+	if key != None:
+		pos = res[key]
+	
+	# Calculate distance from diagonal for positive edges
+	diag_dist = torch.abs(pos_edge_index[0] - pos_edge_index[1]).float()
+	# Normalize the distance weights to [1, 2] range - far edges get 2x weight
+	# Ensure consistent shapes for multiplication
+	pos_loss = -torch.log(pos + EPS).squeeze()
+	
+	if 'edge_logits' in res and res['edge_logits'] is not None:
+		#apply recon loss disto
+		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins , plddt_thresh=plddt_thresh) 
+
+	if plddt == True:
+		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1)
+		c2 = data['plddt'].x[pos_edge_index[1]].squeeze(1)
+		c1 = c1 > plddt_thresh
+		c2 = c2 > plddt_thresh
+		mask = c1 & c2
+		mask = mask.squeeze(0)  # Ensure mask is 1D
+		pos_loss = pos_loss[mask]
+		pos_edge_index_filtered = pos_edge_index[:, mask]
+	else:
+		pos_edge_index_filtered = pos_edge_index
+	
+	# Compute information content weights for positive samples
+	if 'res' in data and hasattr(data['res'], 'batch'):
+		batch_idx = data['res'].batch
+		pos_batch = batch_idx[pos_edge_index_filtered[0]]
+		pos_probs = pos if not plddt else pos[mask]
+		
+		# Weight by -p*log(p) within each batch
+		pos_info_weights = []
+		for b in torch.unique(pos_batch):
+			batch_mask = pos_batch == b
+			batch_probs = pos_probs[batch_mask]
+			batch_info = -batch_probs * torch.log(batch_probs + EPS)
+			# Normalize within batch
+			batch_info = batch_info / (batch_info.sum() + EPS)
+			pos_info_weights.append(batch_info)
+		pos_info_weights = torch.cat(pos_info_weights)
+		pos_loss = (pos_loss * pos_info_weights).sum()
+	else:
+		pos_loss = pos_loss.mean()
+	
+	neg_edge_index = batched_negative_sampling(pos_edge_index, data['res'].batch , force_undirected = True)
+	
+	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
+	res = decoder(data, neg_edge_index)
+
+	if key == None:
+		neg = res[1]
+	if key != None:
+		neg = res[key]
+
+	neg_loss = -torch.log((1 - neg) + EPS).squeeze()
+	
+	if plddt == True:
+		c1 = data['plddt'].x[neg_edge_index[0]].squeeze(1)
+		c2 = data['plddt'].x[neg_edge_index[1]].squeeze(1)
+		c1 = c1 > plddt_thresh
+		c2 = c2 > plddt_thresh
+		mask = c1 & c2
+		mask = mask.squeeze(0)  # Ensure mask is 1D	
+		neg_loss = neg_loss[mask]
+		neg_edge_index_filtered = neg_edge_index[:, mask]
+	else:
+		neg_edge_index_filtered = neg_edge_index
+
+	# Compute information content weights for negative samples
+	if 'res' in data and hasattr(data['res'], 'batch'):
+		batch_idx = data['res'].batch
+		neg_batch = batch_idx[neg_edge_index_filtered[0]]
+		neg_probs = 1 - neg if not plddt else 1 - neg[mask]
+		
+		# Weight by -p*log(p) within each batch
+		neg_info_weights = []
+		for b in torch.unique(neg_batch):
+			batch_mask = neg_batch == b
+			batch_probs = neg_probs[batch_mask]
+			batch_info = -batch_probs * torch.log(batch_probs + EPS)
+			# Normalize within batch
+			batch_info = batch_info / (batch_info.sum() + EPS)
+			neg_info_weights.append(batch_info)
+		neg_info_weights = torch.cat(neg_info_weights)
+		neg_loss = (neg_loss * neg_info_weights).sum()
+	else:
+		neg_loss = neg_loss.mean()
+		
+	if 'edge_logits' in res and res['edge_logits'] is not None:
+		#apply recon loss disto
+		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins , plddt_thresh=plddt_thresh)
+
+	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
+
+
 
 def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False,  nclamp=30, key=None , plddt_thresh=0.3) -> Tensor:
 	for interaction_type in []:
