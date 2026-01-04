@@ -48,22 +48,12 @@ datadir = '../../datasets/foldtree2/'
 
 
 from foldtree2.src.losses import *
+from foldtree2.src.layers import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 
 from  torch_geometric.utils import to_undirected
 #encoder super class
-
-
-
-class SIRENLayer(nn.Module):
-    def __init__(self, in_features, out_features, omega_0=30):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-        self.omega_0 = omega_0
-
-    def forward(self, x):
-        return torch.sin(self.omega_0 * self.linear(x))
 
 
 class HeteroGAE_geo_Decoder(torch.nn.Module):
@@ -367,7 +357,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 				output_edge_logits=False,
 				ncat=16,
 				contact_mlp=True,
-				pool_type='global_mean'):
+				pool_type='global_mean',
+				learn_positions=False):
 		super(CNN_geo_Decoder, self).__init__()
 		
 		# Setting the seed
@@ -377,6 +368,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		
 		self.normalize = normalize
 		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
 		in_channels_orig = copy.deepcopy(in_channels)
 		self.metadata = metadata
 		self.output_fft = output_fft
@@ -397,8 +389,15 @@ class CNN_geo_Decoder(torch.nn.Module):
 		input_dim = in_channels['res']
 		if concat_positions:
 			input_dim = input_dim + 256
+		if learn_positions:
+			self.concat_positions = False
+			input_dim = input_dim + 32
 		
 		self.input['dropout'] = nn.Dropout(p=dropout)
+		
+		if learn_positions:
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+		
 		self.input['input_lin'] = nn.Sequential(
 			nn.Linear(input_dim, conv_channels[0]),
 			nn.GELU(),
@@ -523,6 +522,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 		
 		if self.concat_positions:
 			x = torch.cat([x, data['positions'].x], dim=1)
+		if self.learn_positions:
+			pos_enc = self.input['position_mlp'](data['positions'].x)
+			x = torch.cat([x, pos_enc], dim=1)
 		
 		# Initial linear transformation
 		x = self.input['input_lin'](x)
@@ -654,12 +656,14 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		dropout=0.001,
 		normalize=True,
 		residual=True,
+		learn_positions=False,
 		**kwargs
 	):
 		super(Transformer_AA_Decoder, self).__init__()
 		L.seed_everything(42)
 
 		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
 		self.normalize = normalize
 		self.residual = residual
 		self.amino_acid_indices = amino_mapper
@@ -667,6 +671,9 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		input_dim = in_channels['res']
 		if concat_positions:
 			input_dim = input_dim + 256
+		if learn_positions:
+			self.concat_positions = False
+			input_dim = input_dim + 32
 		d_model = hidden_channels[('res', 'backbone', 'res')][0]
 
 		print(d_model, nheads, layers, dropout)
@@ -676,6 +683,10 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		self.input = nn.ModuleDict()
 		
 		self.input['dropout'] = nn.Dropout(dropout)
+		
+		if learn_positions:
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+		
 		self.input['proj'] = nn.Sequential(
 			nn.Linear(input_dim, d_model),
 			nn.GELU(),
@@ -754,6 +765,9 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		# ===================== INPUT PROCESSING =====================
 		if self.concat_positions:
 			x = torch.cat([x, data['positions'].x], dim=1)
+		if self.learn_positions:
+			pos_enc = self.input['position_mlp'](data['positions'].x)
+			x = torch.cat([x, pos_enc], dim=1)
 		
 		inz = x.clone()
 		x = self.input['dropout'](x)

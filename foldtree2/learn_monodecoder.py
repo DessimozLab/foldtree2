@@ -409,7 +409,7 @@ else:
             
             'geometry_cnn': {
                 'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': False,
+                'concat_positions': True,
                 'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
                 'kernel_sizes': [3, 3, 3],
                 'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
@@ -542,7 +542,7 @@ def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_step
                 print("Initialized process group for ReduceLROnPlateau scheduler")
             except Exception as e:
                 print(f"Note: Could not initialize process group (running in single-process mode): {e}")
-        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2), 'epoch'
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10), 'epoch'
     elif scheduler_type == 'none':
         return None, None
     else:

@@ -16,7 +16,7 @@ from torch_geometric.nn import (
     SAGEConv,
     TransformerConv,
 )
-
+from foldtree2.src.layers import *
 from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
 
@@ -38,7 +38,8 @@ class mk1_Encoder(torch.nn.Module):
 				encoder_hidden=100, dropout_p=0.05, EMA=False, 
 				reset_codes=True, nheads=3, flavor='sage', fftin=False,
 				use_commitment_scheduling=False, commitment_warmup_steps=5000,
-				commitment_schedule='cosine', commitment_start=0.1, concat_positions=False , **kwargs):
+				commitment_schedule='cosine', commitment_start=0.1, concat_positions=False ,
+				learn_positions=False, **kwargs):
 		super(mk1_Encoder, self).__init__()
 
 		# Save all arguments to constructor
@@ -58,12 +59,18 @@ class mk1_Encoder(torch.nn.Module):
 		self.encoder_hidden = encoder_hidden
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
 		self.fftin = fftin
 		
+
 		# Determine input channels
 		self.in_channels = in_channels
 		if self.concat_positions:
 			self.in_channels += 256
+		if self.learn_positions:
+			self.concat_positions = False
+			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout_p)
+			self.in_channels += 32
 
 		# ===================== INPUT MODULE =====================
 		# Preprocessing layers: LayerNorm, input MLPs, dropout
@@ -179,6 +186,9 @@ class mk1_Encoder(torch.nn.Module):
 		
 		if self.concat_positions:
 			x_dict['res'] = torch.cat([x_dict['res'], data['positions'].x], dim=1)
+		if self.learn_positions:
+			pos_enc = self.position_mlp(data['positions'].x)
+			x_dict['res'] = torch.cat([x_dict['res'], pos_enc], dim=1)
 		
 		if 'debug' in kwargs and kwargs['debug']:
 			print(x_dict['res'].shape, 'x_dict[res] shape')
