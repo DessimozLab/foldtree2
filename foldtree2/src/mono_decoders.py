@@ -301,8 +301,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		if self.angles_mlp is not None:
 			angles = self.angles_mlp( z )
-			#tanh is -1 to 1, multiply by 2pi to get angles in radians
-			angles = angles * 2 * np.pi
+			#tanh is -1 to 1, multiply by pi to get angles in radians
+			angles = angles * np.pi
 
 		if contact_pred_index is None:
 			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
@@ -856,6 +856,240 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
 		return amino_acid_sequence
 
+
+class Transformer_Geometry_Decoder(torch.nn.Module):
+	"""
+	Muon-compatible Transformer geometry decoder with modular architecture.
+	Separates input, body, and head modules for compatibility with Muon optimizer.
+	
+	- input: Preprocessing and initial projection (optimized with AdamW)
+	- body: Transformer encoder layers (weights optimized with Muon, gains/biases with AdamW)
+	- head: Prediction heads for rotation-translation, secondary structure, and bond angles (optimized with AdamW)
+	"""
+	def __init__(
+		self,
+		in_channels={'res': 10},
+		hidden_channels={'res_backbone_res': [20, 20, 20]},
+		concat_positions=True,
+		nheads=4,
+		layers=2,
+		RTdecoder_hidden=[128, 64, 32],
+		ssdecoder_hidden=[128, 64, 32],
+		anglesdecoder_hidden=[128, 64, 32],
+		dropout=0.001,
+		normalize=True,
+		residual=True,
+		learn_positions=False,
+		output_rt=True,
+		output_ss=True,
+		output_angles=True,
+		**kwargs
+	):
+		super(Transformer_Geometry_Decoder, self).__init__()
+		L.seed_everything(42)
+
+		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
+		self.normalize = normalize
+		self.residual = residual
+		self.output_rt = output_rt
+		self.output_ss = output_ss
+		self.output_angles = output_angles
+		
+		input_dim = in_channels['res']
+		if concat_positions:
+			input_dim = input_dim + 256
+		if learn_positions:
+			self.concat_positions = False
+			input_dim = input_dim + 32
+		d_model = hidden_channels[('res', 'backbone', 'res')][0]
+
+		print(f"Transformer_Geometry_Decoder: d_model={d_model}, nheads={nheads}, layers={layers}, dropout={dropout}")
+
+		# ===================== INPUT MODULE =====================
+		# Preprocessing and initial projection
+		self.input = nn.ModuleDict()
+		
+		self.input['dropout'] = nn.Dropout(dropout)
+		
+		if learn_positions:
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+		
+		self.input['proj'] = nn.Sequential(
+			nn.Linear(input_dim, d_model),
+			nn.GELU(),
+			nn.Linear(d_model, d_model),
+			nn.GELU(),
+			nn.Tanh(),
+		)
+
+		# ===================== BODY MODULE =====================
+		# Transformer encoder layers
+		self.body = nn.ModuleDict()
+		
+		encoder_layer = nn.TransformerEncoderLayer(
+			d_model=d_model, 
+			nhead=nheads, 
+			dropout=dropout
+		)
+		self.body['transformer_encoder'] = nn.TransformerEncoder(
+			encoder_layer, 
+			num_layers=layers
+		)
+		
+		if self.residual:
+			self.body['dmodel2input'] = nn.Sequential(
+				nn.Linear(d_model, input_dim),
+				nn.GELU(),
+				nn.Linear(input_dim, input_dim),
+			)
+
+		# ===================== HEAD MODULE =====================
+		# Geometry prediction heads
+		self.head = nn.ModuleDict()
+		
+		# Rotation-translation prediction head (7D output: quaternion + translation)
+		if output_rt:
+			if not isinstance(RTdecoder_hidden, list):
+				RTdecoder_hidden = [RTdecoder_hidden, RTdecoder_hidden]
+			self.head['rt_head'] = nn.Sequential(
+				nn.Linear(d_model, RTdecoder_hidden[0]),
+				nn.GELU(),
+				nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(RTdecoder_hidden[1], RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1], 7)  # 4 for quaternion + 3 for translation
+			)
+		
+		# Secondary structure prediction head (3-class: helix, sheet, coil)
+		if output_ss:
+			if not isinstance(ssdecoder_hidden, list):
+				ssdecoder_hidden = [ssdecoder_hidden, ssdecoder_hidden]
+			self.head['ss_head'] = nn.Sequential(
+				nn.LayerNorm(d_model),
+				nn.Linear(d_model, ssdecoder_hidden[0]),
+				nn.GELU(),
+				nn.Linear(ssdecoder_hidden[0], ssdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3),
+				nn.LogSoftmax(dim=1)
+			)
+		
+		# Bond angles prediction head (phi, psi, omega)
+		if output_angles:
+			if not isinstance(anglesdecoder_hidden, list):
+				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
+			self.head['angles_head'] = nn.Sequential(
+				nn.Linear(d_model, anglesdecoder_hidden[0]),
+				nn.GELU(),
+				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
+				nn.GELU(),
+				nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3),
+				nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
+			)
+
+	def forward(self, data, contact_pred_index=None, **kwargs):
+		x = data.x_dict['res']
+		
+		# ===================== INPUT PROCESSING =====================
+		if self.concat_positions:
+			x = torch.cat([x, data['positions'].x], dim=1)
+		if self.learn_positions:
+			pos_enc = self.input['position_mlp'](data['positions'].x)
+			x = torch.cat([x, pos_enc], dim=1)
+		
+		x = self.input['dropout'](x)
+		x = self.input['proj'](x)
+		
+		# ===================== BODY PROCESSING =====================
+		# Transformer expects (seq_len, batch, d_model)
+		batch = data['res'].batch if hasattr(data['res'], 'batch') else None
+		
+		if batch is not None:
+			# Find the number of graphs in the batch
+			num_graphs = batch.max().item() + 1
+			# Split x into a list of tensors, one per graph
+			x_split = [x[batch == i] for i in range(num_graphs)]
+			# Pad sequences to the same length
+			max_len = max([xi.shape[0] for xi in x_split])
+			padded = []
+			for xi in x_split:
+				pad_len = max_len - xi.shape[0]
+				if pad_len > 0:
+					xi = torch.cat([xi, torch.zeros(pad_len, xi.shape[1], device=xi.device, dtype=xi.dtype)], dim=0)
+				padded.append(xi)
+			x = torch.stack(padded, dim=1)  # (seq_len, batch, d_model)
+		else:
+			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
+		
+		# Apply transformer
+		x = self.body['transformer_encoder'](x)  # (seq_len, batch, d_model)
+		
+		# Apply residual connection
+		if self.residual and 'dmodel2input' in self.body:
+			x = x + self.body['dmodel2input'](x)
+		
+		# Apply normalization
+		if self.normalize:
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-10)
+		
+		# ===================== HEAD PROCESSING =====================
+		rt_pred = None
+		ss_pred = None
+		angles = None
+		
+		if batch is not None:
+			# Remove padding and concatenate results for all graphs in the batch
+			rt_list = []
+			ss_list = []
+			angles_list = []
+			
+			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
+				# Remove batch dimension and padding
+				seq_len = (batch == i).sum().item()
+				xi = xi[:seq_len, 0]  # (seq_len, d_model)
+				
+				if self.output_rt and 'rt_head' in self.head:
+					rt_list.append(self.head['rt_head'](xi))
+				
+				if self.output_ss and 'ss_head' in self.head:
+					ss_list.append(self.head['ss_head'](xi))
+				
+				if self.output_angles and 'angles_head' in self.head:
+					angles_list.append(self.head['angles_head'](xi))
+			
+			if rt_list:
+				rt_pred = torch.cat(rt_list, dim=0)
+			if ss_list:
+				ss_pred = torch.cat(ss_list, dim=0)
+			if angles_list:
+				angles = torch.cat(angles_list, dim=0)
+				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+		else:
+			# Single graph case
+			x = x.squeeze(1)  # (seq_len, d_model)
+			
+			if self.output_rt and 'rt_head' in self.head:
+				rt_pred = self.head['rt_head'](x)
+			
+			if self.output_ss and 'ss_head' in self.head:
+				ss_pred = self.head['ss_head'](x)
+			
+			if self.output_angles and 'angles_head' in self.head:
+				angles = self.head['angles_head'](x)
+				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+		
+		return {
+			'rt_pred': rt_pred,
+			'ss_pred': ss_pred,
+			'angles': angles,
+			'z': x.squeeze(1) if batch is None else None  # Return latent for potential use
+		}
 
 class AttentionPooling(nn.Module):
 	def __init__(self, embedding_dim, hidden_dim):
