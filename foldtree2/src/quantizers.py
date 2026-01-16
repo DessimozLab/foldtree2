@@ -158,28 +158,35 @@ class VectorQuantizerEMA(nn.Module):
 			- self.jsweight * jensen_shannon
 
 		# EMA updates (only during training)
+		# Wrap in no_grad() to prevent these buffer updates from interfering with DDP gradient computation
 		if self.training:
-			encodings_sum = encodings.sum(0)
-			dw = torch.matmul(encodings.t(), flat_x)
+			with torch.no_grad():
+				encodings_sum = encodings.sum(0)
+				dw = torch.matmul(encodings.t(), flat_x)
 
-			self.ema_cluster_size = self.ema_cluster_size * self.decay + (1 - self.decay) * encodings_sum
-			self.ema_w = nn.Parameter(self.ema_w * self.decay + (1 - self.decay) * dw)
+				# Update EMA cluster size
+				self.ema_cluster_size.mul_(self.decay).add_(encodings_sum, alpha=1 - self.decay)
+				
+				# Update EMA weights
+				self.ema_w.mul_(self.decay).add_(dw, alpha=1 - self.decay)
 
-			n = self.ema_cluster_size.sum()
-			self.ema_cluster_size = ((self.ema_cluster_size + self.epsilon) / (n + self.num_embeddings * self.epsilon) * n)
+				# Normalize cluster sizes
+				n = self.ema_cluster_size.sum()
+				cluster_size = (self.ema_cluster_size + self.epsilon) / (n + self.num_embeddings * self.epsilon) * n
+				
+				# Update embeddings using copy_ to avoid DDP issues with direct assignment
+				normalized_weights = self.ema_w / cluster_size.unsqueeze(1)
+				self.embeddings.weight.data.copy_(normalized_weights)
 
-			self.embeddings.weight.data = self.ema_w / self.ema_cluster_size.unsqueeze(1)
+				# Update usage count
+				self.embedding_usage_count.add_(encodings_sum.long())
 
-			# Update usage count
-			self.embedding_usage_count += encodings_sum.long()
+				# Update running prior
+				self.running_prior.mul_(self.prior_momentum).add_(probabilities, alpha=1 - self.prior_momentum)
+				self.running_prior.div_(self.running_prior.sum())
 
-			# Update running prior
-			self.running_prior = self.prior_momentum * self.running_prior + (1 - self.prior_momentum) * probabilities
-			self.running_prior = self.running_prior / self.running_prior.sum()
-
-			if self.reset:
-				self.reset_unused_embeddings()
-
+				if self.reset:
+					self.reset_unused_embeddings()
 		quantized = x + (quantized - x).detach()
 		return quantized, total_loss
 

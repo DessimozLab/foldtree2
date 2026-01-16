@@ -406,7 +406,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		)
 		
 		# ===================== BODY MODULE =====================
-		# CNN layers and batch normalization
+		# CNN layers and LayerNorm (applied after transpose)
 		self.body = nn.ModuleDict()
 		self.body['convs'] = nn.ModuleList()
 		self.body['norms'] = nn.ModuleList()
@@ -420,7 +420,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 					padding=kernel_size//2
 				)
 			)
-			self.body['norms'].append(nn.BatchNorm1d(channels))
+			self.body['norms'].append(nn.LayerNorm(channels))
 		
 		finalout = conv_channels[-1]
 		
@@ -475,11 +475,11 @@ class CNN_geo_Decoder(torch.nn.Module):
 		if output_ss:
 			self.head['ss_mlp'] = nn.Sequential(
 				nn.LayerNorm(lastlin),
-				nn.Linear(lastlin, 128),
+				nn.Linear(lastlin, anglesdecoder_hidden[0]),
 				nn.GELU(),
-				nn.Linear(128, 64),
+				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
 				nn.GELU(),
-				nn.Linear(64, 3),
+				nn.Linear(anglesdecoder_hidden[1], 3),
 				nn.LogSoftmax(dim=1)
 			)
 		
@@ -551,7 +551,11 @@ class CNN_geo_Decoder(torch.nn.Module):
 				for conv, norm in zip(self.body['convs'], self.body['norms']):
 					x_batch = conv(x_batch)
 					x_batch = F.gelu(x_batch)
+					# Transpose for LayerNorm: (1, seq_len, features)
+					x_batch = x_batch.transpose(1, 2)
 					x_batch = norm(x_batch)
+					# Transpose back for next conv: (1, features, seq_len)
+					x_batch = x_batch.transpose(1, 2)
 				
 				# Transpose back and remove batch dimension
 				x_batch = x_batch.squeeze(0).transpose(0, 1)  # (seq_len, features)
@@ -566,7 +570,11 @@ class CNN_geo_Decoder(torch.nn.Module):
 			for conv, norm in zip(self.body['convs'], self.body['norms']):
 				x = conv(x)
 				x = F.gelu(x)
+				# Transpose for LayerNorm: (1, seq_len, features)
+				x = x.transpose(1, 2)
 				x = norm(x)
+				# Transpose back for next conv: (1, features, seq_len)
+				x = x.transpose(1, 2)
 			
 			x = x.squeeze(0).transpose(0, 1)  # (seq_len, features)
 		

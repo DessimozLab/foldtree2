@@ -512,7 +512,30 @@ if args.use_muon and MUON_AVAILABLE:
         dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
             lr=args.adamw_lr, betas=(0.9, 0.95), weight_decay=0.01),
     ]
-    optimizer = MuonWithAuxAdam(param_groups)
+    
+    # Initialize process group for Muon optimizer (required even for single-GPU)
+    import torch.distributed as dist
+    if not dist.is_available() or not dist.is_initialized():
+        try:
+            import os as dist_os
+            dist_os.environ.setdefault('MASTER_ADDR', 'localhost')
+            dist_os.environ.setdefault('MASTER_PORT', '12355')
+            dist_os.environ.setdefault('RANK', '0')
+            dist_os.environ.setdefault('WORLD_SIZE', '1')
+            dist.init_process_group(backend='gloo', init_method='env://')
+            print("Initialized single-process group for Muon optimizer")
+            optimizer = MuonWithAuxAdam(param_groups)
+        except Exception as e:
+            print(f"Warning: Could not initialize process group for Muon: {e}")
+            print("Falling back to AdamW optimizer")
+            optimizer = torch.optim.AdamW(
+                list(encoder.parameters()) + list(decoder.parameters()), 
+                lr=args.learning_rate, 
+                weight_decay=0.000001
+            )
+
+    else:
+        optimizer = MuonWithAuxAdam(param_groups)
 else:
     print("Using AdamW optimizer")
     optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate, weight_decay=0.000001)
@@ -528,20 +551,7 @@ def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_step
     elif scheduler_type == 'polynomial' and TRANSFORMERS_AVAILABLE:
         return get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, lr_end=0.0, power=1.0), 'step'
     elif scheduler_type == 'plateau':
-        # Initialize process group if not already initialized (required for ReduceLROnPlateau)
-        import torch.distributed as dist
-        if not dist.is_available() or not dist.is_initialized():
-            try:
-                # Initialize single-process group for non-distributed training
-                import os as dist_os
-                dist_os.environ.setdefault('MASTER_ADDR', 'localhost')
-                dist_os.environ.setdefault('MASTER_PORT', '12355')
-                dist_os.environ.setdefault('RANK', '0')
-                dist_os.environ.setdefault('WORLD_SIZE', '1')
-                dist.init_process_group(backend='gloo', init_method='env://')
-                print("Initialized process group for ReduceLROnPlateau scheduler")
-            except Exception as e:
-                print(f"Note: Could not initialize process group (running in single-process mode): {e}")
+        # ReduceLROnPlateau doesn't require distributed process groups - it only monitors loss values
         return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10), 'epoch'
     elif scheduler_type == 'none':
         return None, None
