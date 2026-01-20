@@ -77,7 +77,6 @@ class mk1_Encoder(torch.nn.Module):
 		else:
 			self.position_mlp = None
 
-	
 		# ===================== INPUT MODULE =====================
 		# Preprocessing layers: LayerNorm, input MLPs, dropout
 		self.input = nn.ModuleDict()
