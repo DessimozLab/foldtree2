@@ -182,7 +182,23 @@ class mk1_Encoder(torch.nn.Module):
 		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
 		
 		# ===================== INPUT PROCESSING =====================
-		x_dict['res'] = self.input['ln'](x_dict['res'])
+		# Ensure input is contiguous and has the correct dtype for LayerNorm
+		# This fixes DeepSpeed FP16 compatibility issues
+		x_res = x_dict['res'].contiguous()
+		
+		if 'debug' in kwargs and kwargs['debug']:
+			print(f"Input shape: {x_res.shape}, dtype: {x_res.dtype}")
+			print(f"LayerNorm normalized_shape: {self.input['ln'].normalized_shape}")
+		
+		# Cast to float32 for LayerNorm (required for numerical stability with FP16)
+		# Also ensure LayerNorm weights are in FP32
+		original_dtype = x_res.dtype
+		if original_dtype != torch.float32:
+			# Temporarily move LayerNorm to float32 if needed
+			ln = self.input['ln'].float()
+			x_dict['res'] = ln(x_res.float()).to(original_dtype)
+		else:
+			x_dict['res'] = self.input['ln'](x_res)
 		
 		if self.concat_positions:
 			x_dict['res'] = torch.cat([x_dict['res'], data['positions'].x], dim=1)

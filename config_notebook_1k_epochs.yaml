@@ -9,12 +9,12 @@ run_name: "notebook_replication_1k_epochs"
 
 # Training hyperparameters (from notebook)
 epochs: 1000
-batch_size: 20
+batch_size: 10
 gradient_accumulation_steps: 1
 seed: 0
 
 # Model architecture (from notebook)
-hidden_size: 100
+hidden_size: 200
 num_embeddings: 40
 embedding_dim: 128
 
@@ -70,6 +70,8 @@ tensorboard_dir: "./runs/"
 se3_transformer: false
 output_fft: false
 output_rt: false
+
+gpus: 2
 
 # Notes:
 # - The notebook uses loss weight schedulers (currently commented out in training loop)

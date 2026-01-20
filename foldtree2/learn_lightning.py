@@ -1,4 +1,4 @@
-# learn_lightning.py - Refactored to follow learn_monodecoder.py structure with multi-GPU support
+# learn_lightning.py - PyTorch Lightning training with multi-GPU support
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np
@@ -18,8 +18,9 @@ import warnings
 import yaml
 import json
 from datetime import datetime
-from torch.cuda.amp import autocast, GradScaler
-import foldtree2.src.se3_strcut_decoder as se3e
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.loggers import TensorBoardLogger
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Try to import Muon optimizer
@@ -119,11 +120,15 @@ parser.add_argument('--plddt-threshold', type=float, default=0.3,
                     help='pLDDT threshold for masking (default: 0.3)')
 
 # Multi-GPU settings
-parser.add_argument('--gpus', type=int, default=1,
-                    help='Number of GPUs to use (default: 1)')
+parser.add_argument('--gpus', type=int, default=-1,
+                    help='Number of GPUs to use (default: -1, use all available GPUs; set to specific number to limit)')
 parser.add_argument('--strategy', type=str, default='auto',
-                    choices=['auto', 'ddp', 'ddp_spawn', 'dp'],
-                    help='Distributed training strategy (default: auto)')
+                    choices=['auto', 'ddp', 'ddp_spawn', 'dp', 'fsdp', 'deepspeed', 'ddp_sharded'],
+                    help='Distributed training strategy (default: auto). Use fsdp or deepspeed for very large models that exceed GPU memory')
+parser.add_argument('--fsdp-cpu-offload', action='store_true',
+                    help='Offload FSDP parameters to CPU to save GPU memory (slower but enables larger models)')
+parser.add_argument('--deepspeed-stage', type=int, default=2, choices=[1, 2, 3],
+                    help='DeepSpeed ZeRO optimization stage (1=optimizer, 2=+gradients, 3=+parameters) (default: 2)')
 
 # Commitment cost scheduling
 parser.add_argument('--commitment-cost', type=float, default=0.9,
@@ -146,9 +151,32 @@ parser.add_argument('--data-dir', type=str, default='../../datasets/foldtree2/',
 parser.add_argument('--aapropcsv', type=str, default='config/aaindex1.csv',
                     help='Amino acid property CSV file (default: config/aaindex1.csv)')
 
+# Loss weight arguments
+parser.add_argument('--edge-weight', type=float, default=0.25,
+                    help='Weight for edge reconstruction loss (default: 0.25)')
+parser.add_argument('--logit-weight', type=float, default=0.25,
+                    help='Weight for logit loss (default: 0.25)')
+parser.add_argument('--x-weight', type=float, default=5.0,
+                    help='Weight for coordinate reconstruction loss (default: 5.0)')
+parser.add_argument('--fft2-weight', type=float, default=0.01,
+                    help='Weight for FFT2 loss (default: 0.01)')
+parser.add_argument('--vq-weight', type=float, default=0.1,
+                    help='Weight for VQ-VAE loss (default: 0.1)')
+parser.add_argument('--angles-weight', type=float, default=0.05,
+                    help='Weight for angles reconstruction loss (default: 0.05)')
+parser.add_argument('--ss-weight', type=float, default=0.25,
+                    help='Weight for secondary structure loss (default: 0.25)')
+
+# Tensor Core precision
+parser.add_argument('--tensor-core-precision', type=str, default='high',
+                    choices=['highest', 'high', 'medium'],
+                    help='Float32 matrix multiplication precision for Tensor Cores (default: high)')
+
 if len(sys.argv) == 1:
     print('No arguments provided. Use -h for help.')
-    print('Example command: python learn_lightning.py -d structs_training_godnodemk5.h5 -o ./models/ -lr 0.0001 -e 20 -bs 5')
+    print('Example command (data parallelism): python learn_lightning.py -d structs_training_godnodemk5.h5 -o ./models/ -lr 0.0001 -e 20 -bs 5 --gpus 4')
+    print('Example command (model parallelism for large models): python learn_lightning.py -d structs.h5 -o ./models/ --strategy fsdp --gpus 4')
+    print('Example with DeepSpeed: python learn_lightning.py -d structs.h5 -o ./models/ --strategy deepspeed --deepspeed-stage 3 --gpus 8')
     print('Example with config: python learn_lightning.py --config my_config.yaml')
     parser.print_help()
     sys.exit(0)
@@ -189,6 +217,11 @@ random.seed(args.seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+# Set tensor core precision for better performance on modern GPUs
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision(args.tensor_core_precision)
+    print(f"Tensor Core precision set to: {args.tensor_core_precision}")
+
 # Print configuration
 print(f"Configuration:")
 print(f"  Dataset: {args.dataset}")
@@ -215,8 +248,26 @@ print(f"  TensorBoard Directory: {args.tensorboard_dir}")
 print(f"  Run Name: {args.run_name if args.run_name else 'auto-generated'}")
 print(f"  LR Schedule: {args.lr_schedule}")
 print(f"  LR Warmup Steps: {args.lr_warmup_steps}")
-if args.lr_schedule in ['cosine', 'linear']:
+print(f"  LR Warmup Ratio: {args.lr_warmup_ratio}")
+print(f"  Gradient Accumulation Steps: {args.gradient_accumulation_steps}")
+if args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial']:
     print(f"  LR Min: {args.lr_min}")
+if args.lr_schedule == 'cosine_restarts':
+    print(f"  Num Cycles: {args.num_cycles}")
+print(f"  Commitment Cost: {args.commitment_cost}")
+print(f"  Use Commitment Scheduling: {args.use_commitment_scheduling}")
+if args.use_commitment_scheduling:
+    print(f"  Commitment Schedule: {args.commitment_schedule}")
+    print(f"  Commitment Warmup Steps: {args.commitment_warmup_steps}")
+    print(f"  Commitment Start: {args.commitment_start}")
+print(f"Loss Weights:")
+print(f"  Edge Weight: {args.edge_weight}")
+print(f"  Logit Weight: {args.logit_weight}")
+print(f"  X Weight: {args.x_weight}")
+print(f"  FFT2 Weight: {args.fft2_weight}")
+print(f"  VQ Weight: {args.vq_weight}")
+print(f"  Angles Weight: {args.angles_weight}")
+print(f"  SS Weight: {args.ss_weight}")
 
 # Save configuration if requested
 if args.save_config:
@@ -227,9 +278,183 @@ if args.save_config:
         yaml.dump(config_dict, f, default_flow_style=False)
     print(f"Configuration saved to {args.save_config}")
 
+# Define PyTorch Lightning Module
+class FoldTree2Model(pl.LightningModule):
+    def __init__(self, encoder, decoder, args, converter):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.args = args
+        self.converter = converter
+        
+        # Loss weights
+        self.edgeweight = args.edge_weight
+        self.logitweight = args.logit_weight
+        self.xweight = args.x_weight
+        self.fft2weight = args.fft2_weight
+        self.vqweight = args.vq_weight
+        self.angles_weight = args.angles_weight
+        self.ss_weight = args.ss_weight
+        
+        # Save hyperparameters
+        self.save_hyperparameters(ignore=['encoder', 'decoder', 'converter'])
+    
+    def forward(self, data):
+        z, vqloss = self.encoder(data)
+        data['res'].x = z
+        out = self.decoder(data, None)
+        return out, vqloss
+    
+    def training_step(self, batch, batch_idx):
+        data = batch
+        
+        # Forward pass
+        out, vqloss = self(data)
+        
+        # Get edge index
+        edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+        
+        # Edge reconstruction loss
+        logitloss = torch.tensor(0.0, device=self.device)
+        edgeloss = torch.tensor(0.0, device=self.device)
+        if edge_index is not None:
+            edgeloss, logitloss = recon_loss_diag(data, edge_index, self.decoder, plddt=self.args.mask_plddt, key='edge_probs')
+        
+        # Amino acid reconstruction loss
+        xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+        
+        # FFT2 loss
+        fft2loss = torch.tensor(0.0, device=self.device)
+        if 'fft2pred' in out and out['fft2pred'] is not None:
+            fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+        
+        # Angles loss
+        angles_loss = torch.tensor(0.0, device=self.device)
+        if out.get('angles') is not None:
+            angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, 
+                                                     plddt_mask=data['plddt'].x if self.args.mask_plddt else None)
+        
+        # Secondary structure loss
+        ss_loss = torch.tensor(0.0, device=self.device)
+        if out.get('ss_pred') is not None:
+            if self.args.mask_plddt:
+                mask = (data['plddt'].x >= self.args.plddt_threshold).squeeze()
+                if mask.sum() > 0:
+                    ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+            else:
+                ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+        
+        # Total loss
+        loss = (self.xweight * xloss + self.edgeweight * edgeloss + self.vqweight * vqloss +
+                self.fft2weight * fft2loss + self.angles_weight * angles_loss +
+                self.ss_weight * ss_loss + self.logitweight * logitloss)
+        
+        # Get batch size from PyG batch (number of graphs in batch)
+        # For PyTorch Geometric, we need to count unique batch indices
+        batch_size = data['res'].batch.max().item() + 1 if hasattr(data['res'], 'batch') and data['res'].batch is not None else 1
+        
+        # Log metrics with explicit batch_size to avoid iteration over FeatureStore
+        self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self.log('train/aa_loss', xloss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/edge_loss', edgeloss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/vq_loss', vqloss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/fft2_loss', fft2loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/angles_loss', angles_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/ss_loss', ss_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/logit_loss', logitloss, on_step=False, on_epoch=True, batch_size=batch_size)
+        
+        # Log commitment cost if using scheduling
+        if self.args.use_commitment_scheduling and hasattr(self.encoder, 'vector_quantizer'):
+            current_commitment = self.encoder.vector_quantizer.get_commitment_cost()
+            self.log('train/commitment_cost', current_commitment, on_step=False, on_epoch=True, batch_size=batch_size)
+        
+        return loss
+    
+    def configure_optimizers(self):
+        # When using DeepSpeed, let it handle the optimizer via the config
+        # This avoids ZeRO-Offload incompatibility with PyTorch optimizers
+        if self.args.strategy == 'deepspeed':
+            return None  # DeepSpeed will configure optimizer from deepspeed_config
+        
+        # Optimizer setup for other strategies
+        if self.args.use_muon and MUON_AVAILABLE:
+            hidden_weights = []
+            hidden_gains_biases = []
+            nonhidden_params = []
+            
+            def has_modular_structure(model):
+                return hasattr(model, 'input') and hasattr(model, 'body') and hasattr(model, 'head')
+            
+            # Process encoder
+            if has_modular_structure(self.encoder):
+                hidden_weights += [p for p in self.encoder.body.parameters() if p.ndim >= 2]
+                hidden_gains_biases += [p for p in self.encoder.body.parameters() if p.ndim < 2]
+                nonhidden_params += [*self.encoder.head.parameters(), *self.encoder.input.parameters()]
+            else:
+                nonhidden_params += list(self.encoder.parameters())
+            
+            # Process decoder
+            if hasattr(self.decoder, 'decoders'):
+                for name, subdecoder in self.decoder.decoders.items():
+                    if has_modular_structure(subdecoder):
+                        hidden_weights += [p for p in subdecoder.body.parameters() if p.ndim >= 2]
+                        hidden_gains_biases += [p for p in subdecoder.body.parameters() if p.ndim < 2]
+                        nonhidden_params += [*subdecoder.head.parameters(), *subdecoder.input.parameters()]
+                    else:
+                        nonhidden_params += list(subdecoder.parameters())
+            elif has_modular_structure(self.decoder):
+                hidden_weights += [p for p in self.decoder.body.parameters() if p.ndim >= 2]
+                hidden_gains_biases += [p for p in self.decoder.body.parameters() if p.ndim < 2]
+                nonhidden_params += [*self.decoder.head.parameters(), *self.decoder.input.parameters()]
+            else:
+                nonhidden_params += list(self.decoder.parameters())
+            
+            param_groups = [
+                dict(params=hidden_weights, use_muon=True, lr=self.args.muon_lr, weight_decay=0.01),
+                dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
+                     lr=self.args.adamw_lr, betas=(0.9, 0.95), weight_decay=0.01),
+            ]
+            optimizer = MuonWithAuxAdam(param_groups)
+        else:
+            optimizer = torch.optim.AdamW(
+                list(self.encoder.parameters()) + list(self.decoder.parameters()),
+                lr=self.args.learning_rate,
+                weight_decay=0.000001
+            )
+        
+        # Scheduler setup
+        total_steps = self.trainer.estimated_stepping_batches
+        
+        if self.args.lr_warmup_ratio > 0:
+            warmup_steps = int(total_steps * self.args.lr_warmup_ratio)
+        else:
+            warmup_steps = self.args.lr_warmup_steps
+        
+        if self.args.lr_schedule == 'linear' and TRANSFORMERS_AVAILABLE:
+            scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+            return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
+        elif self.args.lr_schedule == 'cosine' and TRANSFORMERS_AVAILABLE:
+            scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+            return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
+        elif self.args.lr_schedule == 'cosine_restarts' and TRANSFORMERS_AVAILABLE:
+            scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
+                optimizer, warmup_steps, total_steps, num_cycles=self.args.num_cycles)
+            return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
+        elif self.args.lr_schedule == 'polynomial' and TRANSFORMERS_AVAILABLE:
+            scheduler = get_polynomial_decay_schedule_with_warmup(
+                optimizer, warmup_steps, total_steps, lr_end=0.0, power=1.0)
+            return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
+        elif self.args.lr_schedule == 'plateau':
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+            return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'monitor': 'train/loss_epoch'}}
+        else:
+            return optimizer
+
 if os.path.exists(args.output_dir) and args.overwrite:
-    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best.pkl')):
-        os.remove(os.path.join(args.output_dir, args.model_name + '_best.pkl'))
+    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best_encoder.pt')):
+        os.remove(os.path.join(args.output_dir, args.model_name + '_best_encoder.pt'))
+    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best_decoder.pt')):
+        os.remove(os.path.join(args.output_dir, args.model_name + '_best_decoder.pt'))
 
 # Data setup
 dataset_path = args.dataset
@@ -251,14 +476,14 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
-# Loss weights (matching learn_monodecoder.py and notebook)
-edgeweight = 0.25
-logitweight = 0.25
-xweight = 1
-fft2weight = 0.01
-vqweight = 0.1
-angles_weight = 0.05
-ss_weight = 0.25
+# Loss weights (from args, with defaults matching notebook)
+edgeweight = args.edge_weight
+logitweight = args.logit_weight
+xweight = args.x_weight
+fft2weight = args.fft2_weight
+vqweight = args.vq_weight
+angles_weight = args.angles_weight
+ss_weight = args.ss_weight
 
 # Create output directory
 modeldir = args.output_dir
@@ -288,15 +513,16 @@ config_text += "="*50
 writer.add_text('Configuration', config_text, 0)
 
 # Initialize or load model
-model_path = os.path.join(modeldir, modelname + '_best.pkl')
-if os.path.exists(model_path) and not args.overwrite:
-    print(f"Loading existing model from {model_path}")
+encoder_path = os.path.join(modeldir, modelname + '_best_encoder.pt')
+decoder_path = os.path.join(modeldir, modelname + '_best_decoder.pt')
+if os.path.exists(encoder_path) and os.path.exists(decoder_path) and not args.overwrite:
+    print(f"Loading existing model from {encoder_path} and {decoder_path}")
     if os.path.exists(os.path.join(modeldir, modelname + '_info.txt')):
         with open(os.path.join(modeldir, modelname + '_info.txt'), 'r') as f:
             model_info = f.read()
         print("Model info:", model_info)
-    with open(model_path, 'rb') as f:
-        encoder, decoder = pickle.load(f)
+    encoder = torch.load(encoder_path, map_location=device, weights_only=False)
+    decoder = torch.load(decoder_path, map_location=device, weights_only=False)
 else:
     print("Creating new model...")
     hidden_size = args.hidden_size
@@ -347,7 +573,7 @@ else:
             concat_positions=True
         )
     else:
-        print("Using standard mk1_Encoder")
+        print("Using standard mk1_Encoder with dd.ipynb configuration")
         encoder = ecdr.mk1_Encoder(
             in_channels=ndim,
             hidden_channels=[hidden_size, hidden_size, hidden_size],
@@ -358,16 +584,17 @@ else:
             edge_dim=1,
             encoder_hidden=hidden_size,
             EMA=args.EMA,
-            nheads=16,
+            nheads=10,
             dropout_p=0.01,
             reset_codes=False,
             flavor='transformer',
             fftin=True,
             use_commitment_scheduling=args.use_commitment_scheduling,
             commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule='cosine_with_restart',
+            commitment_schedule='cosine',
             commitment_start=args.commitment_start,
-            concat_positions=True
+            concat_positions=False,
+            learn_positions=True
         )
     
     if args.hetero_gae:
@@ -438,28 +665,29 @@ else:
                 },
             }
         else:
-            print("Using standard decoders")
+            print("Using standard decoders with dd.ipynb configuration")
             mono_configs = {
                 'sequence_transformer': {
                     'in_channels': {'res': args.embedding_dim},
                     'xdim': 20,
-                    'concat_positions': True,
+                    'concat_positions': False,
                     'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
                     'layers': 2,
                     'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
                     'amino_mapper': converter.aaindex,
                     'flavor': 'sage',
-                    'nheads': 5,
+                    'nheads': 8,
                     'dropout': 0.001,
                     'normalize': False,
                     'residual': False,
-                    'use_cnn_decoder': True,
-                    'output_ss': True
+                    'use_cnn_decoder': False,
+                    'output_ss': False,
+                    'learn_positions': True
                 },
                 
                 'geometry_cnn': {
                     'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                    'concat_positions': True,
+                    'concat_positions': False,
                     'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
                     'kernel_sizes': [3, 3, 3],
                     'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
@@ -473,13 +701,14 @@ else:
                     'output_fft': False,
                     'output_rt': False,
                     'output_angles': True,
-                    'output_ss': False,
+                    'output_ss': True,
                     'normalize': True,
                     'residual': False,
                     'output_edge_logits': True,
                     'ncat': 8,
                     'contact_mlp': False,
-                    'pool_type': 'global_mean'
+                    'pool_type': 'global_mean',
+                    'learn_positions': True
                 },
             }
         
@@ -502,139 +731,29 @@ else:
         
         decoder = MultiMonoDecoder(configs=mono_configs)
 
-# Move models to device
-encoder = encoder.to(device)
-decoder = decoder.to(device)
 print("Encoder:", encoder)
 print("Decoder:", decoder)
 
-# Training setup - Optimizer
-if args.use_muon and MUON_AVAILABLE:
-    print("Using Muon optimizer")
-    hidden_weights = []
-    hidden_gains_biases = []
-    nonhidden_params = []
-    
-    # Helper function to check if a model has modular structure
-    def has_modular_structure(model):
-        return hasattr(model, 'input') and hasattr(model, 'body') and hasattr(model, 'head')
-    
-    # Process encoder
-    if has_modular_structure(encoder):
-        print("Using modular encoder structure")
-        hidden_weights += [p for p in encoder.body.parameters() if p.ndim >= 2]
-        hidden_gains_biases += [p for p in encoder.body.parameters() if p.ndim < 2]
-        nonhidden_params += [*encoder.head.parameters(), *encoder.input.parameters()]
-    else:
-        print("Encoder is not modular - using AdamW for all encoder parameters")
-        nonhidden_params += list(encoder.parameters())
-    
-    # Process decoder
-    if hasattr(decoder, 'decoders'):
-        print(f"Using MultiMonoDecoder with {len(decoder.decoders)} sub-decoders")
-        for name, subdecoder in decoder.decoders.items():
-            if has_modular_structure(subdecoder):
-                print(f"  - {name}: modular structure detected")
-                hidden_weights += [p for p in subdecoder.body.parameters() if p.ndim >= 2]
-                hidden_gains_biases += [p for p in subdecoder.body.parameters() if p.ndim < 2]
-                nonhidden_params += [*subdecoder.head.parameters(), *subdecoder.input.parameters()]
-            else:
-                print(f"  - {name}: non-modular, using AdamW")
-                nonhidden_params += list(subdecoder.parameters())
-    elif has_modular_structure(decoder):
-        print("Using modular single decoder structure")
-        hidden_weights += [p for p in decoder.body.parameters() if p.ndim >= 2]
-        hidden_gains_biases += [p for p in decoder.body.parameters() if p.ndim < 2]
-        nonhidden_params += [*decoder.head.parameters(), *decoder.input.parameters()]
-    else:
-        print("Decoder is not modular - using AdamW for all decoder parameters")
-        nonhidden_params += list(decoder.parameters())
-    
-    print(f"\nParameter groups for Muon optimizer:")
-    print(f"  Hidden weights (Muon):           {len(hidden_weights)} tensors")
-    print(f"  Hidden gains/biases (AdamW):     {len(hidden_gains_biases)} tensors")
-    print(f"  Non-hidden params (AdamW):       {len(nonhidden_params)} tensors")
-    
-    param_groups = [
-        dict(params=hidden_weights, use_muon=True,
-            lr=args.muon_lr, weight_decay=0.01),
-        dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
-            lr=args.adamw_lr, betas=(0.9, 0.95), weight_decay=0.01),
-    ]
-    optimizer = MuonWithAuxAdam(param_groups)
-else:
-    print("Using AdamW optimizer")
-    optimizer = torch.optim.AdamW(
-        list(encoder.parameters()) + list(decoder.parameters()),
-        lr=args.learning_rate,
-        weight_decay=0.000001
-    )
+# Initialize Lightning model
+model = FoldTree2Model(encoder, decoder, args, converter)
 
-# Define scheduler function with process group initialization
-def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_steps, **kwargs):
-    if scheduler_type == 'linear' and TRANSFORMERS_AVAILABLE:
-        return get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps), 'step'
-    elif scheduler_type == 'cosine' and TRANSFORMERS_AVAILABLE:
-        return get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps), 'step'
-    elif scheduler_type == 'cosine_restarts' and TRANSFORMERS_AVAILABLE:
-        return get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, num_cycles=kwargs.get('num_cycles', 3)), 'step'
-    elif scheduler_type == 'polynomial' and TRANSFORMERS_AVAILABLE:
-        return get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, lr_end=0.0, power=1.0), 'step'
-    elif scheduler_type == 'plateau':
-        # Initialize process group if not already initialized (required for ReduceLROnPlateau)
-        import torch.distributed as dist
-        if not dist.is_available() or not dist.is_initialized():
-            try:
-                # Initialize single-process group for non-distributed training
-                import os as dist_os
-                dist_os.environ.setdefault('MASTER_ADDR', 'localhost')
-                dist_os.environ.setdefault('MASTER_PORT', '12355')
-                dist_os.environ.setdefault('RANK', '0')
-                dist_os.environ.setdefault('WORLD_SIZE', '1')
-                dist.init_process_group(backend='gloo', init_method='env://')
-                print("Initialized process group for ReduceLROnPlateau scheduler")
-            except Exception as e:
-                print(f"Note: Could not initialize process group (running in single-process mode): {e}")
-        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2, **kwargs), 'epoch'
-    elif scheduler_type == 'none':
-        return None, None
-    else:
-        raise ValueError(f"Unknown scheduler type: {scheduler_type}")
-
-# Learning rate scheduler setup
-total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps
-
-# Calculate warmup steps
-if args.lr_warmup_ratio > 0:
-    warmup_steps = int(total_steps * args.lr_warmup_ratio)
-    print(f"Using warmup ratio {args.lr_warmup_ratio:.2%}, calculated warmup_steps: {warmup_steps}")
-else:
-    warmup_steps = args.lr_warmup_steps
-
-# Initialize scheduler using the new function
-scheduler, scheduler_step_mode = get_scheduler(
-    optimizer,
-    scheduler_type=args.lr_schedule,
-    num_warmup_steps=warmup_steps,
-    num_training_steps=total_steps,
-    num_cycles=args.num_cycles
+# Setup Lightning Trainer
+# Setup callbacks
+checkpoint_callback = ModelCheckpoint(
+    dirpath=modeldir,
+    filename=f'{modelname}' + '-{epoch:02d}-{train/loss:.4f}',
+    save_top_k=3,
+    monitor='train/loss_epoch',
+    mode='min',
+    save_last=True,
 )
 
-print(f"Using {args.lr_schedule} learning rate schedule")
-if scheduler is not None:
-    print(f"Scheduler step mode: {scheduler_step_mode}")
-    print(f"Warmup steps: {warmup_steps}")
+lr_monitor = LearningRateMonitor(logging_interval='step')
 
-# Function to analyze gradient norms
-def analyze_gradient_norms(model, top_k=3):
-    norms = [(n, p.grad.norm().item()) for n, p in model.named_parameters() if p.grad is not None]
-    norms = sorted(norms, key=lambda x: x[1], reverse=True)
-    return {
-        'highest': norms[:top_k] if norms else [],
-        'lowest': sorted(norms, key=lambda x: x[1])[:top_k] if norms else []
-    }
+# Setup logger
+logger = TensorBoardLogger(args.tensorboard_dir, name=run_name)
 
-# Write model parameters to file
+# Write model info
 with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Date: {time.strftime("%Y-%m-%d %H:%M:%S")}\n')
     f.write(f'Encoder: {encoder}\n')
@@ -646,297 +765,139 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Number of embeddings: {args.num_embeddings}\n')
     f.write(f'Loss weights - Edge: {edgeweight}, X: {xweight}, FFT2: {fft2weight}, VQ: {vqweight}\n')
 
-# Training loop
-encoder.train()
-decoder.train()
-clip_grad = args.clip_grad
-best_loss = float('inf')
-global_step = 0
-
-# Initialize GradScaler for mixed precision training
-if args.mixed_precision:
-    scaler = GradScaler()
-    print("Mixed Precision Training Enabled")
+# Determine strategy
+if args.gpus == -1:
+    # Use all available GPUs
+    num_gpus = torch.cuda.device_count()
+    print(f"Using all {num_gpus} available GPUs")
+    devices = num_gpus if num_gpus > 0 else 'auto'
 else:
-    scaler = None
-    print("Mixed Precision Training Disabled")
+    devices = args.gpus
+    print(f"Using {devices} GPU(s)")
+
+
+
+# Lightning Trainer
+# Determine strategy - use find_unused_parameters for all strategies to handle unused model parameters
+if devices > 1 or devices == -1:
+    # For multi-GPU, configure strategy based on user selection
+    if args.strategy == 'auto' or args.strategy == 'ddp':
+        strategy = 'ddp_find_unused_parameters_true'
+    elif args.strategy == 'ddp_spawn':
+        from pytorch_lightning.strategies import DDPSpawnStrategy
+        strategy = DDPSpawnStrategy(find_unused_parameters=True)
+        print("Using DDPSpawn strategy with find_unused_parameters=True")
+    elif args.strategy == 'fsdp':
+        # FSDP for large models that don't fit in single GPU
+        from pytorch_lightning.strategies import FSDPStrategy
+        from torch.distributed.fsdp import CPUOffload, BackwardPrefetch
+        from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+        import functools
+        
+        # Configure FSDP wrapping policy (wrap layers > 1e8 params)
+        auto_wrap_policy = functools.partial(
+            size_based_auto_wrap_policy, min_num_params=1e8
+        )
+        
+        # FSDP doesn't have find_unused_parameters, but handles unused params automatically
+        # through its sharding mechanism
+        strategy = FSDPStrategy(
+            auto_wrap_policy=auto_wrap_policy,
+            cpu_offload=CPUOffload(offload_params=args.fsdp_cpu_offload) if args.fsdp_cpu_offload else None,
+            backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+            state_dict_type="full",  # Save full model state
+        )
+        print(f"Using FSDP strategy with CPU offload: {args.fsdp_cpu_offload}")
+        print("Note: FSDP automatically handles unused parameters through its sharding mechanism")
+    elif args.strategy == 'deepspeed':
+        # DeepSpeed for extreme model sizes
+        from pytorch_lightning.strategies import DeepSpeedStrategy
+        
+        deepspeed_config = {
+            "zero_optimization": {
+                "stage": args.deepspeed_stage,
+                "offload_optimizer": {"device": "cpu", "pin_memory": True} if args.deepspeed_stage >= 2 else None,
+                "offload_param": {"device": "cpu", "pin_memory": True} if args.deepspeed_stage == 3 else None,
+                "overlap_comm": True,
+                "contiguous_gradients": True,
+                "reduce_bucket_size": 5e8,
+                "stage3_prefetch_bucket_size": 5e8,
+                "stage3_param_persistence_threshold": 1e6,
+            },
+            # Optimizer configuration - required when using ZeRO-Offload
+            # DeepSpeed will use its own CPU-optimized AdamW when offload_optimizer is enabled
+            "optimizer": {
+                "type": "AdamW",
+                "params": {
+                    "lr": args.learning_rate,
+                    "betas": [0.9, 0.999],
+                    "eps": 1e-8,
+                    "weight_decay": 0.000001
+                }
+            },
+            "fp16": {"enabled": args.mixed_precision},
+            "bf16": {"enabled": False},
+            "train_micro_batch_size_per_gpu": args.batch_size,
+        }
+        # Note: gradient_accumulation_steps is NOT set here - Lightning passes it via accumulate_grad_batches
+        
+        # DeepSpeed handles unused parameters automatically through ZeRO optimization
+        strategy = DeepSpeedStrategy(config=deepspeed_config)
+        print(f"Using DeepSpeed ZeRO Stage {args.deepspeed_stage}")
+        print("Note: DeepSpeed automatically handles unused parameters through ZeRO optimization")
+        print(f"Note: Using DeepSpeed's built-in AdamW optimizer (required for ZeRO-Offload)")
+    elif args.strategy == 'ddp_sharded':
+        # FairScale's sharded DDP (alternative to FSDP)
+        from pytorch_lightning.strategies import DDPShardedStrategy
+        strategy = DDPShardedStrategy(find_unused_parameters=True)
+        print("Using DDPSharded strategy (FairScale) with find_unused_parameters=True")
+    elif args.strategy == 'dp':
+        # DataParallel - legacy single-node strategy
+        strategy = 'dp'
+        print("Using DataParallel (legacy) - unused parameters handled automatically")
+    else:
+        strategy = args.strategy
+else:
+    strategy = 'auto'
+
+trainer = pl.Trainer(
+    max_epochs=args.epochs,
+    accelerator='gpu' if torch.cuda.is_available() else 'cpu',
+    devices=devices,
+    strategy=strategy,
+    precision='16-mixed' if args.mixed_precision else 32,
+    gradient_clip_val=1.0 if args.clip_grad else 0,
+    # Lightning automatically passes this to DeepSpeed config as gradient_accumulation_steps
+    accumulate_grad_batches=args.gradient_accumulation_steps,
+    callbacks=[checkpoint_callback, lr_monitor],
+    logger=logger,
+    log_every_n_steps=10,
+    deterministic=True,
+    enable_progress_bar=True,
+)
 
 print(f"\nTraining Configuration:")
 print(f"  Total epochs: {args.epochs}")
 print(f"  Gradient accumulation steps: {args.gradient_accumulation_steps}")
-print(f"  Steps per epoch: {len(train_loader)}")
-print(f"  Effective steps per epoch: {len(train_loader) // args.gradient_accumulation_steps}")
+print(f"  Effective batch size: {args.batch_size * args.gradient_accumulation_steps * (devices if isinstance(devices, int) else 1)}")
 print(f"  Mask pLDDT: {args.mask_plddt}")
 if args.mask_plddt:
     print(f"  pLDDT threshold: {args.plddt_threshold}")
-print(f"  Using device: {device}")
+print(f"  Mixed precision: {args.mixed_precision}")
+print(f"  Gradient clipping: {args.clip_grad}")
 print()
 
-for epoch in range(args.epochs):
-    total_loss_x = 0
-    total_loss_edge = 0
-    total_vq = 0
-    total_angles_loss = 0
-    total_loss_fft2 = 0
-    total_logit_loss = 0
-    total_ss_loss = 0
-    
-    for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
-        data = data.to(device)
-        
-        # Forward pass with autocast for mixed precision
-        if args.mixed_precision:
-            with autocast():
-                z, vqloss = encoder(data)
-                data['res'].x = z
-                
-                # Forward pass through decoder
-                out = decoder(data, None)
-                edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+# Train the model
+trainer.fit(model, train_loader)
 
-                # Edge reconstruction loss
-                logitloss = torch.tensor(0.0, device=device)
-                edgeloss = torch.tensor(0.0, device=device)
-                if edge_index is not None:
-                    edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
-                
-                # Amino acid reconstruction loss
-                xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
-                
-                # FFT2 loss
-                fft2loss = torch.tensor(0.0, device=device)
-                if 'fft2pred' in out and out['fft2pred'] is not None:
-                    fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+# Save final model in PyTorch format
+print("\nSaving final models...")
+torch.save(model.encoder, os.path.join(modeldir, f"{modelname}_encoder_final.pt"))
+torch.save(model.decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pt"))
 
-                # Angles loss
-                angles_loss = torch.tensor(0.0, device=device)
-                if out.get('angles') is not None:
-                    angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
-
-                # Secondary structure loss
-                ss_loss = torch.tensor(0.0, device=device)
-                if out.get('ss_pred') is not None:
-                    if args.mask_plddt:
-                        mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-                        ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-                    else:
-                        ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
-
-                # Total loss
-                loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                        fft2weight * fft2loss + angles_weight * angles_loss + 
-                        ss_weight * ss_loss + logitweight * logitloss)
-                
-                # Scale loss by gradient accumulation steps
-                loss = loss / args.gradient_accumulation_steps
-        else:
-            # Non-mixed precision path
-            z, vqloss = encoder(data)
-            data['res'].x = z
-            
-            out = decoder(data, None)
-            edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
-
-            logitloss = torch.tensor(0.0, device=device)
-            edgeloss = torch.tensor(0.0, device=device)
-            if edge_index is not None:
-                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
-            
-            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
-            
-            fft2loss = torch.tensor(0.0, device=device)
-            if 'fft2pred' in out and out['fft2pred'] is not None:
-                fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
-
-            angles_loss = torch.tensor(0.0, device=device)
-            if out.get('angles') is not None:
-                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
-
-            ss_loss = torch.tensor(0.0, device=device)
-            if out.get('ss_pred') is not None:
-                if args.mask_plddt:
-                    mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-                    ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-                else:
-                    ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
-
-            loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                    fft2weight * fft2loss + angles_weight * angles_loss + 
-                    ss_weight * ss_loss + logitweight * logitloss)
-            
-            loss = loss / args.gradient_accumulation_steps
-        
-        # Backward pass with gradient scaling
-        if args.mixed_precision:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        
-        # Only update weights every gradient_accumulation_steps
-        if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
-            if clip_grad:
-                if args.mixed_precision:
-                    scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
-                torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-            
-            # Step optimizer with scaler
-            if args.mixed_precision:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-            optimizer.zero_grad()
-            
-            # Step scheduler if it's a step-based scheduler
-            if scheduler is not None and scheduler_step_mode == 'step':
-                scheduler.step()
-            
-            global_step += 1
-        
-        # Accumulate losses (unscaled for reporting)
-        total_loss_x += xloss.item()
-        total_logit_loss += logitloss.item()
-        total_loss_edge += edgeloss.item()
-        total_loss_fft2 += fft2loss.item()
-        total_angles_loss += angles_loss.item()
-        total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
-        total_ss_loss += ss_loss.item()
-    
-    # Clean up any remaining gradients at epoch end
-    if len(train_loader) % args.gradient_accumulation_steps != 0:
-        if clip_grad:
-            if args.mixed_precision:
-                scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-        if args.mixed_precision:
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            optimizer.step()
-        optimizer.zero_grad()
-    
-    # Calculate average losses
-    avg_loss_x = total_loss_x / len(train_loader)
-    avg_loss_edge = total_loss_edge / len(train_loader)
-    avg_loss_vq = total_vq / len(train_loader)
-    avg_loss_fft2 = total_loss_fft2 / len(train_loader)
-    avg_angles_loss = total_angles_loss / len(train_loader)
-    avg_logit_loss = total_logit_loss / len(train_loader)
-    avg_ss_loss = total_ss_loss / len(train_loader)
-    avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
-                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
-    
-    # Update learning rate scheduler (for epoch-based schedulers)
-    if scheduler is not None and scheduler_step_mode == 'epoch':
-        if args.lr_schedule == 'plateau':
-            scheduler.step(avg_loss_x)
-        else:
-            scheduler.step()
-    
-    # Print metrics
-    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
-          f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
-          f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
-          f"SS Loss: {avg_ss_loss:.4f}, Logit Loss: {avg_logit_loss:.4f}")
-    current_lr = optimizer.param_groups[0]['lr']
-    print(f"Total Loss: {avg_total_loss:.4f}, LR: {current_lr:.6f}")
-    
-    # Print commitment cost if using scheduling
-    if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
-        current_commitment = encoder.vector_quantizer.get_commitment_cost()
-        print(f"Commitment Cost: {current_commitment:.4f}")
-    
-    # Gradient analysis
-    print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
-    print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
-    
-    # Log to TensorBoard
-    current_lr = optimizer.param_groups[0]['lr']
-    writer.add_scalar('Loss/Total', avg_total_loss, epoch)
-    writer.add_scalar('Loss/AA', avg_loss_x, epoch)
-    writer.add_scalar('Loss/Edge', avg_loss_edge, epoch)
-    writer.add_scalar('Loss/VQ', avg_loss_vq, epoch)
-    writer.add_scalar('Loss/FFT2', avg_loss_fft2, epoch)
-    writer.add_scalar('Loss/Angles', avg_angles_loss, epoch)
-    writer.add_scalar('Loss/SS', avg_ss_loss, epoch)
-    writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
-    writer.add_scalar('Learning_Rate', current_lr, epoch)
-    
-    # Log commitment cost if using scheduling
-    if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
-        current_commitment = encoder.vector_quantizer.get_commitment_cost()
-        writer.add_scalar('Training/Commitment_Cost', current_commitment, epoch)
-    
-    # Log loss weights
-    writer.add_scalar('Weights/Edge', edgeweight, epoch)
-    writer.add_scalar('Weights/X', xweight, epoch)
-    writer.add_scalar('Weights/FFT2', fft2weight, epoch)
-    writer.add_scalar('Weights/VQ', vqweight, epoch)
-    writer.add_scalar('Weights/Angles', angles_weight, epoch)
-    writer.add_scalar('Weights/SS', ss_weight, epoch)
-    
-    # Log gradient norms
-    encoder_grad_norms = analyze_gradient_norms(encoder, top_k=1)
-    decoder_grad_norms = analyze_gradient_norms(decoder, top_k=1)
-    if encoder_grad_norms['highest']:
-        writer.add_scalar('Gradients/Encoder_Max', encoder_grad_norms['highest'][0][1], epoch)
-    if encoder_grad_norms['lowest']:
-        writer.add_scalar('Gradients/Encoder_Min', encoder_grad_norms['lowest'][0][1], epoch)
-    if decoder_grad_norms['highest']:
-        writer.add_scalar('Gradients/Decoder_Max', decoder_grad_norms['highest'][0][1], epoch)
-    if decoder_grad_norms['lowest']:
-        writer.add_scalar('Gradients/Decoder_Min', decoder_grad_norms['lowest'][0][1], epoch)
-    
-    # Save best model (pickle format)
-    if avg_total_loss < best_loss:
-        best_loss = avg_total_loss
-        print(f"Saving best model with loss: {best_loss:.4f}")
-        with open(os.path.join(modeldir, modelname + '_best.pkl'), 'wb') as f:
-            pickle.dump((encoder, decoder), f)
-    
-    # Save checkpoint every 10 epochs (PyTorch format for compatibility)
-    if (epoch + 1) % 10 == 0:
-        checkpoint_path = os.path.join(modeldir, f"{modelname}_epoch_{epoch+1}.pt")
-        torch.save({
-            'epoch': epoch,
-            'encoder_state_dict': encoder.state_dict(),
-            'decoder_state_dict': decoder.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': avg_total_loss,
-            'best_loss': best_loss,
-            'hyperparameters': vars(args)
-        }, checkpoint_path)
-        print(f"Saved checkpoint to {checkpoint_path}")
-
-# Save final model (both formats)
-with open(os.path.join(modeldir, modelname + '.pkl'), 'wb') as f:
-    pickle.dump((encoder, decoder), f)
-
-final_pt_path = os.path.join(modeldir, f"{modelname}_final.pt")
-torch.save({
-    'encoder_state_dict': encoder.state_dict(),
-    'decoder_state_dict': decoder.state_dict(),
-    'hyperparameters': vars(args),
-    'final_loss': avg_total_loss,
-    'best_loss': best_loss
-}, final_pt_path)
-
-print("Training complete! Final models saved:")
-print(f"  Pickle: {os.path.join(modeldir, modelname + '.pkl')}")
-print(f"  PyTorch: {final_pt_path}")
-print(f"  Best Loss: {best_loss:.4f}")
-
-# Log hyperparameters to TensorBoard
-hparam_dict = {k: v for k, v in vars(args).items() 
-               if isinstance(v, (int, float, str, bool))}
-metric_dict = {
-    'hparam/best_loss': best_loss,
-    'hparam/final_loss': avg_total_loss,
-    'hparam/final_aa_loss': avg_loss_x,
-    'hparam/final_edge_loss': avg_loss_edge
-}
-writer.add_hparams(hparam_dict, metric_dict)
-writer.close()
-print(f"TensorBoard logs saved to {tensorboard_log_dir}")
+print("Training complete! Models saved:")
+print(f"  Lightning checkpoint: {checkpoint_callback.best_model_path}")
+print(f"  Encoder: {os.path.join(modeldir, modelname + '_encoder_final.pt')}")
+print(f"  Decoder: {os.path.join(modeldir, modelname + '_decoder_final.pt')}")
+print(f"  Best loss: {checkpoint_callback.best_model_score:.4f}")
+print(f"  TensorBoard logs: {logger.log_dir}")

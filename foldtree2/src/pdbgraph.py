@@ -1338,6 +1338,10 @@ class StructureDataset(Dataset):
 			self.h5dataset = h5py.File(h5dataset, 'r')
 		self.structlist = list(self.h5dataset['structs'].keys())
 	
+	def __iter__(self):
+		for idx in range(len(self)):
+			yield self[idx]
+
 	def __len__(self):
 		return len(self.structlist)
 

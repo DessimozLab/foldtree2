@@ -152,6 +152,11 @@ parser.add_argument('--angles-weight', type=float, default=0.05,
 parser.add_argument('--ss-weight', type=float, default=0.25,
                     help='Weight for secondary structure loss (default: 0.25)')
 
+# Tensor Core precision
+parser.add_argument('--tensor-core-precision', type=str, default='high',
+                    choices=['highest', 'high', 'medium'],
+                    help='Float32 matrix multiplication precision for Tensor Cores (default: high)')
+
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:
     print('No arguments provided. Use -h for help.')
@@ -199,6 +204,11 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+
+# Set tensor core precision for better performance on modern GPUs
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision(args.tensor_core_precision)
+    print(f"Tensor Core precision set to: {args.tensor_core_precision}")
 
 if args.EMA:
     print("Using Exponential Moving Average for encoder codebook")
@@ -278,8 +288,10 @@ if args.save_config:
 
 if os.path.exists(args.output_dir) and args.overwrite:
     #remove existing model
-    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best.pkl')):
-        os.remove(os.path.join(args.output_dir, args.model_name + '_best.pkl'))
+    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best_encoder.pt')):
+        os.remove(os.path.join(args.output_dir, args.model_name + '_best_encoder.pt'))
+    if os.path.exists(os.path.join(args.output_dir, args.model_name + '_best_decoder.pt')):
+        os.remove(os.path.join(args.output_dir, args.model_name + '_best_decoder.pt'))
 
 # Data setup
 datadir = '../../datasets/foldtree2/'
@@ -334,15 +346,17 @@ writer = SummaryWriter(log_dir=tensorboard_log_dir)
 
 
 # Initialize or load model
-if os.path.exists(os.path.join(modeldir, modelname + '_best.pkl')) and args.overwrite == False:
-    print(f"Loading existing model from {os.path.join(modeldir, modelname + '_best.pkl')}")
+encoder_path = os.path.join(modeldir, modelname + '_best_encoder.pt')
+decoder_path = os.path.join(modeldir, modelname + '_best_decoder.pt')
+if os.path.exists(encoder_path) and os.path.exists(decoder_path) and args.overwrite == False:
+    print(f"Loading existing model from {encoder_path} and {decoder_path}")
     if os.path.exists(os.path.join(modeldir, modelname + '_info.txt')):
         with open(os.path.join(modeldir, modelname + '_info.txt'), 'r') as f:
             model_info = f.read()
         print("Model info:", model_info)
     # Load encoder and decoder from saved model
-    with open(os.path.join(modeldir, modelname + '_best.pkl'), 'rb') as f:
-        encoder, decoder = pickle.load(f)
+    encoder = torch.load(encoder_path, map_location=device, weights_only=False)
+    decoder = torch.load(decoder_path, map_location=device, weights_only=False)
 else:
     print("Creating new model...")
     # Model setup
@@ -934,6 +948,6 @@ writer.add_hparams(hparams_dict, metrics_dict)
 # Close TensorBoard writer
 writer.close()
 
-print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '.pkl')}")
+print(f"Training complete! Final model saved to {os.path.join(modeldir, modelname + '_encoder_final.pt')} and {os.path.join(modeldir, modelname + '_decoder_final.pt')}")
 print(f"TensorBoard logs saved to: {tensorboard_log_dir}")
 print(f"View with: tensorboard --logdir={args.tensorboard_dir}")
