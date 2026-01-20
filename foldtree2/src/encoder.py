@@ -38,8 +38,8 @@ class mk1_Encoder(torch.nn.Module):
 				encoder_hidden=100, dropout_p=0.05, EMA=False, 
 				reset_codes=True, nheads=3, flavor='sage', fftin=False,
 				use_commitment_scheduling=False, commitment_warmup_steps=5000,
-				commitment_schedule='cosine', commitment_start=0.1, concat_positions=False ,
-				learn_positions=False, **kwargs):
+				commitment_schedule='cosine', commitment_start=0.1, concat_positions=True ,
+				learn_positions=True, **kwargs):
 		super(mk1_Encoder, self).__init__()
 
 		# Save all arguments to constructor
@@ -63,26 +63,32 @@ class mk1_Encoder(torch.nn.Module):
 		self.fftin = fftin
 		
 
+
 		# Determine input channels
 		self.in_channels = in_channels
-		if self.concat_positions:
-			self.in_channels += 256
-		if self.learn_positions:
+		
+		self.in_with_positions = self.in_channels
+		if self.concat_positions and self.learn_positions==False:
+			self.in_with_positions += 256
+		if self.learn_positions == True:
 			self.concat_positions = False
 			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout_p)
-			self.in_channels += 32
+			self.in_with_positions += 32
+		else:
+			self.position_mlp = None
 
+	
 		# ===================== INPUT MODULE =====================
 		# Preprocessing layers: LayerNorm, input MLPs, dropout
 		self.input = nn.ModuleDict()
 		
-		self.input['ln'] = nn.LayerNorm(in_channels)
 		self.input['dropout'] = nn.Dropout(p=dropout_p)
-		
+		self.input['ln'] = nn.LayerNorm(self.in_channels)
+
 		self.input['inmlp'] = nn.Sequential(
 			nn.Dropout(dropout_p),
-			nn.LayerNorm(self.in_channels),
-			nn.Linear(self.in_channels, hidden_channels[0] * 2),
+			nn.LayerNorm(self.in_with_positions),
+			nn.Linear(self.in_with_positions, hidden_channels[0] * 2),
 			nn.GELU(),
 			nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
 			nn.GELU(),
@@ -200,9 +206,9 @@ class mk1_Encoder(torch.nn.Module):
 		else:
 			x_dict['res'] = self.input['ln'](x_res)
 		
-		if self.concat_positions:
+		if self.concat_positions and not self.learn_positions:
 			x_dict['res'] = torch.cat([x_dict['res'], data['positions'].x], dim=1)
-		if self.learn_positions:
+		if self.learn_positions == True and self.position_mlp is not None:
 			pos_enc = self.position_mlp(data['positions'].x)
 			x_dict['res'] = torch.cat([x_dict['res'], pos_enc], dim=1)
 		
@@ -251,7 +257,7 @@ class mk1_Encoder(torch.nn.Module):
 		
 		return z_quantized, vq_loss
 
-	def encode_structures_fasta(self, dataloader, filename='structalign.strct.fasta', 
+	def encode_structures_fasta(self, dataloader, filename=None, 
 							   verbose=False, alphabet=None, replace=True, **kwargs):
 		"""
 		Write an encoded fasta for use with mafft and raxmlng. 
@@ -264,6 +270,9 @@ class mk1_Encoder(torch.nn.Module):
 			'\r': chr(254), '\n': chr(255)
 		}
 		
+		if filename is None:
+			raise ValueError('Filename must be provided for fasta encoding')
+
 		# Check encoding size
 		if self.vector_quantizer.num_embeddings > 248:
 			raise ValueError('Encoding size too large for fasta encoding')

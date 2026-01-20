@@ -380,7 +380,8 @@ else:
         commitment_warmup_steps=args.commitment_warmup_steps,
         commitment_schedule='cosine_with_restart',
         commitment_start=args.commitment_start,
-        concat_positions=True
+        concat_positions=True,
+        learn_positions=True
     )
     if args.hetero_gae:
         # HeteroGAE_Decoder config (example, adjust as needed)

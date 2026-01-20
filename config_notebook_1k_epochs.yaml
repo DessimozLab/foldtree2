@@ -7,6 +7,8 @@ dataset: "structs_train_final.h5"
 output_dir: "./models/notebook_1k_training_nopositions/"
 run_name: "notebook_replication_1k_epochs"
 
+overwrite: true
+
 # Training hyperparameters (from notebook)
 epochs: 1000
 batch_size: 10
@@ -19,11 +21,9 @@ num_embeddings: 40
 embedding_dim: 128
 
 # Encoder configuration (mk1_Encoder from notebook)
-use_muon_encoder: false  # Notebook uses standard mk1_Encoder
 EMA: true
 
 # Decoder configuration (MultiMonoDecoder from notebook)
-use_muon_decoders: false  # Notebook uses standard decoders
 hetero_gae: false  # Use MultiMonoDecoder
 
 # Optimizer settings (from notebook - Muon optimizer)
