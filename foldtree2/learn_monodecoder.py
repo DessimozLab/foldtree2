@@ -733,7 +733,8 @@ for epoch in range(args.epochs):
                 if out.get('ss_pred') is not None:
                     if args.mask_plddt:
                         mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-                        ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+                        if mask.sum() > 0:
+                            ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                     else:
                         ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
 
@@ -771,7 +772,8 @@ for epoch in range(args.epochs):
             if out.get('ss_pred') is not None:
                 if args.mask_plddt:
                     mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-                    ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+                    if mask.sum() > 0:
+                        ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                 else:
                     ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
 

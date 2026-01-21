@@ -234,7 +234,10 @@ def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 ,
 	"""
 	if mask_plddt:
 		mask = (plddt_mask > plddt_threshold).squeeze()
-		ss_loss = F.cross_entropy(recon_ss[mask], ss[mask])
+		if mask.sum() > 0:
+			ss_loss = F.cross_entropy(recon_ss[mask], ss[mask])
+		else:
+			ss_loss = torch.tensor(0.0, device=recon_ss.device)
 	else:	
 		ss_loss = F.cross_entropy(recon_ss, ss)
 	return ss_loss
@@ -251,7 +254,10 @@ def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_
 	if plddt_mask is not None:
 		mask = plddt_mask > plddt_thresh
 		mask = mask.squeeze(1)  # Ensure mask is 1D
-		delta = delta[mask]
+		if mask.sum() > 0:
+			delta = delta[mask]
+		else:
+			return torch.tensor(0.0, device=pred.device)
 	loss = F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
 
 	return loss.mean()

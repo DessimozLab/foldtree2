@@ -82,11 +82,11 @@ class mk1_Encoder(torch.nn.Module):
 		self.input = nn.ModuleDict()
 		
 		self.input['dropout'] = nn.Dropout(p=dropout_p)
-		self.input['ln'] = nn.LayerNorm(self.in_channels)
+		self.input['ln'] = nn.LayerNorm(self.in_channels, eps=1e-6)
 
 		self.input['inmlp'] = nn.Sequential(
 			nn.Dropout(dropout_p),
-			nn.LayerNorm(self.in_with_positions),
+			nn.LayerNorm(self.in_with_positions, eps=1e-6),
 			nn.Linear(self.in_with_positions, hidden_channels[0] * 2),
 			nn.GELU(),
 			nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
@@ -96,7 +96,7 @@ class mk1_Encoder(torch.nn.Module):
 		if self.fftin:
 			self.input['ffin'] = nn.Sequential(
 				nn.Dropout(dropout_p),
-				nn.LayerNorm(2 * 80),
+				nn.LayerNorm(2 * 80, eps=1e-6),
 				nn.Linear(2 * 80, hidden_channels[0] * 2),
 				nn.GELU(),
 				nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),

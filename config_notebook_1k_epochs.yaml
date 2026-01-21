@@ -12,7 +12,7 @@ overwrite: true
 # Training hyperparameters (from notebook)
 epochs: 1000
 batch_size: 10
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 2
 seed: 0
 
 # Model architecture (from notebook)

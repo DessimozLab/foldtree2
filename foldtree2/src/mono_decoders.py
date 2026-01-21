@@ -43,7 +43,7 @@ from Bio import PDB
 from Bio.PDB import PDBParser
 from foldtree2.src.chebconv import StableChebConv
 from scipy.spatial.distance import cdist
-EPS = 1e-15
+EPS = 1e-6
 datadir = '../../datasets/foldtree2/'
 
 
@@ -197,13 +197,12 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if output_ss == True:
 			self.output_ss = True
 			self.ss_mlp = torch.nn.Sequential(
-				torch.nn.LayerNorm(lastlin),
+				torch.nn.LayerNorm(lastlin, eps=1e-6),
 				torch.nn.Linear(lastlin, 128),
 				torch.nn.GELU(),
 				torch.nn.Linear(128,64),
 				torch.nn.GELU(),
-				torch.nn.Linear(64,3),
-				torch.nn.LogSoftmax(dim=1)
+				torch.nn.Linear(64,3)
 			)
 		else:
 			self.output_ss = False
@@ -231,7 +230,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			self.output_edge_logits = True
 			self.edge_logits_mlp = torch.nn.Sequential(
 				#layernorm
-				torch.nn.LayerNorm(2*lastlin),
+				torch.nn.LayerNorm(2*lastlin, eps=1e-6),
 				torch.nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
 				torch.nn.GELU(),
 				torch.nn.Linear(anglesdecoder_hidden[0],anglesdecoder_hidden[1]),
@@ -276,7 +275,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.residual == True:
 			z = z + inz
 		if self.normalize == True:
-			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-10)
+			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-6)
 		#decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#amino acid prediction removed
 
@@ -420,13 +419,10 @@ class CNN_geo_Decoder(torch.nn.Module):
 					padding=kernel_size//2
 				)
 			)
-			self.body['norms'].append(nn.LayerNorm(channels))
+			self.body['norms'].append(nn.LayerNorm(channels, eps=1e-6))
 		
-		finalout = conv_channels[-1]
-		
-		# Intermediate projection
 		self.body['lin'] = nn.Sequential(
-			nn.Linear(finalout, Xdecoder_hidden[0]),
+			nn.Linear(conv_channels[-1], Xdecoder_hidden[0]),
 			nn.GELU(),
 			nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
 			nn.GELU(),
@@ -474,13 +470,12 @@ class CNN_geo_Decoder(torch.nn.Module):
 		# Secondary structure prediction
 		if output_ss:
 			self.head['ss_mlp'] = nn.Sequential(
-				nn.LayerNorm(lastlin),
+				nn.LayerNorm(lastlin, eps=1e-6),
 				nn.Linear(lastlin, anglesdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
 				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[1], 3),
-				nn.LogSoftmax(dim=1)
+				nn.Linear(anglesdecoder_hidden[1], 3)
 			)
 		
 		# Bond angles prediction
@@ -499,7 +494,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		# Edge logits prediction
 		if output_edge_logits:
 			self.head['edge_logits_mlp'] = nn.Sequential(
-				nn.LayerNorm(2*lastlin),
+				nn.LayerNorm(2*lastlin, eps=1e-6),
 				nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
@@ -584,7 +579,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		if self.residual:
 			z = z + inz
 		if self.normalize:
-			z = z / (torch.norm(z, dim=1, keepdim=True) + 1e-10)
+			z = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
 		
 		# ===================== HEAD PROCESSING =====================
 		# Godnode/FFT decoder
@@ -730,7 +725,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		# Optional CNN decoder
 		if use_cnn_decoder := kwargs.get('use_cnn_decoder', False):
-			self.head['prenorm'] = nn.LayerNorm(d_model)
+			self.head['prenorm'] = nn.LayerNorm(d_model, eps=1e-6)
 			self.head['cnn_decoder'] = nn.Sequential(
 				# Conv1d expects (batch, channels, seq_len)
 				nn.Conv1d(d_model, AAdecoder_hidden[0], kernel_size=3, padding=1),
@@ -750,8 +745,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
-				nn.Linear(AAdecoder_hidden[2], 20),
-				nn.LogSoftmax(dim=1)
+				nn.Linear(AAdecoder_hidden[2], 20)
 			)
 		
 		# Optional secondary structure prediction head
@@ -763,8 +757,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
-				nn.Linear(AAdecoder_hidden[2], 3),
-				nn.LogSoftmax(dim=1)
+				nn.Linear(AAdecoder_hidden[2], 3)
 			)
 
 	def forward(self, data, **kwargs):
@@ -814,7 +807,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		# Apply normalization
 		if self.normalize:
-			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-10)
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
 		
 		# ===================== HEAD PROCESSING =====================
 		if batch is not None:
@@ -975,15 +968,14 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			if not isinstance(ssdecoder_hidden, list):
 				ssdecoder_hidden = [ssdecoder_hidden, ssdecoder_hidden]
 			self.head['ss_head'] = nn.Sequential(
-				nn.LayerNorm(d_model),
+				nn.LayerNorm(d_model, eps=1e-6),
 				nn.Linear(d_model, ssdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(ssdecoder_hidden[0], ssdecoder_hidden[1]),
 				nn.GELU(),
 				nn.Linear(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1]),
 				nn.GELU(),
-				nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3),
-				nn.LogSoftmax(dim=1)
+				nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3)
 			)
 		
 		# Bond angles prediction head (phi, psi, omega)
@@ -1044,7 +1036,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		
 		# Apply normalization
 		if self.normalize:
-			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-10)
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
 		
 		# ===================== HEAD PROCESSING =====================
 		rt_pred = None
@@ -1171,7 +1163,7 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 			# No residual connection here, as pooled is a single vector
 			pass
 		if self.normalize:
-			pooled = pooled / (torch.norm(pooled, dim=-1, keepdim=True) + 1e-10)
+			pooled = pooled / (torch.norm(pooled, dim=-1, keepdim=True) + 1e-6)
 		foldx_out = self.lin(pooled)
 		return { 'foldx_out' : foldx_out }
 
