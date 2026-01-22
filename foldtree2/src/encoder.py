@@ -2,6 +2,8 @@
 # coding: utf-8
 
 import importlib
+import os
+from foldtree2.src.pdbgraph import StructureDataset
 import numpy as np
 import pandas as pd
 import pytorch_lightning as L
@@ -19,6 +21,7 @@ from torch_geometric.nn import (
 from foldtree2.src.layers import *
 from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
+from torch_geometric.data import DataLoader
 
 # Note: datadir is defined but may not be used throughout the module
 datadir = '../../datasets/foldtree2/'
@@ -72,7 +75,7 @@ class mk1_Encoder(torch.nn.Module):
 			self.in_with_positions += 256
 		if self.learn_positions == True:
 			self.concat_positions = False
-			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout_p)
+			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[128,128, 64], out_channels=32, dropout=0)
 			self.in_with_positions += 32
 		else:
 			self.position_mlp = None
@@ -256,6 +259,35 @@ class mk1_Encoder(torch.nn.Module):
 		
 		return z_quantized, vq_loss
 
+
+	def encode_structures(self, device, dataset_path):
+		"""Encode protein structures using trained model."""
+		if os.path.exists(dataset_path):
+			print(f"Loading dataset from {dataset_path}")
+			struct_dat = StructureDataset(dataset_path)
+		else:
+			print(f"Dataset {dataset_path} not found!")
+			return None
+		
+		print(f"Loaded {len(struct_dat)} structures")
+		encoder_loader = DataLoader(struct_dat, batch_size=1, shuffle=False)
+		
+		def databatch2list(loader):
+			for data in loader:
+				data = data.to_data_list()
+				for d in data:
+					d = d.to(device)
+					yield d
+		
+		encoder_loader = databatch2list(encoder_loader)
+		
+		# Encode structures
+		output_path = os.path.join(output_dir, modelname + '_aln_encoded.fasta')
+		self.encode_structures_fasta(encoder_loader, output_path, replace=True)
+		print(f"Encoded structures saved to {output_path}")
+		return output_path
+
+
 	def encode_structures_fasta(self, dataloader, filename=None, 
 							   verbose=False, alphabet=None, replace=True, **kwargs):
 		"""
@@ -313,6 +345,131 @@ class mk1_Encoder(torch.nn.Module):
 				
 				f.write(outstr)
 				f.write('\n')
+		
+		return filename
+	
+	def encode_structures_batched(self, device, dataset_path, batch_size=8):
+		"""Encode protein structures using trained model.
+		
+		Args:
+			device: Device to use for encoding
+			dataset_path: Path to the HDF5 dataset file
+			batch_size: Number of structures to process in parallel (default: 8)
+		"""
+		
+		if os.path.exists(dataset_path):
+			print(f"Loading dataset from {dataset_path}")
+			struct_dat = StructureDataset(dataset_path)
+		else:
+			print(f"Dataset {dataset_path} not found!")
+			return None
+		
+		print(f"Loaded {len(struct_dat)} structures")
+		encoder_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=False)
+		
+		# Encode structures
+		output_path = os.path.join(output_dir, modelname + '_aln_encoded.fasta')
+		self.encode_structures_fasta_batched(encoder_loader, output_path, replace=True)
+		print(f"Encoded structures saved to {output_path}")
+		return output_path
+	
+	def encode_structures_fasta_batched(self, dataloader, filename=None, 
+								verbose=False, alphabet=None, replace=True, **kwargs):
+		"""
+		Write an encoded fasta for use with mafft and raxmlng. 
+		Only doable with alphabet size of less than 248.
+		
+		Args:
+			dataloader: DataLoader yielding batches of protein structures
+			filename: Output FASTA filename
+			verbose: Print debug information
+			alphabet: Optional custom alphabet mapping
+			replace: Whether to replace special characters
+		"""
+		# Replace characters with special characters to avoid issues with fasta format
+		replace_dict = {
+			chr(0): chr(246), '"': chr(248), '#': chr(247), '>': chr(249), 
+			'=': chr(250), '<': chr(251), '-': chr(252), ' ': chr(253), 
+			'\r': chr(254), '\n': chr(255)
+		}
+		
+		if filename is None:
+			raise ValueError('Filename must be provided for fasta encoding')
+
+		# Check encoding size
+		if self.vector_quantizer.num_embeddings > 248:
+			raise ValueError('Encoding size too large for fasta encoding')
+		
+		if alphabet is not None:
+			print('using alphabet')
+			print(alphabet)
+		
+		with open(filename, 'w') as f:
+			for batch in tqdm.tqdm(dataloader, desc='Encoding structures to FASTA'):
+				# Move batch to device
+				batch = batch.to(self.device)
+				
+				# Forward pass on entire batch
+				z, qloss = self.forward(batch)
+				
+				# Discretize all structures in batch
+				strdata_indices, strdata_chars = self.vector_quantizer.discretize_z(z)
+				
+				# Get batch information
+				if hasattr(batch['res'], 'batch') and batch['res'].batch is not None:
+					batch_indices = batch['res'].batch
+					num_graphs = batch_indices.max().item() + 1
+				else:
+					# Single graph case
+					num_graphs = 1
+					batch_indices = torch.zeros(z.shape[0], dtype=torch.long, device=z.device)
+				
+				# Process each structure in the batch
+				for graph_idx in range(num_graphs):
+					# Get mask for this graph
+					mask = (batch_indices == graph_idx)
+					graph_strdata = strdata_indices[mask]
+					
+					# Get identifier - handle both batched and single structure cases
+					if hasattr(batch, 'identifier'):
+						if isinstance(batch.identifier, list):
+							identifier = batch.identifier[graph_idx]
+						else:
+							identifier = batch.identifier
+					else:
+						identifier = f"structure_{graph_idx}"
+					
+					# Write FASTA header
+					f.write(f'>{identifier}\n')
+					outstr = ''
+					
+					# Convert indices to characters
+					for char_idx in graph_strdata:
+						# Start at 0x01
+						if alphabet is not None:
+							char = alphabet[char_idx.item()]
+						else:
+							char = chr(char_idx.item() + 1)
+						if replace and char in replace_dict:
+							char = replace_dict[char]
+						outstr += char
+					
+					# Debug assertions
+					if 'debug' in kwargs and kwargs['debug']:
+						print('len outstring', len(outstr))
+						graph_res_x = batch['res'].x[mask]
+						graph_aa_x = batch['AA'].x[mask]
+						print(f"Graph {graph_idx}: res={graph_res_x.shape[0]}, AA={graph_aa_x.shape[0]}, z={mask.sum().item()}")
+						assert len(outstr) == graph_res_x.shape[0], \
+							f"Output string length {len(outstr)} does not match AA length {graph_res_x.shape[0]} for identifier {identifier}"
+						assert len(outstr) == graph_aa_x.shape[0], \
+							f"Output string length {len(outstr)} does not match AA length {graph_aa_x.shape[0]} for identifier {identifier}"
+						assert len(outstr) == mask.sum().item(), \
+							f"Output string length {len(outstr)} does not match z shape {mask.sum().item()} for identifier {identifier}"
+					
+					# Write sequence
+					f.write(outstr)
+					f.write('\n')
 		
 		return filename
 

@@ -7,7 +7,7 @@ dataset: "structs_train_final.h5"
 output_dir: "./models/notebook_1k_training_nopositions/"
 run_name: "notebook_replication_1k_epochs"
 
-overwrite: true
+overwrite: false
 
 # Training hyperparameters (from notebook)
 epochs: 1000
@@ -27,7 +27,7 @@ EMA: true
 hetero_gae: false  # Use MultiMonoDecoder
 
 # Optimizer settings (from notebook - Muon optimizer)
-use_muon: true
+use_muon: false
 muon_lr: 0.02      # Muon learning rate for hidden weights
 adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
 
