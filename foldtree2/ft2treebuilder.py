@@ -6,13 +6,12 @@ import Bio.PDB as PDB
 #import torch_geometric hetero data
 import torch_geometric
 import multiprocessing as mp
-import pebble
 import argparse
 
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
 from foldtree2.src.pdbgraph import PDB2PyG
-
+from torch_geometric.data import HeteroData
 
 import traceback
 import tqdm
@@ -22,7 +21,7 @@ import ete3
 import sys
 
 class treebuilder():
-	def __init__ ( self , model , mafftmat = None , submat = None , n_state = None, raxml_path= None, charmaps=None, **kwargs ):
+	def __init__ ( self , model , mafftmat = None , submat = None ,  raxml_path= None, charmaps=None, **kwargs ):
 
 		#make fasta is shifted by 1 and goes from 1-248 included
 		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
@@ -60,7 +59,6 @@ class treebuilder():
 		#load pickled model
 		self.model = model
 		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
-
 		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
 		else:
@@ -92,8 +90,6 @@ class treebuilder():
 		else:
 			self.maffthex2text = 'hex2maffttext'
 		
-
-
 		if 'ncores' in kwargs:
 			self.ncores = kwargs['ncores']
 		else:
@@ -496,11 +492,52 @@ class treebuilder():
 		return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
 def print_about():
 	ascii_art = r'''
-	+-------------------------------+
-	|       foldtree2     	   	    |	
-	|  Structural Phylogenetics & AI|
-	|   	🧬  🧠  🌳              |
-	+-------------------------------+
+
+                                 @@@@@@@@.                                 
+                     %@@@@@@@ @@@@@@@@@@@@@@@@@@@@@@@                      
+               /@@@@@@@@@@@@ . @@@@@@@@@@@@@@@@@@@@@@@@ .@@                
+           @@@@@@@@@@@@@@@@  @  @@@@@@@@@@@@@@@@@@@@   /@@@@@@@            
+       .@@@@@@@@@@@@@@@@@@@ @@@  @@@@@@@@@@@@@@@@  @% %@@@@@@@@@@@*        
+     @@@@@@@@@@@@@@@@@@@@@ @@@@@  @@@@@@@@@@@@  @@@  @@@@@@@@@@@@@@@@&     
+  %@@@@@@@@@@@@@@@@@@@@@@ #@@@@@,  @@@@@@@&  @@@@@  @@@@@@@@@@@@@@@@@@@@   
+@@@@@@@@@@@@@@@   .  @@@( @@@@@@@#@ @@@( (@@@@@@ / @@@@@@@@@@@@@@@@@@@@@@@ 
+@@@@@@@@@@@@@@ #@  *@ (@  @@@@@ @ @   %@@@@@@@@ * @@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@ (  @@ .@@ @     @@*@@@@  @@@@@@.,  @@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@  @@@@@@  @@.  @@@@@.@@@@@@* @@@ @  @@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@ @@@  @@@ /@@#             @ *@@@@@ @@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@ *@@@@ %@@@  @@@  @@&#@@@@@@  @ @ #@@@@@# @@  @@@@@@@@@ @@@@@@@@
+@@@@@@@   .%@  @@@ @@ @( @@@  @@(@@@@  @@@  @@@@@@@  # @.  ,@@@@ &@@@.@@@@@
+@@@@@@@@@@@@@@  @   @@@@@ @ *@ @,@  @@@@#  @@@@@@@@  @@@@@@@@@     @@@@@@@@
+@@@@@@@@@%@@@@@@@@   *@@@@@@@@@  %@@@@@@@@@@@@@@@@. @@@@@@@@ @       @@@@@@
+@@@@@&@@@@# @@@ @@@@@&  @. @@@@@@@@@@@@@@@@@@@@@(# @@@@%(.  /@@@#@@@@@@@@@@
+@@@@@@@@@  ,# @ @@@@@@@@@ * @@@@@@@@@@@@@@@@@. (@      ,@@@@@@@@ @@@&  @@@@
+@@@@@@@@@@@@@@ &.@@@@@@@@@ @ @@@@@@@@@@@@/ @@/  @@@@@@@@@@@@@  % / .@@@@@@@
+@@@@@@@@@@@@@@@   @@@@@@@@ @%/@@@@@@@@@ %@@ .@@@@@@@@@@@/  #@@ #(@@@@@@@@@@
+@@@@@.      , .,.  ...,,**  @@@  @@@( @@               (@@@@@ %.@@@@@@@@@@@
+@@@@@@@@  /@@@@@@@@@@@@@@@@@   @@@.(@.  *@@@@@@@@@@@@ .@@@@@ ( @@@(   *@@@@
+@@@@@@@@@@@@@@&  @@@@@@@@@@@@@@    *  @@@@@@@@@@@@@@ @@@@ .(        &@@@@@@
+@@@@@@@@@@  @@@@@@#   @@@@/    %@ @@& @@@@@@@@@@@@@@@ ,@   @@@@@@@@@@@@@@@@
+@@@@@             #@%/            @.& @@@@@@@@@@( &@@  &@@@@@@@@    @@@@@@@
+@@@@@@@@@  @@@@ *@@@ ,@@@@@@@@@@@ @@   @@@@&#(,@@*     .,* .( %@@@@@@@@@@@@
+@@@@@@@@@@@@@  (@@@@@@@@@@@@@@@@*%@%*             ( (@@@@@@@@@ @@  ./%@@@@@
+@@@@@@@@@@@ @@/@@@@@@@@@@@@@@@@@ @@ @  %@@@@@@@@@@@@*      &@@@#,@@* @@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ @@ @%  @@@@@@@@@@@@@@@ /@@, @@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&.@@ @   @@@@@@@@@@@@@@@@ @@@.,  @@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ @@ @@  .@@@@@@@@@@@@@@@@@@@@@ @@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@,%@/%@.  &.@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 
+  ,@@@@@@@@@@@@@@@@@@@@@@@@@@ @@ @@  .@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@   
+     @@@@@@@@@@@@@@@@@@@@@@@ @@ @@@  (@ @@@@@@@@@@@@@@@@@@@@@@@@@@@@@      
+        @@@@@@@@@@@@@@@@@@@&,@@ @@   @@(.@@@@@@@@@@@@@@@@@@@@@@@@@         
+           (@@@@@@@@@@*      @ @@%   @@@     #@@@@@@@@@@@@@@@@@            
+                @@@@@@@@@@@@@ *    /@@@(.@@@@@@@@@@@@@@@@@(                
+                      @@@@@ /@@@@@@@@@@@@@@@@@@@@@@@%                      
+
+				+-------------------------------------------+
+				|                 foldtree2                 |
+				|        Structural Phylogenetics & AI      |
+				|              🧬   🧠   🌳                 |
+				+-------------------------------------------+
+
 	'''
 
 	print(ascii_art)
@@ -509,8 +546,8 @@ def print_about():
 	print("FoldTree2 is a toolkit for encoding protein structures as sequences using deep learning,\n"
 		  "enabling phylogenetic tree inference, ancestral structure/sequence reconstruction, and\n"
 		  "custom alphabets for evolutionary analysis. It integrates structure encoding, alignment,\n"
-		  "custom substitution matrices, and tree inference (RAxML-NG), supporting both sequence\n"
-		  "and structure-based workflows. FoldTree2 is designed for protein family analysis,\n"
+		  "custom substitution matrices, and tree inference (RAxML-NG), supporting \n"
+		  "structure-based workflows. FoldTree2 is designed for protein family analysis,\n"
 		  "benchmarking, and exploring the evolution of protein folds.\n\n"
 		  "NOTE: FoldTree2 is under heavy development and its interface, models, and workflows may change\n"
 		  "as new features and improvements are added.\n\n"
@@ -523,10 +560,20 @@ def main():
 		print_about()
 		sys.exit(0)
 
+	
+	# Example usage:
+	# Run the script from the command line with:
+	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral
+	# This command will load the model (from 'path/to/model.pkl'),
+	# the MAFFT matrix, and the substitution matrix for RAxML.
+	# It will process all PDB files matching the glob pattern,
+	# perform the ancestral reconstruction, and output results accordingly.
+
+	#otherwise, import the treebuilder class and use it programmatically.
+
 	parser = argparse.ArgumentParser(description="CLI for running foldtree2 tree builder.")
 	parser.add_argument("--about", action="store_true", help="Show information about FoldTree2 and exit.")
-	parser.add_argument("--model", required=True, help="Path to the model (without .pkl extension)")
-	parser.add_argument("--modeldir" , required=False, default='./models', help="Directory containing the model files (if not specified, uses current directory)")
+	parser.add_argument("--model", required=True, help="Path to the model and name (without encoder/decoder or .pth extension)")
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--charmaps", required=False, default=None, help="Path to the character maps for encoding (if not specified, uses default)"	)
@@ -543,7 +590,6 @@ def main():
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
-	parser.add_argument("--n_state", type=int, default=40, help="Number of encoded states (default: 40)")
 	parser.add_argument("--device", default=None, help="Device to run the model on (default: None, uses CPU or GPU if available)")
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
@@ -551,7 +597,7 @@ def main():
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
 		print('No arguments provided. Use -h or --help for help.')
 		print('Example command:')
-		print('  python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.txt --structures "/path/to/structures/*.pdb" --outdir ./results --ancestral')
+		print('  python ft2treebuilder.py --model my_model --modeldir ./models --mafftmat ./models/my_model_mafftmat.mtx --submat ./models/my_model_submat.txt --charmaps ./models/my_model_pair_counts.pkl --structures "/path/to/structures/*.pdb" --outdir ./results --aapropcsv ./foldtree2/config/aaindex1.csv --ncores 8 --raxml_iterations 20 --raxmlpath raxml-ng --ancestral')
 		parser.print_help()
 		sys.exit(0)
 
@@ -559,15 +605,23 @@ def main():
 		print_about()
 		sys.exit(0)
 	args = parser.parse_args()
+
 	if args.model is None:
 		print('Model path is required. Use --model to specify the model path.')
 		sys.exit(1)
+	
+	args.model = args.model.replace('.pt', '')
+	args.model = args.model.replace('.pth', '')
+	modeldir = '/'.join( args.model.split('/')[:-1] )
 
-	modelpath = os.path.join( args.modeldir, args.model + '.pt' )
-	print('Using model path:', modelpath)
+	encoder_path = os.path.join( args.model + '_encoder.pt' )
+	decoder_path = os.path.join( args.model + '_decoder.pt' )
+	print('Using encoder path:', encoder_path)
+	print('Using decoder path:', decoder_path)
 	#check pth files exist
-	if not os.path.exists(modelpath):
-		print(f"Model files not found in {args.modeldir}. Please ensure the model files are present.")
+
+	if not os.path.exists(encoder_path) or not os.path.exists(decoder_path):
+		print(f"Model files not found in {args.model}. Please ensure the encoder and decoder files are present.")
 		sys.exit(1)
 
 	if args.structures is None:
@@ -589,27 +643,20 @@ def main():
 			args.output_prefix += '_'
 	
 	if args.mafftmat is None:
-		args.mafftmat = os.path.join(args.modeldir, args.model + '_mafftmat.mtx')
+		args.mafftmat = os.path.join(modeldir, encoder_path.replace('.pt', '_mafftmat.mtx'))
 	if args.submat is None:
-		args.submat = os.path.join(args.modeldir, args.model + '_submat.txt')
+		args.submat = os.path.join(modeldir, encoder_path.replace('.pt', '_submat.txt'))
 	if args.charmaps is None:
-		args.charmaps = os.path.join(args.modeldir, args.model + '_pair_counts.pkl')
+		args.charmaps = os.path.join(modeldir, encoder_path.replace('.pt', '_pair_counts.pkl'))
 	
-	# Example usage:
-	# Run the script from the command line with:
-	# python ft2treebuilder.py --model path/to/model --mafftmat path/to/mafft_matrix.mtx --submat path/to/substitution_matrix.mtx --structures "/path/to/structures/*.pdb" --ancestral
-	# This command will load the model (from 'path/to/model.pkl'),
-	# the MAFFT matrix, and the substitution matrix for RAxML.
-	# It will process all PDB files matching the glob pattern,
-	# perform the ancestral reconstruction, and output results accordingly.
 
 	# Create an instance of treebuilder
-	tb = treebuilder(model=modelpath, mafftmat=args.mafftmat, submat=args.submat , n_state=args.n_state , raxml_path=args.raxmlpath,
+	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, submat=args.submat , raxml_path=args.raxmlpath,
 	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device)
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
-				 , verbose=args.verbose , n_state=args.n_state , aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
+				 , verbose=args.verbose  , aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
 
 if __name__ == "__main__":
 	main()
