@@ -411,19 +411,18 @@ class treebuilder():
 		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)		
 		edge_index = edge_index.to( device )
 		data = data.to( self.device )
-		
 		#decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
 		allpairs = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T.to( self.device )
 		out = decoder( data.x_dict, data.edge_index_dict , allpairs )
-		recon_x = out['aa'] if 'aa' in out else None
-		edge_probs = out['edge_probs'] if 'edge_probs' in out else None
-		print( edge_probs.shape)
-
+		recon_x = out['aa'].detach().to('cpu').numpy() if 'aa' in out else None
+		edge_probs = out['edge_probs'].detach().to('cpu').numpy() if 'edge_probs' in out else None
 		amino_map = decoder.decoders['sequence_transformer'].amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
-		return aastr ,edge_probs , zgodnode , foldxout , r , t , angles
+		out['aastr'] = aastr
+		out['edge_probs'] = edge_probs
+		return out
 
 	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
 		#encode the structures
@@ -472,13 +471,8 @@ class treebuilder():
 			ords = ancestral_df.ord.values
 			for l in ords.shape[0]:
 				res = decoder_reconstruction( ords[l] , verbose = verbose)	
-				ancestral_df.loc[l , 'aastr'] = aastr
-				ancestral_df.loc[l , 'edge_probs'] = edge_probs
-				ancestral_df.loc[l , 'zgodnode' ] = zgodnode
-				ancestral_df.loc[l , 'foldxout' ] = foldxout
-				ancestral_df.loc[l , 'r' ] = r
-				ancestral_df.loc[l , 't' ] = t
-				ancestral_df.loc[l , 'angles' ] = angles
+				for key,item in res.items():
+					ancestral_df.loc[l , key] = item
 			#write the ancestral dataframe to a file
 			ancestral_df.to_csv( outfasta.replace('.fasta' , '.csv') )
 			#write out aastr to a fasta

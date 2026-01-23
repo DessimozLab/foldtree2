@@ -44,8 +44,38 @@ except ImportError:
     print("Warning: transformers library not available. Using PyTorch schedulers only.")
     TRANSFORMERS_AVAILABLE = False
 
+def print_about():
+    ascii_art = r'''
+
++-----------------------------------------------------------+
+|                         foldtree2                          |
+|                 VQ-VAE + Multi-Task Training               |
+|     Discrete Structural Tokens → Sequence • Geometry • CM   |
+|        Mixed Precision • Accumulation/Clipping • TB         |
+|                      🧬   🧠   🌳                          |
++-----------------------------------------------------------+
+
+
+    '''
+    print(ascii_art)
+    print("FoldTree2 Training Script")
+    print("-" * 50)
+    print("Train FoldTree2 encoder-decoder models for structural phylogenetics.\n")
+    print("Features:")
+    print("  • VQ-VAE encoder for discrete structural tokens")
+    print("  • Multi-task decoder (sequence, geometry, contacts)")
+    print("  • Mixed precision training")
+    print("  • Gradient accumulation & clipping")
+    print("  • Optional Muon optimizer for modular architectures")
+    print("  • TensorBoard logging\n")
+    print("Project: https://github.com/DessimozLab/foldtree2")
+    print("Contact: dmoi@unil.ch\n")
+    print("Run with --help for usage instructions.")
+
 # Add argparse for CLI configuration
 parser = argparse.ArgumentParser(description='Train model with MultiMonoDecoders for sequence and geometry prediction')
+parser.add_argument('--about', action='store_true',
+                    help='Show information about this tool and exit')
 parser.add_argument('--config', '-c', type=str, default=None,
                     help='Path to config file (YAML or JSON). Command-line args override config file values.')
 parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
@@ -156,6 +186,11 @@ parser.add_argument('--ss-weight', type=float, default=0.25,
 parser.add_argument('--tensor-core-precision', type=str, default='high',
                     choices=['highest', 'high', 'medium'],
                     help='Float32 matrix multiplication precision for Tensor Cores (default: high)')
+
+# Handle --about flag before argument parsing
+if '--about' in sys.argv:
+    print_about()
+    sys.exit(0)
 
 # Print an overview of the arguments and example command if no arguments provided
 if len(sys.argv) == 1:

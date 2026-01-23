@@ -52,6 +52,34 @@ from foldtree2.src import AFDB_tools, foldseek2tree
 from foldtree2.src.pdbgraph import PDB2PyG, StructureDataset
 import foldtree2.src.encoder as ft2
 
+def print_about():
+	ascii_art = r'''
+
++-----------------------------------------------------------+
+|                         foldtree2                          |
+|          Structure-Based Substitution Matrix Generator      |
+|     AFDB reps • Foldseek align • Discrete alphabets → MAT   |
+|          MAFFT + RAxML matrices for phylogenetic inference  |
+|                      🧬   🧠   🌳                          |
++-----------------------------------------------------------+
+
+
+	'''
+	print(ascii_art)
+	print("Structure-Based Substitution Matrix Generator")
+	print("-" * 50)
+	print("Generate custom substitution matrices from protein structural alignments")
+	print("for phylogenetic inference with FoldTree2.\n")
+	print("This tool creates matrices by:")
+	print("  • Downloading AFDB cluster representatives")
+	print("  • Aligning structures with Foldseek")
+	print("  • Encoding structures to discrete alphabets")
+	print("  • Computing substitution frequencies")
+	print("  • Generating MAFFT and RAxML matrices\n")
+	print("Project: https://github.com/DessimozLab/foldtree2")
+	print("Contact: dmoi@unil.ch\n")
+	print("Run with --help for usage instructions.")
+
 def parse_args():
 	parser = argparse.ArgumentParser(
 		description="""
@@ -82,6 +110,8 @@ makesubmat --modelname my_model --encode_alns
 	)
 	
 	# Core parameters
+	parser.add_argument('--about', action='store_true',
+						help='Show information about this tool and exit')
 	parser.add_argument('--modelname', type=str, default=None, required=True,
 						help='Name of trained FoldTree2 model to use for encoding (without .pt extension)')
 	parser.add_argument('--modeldir', type=str, default='models/', 
@@ -591,6 +621,10 @@ def main():
 	6. Compute substitution matrix from structural alignments
 	7. Output matrices in MAFFT and RAxML formats
 	"""
+	if '--about' in sys.argv:
+		print_about()
+		sys.exit(0)
+		
 	args = parse_args()
 	
 	# Set default output paths if not provided

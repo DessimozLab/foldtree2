@@ -4,9 +4,42 @@ import glob
 import torch
 import numpy as np
 import argparse
+import sys
+
+def print_about():
+    ascii_art = r'''
+    
++-----------------------------------------------------------+
+|                         foldtree2                          |
+|                 pdb2pyg  (PDB → PyG graphs)                |
+|          Structure → Contacts • Angles • Features          |
+|                 Ready for PyTorch Geometric                |
+|                      🧬   🧠   🌳                          |
++-----------------------------------------------------------+
+
+
+    '''
+    print(ascii_art)
+    print("PDB to PyTorch Geometric Converter")
+    print("-" * 50)
+    print("Convert protein structure files (PDB) into PyTorch Geometric graph format")
+    print("for neural network processing with FoldTree2.\n")
+    print("This tool extracts structural features including:")
+    print("  • Contact maps and hydrogen bonds")
+    print("  • Secondary structure annotations")
+    print("  • Backbone angles (phi, psi, omega)")
+    print("  • Amino acid properties")
+    print("  • Optional FoldX energy predictions")
+    print("  • Optional ProDy interaction features\n")
+    print("Project: https://github.com/DessimozLab/foldtree2")
+    print("Contact: dmoi@unil.ch\n")
+    print("Run with --help for usage instructions.")
     
 # command line arguments are an input directory with pdbs, a model file and an output directory
 if __name__ == '__main__':
+    if '--about' in sys.argv:
+        print_about()
+        sys.exit(0)
     # Setting the seed for reproducibility
     torch.manual_seed(0)
     np.random.seed(0)
