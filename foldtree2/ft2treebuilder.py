@@ -7,6 +7,7 @@ import Bio.PDB as PDB
 import torch_geometric
 import multiprocessing as mp
 import argparse
+import numpy as np
 
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
@@ -17,11 +18,12 @@ import traceback
 import tqdm
 import pandas as pd
 import os
-import ete3 
+import ete3
+from scipy import sparse
 import sys
 
 class treebuilder():
-	def __init__ ( self , model , mafftmat = None , submat = None ,  raxml_path= None, charmaps=None, **kwargs ):
+	def __init__ ( self , model , decoder_model = None, mafftmat = None , submat = None ,  raxml_path= None, charmaps=None, **kwargs ):
 
 		#make fasta is shifted by 1 and goes from 1-248 included
 		#0x01 – 0xFF excluding > (0x3E), = (0x3D), < (0x3C), - (0x2D), Space (0x20), Carriage Return (0x0d) and Line Feed (0x0a)
@@ -68,13 +70,14 @@ class treebuilder():
 			self.revmap = { v:k for k,v in data['char_position_map'].items() }
 			self.raxml_indices = data['raxml_char_position_map']
 			self.rev_raxml_indices = { v:k for k,v in data['raxml_char_position_map'].items() }
-			self.revmap_raxml = { v:k for k,v in data['raxml_char_position_map'].items() }
+			self.revmap_raxml = self.raxml_indices
 			self.raxmlchars = data['raxml_charset']
 		
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		#load pickled model
 		self.model = model
 		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
+		self.decoder = torch.load( decoder_model , map_location=torch.device('cpu') , weights_only=False ) if decoder_model is not None else None
 		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
 		else:
@@ -87,8 +90,13 @@ class treebuilder():
 			self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 			self.encoder = self.encoder.to(self.device)
 			self.encoder.device = self.device
+			if self.decoder is not None:
+				self.decoder = self.decoder.to(self.device)
+				self.decoder.device = self.device
 		
 		self.encoder.eval()
+		if self.decoder is not None:
+			self.decoder.eval()
 		
 
 		#load the mafftmat and submat matrices
@@ -402,48 +410,46 @@ class treebuilder():
 
 	def decoder_reconstruction( self, ords , verbose = False):
 		data = HeteroData()
-		z = self.encoder.vector_quantizer.embeddings( ords  ).to('cpu')
+		ords = ords.to( self.device )
+		z = self.encoder.vector_quantizer.embeddings( ords  ).to(self.device)
 		edge_index = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T
 		godnode_index = np.vstack([np.zeros(z.shape[0]), [ i for i in range(z.shape[0]) ] ])
 		godnode_rev = np.vstack([ [ i for i in range(z.shape[0]) ] , np.zeros(z.shape[0]) ])
 		#generate a backbone for the decoder
 		data['res'].x = z
-		backbone, backbone_rev = self.converter.get_backbone( z.shape[0] )
+		data['res'].batch = torch.tensor([0 for i in range(z.shape[0])], dtype=torch.long)
+		backbone, backbone_rev = self.converter.get_backbone( chainlen=z.shape[0] )
 		backbone = sparse.csr_matrix(backbone)
 		backbone_rev = sparse.csr_matrix(backbone_rev)
 		backbone = self.converter.sparse2pairs(backbone)
 		backbone_rev = self.converter.sparse2pairs(backbone_rev)
 		positional_encoding = self.converter.get_positional_encoding( z.shape[0] , 256 )
-		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32)
-		data['res'].x = torch.cat([data['res'].x, data['positions'].x], dim=1)
-		data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
-		data['res','backbonerev','res'].edge_index = torch.tensor(backbone,  dtype=torch.long )
-
-		data['res','backbone','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbone','res'].edge_index)[0]
-		data['res','backbonerev','res'].edge_index = torch_geometric.utils.add_self_loops(data['res','backbonerev','res'].edge_index)[0]
-
+		data['positions'].x = torch.tensor( positional_encoding, dtype=torch.float32).to( self.device )		
+		data['res','backbone','res'].edge_index = torch.tensor(backbone,  dtype=torch.long ).to( self.device )
+		data['res','backbonerev','res'].edge_index = torch.tensor(backbone_rev,  dtype=torch.long ).to( self.device )
 		#add the godnode
-		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
-		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32)
-		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_index, dtype=torch.long)
+		data['godnode'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32).to( self.device )
+		data['godnode4decoder'].x = torch.tensor(np.ones((1,5)), dtype=torch.float32).to( self.device )
+		data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_index, dtype=torch.long).to( self.device )
 
 		# Repeat for godnode4decoder
-		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)
-		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long)		
-		edge_index = edge_index.to( device )
+		data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(godnode_rev, dtype=torch.long).to( self.device )
+		data['res', 'informs', 'godnode'].edge_index = torch.tensor(godnode_rev, dtype=torch.long).to( self.device )
+		edge_index = edge_index.to( self.device )
 		data = data.to( self.device )
 		#decode_out = decoder(z , data.edge_index_dict[( 'res','contactPoints','res')] , data.edge_index_dict , poslossmod = 1 , neglossmod= 1 )
 		allpairs = torch.tensor( [ [i,j] for i in range(z.shape[0]) for j in range(z.shape[0]) ]  , dtype = torch.long).T.to( self.device )
-		out = decoder( data.x_dict, data.edge_index_dict , allpairs )
-		recon_x = out['aa'].detach().to('cpu').numpy() if 'aa' in out else None
+		out = self.decoder( data , allpairs )
+		recon_x = out['aa'].detach().to('cpu') if 'aa' in out else None
 		edge_probs = out['edge_probs'].detach().to('cpu').numpy() if 'edge_probs' in out else None
-		amino_map = decoder.decoders['sequence_transformer'].amino_acid_indices
+		amino_map = self.decoder.decoders['sequence_transformer'].amino_acid_indices
 		revmap_aa = { v:k for k,v in amino_map.items() }
 		edge_probs = edge_probs.reshape((z.shape[0], z.shape[0]))
 		aastr = ''.join(revmap_aa[int(idx.item())] for idx in recon_x.argmax(dim=1) )
-		out['aastr'] = aastr
-		out['edge_probs'] = edge_probs
-		return out
+		res = {}
+		res['aastr'] = aastr
+		#res['edge_probs'] = edge_probs
+		return res
 
 	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
 		#encode the structures
@@ -489,17 +495,25 @@ class treebuilder():
 			ancestral_fasta = self.ancestral2fasta( ancestral_file )
 			ancestral_df = self.ancestralfasta2df( ancestral_fasta )
 			#decode the ancestral sequence
+			print(ancestral_df.head())
 			ords = ancestral_df.ord.values
+			identifiers = ancestral_df.protid.values
+			results = {}
 			for l in tqdm.tqdm(range(ords.shape[0]), desc='decoding ancestral sequences'):
-				res = self.decoder_reconstruction( ords[l] , verbose = verbose)	
-				for key,item in res.items():
-					ancestral_df.loc[l , key] = item
+				res = self.decoder_reconstruction( torch.tensor(ords[l] , dtype=torch.long).T , verbose = verbose)	
+				results.update({ identifiers[l] : res } )
+			#create a new dataframe with the decoded sequences
+			results = pd.DataFrame.from_dict( results , orient='index' )
+			print('decoded ancestral sequences:')
+			print(results.head())
+			#merge with ancestral df
+			ancestral_df = ancestral_df.merge( results , left_on='protid' , right_index=True , how='left' )
 			#write the ancestral dataframe to a file
 			ancestral_df.to_csv( ancestral_fasta.replace('.aastr.fasta' , '.csv') )
 			#write out aastr to a fasta
 			with open( ancestral_fasta , 'w') as f:
 				for i in ancestral_df.index:
-					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
+					f.write('>' + ancestral_df.loc[i].protid + '\n' + ancestral_df.loc[i].aastr + '\n')
 			ancestral_fasta = ancestral_fasta
 		else:
 			ancestral_fasta = None
@@ -666,7 +680,7 @@ def main():
 	
 
 	# Create an instance of treebuilder
-	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, submat=args.submat , raxml_path=args.raxmlpath,
+	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, decoder_model=decoder_path, submat=args.submat , raxml_path=args.raxmlpath,
 	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device)
 
 	# Generate tree from structures using the provided options

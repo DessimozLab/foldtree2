@@ -213,9 +213,15 @@ class PDB2PyG:
 		return contact_mat
 
 	@staticmethod
-	def get_backbone(chain):
-		backbone_mat = np.zeros((len(chain), len(chain)))
-		backbone_rev_mat = np.zeros((len(chain), len(chain)))
+	def get_backbone(chain = None , chainlen = None):
+		if chainlen is not None:
+			backbone_mat = np.zeros((chainlen, chainlen))
+			backbone_rev_mat = np.zeros((chainlen, chainlen))
+		elif chain is not None:
+			backbone_mat = np.zeros((len(chain), len(chain)))
+			backbone_rev_mat = np.zeros((len(chain), len(chain)))
+		else:
+			raise 'provide chain or chainlen'
 		np.fill_diagonal(backbone_mat[1:], 1)
 		np.fill_diagonal(backbone_rev_mat[:, 1:], 1)
 		return backbone_mat, backbone_rev_mat
