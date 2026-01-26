@@ -30,6 +30,7 @@ class treebuilder():
 		self.rev_replace_dict = { v:k for k,v in self.replace_dict.items() }
 		self.replace_dict_ord = { ord(k):ord(v) for k,v in self.replace_dict.items() }
 		self.raxml_path = raxml_path
+		self.raxmlng_path = raxml_path
 		if charmaps is None:
 			self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
 			self.raxml_path = raxml_path
@@ -45,16 +46,31 @@ class treebuilder():
 			self.revmap = { i:c for i,c in enumerate(self.alphabet)}
 		else:
 			print('loading charmaps from', charmaps)
+			
+			'''
+		save format is {
+		'pair_counts': pair_counts,
+		'char_set': char_set,
+		'char_position_map': char_position_map,
+		'raxml_charset': raxml_charset,
+		'raxml_char_position_map': raxml_char_position_map,
+		'background_freq': background_freq,
+		'convergence_history': monitor.history
+		
+		}'''
+			
 			with open(charmaps, 'rb') as f:
-				pair_counts, char_set, char_position_map , raxml_charset, raxml_char_position_map = pickle.load(f)
-			self.raxml_characters = raxml_charset
-			self.alphabet = char_set
+				data = pickle.load(f)
+			self.raxml_characters = data['raxml_charset']
+			self.alphabet = data['char_set']	
 			self.nchars = len(self.alphabet)
-			self.map = char_position_map
-			self.revmap = { v:k for k,v in char_position_map.items() }
-			self.raxml_indices = raxml_char_position_map
-			self.rev_raxml_indices = { v:k for k,v in raxml_char_position_map.items() }
-			self.raxmlchars = raxml_charset
+			self.map = data['char_position_map']
+			self.revmap = { v:k for k,v in data['char_position_map'].items() }
+			self.raxml_indices = data['raxml_char_position_map']
+			self.rev_raxml_indices = { v:k for k,v in data['raxml_char_position_map'].items() }
+			self.revmap_raxml = { v:k for k,v in data['raxml_char_position_map'].items() }
+			self.raxmlchars = data['raxml_charset']
+		
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		#load pickled model
 		self.model = model
@@ -184,6 +200,9 @@ class treebuilder():
 			structs = glob.glob(blob + '*.pdb')
 		else:
 			structs = glob.glob(blob)
+
+		#you need at least 4 structs for a tree
+		assert len(structs) >= 4, f'Need at least 4 structures to build a tree, found {len(structs)}'
 		if outfile == None:
 			outfolder = '/'.join( blob.split('/')[:-1] )
 			outfile = outfolder + 'encoded.fasta'
@@ -343,19 +362,21 @@ class treebuilder():
 
 	def run_raxml_ng_ancestral_struct(self, fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G'
-		if raxmlng_path == None:
-			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path + ' --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
+		if self.raxmlng_path == None:
+			self.raxmlng_path = 'raxml-ng'
+		raxml_cmd = self.raxmlng_path + ' --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
-		return None
+		return fasta_file.replace('raxml_aln.fasta' , 'raxml.ancestralStates')
 
-	def madroot( treefile  , madroot_path = 'mad' ):
+	def madroot( self, treefile  , madroot_path = 'mad' ):
 		mad_cmd = f'{madroot_path} {treefile} '
 		subprocess.run(mad_cmd, shell=True)
 		return treefile+'.rooted'
 	
-	def ancestral2fasta( ancestral_file , outfasta ):
+	def ancestral2fasta(self, ancestral_file , outfasta = None ):
+		if outfasta is None:
+			outfasta = ancestral_file + '.fasta'
 		with open( outfasta , 'w') as g:        
 			with open( ancestral_file , 'r') as f:
 				for l in f:
@@ -365,7 +386,7 @@ class treebuilder():
 						g.write('>' + identifier + '\n' + seq + '\n')
 		return outfasta
 
-	def ancestralfasta2df( outfasta ):
+	def ancestralfasta2df(self, outfasta ):
 		aln_data = {}
 		with open(outfasta, 'r') as f:
 			for line in f:
@@ -376,7 +397,7 @@ class treebuilder():
 					aln_data[ID] += line.strip()
 		ancestral_df = pd.DataFrame( aln_data.items() , columns=['protid', 'seq'] )
 		#use rev map to convert back to ord
-		ancestral_df['ord'] = ancestral_df.seq.map( lambda x: [ revmap_raxml[c] if c in revmap_raxml else '-' for c in x ] )
+		ancestral_df['ord'] = ancestral_df.seq.map( lambda x: [ self.revmap_raxml[c] if c in self.revmap_raxml else '-' for c in x ] )
 		return ancestral_df
 
 	def decoder_reconstruction( self, ords , verbose = False):
@@ -465,21 +486,21 @@ class treebuilder():
 		if ancestral == True:
 			#not tested yet
 			ancestral_file = self.run_raxml_ng_ancestral_struct( alnfasta , treefile , self.submat , self.nchars , alnfasta.replace('.raxml_aln.fasta' , '') )
-			ancestral_fasta = self.ancestral2fasta( ancestral_file , outfasta )
-			ancestral_df = self.ancestralfasta2df( outfasta )
+			ancestral_fasta = self.ancestral2fasta( ancestral_file )
+			ancestral_df = self.ancestralfasta2df( ancestral_fasta )
 			#decode the ancestral sequence
 			ords = ancestral_df.ord.values
-			for l in ords.shape[0]:
-				res = decoder_reconstruction( ords[l] , verbose = verbose)	
+			for l in tqdm.tqdm(range(ords.shape[0]), desc='decoding ancestral sequences'):
+				res = self.decoder_reconstruction( ords[l] , verbose = verbose)	
 				for key,item in res.items():
 					ancestral_df.loc[l , key] = item
 			#write the ancestral dataframe to a file
-			ancestral_df.to_csv( outfasta.replace('.fasta' , '.csv') )
+			ancestral_df.to_csv( ancestral_fasta.replace('.aastr.fasta' , '.csv') )
 			#write out aastr to a fasta
-			with open( outfasta.replace('.fasta' , '.aastr.fasta') , 'w') as f:
+			with open( ancestral_fasta , 'w') as f:
 				for i in ancestral_df.index:
 					f.write('>' + i + '\n' + ancestral_df.loc[i].aastr + '\n')
-			ancestral_fasta = outfasta.replace('.fasta' , '.aastr.fasta')
+			ancestral_fasta = ancestral_fasta
 		else:
 			ancestral_fasta = None
 		#return in dictionary form
@@ -591,7 +612,7 @@ def main():
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
 		print('No arguments provided. Use -h or --help for help.')
 		print('Example command:')
-		print('  python ft2treebuilder.py --model my_model --modeldir ./models --mafftmat ./models/my_model_mafftmat.mtx --submat ./models/my_model_submat.txt --charmaps ./models/my_model_pair_counts.pkl --structures "/path/to/structures/*.pdb" --outdir ./results --aapropcsv ./foldtree2/config/aaindex1.csv --ncores 8 --raxml_iterations 20 --raxmlpath raxml-ng --ancestral')
+		print('  python ft2treebuilder.py --model ./models/my_model --structures "/path/to/structures/*.pdb" --outdir ./results --aapropcsv ./foldtree2/config/aaindex1.csv --ncores 8 --raxml_iterations 20 --ancestral')
 		parser.print_help()
 		sys.exit(0)
 
@@ -637,11 +658,11 @@ def main():
 			args.output_prefix += '_'
 	
 	if args.mafftmat is None:
-		args.mafftmat = os.path.join(modeldir, encoder_path.replace('.pt', '_mafftmat.mtx'))
+		args.mafftmat = encoder_path.replace('.pt', '_mafftmat.mtx')
 	if args.submat is None:
-		args.submat = os.path.join(modeldir, encoder_path.replace('.pt', '_submat.txt'))
+		args.submat = encoder_path.replace('.pt', '_submat.txt')
 	if args.charmaps is None:
-		args.charmaps = os.path.join(modeldir, encoder_path.replace('.pt', '_pair_counts.pkl'))
+		args.charmaps = encoder_path.replace('.pt', '_pair_counts.pkl')
 	
 
 	# Create an instance of treebuilder
