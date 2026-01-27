@@ -4,20 +4,20 @@
 
 # Dataset configuration
 dataset: "structs_train_final.h5"
-output_dir: "./models/notebook_1k_training_nopositions/"
-run_name: "notebook_replication_1k_epochs"
+output_dir: "./models/notebook_1k_training_nopositions_small/"
+run_name: "notebook_replication_1k_epochs_small"
 
-overwrite: false
+overwrite: true
 
 # Training hyperparameters (from notebook)
 epochs: 1000
-batch_size: 10
+batch_size: 8
 gradient_accumulation_steps: 2
 seed: 0
 
 # Model architecture (from notebook)
-hidden_size: 200
-num_embeddings: 40
+hidden_size: 150
+num_embeddings: 30
 embedding_dim: 128
 
 # Encoder configuration (mk1_Encoder from notebook)
@@ -27,7 +27,7 @@ EMA: true
 hetero_gae: false  # Use MultiMonoDecoder
 
 # Optimizer settings (from notebook - Muon optimizer)
-use_muon: false
+use_muon: true
 muon_lr: 0.02      # Muon learning rate for hidden weights
 adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
 
