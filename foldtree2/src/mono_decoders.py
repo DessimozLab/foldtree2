@@ -208,7 +208,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			self.output_ss = False
 			self.ss_mlp = None
 
-
+		#add self.contact_temp and self.contact_bias
+		self.contact_temp = torch.nn.Parameter( torch.tensor(1.0) )
+		self.contact_bias = torch.nn.Parameter( torch.tensor(0.0) )
 
 		if output_angles == True:
 			if type(anglesdecoder_hidden) is not list:
@@ -275,7 +277,10 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.residual == True:
 			z = z + inz
 		if self.normalize == True:
-			z =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-6)
+			znorm =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-6)
+		else:
+			znorm = z
+		
 		#decoder_in =  torch.cat( [inz,  z] , axis = 1)
 		#amino acid prediction removed
 
@@ -308,9 +313,10 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		else:
 			if self.contact_mlp is None:
-				edge_probs = self.sigmoid( torch.sum( z[contact_pred_index[0]] * z[contact_pred_index[1]] , axis =1 ) )
+				score = self.contact_temp * torch.sum( znorm[contact_pred_index[0]] * znorm[contact_pred_index[1]] , axis =1 ) + self.contact_bias
+				edge_probs = self.sigmoid( score )
 			else:
-				edge_scores = self.contact_mlp( torch.concat( [z[contact_pred_index[0]], z[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
+				edge_scores = self.contact_mlp( torch.concat( [znorm[contact_pred_index[0]], znorm[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
 				edge_probs = self.sigmoid(edge_scores)
 			if self.edge_logits_mlp is not None:
 				edge_logits = self.edge_logits_mlp( torch.concat( [z[contact_pred_index[0]], z[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
@@ -375,27 +381,29 @@ class CNN_geo_Decoder(torch.nn.Module):
 		self.pool_type = pool_type
 		
 		# Determine final output dimension
-		if self.residual:
+		if self.residual == True:
 			lastlin = in_channels_orig['res']
 		else:
 			lastlin = Xdecoder_hidden[-1]
+		
 		self.lastlin = lastlin
 		
 		# ===================== INPUT MODULE =====================
 		# Preprocessing: dropout, initial linear transformation
+		
 		self.input = nn.ModuleDict()
 		
 		input_dim = in_channels['res']
+		
 		if concat_positions:
 			input_dim = input_dim + 256
 		if learn_positions:
 			self.concat_positions = False
-			input_dim = input_dim + 32
-		
+			#input_dim = input_dim + 0  # Position_MLP output size only used for distogram encoding
 		self.input['dropout'] = nn.Dropout(p=dropout)
 		
-		if learn_positions:
-			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+		self.contact_temp = nn.Parameter(torch.tensor(1.0))  # learnable scale
+		self.contact_bias = nn.Parameter(torch.tensor(0.0))
 		
 		self.input['input_lin'] = nn.Sequential(
 			nn.Linear(input_dim, conv_channels[0]),
@@ -418,11 +426,13 @@ class CNN_geo_Decoder(torch.nn.Module):
 					kernel_size=kernel_size, 
 					padding=kernel_size//2
 				)
+				
 			)
+
 			self.body['norms'].append(nn.LayerNorm(channels, eps=1e-6))
 		
 		self.body['lin'] = nn.Sequential(
-			nn.Linear(conv_channels[-1], Xdecoder_hidden[0]),
+			nn.Linear(conv_channels[len(kernel_sizes)-1], Xdecoder_hidden[0]),
 			nn.GELU(),
 			nn.Linear(Xdecoder_hidden[0], Xdecoder_hidden[1]),
 			nn.GELU(),
@@ -494,17 +504,22 @@ class CNN_geo_Decoder(torch.nn.Module):
 		# Edge logits prediction
 		if output_edge_logits:
 			self.head['edge_logits_mlp'] = nn.Sequential(
-				nn.LayerNorm(2*lastlin, eps=1e-6),
-				nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
+				nn.LayerNorm(2*lastlin + 64 if self.learn_positions else 2*lastlin, eps=1e-6),
+				#if learn positions, then lastlin is larger by 32 * 2
+				nn.Linear(2*lastlin + 64 if self.learn_positions else 2*lastlin , anglesdecoder_hidden[0]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], ncat),
-				nn.GELU(),
 				nn.Sigmoid()
 			)
+		
+		if learn_positions:
+			self.head['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+
+
 		
 		self.sigmoid = nn.Sigmoid()
 	
@@ -517,9 +532,6 @@ class CNN_geo_Decoder(torch.nn.Module):
 		
 		if self.concat_positions:
 			x = torch.cat([x, data['positions'].x], dim=1)
-		if self.learn_positions:
-			pos_enc = self.input['position_mlp'](data['positions'].x)
-			x = torch.cat([x, pos_enc], dim=1)
 		
 		# Initial linear transformation
 		x = self.input['input_lin'](x)
@@ -545,7 +557,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 				# Apply CNN layers
 				for conv, norm in zip(self.body['convs'], self.body['norms']):
 					x_batch = conv(x_batch)
-					x_batch = F.gelu(x_batch)
+					x_batch = F.silu(x_batch)
 					# Transpose for LayerNorm: (1, seq_len, features)
 					x_batch = x_batch.transpose(1, 2)
 					x_batch = norm(x_batch)
@@ -564,7 +576,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 			
 			for conv, norm in zip(self.body['convs'], self.body['norms']):
 				x = conv(x)
-				x = F.gelu(x)
+				x = F.silu(x)
 				# Transpose for LayerNorm: (1, seq_len, features)
 				x = x.transpose(1, 2)
 				x = norm(x)
@@ -579,8 +591,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 		if self.residual:
 			z = z + inz
 		if self.normalize:
-			z = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
-		
+			znorm = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
+		else:
+			znorm = z
 		# ===================== HEAD PROCESSING =====================
 		# Godnode/FFT decoder
 		fft2_pred = None
@@ -604,7 +617,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		angles = None
 		if 'angles_mlp' in self.head:
 			angles = self.head['angles_mlp'](z)
-			angles = angles * 2 * np.pi
+			angles = angles * np.pi
 		
 		# Contact prediction
 		edge_logits = None
@@ -614,7 +627,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 					'ss_pred': ss_pred, 'z': z}
 		else:
 			if 'contact_mlp' not in self.head:
-				edge_probs = self.sigmoid(torch.sum(z[contact_pred_index[0]] * z[contact_pred_index[1]], axis=1))
+				score = self.contact_temp * (znorm[contact_pred_index[0]] * znorm[contact_pred_index[1]]).sum(dim=-1) + self.contact_bias
+				edge_probs = self.sigmoid(score)
 			else:
 				edge_scores = self.head['contact_mlp'](
 					torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]]], axis=1)
@@ -622,9 +636,16 @@ class CNN_geo_Decoder(torch.nn.Module):
 				edge_probs = self.sigmoid(edge_scores)
 			
 			if 'edge_logits_mlp' in self.head:
-				edge_logits = self.head['edge_logits_mlp'](
-					torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]]], axis=1)
-				).squeeze()
+				if self.learn_positions:
+					pos_enc = self.head['position_mlp'](data['positions'].x)
+					edge_logits = self.head['edge_logits_mlp'](
+						torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]], 
+									  pos_enc[contact_pred_index[0]], pos_enc[contact_pred_index[1]]], axis=1)
+					).squeeze()
+				else:
+					edge_logits = self.head['edge_logits_mlp'](
+						torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]] ], axis=1)
+					).squeeze()
 		
 		# Weight initialization
 		if 'init' in kwargs and kwargs['init']:
@@ -695,7 +716,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			nn.GELU(),
 			nn.Linear(d_model, d_model),
 			nn.GELU(),
-			nn.Tanh(),
+			#nn.Tanh(),
 		)
 
 		# ===================== BODY MODULE =====================
@@ -949,49 +970,93 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		# Geometry prediction heads
 		self.head = nn.ModuleDict()
 		
+		# Check if CNN decoder should be used
+		use_cnn_decoder = kwargs.get('use_cnn_decoder', False)
+		
+		if use_cnn_decoder:
+			# Prenorm for CNN decoders
+			self.head['prenorm'] = nn.LayerNorm(d_model, eps=1e-6)
+		
 		# Rotation-translation prediction head (7D output: quaternion + translation)
 		if output_rt:
 			if not isinstance(RTdecoder_hidden, list):
 				RTdecoder_hidden = [RTdecoder_hidden, RTdecoder_hidden]
-			self.head['rt_head'] = nn.Sequential(
-				nn.Linear(d_model, RTdecoder_hidden[0]),
-				nn.GELU(),
-				nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(RTdecoder_hidden[1], RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1], 7)  # 4 for quaternion + 3 for translation
-			)
+			
+			if use_cnn_decoder:
+				self.head['rt_cnn'] = nn.Sequential(
+					nn.Conv1d(d_model, RTdecoder_hidden[0], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(RTdecoder_hidden[0], RTdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(RTdecoder_hidden[1], RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1], 7, kernel_size=1)
+				)
+			else:
+				self.head['rt_head'] = nn.Sequential(
+					nn.Linear(d_model, RTdecoder_hidden[0]),
+					nn.GELU(),
+					nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(RTdecoder_hidden[1], RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1], 7)  # 4 for quaternion + 3 for translation
+				)
 		
 		# Secondary structure prediction head (3-class: helix, sheet, coil)
 		if output_ss:
 			if not isinstance(ssdecoder_hidden, list):
 				ssdecoder_hidden = [ssdecoder_hidden, ssdecoder_hidden]
-			self.head['ss_head'] = nn.Sequential(
-				nn.LayerNorm(d_model, eps=1e-6),
-				nn.Linear(d_model, ssdecoder_hidden[0]),
-				nn.GELU(),
-				nn.Linear(ssdecoder_hidden[0], ssdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3)
-			)
+			
+			if use_cnn_decoder:
+				self.head['ss_cnn'] = nn.Sequential(
+					nn.Conv1d(d_model, ssdecoder_hidden[0], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(ssdecoder_hidden[0], ssdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3, kernel_size=1)
+				)
+			else:
+				self.head['ss_head'] = nn.Sequential(
+					nn.LayerNorm(d_model, eps=1e-6),
+					nn.Linear(d_model, ssdecoder_hidden[0]),
+					nn.GELU(),
+					nn.Linear(ssdecoder_hidden[0], ssdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3)
+				)
 		
 		# Bond angles prediction head (phi, psi, omega)
 		if output_angles:
 			if not isinstance(anglesdecoder_hidden, list):
 				anglesdecoder_hidden = [anglesdecoder_hidden, anglesdecoder_hidden]
-			self.head['angles_head'] = nn.Sequential(
-				nn.Linear(d_model, anglesdecoder_hidden[0]),
-				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3),
-				nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
-			)
+			
+			if use_cnn_decoder:
+				self.head['angles_cnn'] = nn.Sequential(
+					nn.Conv1d(d_model, anglesdecoder_hidden[0], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(anglesdecoder_hidden[0], anglesdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3, kernel_size=1),
+					nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
+				)
+			else:
+				self.head['angles_head'] = nn.Sequential(
+					nn.Linear(d_model, anglesdecoder_hidden[0]),
+					nn.GELU(),
+					nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3),
+					nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
+				)
 
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		x = data.x_dict['res']
@@ -1043,6 +1108,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		ss_pred = None
 		angles = None
 		
+		# Check if using CNN decoders
+		use_cnn = 'prenorm' in self.head
+		
 		if batch is not None:
 			# Remove padding and concatenate results for all graphs in the batch
 			rt_list = []
@@ -1052,16 +1120,41 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
 				# Remove batch dimension and padding
 				seq_len = (batch == i).sum().item()
-				xi = xi[:seq_len, 0]  # (seq_len, d_model)
 				
-				if self.output_rt and 'rt_head' in self.head:
-					rt_list.append(self.head['rt_head'](xi))
-				
-				if self.output_ss and 'ss_head' in self.head:
-					ss_list.append(self.head['ss_head'](xi))
-				
-				if self.output_angles and 'angles_head' in self.head:
-					angles_list.append(self.head['angles_head'](xi))
+				if use_cnn:
+					# Apply prenorm and prepare for CNN
+					xi_norm = self.head['prenorm'](xi.squeeze(1)[:seq_len])  # (seq_len, d_model)
+					xi_cnn = xi_norm.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
+					
+					# RT prediction with CNN
+					if self.output_rt and 'rt_cnn' in self.head:
+						rt_out = self.head['rt_cnn'](xi_cnn)  # (1, 7, seq_len)
+						rt_out = rt_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 7)
+						rt_list.append(rt_out)
+					
+					# SS prediction with CNN
+					if self.output_ss and 'ss_cnn' in self.head:
+						ss_out = self.head['ss_cnn'](xi_cnn)  # (1, 3, seq_len)
+						ss_out = ss_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+						ss_list.append(ss_out)
+					
+					# Angles prediction with CNN
+					if self.output_angles and 'angles_cnn' in self.head:
+						angles_out = self.head['angles_cnn'](xi_cnn)  # (1, 3, seq_len)
+						angles_out = angles_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+						angles_list.append(angles_out)
+				else:
+					# DNN decoder path
+					xi = xi[:seq_len, 0]  # (seq_len, d_model)
+					
+					if self.output_rt and 'rt_head' in self.head:
+						rt_list.append(self.head['rt_head'](xi))
+					
+					if self.output_ss and 'ss_head' in self.head:
+						ss_list.append(self.head['ss_head'](xi))
+					
+					if self.output_angles and 'angles_head' in self.head:
+						angles_list.append(self.head['angles_head'](xi))
 			
 			if rt_list:
 				rt_pred = torch.cat(rt_list, dim=0)
@@ -1069,20 +1162,43 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
-				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+				if not use_cnn or 'angles_cnn' in self.head:  # CNN already applies tanh
+					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
 		else:
 			# Single graph case
-			x = x.squeeze(1)  # (seq_len, d_model)
-			
-			if self.output_rt and 'rt_head' in self.head:
-				rt_pred = self.head['rt_head'](x)
-			
-			if self.output_ss and 'ss_head' in self.head:
-				ss_pred = self.head['ss_head'](x)
-			
-			if self.output_angles and 'angles_head' in self.head:
-				angles = self.head['angles_head'](x)
-				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+			if use_cnn:
+				# Apply prenorm and prepare for CNN
+				x_norm = self.head['prenorm'](x.squeeze(1))  # (seq_len, d_model)
+				x_cnn = x_norm.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
+				
+				# RT prediction with CNN
+				if self.output_rt and 'rt_cnn' in self.head:
+					rt_pred = self.head['rt_cnn'](x_cnn)  # (1, 7, seq_len)
+					rt_pred = rt_pred.permute(2, 0, 1).squeeze(1)  # (seq_len, 7)
+				
+				# SS prediction with CNN
+				if self.output_ss and 'ss_cnn' in self.head:
+					ss_pred = self.head['ss_cnn'](x_cnn)  # (1, 3, seq_len)
+					ss_pred = ss_pred.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+				
+				# Angles prediction with CNN
+				if self.output_angles and 'angles_cnn' in self.head:
+					angles = self.head['angles_cnn'](x_cnn)  # (1, 3, seq_len)
+					angles = angles.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+			else:
+				# DNN decoder path
+				x = x.squeeze(1)  # (seq_len, d_model)
+				
+				if self.output_rt and 'rt_head' in self.head:
+					rt_pred = self.head['rt_head'](x)
+				
+				if self.output_ss and 'ss_head' in self.head:
+					ss_pred = self.head['ss_head'](x)
+				
+				if self.output_angles and 'angles_head' in self.head:
+					angles = self.head['angles_head'](x)
+					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
 		
 		return {
 			'rt_pred': rt_pred,
