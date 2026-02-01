@@ -18,6 +18,7 @@ import sys
 import time
 import warnings
 import yaml
+from matplotlib import pyplot as plt
 import json
 from datetime import datetime
 from torch.cuda.amp import autocast, GradScaler
@@ -153,6 +154,12 @@ parser.add_argument('--mask-plddt', action='store_true',
 parser.add_argument('--plddt-threshold', type=float, default=0.3,
                     help='pLDDT threshold for masking (default: 0.3)')
 
+# Validation parameters
+parser.add_argument('--val-split', type=float, default=0.1,
+                    help='Fraction of data to use for validation (default: 0.1)')
+parser.add_argument('--val-seed', type=int, default=42,
+                    help='Random seed for train/val split (default: 42)')
+
 # Commitment cost scheduling
 parser.add_argument('--commitment-cost', type=float, default=0.9,
                     help='Final commitment cost for VQ-VAE (default: 0.9)')
@@ -264,6 +271,38 @@ else:
 
 
 
+# Batched reconstruction helper function
+def decode_batch_reconstruction(encoder, decoder, z_batch, device, converter, verbose=False):
+	"""
+	Batch decode discrete embeddings back to predictions.
+	
+	Args:
+		encoder: Trained encoder model
+		decoder: Trained decoder model  
+		z_batch: List of discrete embedding index tensors
+		device: PyTorch device
+		converter: PDB2PyG converter
+		verbose: Print debug information
+		
+	Returns:
+		List of dictionaries containing predictions for each sequence
+	"""
+	encoder.eval()
+	decoder.eval()
+	
+	with torch.no_grad():
+		results = decoder.decode_batch_with_contacts(z_batch, device, converter, encoder)
+	
+	if verbose:
+		print(f"Decoded batch of {len(z_batch)} sequences")
+		for i, result in enumerate(results):
+			print(f"\nSequence {i}:")
+			for key, value in result.items():
+				if value is not None:
+					print(f"  {key}: {value.shape}")
+	
+	return results
+
 # Print configuration
 print(f"Configuration:")
 print(f"  Dataset: {args.dataset}")
@@ -333,7 +372,17 @@ datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
 converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
 struct_dat = pdbgraph.StructureDataset(dataset_path)
-train_loader = DataLoader(struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=4)
+
+# Create train/validation split
+torch.manual_seed(args.val_seed)
+val_size = int(len(struct_dat) * args.val_split)
+train_size = len(struct_dat) - val_size
+train_dataset, val_dataset = torch.utils.data.random_split(struct_dat, [train_size, val_size])
+
+print(f"Dataset split: {train_size} training samples, {val_size} validation samples")
+
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 data_sample = next(iter(train_loader))
 
 # Set device
@@ -440,68 +489,72 @@ else:
         # MultiMonoDecoder for sequence and geometry
         print("Using standard decoders")
         mono_configs = {
-            'sequence_transformer': {
-                'in_channels': {'res': args.embedding_dim},
-                'xdim': 20,
-                'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-                'layers': 2,
-                'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                'amino_mapper': converter.aaindex,
-                'flavor': 'sage',
-                'nheads': 5,
-                'dropout': 0.001,
-                'normalize': False,
-                'residual': False,
-                'use_cnn_decoder': True,
-                'output_ss': False
-            },
-            
-            'geometry_cnn': {
-                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                'concat_positions': True,
-                'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
-                'kernel_sizes': [3, 3],
-                #'kernel_sizes': [3, 3 , 3],
-                'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
-                'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
-                'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
-                'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
-                'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
-                'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
-                'metadata': converter.metadata,
-                'dropout': 0.001,
-                'output_fft': False,
-                'output_rt': False,
-                'output_angles': True,
-                'output_ss': True,
-                'normalize': True,
-                'residual': False,
-                'output_edge_logits': True,
-                'ncat': 8,
-                'contact_mlp': False,
-                'pool_type': 'global_mean'
-            },
-        }
-        if args.output_foldx:
-            mono_configs['foldx'] = {
-                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
-                'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3,
-                                   ('res','informs','godnode4decoder'): [hidden_size]*3, 
-                                   ('godnode4decoder','informs','res'): [hidden_size]*3},
-                'layers': 3,
-                'foldx_hidden': [hidden_size, hidden_size//2],
-                'nheads': 2,
-                'metadata': converter.metadata,
-                'flavor': 'sage',
-                'dropout': 0.005,
-                'normalize': True,
-                'residual': False
-            }
+			'sequence_transformer': {
+				'in_channels': {'res': args.embedding_dim},
+				'xdim': 20,
+				'concat_positions': False,
+				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+				'layers': 2,
+				'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2], 
+				'amino_mapper': converter.aaindex,
+				'nheads': 2,
+				'dropout': 0.001,
+				'normalize': False,
+				'residual': False,
+				'use_cnn_decoder': False,
+				'output_ss': False,  # Don't output SS from sequence decoder
+				'learn_positions': True,
+				'concat_positions': False
+			},
+			
+			'geometry_transformer': {
+				'in_channels': {'res': args.embedding_dim},
+				'concat_positions': False,
+				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+				'layers': 2,
+				'nheads': 2,
+				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
+				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
+				'dropout': 0.001,
+				'normalize': False,
+				'residual': False,
+				'learn_positions': True,
+				'use_cnn_decoder':True,
+				'concat_positions': False,
+				'output_rt': False,       # Enable if you want rotation-translation
+				'output_ss': True,        # Secondary structure prediction
+				'output_angles': True     # Bond angles prediction
+			},
+			
+			'geometry_cnn': {
+				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+				'concat_positions': False,
+				'conv_channels': [2*hidden_size, hidden_size, hidden_size],
+				'kernel_sizes': [3, 3 ,3 ],
+				'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
+				'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
+				'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
+				'Xdecoder_hidden': [hidden_size, hidden_size], 
+				'anglesdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+				'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
+				'metadata': converter.metadata, 
+				'dropout': 0.001,
+				'output_fft': False,
+				'output_rt': False,
+				'output_angles': False,   # Don't duplicate angles from geometry_transformer
+				'output_ss': False,       # Don't duplicate SS from geometry_transformer
+				'normalize': True,
+				'residual': False,
+				'output_edge_logits': True,
+				'ncat': 8,
+				'contact_mlp': False,
+				'pool_type': 'global_mean',
+				'learn_positions': True,
+				'concat_positions': False
+			},
+		}
         # Initialize decoder
-        #tasks = ['sequence_transformer', 'contacts']
-        tasks = ['sequence', 'contacts']
         decoder = MultiMonoDecoder( configs=mono_configs)
 
 # Move models to device
@@ -648,7 +701,7 @@ def analyze_gradient_norms(model, top_k=3):
     grad_norms = []
     for name, param in model.named_parameters():
         if param.grad is not None:
-            grad_norm = param.grad.norm().item()
+            grad_norm = float(param.grad.norm().item())
             grad_norms.append((name, grad_norm))
     # Sort by gradient norms
     grad_norms.sort(key=lambda x: x[1])
@@ -697,6 +750,284 @@ hparams_dict = {
 }
 metrics_dict = {}
 
+def create_reconstruction_figure(data_sample, predictions, z_discrete, num_embeddings, 
+								epoch=None, save_path=None, figsize=(15, 10)):
+	"""
+	Create reconstruction visualization from pre-computed predictions.
+	
+	Args:
+		data_sample: Original data sample
+		predictions: Dictionary of predictions from decoder
+		z_discrete: Discrete embeddings
+		num_embeddings: Size of embedding alphabet
+		epoch: Epoch number (optional)
+		save_path: Path to save figure
+		figsize: Figure size
+		
+	Returns:
+		(fig, metrics_dict) tuple
+	"""
+	import numpy as np
+	import matplotlib.pyplot as plt
+	from colour import Color
+	
+	fig, axs = plt.subplots(2, 3, figsize=figsize)
+	epoch_str = f"Epoch {epoch} - " if epoch is not None else ""
+	
+	# Row 1: Predictions
+	# AA predictions
+	if 'aa' in predictions and predictions['aa'] is not None:
+		aa_probs = torch.softmax(predictions['aa'], dim=-1).cpu().numpy()
+		im0 = axs[0, 0].imshow(aa_probs.T, cmap='hot', aspect='auto')
+		axs[0, 0].set_title(f"{epoch_str}AA Predictions")
+		axs[0, 0].set_xlabel('Residue Index')
+		axs[0, 0].set_ylabel('AA Type')
+		fig.colorbar(im0, ax=axs[0, 0])
+	
+	# Contact predictions
+	if 'edge_probs' in predictions and predictions['edge_probs'] is not None:
+		edge_probs = predictions['edge_probs'].cpu().numpy()
+		im1 = axs[0, 1].imshow(1 - edge_probs, cmap='hot', interpolation='nearest')
+		axs[0, 1].set_title(f"{epoch_str}Predicted Contacts")
+		fig.colorbar(im1, ax=axs[0, 1])
+	
+	# Embedding sequence
+	if z_discrete is not None:
+		ord_colors = Color("red").range_to(Color("blue"), num_embeddings)
+		ord_colors = np.array([c.get_rgb() for c in ord_colors])
+		sequence_colors = ord_colors[z_discrete.cpu().numpy()]
+		
+		max_width = 64
+		seq_len = len(sequence_colors)
+		rows = int(np.ceil(seq_len / max_width))
+		canvas = np.ones((rows, max_width, 3))
+		
+		for i in range(rows):
+			start = i * max_width
+			end = min((i + 1) * max_width, seq_len)
+			row_colors = sequence_colors[start:end]
+			canvas[i, :len(row_colors), :] = row_colors
+		
+		axs[0, 2].imshow(canvas, aspect='auto')
+		axs[0, 2].set_title('Embedding Sequence')
+		axs[0, 2].axis('off')
+	
+	# Row 2: Additional predictions
+	# Angles
+	if 'angles' in predictions and predictions['angles'] is not None:
+		angles = predictions['angles'].cpu().numpy()
+		for i in range(min(3, angles.shape[1])):
+			axs[1, 0].plot(angles[:, i], label=f'Angle {i}', alpha=0.7)
+		axs[1, 0].set_title('Predicted Angles')
+		axs[1, 0].legend()
+		axs[1, 0].set_xlabel('Residue Index')
+		axs[1, 0].set_ylabel('Angle (radians)')
+	
+	# Secondary structure
+	if 'ss_pred' in predictions and predictions['ss_pred'] is not None:
+		ss_pred = torch.argmax(predictions['ss_pred'], dim=-1).cpu().numpy()
+		ss_colors = Color("red").range_to(Color("blue"), 3)
+		ss_colors = np.array([c.get_rgb() for c in ss_colors])
+		ss_sequence = ss_colors[ss_pred]
+		
+		max_width = 64
+		rows = int(np.ceil(len(ss_sequence) / max_width))
+		canvas = np.ones((rows, max_width, 3))
+		
+		for i in range(rows):
+			start = i * max_width
+			end = min((i + 1) * max_width, len(ss_sequence))
+			row_colors = ss_sequence[start:end]
+			canvas[i, :len(row_colors), :] = row_colors
+		
+		axs[1, 1].imshow(canvas, aspect='auto')
+		axs[1, 1].set_title('Predicted SS')
+		axs[1, 1].axis('off')
+	
+	# Edge logits heatmap
+	if 'edge_logits' in predictions and predictions['edge_logits'] is not None:
+		edge_logits = predictions['edge_logits']
+		if edge_logits.dim() == 3:
+			# Sum over categories if multi-dimensional
+			edge_logits = edge_logits.sum(dim=-1)
+		im2 = axs[1, 2].imshow(edge_logits.cpu().numpy(), cmap='hot', interpolation='nearest')
+		axs[1, 2].set_title('Edge Logits')
+		fig.colorbar(im2, ax=axs[1, 2])
+	
+	plt.tight_layout()
+	
+	if save_path:
+		fig.savefig(save_path, bbox_inches='tight', dpi=150)
+	
+	# Compute basic metrics
+	metrics = {
+		'num_residues': len(z_discrete) if z_discrete is not None else 0,
+		'has_aa': 'aa' in predictions,
+		'has_contacts': 'edge_probs' in predictions,
+		'has_angles': 'angles' in predictions,
+		'has_ss': 'ss_pred' in predictions
+	}
+	
+	return fig, metrics
+
+
+def visualize_batch_reconstructions(encoder, decoder, data_samples, device, num_embeddings, 
+									converter, epoch=None, save_dir=None, max_samples=4):
+	"""
+	Visualize reconstructions for a batch of samples.
+	
+	Args:
+		encoder: Trained encoder
+		decoder: Trained decoder
+		data_samples: List of data samples
+		device: PyTorch device
+		num_embeddings: Number of discrete embeddings
+		converter: PDB2PyG converter
+		epoch: Current epoch (for titles)
+		save_dir: Directory to save figures
+		max_samples: Maximum number of samples to visualize
+		
+	Returns:
+		List of (figure, metrics) tuples
+	"""
+	import os
+	from matplotlib import pyplot as plt
+	
+	encoder.eval()
+	decoder.eval()
+	
+	# Limit number of samples
+	data_samples = data_samples[:max_samples]
+	
+	# Encode all samples
+	z_batch = []
+	with torch.no_grad():
+		for data in data_samples:
+			data = data.to(device)
+			z, _ = encoder(data)
+			z_discrete = encoder.vector_quantizer.discretize_z(z.detach())[0]
+			z_batch.append(z_discrete)
+	
+	# Batch decode
+	results = decode_batch_reconstruction(encoder, decoder, z_batch, device, converter)
+	
+	# Visualize each sample
+	figures_and_metrics = []
+	
+	for idx, (data_sample, result, z_discrete) in enumerate(zip(data_samples, results, z_batch)):
+		try:
+			save_path = None
+			if save_dir:
+				os.makedirs(save_dir, exist_ok=True)
+				save_path = os.path.join(save_dir, f'reconstruction_sample{idx}.png')
+			
+			# Create visualization
+			fig, metrics = create_reconstruction_figure(
+				data_sample, result, z_discrete, num_embeddings, 
+				epoch=epoch, save_path=save_path
+			)
+			
+			figures_and_metrics.append((fig, metrics))
+			
+		except Exception as e:
+			print(f"Error visualizing sample {idx}: {e}")
+			continue
+	
+	encoder.train()
+	decoder.train()
+	
+	return figures_and_metrics
+
+def validate(encoder, decoder, val_loader, device, args):
+    """Run validation and compute metrics."""
+    encoder.eval()
+    decoder.eval()
+    
+    total_loss_x = 0
+    total_loss_edge = 0
+    total_vq = 0
+    total_angles_loss = 0
+    total_loss_fft2 = 0
+    total_logit_loss = 0
+    total_ss_loss = 0
+    num_batches = 0
+    
+    with torch.no_grad():
+        for data in tqdm.tqdm(val_loader, desc="Validation", leave=False):
+            data = data.to(device)
+            
+            # Forward pass
+            z, vqloss = encoder(data)
+            data['res'].x = z
+            
+            # Forward pass through decoder
+            out = decoder(data, None)
+            edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+
+            # Edge reconstruction loss
+            logitloss = torch.tensor(0.0, device=device)
+            edgeloss = torch.tensor(0.0, device=device)
+            if edge_index is not None:
+                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
+            
+            # Amino acid reconstruction loss
+            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+            
+            # FFT2 loss
+            fft2loss = torch.tensor(0.0, device=device)
+            if 'fft2pred' in out and out['fft2pred'] is not None:
+                fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+
+            # Angles loss
+            angles_loss = torch.tensor(0.0, device=device)
+            if out.get('angles') is not None:
+                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+                 
+            # Secondary structure loss
+            ss_loss = torch.tensor(0.0, device=device)
+            if out.get('ss_pred') is not None:
+                if args.mask_plddt:
+                    mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
+                    if mask.sum() > 0:
+                        ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+                else:
+                    ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+            
+            # Accumulate losses
+            total_loss_x += float(xloss.item())
+            total_logit_loss += float(logitloss.item())
+            total_loss_edge += float(edgeloss.item())
+            total_loss_fft2 += float(fft2loss.item())
+            total_angles_loss += float(angles_loss.item())
+            total_vq += float(vqloss.item()) if isinstance(vqloss, torch.Tensor) else float(vqloss)
+            total_ss_loss += float(ss_loss.item())
+            num_batches += 1
+    
+    # Calculate average losses
+    avg_loss_x = total_loss_x / num_batches
+    avg_loss_edge = total_loss_edge / num_batches
+    avg_loss_vq = total_vq / num_batches
+    avg_loss_fft2 = total_loss_fft2 / num_batches
+    avg_angles_loss = total_angles_loss / num_batches
+    avg_logit_loss = total_logit_loss / num_batches
+    avg_ss_loss = total_ss_loss / num_batches
+    avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
+                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
+    
+    encoder.train()
+    decoder.train()
+    
+    return {
+        'val/loss': avg_total_loss,
+        'val/aa_loss': avg_loss_x,
+        'val/edge_loss': avg_loss_edge,
+        'val/vq_loss': avg_loss_vq,
+        'val/fft2_loss': avg_loss_fft2,
+        'val/angles_loss': avg_angles_loss,
+        'val/ss_loss': avg_ss_loss,
+        'val/logit_loss': avg_logit_loss
+    }
+
 # Training loop
 encoder.train()
 decoder.train()
@@ -720,6 +1051,8 @@ print(f"  Effective steps per epoch: {len(train_loader) // args.gradient_accumul
 print(f"  Mask pLDDT: {args.mask_plddt}")
 if args.mask_plddt:
     print(f"  pLDDT threshold: {args.plddt_threshold}")
+print(f"  Validation split: {args.val_split}")
+print(f"  Validation seed: {args.val_seed}")
 print(f"  Using device: {device}")
 print()
 
@@ -763,7 +1096,7 @@ for epoch in range(args.epochs):
                 angles_loss = torch.tensor(0.0, device=device)
                 if out.get('angles') is not None:
                     angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
-
+                     
                 # Secondary structure loss
                 ss_loss = torch.tensor(0.0, device=device)
                 if out.get('ss_pred') is not None:
@@ -774,6 +1107,7 @@ for epoch in range(args.epochs):
                     else:
                         ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
 
+                
                 # Total loss
                 loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
                         fft2weight * fft2loss + angles_weight * angles_loss + 
@@ -813,6 +1147,7 @@ for epoch in range(args.epochs):
                 else:
                     ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
 
+
             loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
                     fft2weight * fft2loss + angles_weight * angles_loss + 
                     ss_weight * ss_loss + logitweight * logitloss)
@@ -839,22 +1174,24 @@ for epoch in range(args.epochs):
                 scaler.update()
             else:
                 optimizer.step()
-            optimizer.zero_grad()
-            
+            optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
+
             # Step scheduler if it's a step-based scheduler
             if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
             
             global_step += 1
         
+
+
         # Accumulate losses (unscaled for reporting)
-        total_loss_x += xloss.item()
-        total_logit_loss += logitloss.item()
-        total_loss_edge += edgeloss.item()
-        total_loss_fft2 += fft2loss.item()
-        total_angles_loss += angles_loss.item()
-        total_vq += vqloss.item() if isinstance(vqloss, torch.Tensor) else float(vqloss)
-        total_ss_loss += ss_loss.item()
+        total_loss_x += float(xloss.item())
+        total_logit_loss += float(logitloss.item())
+        total_loss_edge += float(edgeloss.item())
+        total_loss_fft2 += float(fft2loss.item())
+        total_angles_loss += float(angles_loss.item())
+        total_vq += float(vqloss.item()) if isinstance(vqloss, torch.Tensor) else float(vqloss)
+        total_ss_loss += float(ss_loss.item())
     
     # Clean up any remaining gradients at epoch end
     if len(train_loader) % args.gradient_accumulation_steps != 0:
@@ -868,7 +1205,7 @@ for epoch in range(args.epochs):
             scaler.update()
         else:
             optimizer.step()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
     
     # Calculate average losses
     avg_loss_x = total_loss_x / len(train_loader)
@@ -881,20 +1218,31 @@ for epoch in range(args.epochs):
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
     
+    # Clear CUDA cache
+    torch.cuda.empty_cache()
+
+    # Run validation
+    val_metrics = validate(encoder, decoder, val_loader, device, args)
+    
     # Update learning rate scheduler (for epoch-based schedulers)
     if scheduler is not None and scheduler_step_mode == 'epoch':
         if args.lr_schedule == 'plateau':
-            scheduler.step(avg_loss_x)
+            scheduler.step(val_metrics['val/loss'])  # Use validation loss for plateau scheduler
         else:
             scheduler.step()
     
     # Print metrics
-    print(f"Epoch {epoch+1}: AA Loss: {avg_loss_x:.4f}, "
-          f"Edge Loss: {avg_loss_edge:.4f}, VQ Loss: {avg_loss_vq:.4f}, "
-          f"FFT2 Loss: {avg_loss_fft2:.4f}, Angles Loss: {avg_angles_loss:.4f}, "
-          f"SS Loss: {avg_ss_loss:.4f}, Logit Loss: {avg_logit_loss:.4f}")
+    print(f"Epoch {epoch+1}:")
+    print(f"  Train - AA Loss: {avg_loss_x:.4f}, Edge Loss: {avg_loss_edge:.4f}, "
+          f"VQ Loss: {avg_loss_vq:.4f}, FFT2 Loss: {avg_loss_fft2:.4f}")
+    print(f"  Train - Angles Loss: {avg_angles_loss:.4f}, SS Loss: {avg_ss_loss:.4f}, "
+          f"Logit Loss: {avg_logit_loss:.4f}")
+    print(f"  Val   - AA Loss: {val_metrics['val/aa_loss']:.4f}, Edge Loss: {val_metrics['val/edge_loss']:.4f}, "
+          f"VQ Loss: {val_metrics['val/vq_loss']:.4f}, FFT2 Loss: {val_metrics['val/fft2_loss']:.4f}")
+    print(f"  Val   - Angles Loss: {val_metrics['val/angles_loss']:.4f}, SS Loss: {val_metrics['val/ss_loss']:.4f}, "
+          f"Logit Loss: {val_metrics['val/logit_loss']:.4f}")
     current_lr = optimizer.param_groups[0]['lr']
-    print(f"Total Loss: {avg_total_loss:.4f}, LR: {current_lr:.6f}")
+    print(f"  Train Total Loss: {avg_total_loss:.4f}, Val Total Loss: {val_metrics['val/loss']:.4f}, LR: {current_lr:.6f}")
     
     # Print commitment cost if using scheduling
     if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
@@ -909,23 +1257,28 @@ for epoch in range(args.epochs):
     #    print(f"Increasing AA weight to {xweight:.4f} due to higher AA loss")
 
     # Gradient analysis
-    print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
-    print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
+    #print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
+    #print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
     
     # Log to tensorboard
-    writer.add_scalar('Loss/AA', avg_loss_x, epoch)
-    writer.add_scalar('Loss/Edge', avg_loss_edge, epoch)
-    writer.add_scalar('Loss/VQ', avg_loss_vq, epoch)
-    writer.add_scalar('Loss/FFT2', avg_loss_fft2, epoch)
-    writer.add_scalar('Loss/Angles', avg_angles_loss, epoch)
-    writer.add_scalar('Loss/SS', avg_ss_loss, epoch)
-    writer.add_scalar('Loss/Logit', avg_logit_loss, epoch)
-    writer.add_scalar('Loss/Total', avg_total_loss, epoch)
+    writer.add_scalar('Train/AA_Loss', avg_loss_x, epoch)
+    writer.add_scalar('Train/Edge_Loss', avg_loss_edge, epoch)
+    writer.add_scalar('Train/VQ_Loss', avg_loss_vq, epoch)
+    writer.add_scalar('Train/FFT2_Loss', avg_loss_fft2, epoch)
+    writer.add_scalar('Train/Angles_Loss', avg_angles_loss, epoch)
+    writer.add_scalar('Train/SS_Loss', avg_ss_loss, epoch)
+    writer.add_scalar('Train/Logit_Loss', avg_logit_loss, epoch)
+    writer.add_scalar('Train/Total_Loss', avg_total_loss, epoch)
+    
+    # Log validation metrics
+    for metric_name, metric_value in val_metrics.items():
+        writer.add_scalar(metric_name.replace('val/', 'Val/'), metric_value, epoch)
+    
     writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
     
     # Log commitment cost if using scheduling
     if args.use_commitment_scheduling and hasattr(encoder, 'vector_quantizer'):
-        current_commitment = encoder.vector_quantizer.get_commitment_cost()
+        current_commitment = float(encoder.vector_quantizer.get_commitment_cost())
         writer.add_scalar('Training/Commitment_Cost', current_commitment, epoch)
     
     # Log loss weights
@@ -935,26 +1288,29 @@ for epoch in range(args.epochs):
     writer.add_scalar('Weights/VQ', vqweight, epoch)
     
     # Log gradient norms
-    encoder_grad_norms = analyze_gradient_norms(encoder, top_k=1)
-    decoder_grad_norms = analyze_gradient_norms(decoder, top_k=1)
-    if encoder_grad_norms['highest']:
-        writer.add_scalar('Gradients/Encoder_Max', encoder_grad_norms['highest'][0][1], epoch)
-    if encoder_grad_norms['lowest']:
-        writer.add_scalar('Gradients/Encoder_Min', encoder_grad_norms['lowest'][0][1], epoch)
-    if decoder_grad_norms['highest']:
-        writer.add_scalar('Gradients/Decoder_Max', decoder_grad_norms['highest'][0][1], epoch)
-    if decoder_grad_norms['lowest']:
-        writer.add_scalar('Gradients/Decoder_Min', decoder_grad_norms['lowest'][0][1], epoch)
+    #encoder_grad_norms = analyze_gradient_norms(encoder, top_k=1)
+    #decoder_grad_norms = analyze_gradient_norms(decoder, top_k=1)
+    #if encoder_grad_norms['highest']:
+    #    writer.add_scalar('Gradients/Encoder_Max', float(encoder_grad_norms['highest'][0][1]), epoch)
+    #if encoder_grad_norms['lowest']:
+    #    writer.add_scalar('Gradients/Encoder_Min', float(encoder_grad_norms['lowest'][0][1]), epoch)
+    #if decoder_grad_norms['highest']:
+    #    writer.add_scalar('Gradients/Decoder_Max', float(decoder_grad_norms['highest'][0][1]), epoch)
+    #if decoder_grad_norms['lowest']:
+    #    writer.add_scalar('Gradients/Decoder_Min', float(decoder_grad_norms['lowest'][0][1]), epoch)
     
     # Update metrics for hparams logging
-    metrics_dict['best_loss'] = best_loss
-    metrics_dict['final_aa_loss'] = avg_loss_x
-    metrics_dict['final_edge_loss'] = avg_loss_edge
+    metrics_dict['best_val_loss'] = best_loss
+    metrics_dict['final_train_aa_loss'] = avg_loss_x
+    metrics_dict['final_train_edge_loss'] = avg_loss_edge
+    metrics_dict['final_val_loss'] = val_metrics['val/loss']
+    metrics_dict['final_val_aa_loss'] = val_metrics['val/aa_loss']
+    metrics_dict['final_val_edge_loss'] = val_metrics['val/edge_loss']
     
-    # Save best model
-    if avg_total_loss < best_loss:
-        best_loss = avg_total_loss
-        print(f"Saving best model with loss: {best_loss:.4f}")
+    # Save best model based on validation loss
+    if val_metrics['val/loss'] < best_loss:
+        best_loss = val_metrics['val/loss']
+        print(f"Saving best model with validation loss: {best_loss:.4f}")
         #save as pth
         encoder_path = os.path.join(modeldir, f"{modelname}_best_encoder.pt")
         decoder_path = os.path.join(modeldir, f"{modelname}_best_decoder.pt")
@@ -967,13 +1323,54 @@ for epoch in range(args.epochs):
         torch.save(encoder.state_dict(), encoder_path)
         torch.save(decoder.state_dict(), decoder_path)
 
-    # Save checkpoint every 10 epochs
+    # Save checkpoint and visualize every 10 epochs
     if (epoch + 1) % 10 == 0:
-        #with open(os.path.join(modeldir, f"{modelname}_epoch{epoch+1}.pkl"), 'wb') as f:
-        #    pickle.dump((encoder, decoder), f)
-        #save pth 
+        print(f"\n{'─'*80}")
+        print(f"Saving checkpoint at epoch {epoch+1}...")
+        print(f"{'─'*80}")
+        
+        # Save models
         torch.save(encoder, os.path.join(modeldir, f"{modelname}_encoder_epoch{epoch+1}.pt"))
         torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_epoch{epoch+1}.pt"))
+        
+        # Optional: Generate batched visualization (can be toggled)
+        USE_BATCHED_VIZ = True  # Set to False to disable visualization
+        
+        if USE_BATCHED_VIZ:
+            try:
+                # Collect a few samples for batched visualization
+                viz_samples = []
+                for i in range(min(4, len(struct_dat))):  # Visualize up to 4 samples
+                    sample_idx = random.randint(0, len(struct_dat) - 1)
+                    viz_samples.append(struct_dat[sample_idx])
+                
+                print(f"Generating batched reconstruction visualization for {len(viz_samples)} samples...")
+                os.makedirs('figures', exist_ok=True)
+                
+                figs_and_metrics = visualize_batch_reconstructions(
+                    encoder, decoder, viz_samples, device, args.num_embeddings,
+                    converter, epoch=epoch+1, save_dir=f'figures/epoch_{epoch+1}'
+                )
+                
+                for i, (fig, metrics) in enumerate(figs_and_metrics):
+                    print(f"\nSample {i+1} metrics:")
+                    for key, value in metrics.items():
+                        print(f"  {key}: {value}")
+                    
+                    # Log to tensorboard if available
+                    if writer is not None:
+                        writer.add_figure(f'Reconstruction/Sample_{i+1}', fig, epoch+1)
+                    
+                    # Close figure to free memory
+                    plt.close(fig)
+                
+                print(f"Visualizations saved to figures/epoch_{epoch+1}/")
+            except Exception as e:
+                print(f"Warning: Visualization failed with error: {e}")
+                import traceback
+                traceback.print_exc()
+
+    
 
 # Save final model
 #with open(os.path.join(modeldir, modelname + '.pkl'), 'wb') as f:

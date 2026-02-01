@@ -1377,6 +1377,140 @@ class MultiMonoDecoder(torch.nn.Module):
 				else:
 					results[key] = value
 		return results
+	
+	def decode_batch_with_contacts(self, z_batch, device, converter, encoder):
+		"""
+		Decode a batch with proper contact prediction.
+		
+		Args:
+			z_batch: List of discrete embedding indices tensors
+			device: PyTorch device
+			converter: PDB2PyG converter
+			encoder: Encoder instance (needed to convert indices to embeddings)
+			
+		Returns:
+			List of dictionaries with batched predictions, one per input sequence
+		"""
+		from torch_geometric.data import Batch
+		import numpy as np
+		
+		def get_backbone(naa):
+			backbone_mat = np.zeros((naa, naa))
+			backbone_rev_mat = np.zeros((naa, naa))
+			np.fill_diagonal(backbone_mat[1:], 1)
+			np.fill_diagonal(backbone_rev_mat[:, 1:], 1)
+			return backbone_mat, backbone_rev_mat
+		
+		def sparse2pairs(sparsemat):
+			found = scipy.sparse.find(sparsemat)
+			return np.vstack([found[0], found[1]])
+		
+		self.eval()
+		encoder.eval()
+		
+		# Create list of HeteroData objects
+		data_list = []
+		contact_indices_list = []
+		offset = 0
+		
+		for seq_idx, z_discrete in enumerate(z_batch):
+			# Convert discrete indices to embeddings
+			z = encoder.vector_quantizer.embeddings(z_discrete.to(device))
+			seq_len = z.shape[0]
+			
+			data = HeteroData()
+			data['res'].x = z
+			
+			# Backbone
+			backbone, backbone_rev = get_backbone(seq_len)
+			backbone_sparse = scipy.sparse.csr_matrix(backbone)
+			backbone_rev_sparse = scipy.sparse.csr_matrix(backbone_rev)
+			
+			data['res', 'backbone', 'res'].edge_index = torch.tensor(
+				sparse2pairs(backbone_sparse), dtype=torch.long
+			)
+			data['res', 'backbonerev', 'res'].edge_index = torch.tensor(
+				sparse2pairs(backbone_rev_sparse), dtype=torch.long
+			)
+			
+			# Positional encoding
+			pos_enc = converter.get_positional_encoding(seq_len, 256)
+			data['positions'].x = torch.tensor(pos_enc, dtype=torch.float32)
+			
+			# Batch index
+			data['res'].batch = torch.full((seq_len,), seq_idx, dtype=torch.long)
+			
+			# God nodes
+			godnode_to_res = np.vstack([np.zeros(seq_len), np.arange(seq_len)])
+			res_to_godnode = np.vstack([np.arange(seq_len), np.zeros(seq_len)])
+			
+			data['godnode'].x = torch.ones((1, 5), dtype=torch.float32)
+			data['godnode4decoder'].x = torch.ones((1, 5), dtype=torch.float32)
+			data['godnode4decoder', 'informs', 'res'].edge_index = torch.tensor(godnode_to_res, dtype=torch.long)
+			data['res', 'informs', 'godnode4decoder'].edge_index = torch.tensor(res_to_godnode, dtype=torch.long)
+			data['res', 'informs', 'godnode'].edge_index = torch.tensor(res_to_godnode, dtype=torch.long)
+			
+			# Create all-pairs contact indices for this sequence
+			all_pairs = torch.tensor(
+				[[i, j] for i in range(seq_len) for j in range(seq_len)],
+				dtype=torch.long
+			).T
+			# Add offset for batching
+			all_pairs += offset
+			contact_indices_list.append(all_pairs)
+			
+			data_list.append(data)
+			offset += seq_len
+		
+		# Batch everything
+		batched_data = Batch.from_data_list(data_list).to(device)
+		
+		# Concatenate contact indices
+		batched_contact_indices = torch.cat(contact_indices_list, dim=1).to(device)
+		
+		# Forward pass
+		with torch.no_grad():
+			out = self(batched_data, contact_pred_index=batched_contact_indices)
+		
+		# Split outputs by sequence
+		batch_indices = batched_data['res'].batch
+		results = []
+		
+		for seq_idx in range(len(z_batch)):
+			mask = (batch_indices == seq_idx)
+			seq_len = mask.sum().item()
+			
+			result = {}
+			
+			# Split amino acid predictions
+			if 'aa' in out and out['aa'] is not None:
+				result['aa'] = out['aa'][mask]
+			
+			# Split contact predictions - reshape from flattened all-pairs
+			if 'edge_probs' in out and out['edge_probs'] is not None:
+				# Calculate indices for this sequence in the concatenated tensor
+				start_idx = sum(z_batch[i].shape[0]**2 for i in range(seq_idx))
+				end_idx = start_idx + seq_len**2
+				edge_probs = out['edge_probs'][start_idx:end_idx]
+				result['edge_probs'] = edge_probs.reshape(seq_len, seq_len)
+			
+			# Split edge logits
+			if 'edge_logits' in out and out['edge_logits'] is not None:
+				start_idx = sum(z_batch[i].shape[0]**2 for i in range(seq_idx))
+				end_idx = start_idx + seq_len**2
+				edge_logits = out['edge_logits'][start_idx:end_idx]
+				result['edge_logits'] = edge_logits.reshape(seq_len, seq_len, -1) if edge_logits.dim() > 1 else edge_logits.reshape(seq_len, seq_len)
+			
+			# Split other predictions
+			if 'angles' in out and out['angles'] is not None:
+				result['angles'] = out['angles'][mask]
+			
+			if 'ss_pred' in out and out['ss_pred'] is not None:
+				result['ss_pred'] = out['ss_pred'][mask]
+			
+			results.append(result)
+		
+		return results
 
 
 

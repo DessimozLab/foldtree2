@@ -198,8 +198,10 @@ class VectorQuantizerEMA(nn.Module):
 		num_resets = unused_embeddings.sum().item()
 		if num_resets > 0:
 			with torch.no_grad():
-				self.embeddings.weight[unused_embeddings] = torch.randn((num_resets, self.embedding_dim), device=self.embeddings.weight.device)
-			# Reset usage counts for the reset embeddings
+				# MEMORY OPTIMIZATION: Use copy_() instead of direct assignment to avoid DDP issues
+				new_embeddings = torch.randn((num_resets, self.embedding_dim), device=self.embeddings.weight.device)
+				self.embeddings.weight.data[unused_embeddings] = new_embeddings
+			# Reset usage counts for the reset embeddings (in-place operation)
 			self.embedding_usage_count[unused_embeddings] = 0
 
 	def get_commitment_cost(self):
