@@ -16,6 +16,7 @@ import pickle
 import argparse
 import sys
 import time
+import gc
 import warnings
 import yaml
 from matplotlib import pyplot as plt
@@ -1220,6 +1221,7 @@ for epoch in range(args.epochs):
     
     # Clear CUDA cache
     torch.cuda.empty_cache()
+    gc.collect()
 
     # Run validation
     val_metrics = validate(encoder, decoder, val_loader, device, args)
