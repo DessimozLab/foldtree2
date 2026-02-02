@@ -1,6 +1,10 @@
 # coding: utf-8
 # learn_monodecoder.py - Training script for MultiMonoDecoder
 
+import os
+# Set CUDA memory allocator to use expandable segments to reduce fragmentation
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np

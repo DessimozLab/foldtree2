@@ -1,4 +1,8 @@
 # learn_lightning.py - PyTorch Lightning training with multi-GPU support
+import os
+# Set CUDA memory allocator to use expandable segments to reduce fragmentation
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np
