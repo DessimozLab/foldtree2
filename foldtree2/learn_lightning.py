@@ -1,4 +1,5 @@
 # learn_lightning.py - PyTorch Lightning training with multi-GPU support
+import gc
 import os
 # Set CUDA memory allocator to use expandable segments to reduce fragmentation
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
@@ -407,6 +408,10 @@ class FoldTree2Model(pl.LightningModule):
             current_commitment = self.encoder.vector_quantizer.get_commitment_cost()
             self.log('train/commitment_cost', current_commitment, on_step=False, on_epoch=True, batch_size=batch_size)
         
+            
+        # Clear CUDA cache
+        torch.cuda.empty_cache()
+        gc.collect()
         return loss
     
     def configure_optimizers(self):

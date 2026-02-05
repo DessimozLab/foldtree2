@@ -194,6 +194,9 @@ parser.add_argument('--angles-weight', type=float, default=0.05,
 parser.add_argument('--ss-weight', type=float, default=0.25,
                     help='Weight for secondary structure loss (default: 0.25)')
 
+parser.add_argument('--nconv-layers', type=int, default=3,
+                    help='Number of convolutional layers in the geometry decoder (default: 3)')
+
 # Tensor Core precision
 parser.add_argument('--tensor-core-precision', type=str, default='high',
                     choices=['highest', 'high', 'medium'],
@@ -536,7 +539,7 @@ else:
 				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 				'concat_positions': False,
 				'conv_channels': [2*hidden_size, hidden_size, hidden_size],
-				'kernel_sizes': [3, 3 ,3 ],
+				'kernel_sizes': [3 ]*args.nconv_layers,
 				'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
 				'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
 				'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
