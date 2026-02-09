@@ -1,4 +1,7 @@
 import warnings
+import json
+import time
+import multiprocessing as mp
 import torch_geometric
 import h5py
 from scipy import sparse
@@ -46,6 +49,7 @@ def interaction_matrix_energy(ag):
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
 	def __init__(self , aapropcsv = './foldtree2/config/aaindex1.csv'):
+		self.aapropcsv = aapropcsv
 		aaproperties = pd.read_csv(aapropcsv, header=0)
 		colmap = {aaproperties.columns[i]:i for i in range(len(aaproperties.columns))}
 		aaproperties.drop( [ 'description' , 'reference'  ], axis=1, inplace=True)
@@ -242,8 +246,9 @@ class PDB2PyG:
 		output = torch.tensor(output)
 		if verbose:
 			print(output.shape)
-		mat =  pydssp.get_hbond_map(output[0])
-		ss = pydssp.assign(output[0], out_type='onehot')
+		with torch.device('cpu'):
+			mat =  pydssp.get_hbond_map(output[0])
+			ss = pydssp.assign(output[0], out_type='onehot')
 		return mat , ss
 	
 
@@ -483,16 +488,38 @@ class PDB2PyG:
 			print( 'prody error:' ,  str( e ))
 			return None
 	#create features from a monomer pdb file
-	def create_features(self, monomerpdb, distance = 8, verbose = False , foldxdir = None , add_prody = False):
+	def create_features(self, monomerpdb, distance=8, verbose=False, foldxdir=None, add_prody=False,
+						debug_step_log_path=None, debug_step_log_flush=False, compute_hbonds=True , **kwargs):
+		def step_log(event, step, **fields):
+			if debug_step_log_path is None:
+				return
+			payload = {
+				"ts": time.time(),
+				"event": event,
+				"step": step,
+				"pdb_file": monomerpdb if isinstance(monomerpdb, str) else str(monomerpdb),
+			}
+			payload.update(fields)
+			with open(debug_step_log_path, 'a') as dbg:
+				dbg.write(json.dumps(payload) + "\n")
+				if debug_step_log_flush:
+					dbg.flush()
+
+		step_log("start", "create_features")
 		if type(monomerpdb) == str:    
+			step_log("start", "read_pdb")
 			chain = self.read_pdb(monomerpdb)[0]
+			step_log("end", "read_pdb")
 		else:
 			chain = monomerpdb
 		chain = [ r for r in chain if PDB.is_aa(r)]
 
 		if len(chain) ==0:
+			step_log("end", "create_features", status="empty_chain")
 			return None
+		step_log("start", "get_angles")
 		angles = self.get_angles(chain)
+		step_log("end", "get_angles")
 		
 		assert len(angles) == len(chain), f'angles {len(angles)} != chain {len(chain)}'
 		#check if the angles are in the right order
@@ -502,13 +529,17 @@ class PDB2PyG:
 			raise ValueError('angles and chain do not match')
 
 
+		step_log("start", "get_coords")
 		coords = np.array([r['CA'].get_coord() for r in chain])
+		step_log("end", "get_coords")
 
 		bondangles = np.array(angles[['Phi_Angle', 'Psi_Angle' , 'Omega_Angle']])
 
 		if len(angles) ==0:
 			return None
+		step_log("start", "add_aaproperties")
 		angles = self.add_aaproperties(angles , verbose = verbose)
+		step_log("end", "add_aaproperties")
 		angles = angles.dropna()
 		angles = angles.reset_index(drop=True)
 		angles = angles.set_index(['Chain', 'Residue_Number'])
@@ -520,15 +551,23 @@ class PDB2PyG:
 			plt.imshow(angles.iloc[:,-20:])
 			plt.show()
 		aa = np.array(angles.iloc[:,-20:])
+		step_log("start", "get_contact_points")
 		contact_points = self.get_contact_points(chain, distance)
+		step_log("end", "get_contact_points")
 		if verbose:
 			print('contacts' , contact_points.shape)
 			plt.imshow(contact_points)
 			plt.colorbar()
 			plt.show()
 		
-		hbond_mat , ss  = self.ret_hbonds(chain, verbose)
-		hbond_mat = np.array(hbond_mat)
+		if compute_hbonds:
+			step_log("start", "ret_hbonds")
+			hbond_mat, ss = self.ret_hbonds(chain, verbose)
+			step_log("end", "ret_hbonds")
+			hbond_mat = np.array(hbond_mat)
+		else:
+			hbond_mat = np.zeros((len(chain), len(chain)))
+			ss = np.zeros((len(chain), 3))
 
 		if verbose:
 			print('hbond' , hbond_mat.shape)
@@ -539,12 +578,18 @@ class PDB2PyG:
 			plt.show()
 		#return the angles, amino acid properties, contact points, and hydrogen bonds
 		#backbone is just the amino acid chain
+		step_log("start", "get_backbone")
 		backbone , backbone_rev = self.get_backbone(chain)
+		step_log("end", "get_backbone")
 
+		step_log("start", "get_sliding_window")
 		window = self.get_sliding_window(len(chain), window = 2)
 		window_rev = backbone.T
+		step_log("end", "get_sliding_window")
 
+		step_log("start", "get_positional_encoding")
 		positional_encoding = self.get_positional_encoding( len(chain) , 256)
+		step_log("end", "get_positional_encoding")
 
 		if verbose:
 			print('positions' , positional_encoding.shape)
@@ -577,7 +622,9 @@ class PDB2PyG:
 		window_rev = sparse.csr_matrix(window_rev)
 
 		hbond_mat = sparse.csr_matrix(hbond_mat)
+		step_log("start", "get_plddt")
 		plddt = self.get_plddt(chain)/100
+		step_log("end", "get_plddt")
 		if verbose:
 			print('plddt' , plddt.shape)
 			plt.plot(plddt)
@@ -596,7 +643,9 @@ class PDB2PyG:
 
 		prodymats = None
 		if add_prody == True:
+			step_log("start", "get_prody_interactions")
 			prodymats = self.get_prody_interactions(monomerpdb)
+			step_log("end", "get_prody_interactions")
 			for key in prodymats:
 				if verbose:
 					print(f'prody {key}' , prodymats[key].shape)
@@ -604,6 +653,7 @@ class PDB2PyG:
 					plt.colorbar()
 					plt.show()
 
+		step_log("end", "create_features", status="ok")
 		return angles, contact_points, ss , hbond_mat, backbone , backbone_rev , positional_encoding , plddt , aa , bondangles , foldx_vals , coords , window, window_rev , prodymats
 
 	def extract_pdb_coordinates(self, pdb_file, atom_type="CA"):
@@ -707,19 +757,51 @@ class PDB2PyG:
 		
 	def struct2pyg(self , pdbchain  , foldxdir= None , identifier=None,  verbose = False , include_chain = False , add_prody = False , **kwargs):
 		data = HeteroData()
+		debug_step_log_path = kwargs.pop('debug_step_log_path', None)
+		debug_step_log_flush = kwargs.pop('debug_step_log_flush', False)
+
+		def step_log(event, step, **fields):
+			if debug_step_log_path is None:
+				return
+			payload = {
+				"ts": time.time(),
+				"event": event,
+				"step": step,
+				"pdb_file": pdbchain if isinstance(pdbchain, str) else str(pdbchain),
+			}
+			payload.update(fields)
+			with open(debug_step_log_path, 'a') as dbg:
+				dbg.write(json.dumps(payload) + "\n")
+				if debug_step_log_flush:
+					dbg.flush()
+
+		step_log("start", "struct2pyg")
 		#transform a structure chain into a pytorch geometric graph
 		#get the adjacency matrices
 		#try:
-		xdata = self.create_features(pdbchain , verbose = verbose, foldxdir = foldxdir, add_prody = add_prody , **kwargs)
+		step_log("start", "create_features")
+		xdata = self.create_features(
+			pdbchain,
+			verbose=verbose,
+			foldxdir=foldxdir,
+			add_prody=add_prody,
+			debug_step_log_path=debug_step_log_path,
+			debug_step_log_flush=debug_step_log_flush,
+			**kwargs,
+		)
+		step_log("end", "create_features")
 		try:
+			step_log("start", "pdb_chain_fft")
 			fft1r, fft1i, fft2r , fft2i  = self.pdb_chain_fft(pdbchain , cutoff_1d = 80, cutoff_2d = 25)
 			#transform the ffts into tensors
 			fft1r = torch.tensor(fft1r, dtype=torch.float32)
 			fft1i = torch.tensor(fft1i, dtype=torch.float32)
 			fft2r = torch.tensor(fft2r, dtype=torch.float32)
 			fft2i = torch.tensor(fft2i, dtype=torch.float32)
+			step_log("end", "pdb_chain_fft")
 
 		except:
+			step_log("end", "struct2pyg", status="fft_failed")
 			return None
 
 		#except:
@@ -727,8 +809,10 @@ class PDB2PyG:
 		if xdata is not None:
 			angles, contact_points, ss , hbond_mat , backbone , backbone_rev , positional_encoding , plddt ,aa , bondangles , foldx_vals , coords , window , window_rev , prodymats = xdata
 		else:
+			step_log("end", "struct2pyg", status="no_features")
 			return None
 		if len(angles) ==0:
+			step_log("end", "struct2pyg", status="empty_angles")
 			return None
 		if type(pdbchain) == str:
 			identifier = pdbchain.split('/')[-1].split('.')[0]
@@ -752,11 +836,13 @@ class PDB2PyG:
 			data['Foldx'].x = torch.tensor(foldx_vals, dtype=torch.float32)
 		data['coords'].x = torch.tensor(coords, dtype=torch.float32)
 		# Extract N, CA, C atom coordinates per residue (N, 3, 3)
+		step_log("start", "extract_pdb_coordinates")
 		residue_frames = torch.stack([
 			self.extract_pdb_coordinates(pdbchain, atom_type="N"),
 			self.extract_pdb_coordinates(pdbchain, atom_type="CA"),
 			self.extract_pdb_coordinates(pdbchain, atom_type="C"),
 		], dim=1)
+		step_log("end", "extract_pdb_coordinates")
 		# Compute ground truth transformations
 		data['R_true'].x , data['t_true'].x= self.compute_local_frame(residue_frames)
 		data['bondangles'].x = torch.tensor(bondangles, dtype=torch.float32)
@@ -847,59 +933,153 @@ class PDB2PyG:
 			#remove foldx
 			del data['Foldx']
 
+		step_log("end", "struct2pyg", status="ok")
 		return data
 
-	def process_single_pdb(self,pdb,**keywargs):
+	def process_single_pdb(self, pdb, **keywargs):
 		"""Process a single PDB file."""
-		# Create a new instance of PDB2PyG for this process
-		hetero_data = self.struct2pyg(pdb,  **keywargs)
-		return (hetero_data, pdb, None)
+		try:
+			# Create a new instance of PDB2PyG for this process
+			hetero_data = self.struct2pyg(pdb, **keywargs)
+			return (hetero_data, pdb, None)
+		except Exception:
+			return (None, pdb, traceback.format_exc())
 	
 	#create a function to store the pytorch geometric data in a hdf5 file
-	def store_pyg_mp(self, pdbfiles, filename, ncpu=4, verbose = False, **kwargs):
+	def store_pyg_mp(self, pdbfiles, filename, ncpu=4, verbose=False, timeout=100, retry_on_timeout=False, debug_log_path=None, debug_log_flush=False, start_method=None, chunk_size=None, **kwargs):
 		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
 		# Prepare arguments for multiprocessing
 		args_list = [pdb_file for pdb_file in pdbfiles]
 		print(kwargs)
+		debug_log = open(debug_log_path, 'a') if debug_log_path else None
+
+		def log_event(event, pdb_file, **fields):
+			if debug_log is None:
+				return
+			payload = {
+				"ts": time.time(),
+				"event": event,
+				"pdb_file": pdb_file,
+			}
+			payload.update(fields)
+			debug_log.write(json.dumps(payload) + "\n")
+			if debug_log_flush:
+				debug_log.flush()
 		
 		# Process files in parallel and write to HDF5 as they complete
 		with h5py.File(filename, mode='w') as f:
 			structs_group = f.create_group('structs')
-			with pebble.ProcessPool(max_workers=ncpu) as pool:
+			ctx = mp.get_context(start_method) if start_method else None
+			with pebble.ProcessPool(max_workers=ncpu, context=ctx) as pool:
 				failed_files = []
 				successful_count = 0
-				# Submit all tasks and get futures
-				futures = [pool.schedule(self.process_single_pdb, args=(arg,), kwargs=kwargs, timeout=100) for arg in args_list]
-				# Process results as they complete
-				for future in tqdm.tqdm(futures, total=len(pdbfiles), desc="Processing and storing PDB files"):
-					try:
-						result = future.result()
-					except Exception as e:
-						if verbose:
-							print(f"Error processing future: {str(e)}")
-							print(traceback.format_exc())
+				pbar = tqdm.tqdm(total=len(pdbfiles), desc="Processing and storing PDB files")
+				chunk_size = chunk_size or len(args_list)
+				for chunk_start in range(0, len(args_list), chunk_size):
+					chunk = args_list[chunk_start:chunk_start + chunk_size]
+					# Submit chunk tasks and get futures
+					futures = []
+					for arg in chunk:
+						future = pool.schedule(self.process_single_pdb, args=(arg,), kwargs=kwargs, timeout=timeout)
+						futures.append(future)
+					future_to_pdb = {future: pdb_file for future, pdb_file in zip(futures, chunk)}
+					future_start = {future: time.time() for future in futures}
+					for pdb_file in chunk:
+						log_event("scheduled", pdb_file, timeout=timeout)
+					# Process results as they complete
+					for future in futures:
+						try:
+							result = future.result()
+						except Exception as e:
+							if verbose:
+								print(f"Error processing future: {str(e)}")
+								print(traceback.format_exc())
 
-						# Handle timeout or other exceptions
-						failed_files.append((args_list[futures.index(future)][0], f"Future exception: {str(e)}"))
-						continue
+							# Handle timeout or other exceptions
+							pdb_file = future_to_pdb.get(future, "<unknown>")
+							elapsed = time.time() - future_start.get(future, time.time())
+							log_event("future_error", pdb_file, elapsed=elapsed, error=str(e))
+							if retry_on_timeout:
+								retry_data, retry_pdb, retry_error = self.process_single_pdb(pdb_file, **kwargs)
+								if retry_error:
+									log_event("retry_error", retry_pdb, error=retry_error)
+									failed_files.append((retry_pdb, f"Retry exception: {retry_error}"))
+									pbar.update(1)
+									continue
+								if not retry_data:
+									log_event("retry_no_data", retry_pdb)
+									failed_files.append((retry_pdb, "Retry returned no data"))
+									pbar.update(1)
+									continue
+								# Write retry result directly to HDF5
+								try:
+									if not hasattr(retry_data, 'identifier'):
+										log_event("retry_missing_identifier", retry_pdb)
+										failed_files.append((retry_pdb, "No identifier in hetero_data (retry)"))
+										pbar.update(1)
+										continue
+
+									identifier = retry_data.identifier
+									struct_group = structs_group.create_group(identifier)
+									node_group = struct_group.create_group('node')
+									for node_type in retry_data.node_types:
+										if retry_data[node_type].x is not None:
+											type_group = node_group.create_group(node_type)
+											type_group.create_dataset('x', data=retry_data[node_type].x.numpy())
+									edge_group = struct_group.create_group('edge')
+									for edge_type in retry_data.edge_types:
+										edge_name = f'{edge_type[0]}_{edge_type[1]}_{edge_type[2]}'
+										type_group = edge_group.create_group(edge_name)
+										if retry_data[edge_type].edge_index is not None:
+											type_group.create_dataset(
+												'edge_index',
+												data=retry_data[edge_type].edge_index.numpy()
+											)
+										if (hasattr(retry_data[edge_type], 'edge_attr') and
+											retry_data[edge_type].edge_attr is not None):
+											type_group.create_dataset(
+												'edge_attr',
+												data=retry_data[edge_type].edge_attr.numpy()
+											)
+									successful_count += 1
+									log_event("retry_success", retry_pdb)
+									pbar.update(1)
+									continue
+								except Exception as retry_store_error:
+									if verbose:
+										print(f"Error storing retry data for {identifier}: {str(retry_store_error)}")
+									log_event("retry_store_error", retry_pdb, error=str(retry_store_error))
+									failed_files.append((retry_pdb, f"Retry storage error: {str(retry_store_error)}"))
+									pbar.update(1)
+									continue
+
+							failed_files.append((pdb_file, f"Future exception: {str(e)}"))
+							pbar.update(1)
+							continue
 					hetero_data, pdb_file, error = result
 					
 					if error:
 						if verbose:
 							print(f"Error processing {pdb_file}: {error}")
+						log_event("process_error", pdb_file, error=error)
 						failed_files.append((pdb_file, error))
+						pbar.update(1)
 						continue
 					
 					if not hetero_data:
 						if verbose:
 							print(f"No data returned for {pdb_file}")
+						log_event("no_data", pdb_file)
 						failed_files.append((pdb_file, "No data returned"))
+						pbar.update(1)
 						continue
 					
 					# Write directly to HDF5
 					try:
 						if not hasattr(hetero_data, 'identifier'):
+							log_event("missing_identifier", pdb_file)
 							failed_files.append((pdb_file, "No identifier in hetero_data"))
+							pbar.update(1)
 							continue
 							
 						identifier = hetero_data.identifier
@@ -932,11 +1112,22 @@ class PDB2PyG:
 								)
 						
 						successful_count += 1
+						elapsed = time.time() - future_start.get(future, time.time())
+						log_event("success", pdb_file, elapsed=elapsed)
 						
 					except Exception as e:
 						if verbose:
 							print(f"Error storing data for {identifier}: {str(e)}")
+						log_event("store_error", pdb_file, error=str(e))
 						failed_files.append((pdb_file, f"Storage error: {str(e)}"))
+						pbar.update(1)
+						continue
+					pbar.update(1)
+
+				pbar.close()
+
+		if debug_log is not None:
+			debug_log.close()
 		
 		if verbose:
 			print(f"\nSuccessfully processed and stored: {successful_count}/{len(pdbfiles)}")
@@ -945,6 +1136,327 @@ class PDB2PyG:
 				for pdb_file, error in failed_files:
 					print(f"  {pdb_file}: {error}")
 			
+		return failed_files
+
+	def store_pyg_mp_pool(self, pdbfiles, filename, ncpu=4, verbose=False, chunksize=1,
+								  start_method=None, maxtasksperchild=None,
+								  debug_log_path=None, debug_log_flush=False, **kwargs):
+		"""Store pytorch geometric data in HDF5 using multiprocessing.Pool."""
+		args_list = [pdb_file for pdb_file in pdbfiles]
+		debug_log = open(debug_log_path, 'a') if debug_log_path else None
+
+		def log_event(event, pdb_file, **fields):
+			if debug_log is None:
+				return
+			payload = {
+				"ts": time.time(),
+				"event": event,
+				"pdb_file": pdb_file,
+			}
+			payload.update(fields)
+			debug_log.write(json.dumps(payload) + "\n")
+			if debug_log_flush:
+				debug_log.flush()
+
+		failed_files = []
+		successful_count = 0
+
+		with h5py.File(filename, mode='w') as f:
+			structs_group = f.create_group('structs')
+			ctx = mp.get_context(start_method) if start_method else mp.get_context()
+			pool = ctx.Pool(
+				processes=ncpu,
+				initializer=_init_pdb2pyg_worker,
+				initargs=(self.aapropcsv, kwargs),
+				maxtasksperchild=maxtasksperchild,
+			)
+			try:
+				for pdb_file in args_list:
+					log_event("scheduled", pdb_file, chunksize=chunksize)
+
+				results_iter = pool.imap_unordered(_process_pdb_worker, args_list, chunksize=chunksize)
+				for hetero_data, pdb_file, error in tqdm.tqdm(
+					results_iter,
+					total=len(args_list),
+					desc="Processing and storing PDB files (Pool)",
+				):
+					if error:
+						if verbose:
+							print(f"Error processing {pdb_file}: {error}")
+						log_event("process_error", pdb_file, error=error)
+						failed_files.append((pdb_file, error))
+						continue
+
+					if not hetero_data:
+						if verbose:
+							print(f"No data returned for {pdb_file}")
+						log_event("no_data", pdb_file)
+						failed_files.append((pdb_file, "No data returned"))
+						continue
+
+					try:
+						if not hasattr(hetero_data, 'identifier'):
+							log_event("missing_identifier", pdb_file)
+							failed_files.append((pdb_file, "No identifier in hetero_data"))
+							continue
+
+						identifier = hetero_data.identifier
+						struct_group = structs_group.create_group(identifier)
+
+						# Store node features
+						node_group = struct_group.create_group('node')
+						for node_type in hetero_data.node_types:
+							if hetero_data[node_type].x is not None:
+								type_group = node_group.create_group(node_type)
+								type_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+
+						# Store edge features
+						edge_group = struct_group.create_group('edge')
+						for edge_type in hetero_data.edge_types:
+							edge_name = f'{edge_type[0]}_{edge_type[1]}_{edge_type[2]}'
+							type_group = edge_group.create_group(edge_name)
+
+							if hetero_data[edge_type].edge_index is not None:
+								type_group.create_dataset(
+									'edge_index',
+									data=hetero_data[edge_type].edge_index.numpy()
+								)
+
+							if (hasattr(hetero_data[edge_type], 'edge_attr') and
+								hetero_data[edge_type].edge_attr is not None):
+								type_group.create_dataset(
+									'edge_attr',
+									data=hetero_data[edge_type].edge_attr.numpy()
+								)
+
+						successful_count += 1
+						log_event("success", pdb_file)
+					except Exception as e:
+						if verbose:
+							print(f"Error storing data for {pdb_file}: {str(e)}")
+						log_event("store_error", pdb_file, error=str(e))
+						failed_files.append((pdb_file, f"Storage error: {str(e)}"))
+			finally:
+				pool.close()
+				pool.join()
+
+		if debug_log is not None:
+			debug_log.close()
+
+		if verbose:
+			print(f"\nSuccessfully processed and stored: {successful_count}/{len(args_list)}")
+			if failed_files:
+				print(f"Failed files ({len(failed_files)}):")
+				for pdb_file, error in failed_files:
+					print(f"  {pdb_file}: {error}")
+
+		return failed_files
+
+	def store_pyg_mp_polling(self, pdbfiles, filename, ncpu=4, verbose=False,
+									timeout=None, poll_interval=0.5,
+									retry_on_timeout=False,
+									start_method=None,
+									debug_log_path=None, debug_log_flush=False, **kwargs):
+		"""Store pytorch geometric data in HDF5 using manual Process start/join with polling."""
+		args_list = list(pdbfiles)
+		debug_log = open(debug_log_path, 'a') if debug_log_path else None
+
+		def log_event(event, pdb_file, **fields):
+			if debug_log is None:
+				return
+			payload = {
+				"ts": time.time(),
+				"event": event,
+				"pdb_file": pdb_file,
+			}
+			payload.update(fields)
+			debug_log.write(json.dumps(payload) + "\n")
+			if debug_log_flush:
+				debug_log.flush()
+
+		failed_files = []
+		successful_count = 0
+		ctx = mp.get_context(start_method) if start_method else mp.get_context()
+		result_queue = ctx.Queue()
+		pending = list(args_list)
+		active = {}
+		completed = set()
+
+		def launch_one(pdb_file):
+			proc = ctx.Process(
+				target=_process_pdb_worker_queue,
+				args=(pdb_file, self.aapropcsv, kwargs, result_queue),
+			)
+			proc.daemon = False
+			proc.start()
+			active[pdb_file] = {
+				"proc": proc,
+				"start": time.time(),
+			}
+			log_event("scheduled", pdb_file)
+
+		# Prime the worker pool
+		for _ in range(min(ncpu, len(pending))):
+			launch_one(pending.pop(0))
+
+		with h5py.File(filename, mode='w') as f:
+			structs_group = f.create_group('structs')
+			pbar = tqdm.tqdm(total=len(args_list), desc="Processing and storing PDB files (Polling)")
+
+			while active or pending:
+				# Poll for results
+				try:
+					pdb_file, hetero_data, error = result_queue.get(timeout=poll_interval)
+					completed.add(pdb_file)
+					proc_info = active.pop(pdb_file, None)
+					if proc_info is not None:
+						proc_info["proc"].join(timeout=0.1)
+
+					if error:
+						if verbose:
+							print(f"Error processing {pdb_file}: {error}")
+						log_event("process_error", pdb_file, error=error)
+						failed_files.append((pdb_file, error))
+					else:
+						if not hetero_data:
+							if verbose:
+								print(f"No data returned for {pdb_file}")
+							log_event("no_data", pdb_file)
+							failed_files.append((pdb_file, "No data returned"))
+						else:
+							try:
+								if not hasattr(hetero_data, 'identifier'):
+									log_event("missing_identifier", pdb_file)
+									failed_files.append((pdb_file, "No identifier in hetero_data"))
+								else:
+									identifier = hetero_data.identifier
+									struct_group = structs_group.create_group(identifier)
+
+									# Store node features
+									node_group = struct_group.create_group('node')
+									for node_type in hetero_data.node_types:
+										if hetero_data[node_type].x is not None:
+											type_group = node_group.create_group(node_type)
+											type_group.create_dataset('x', data=hetero_data[node_type].x.numpy())
+
+									# Store edge features
+									edge_group = struct_group.create_group('edge')
+									for edge_type in hetero_data.edge_types:
+										edge_name = f'{edge_type[0]}_{edge_type[1]}_{edge_type[2]}'
+										type_group = edge_group.create_group(edge_name)
+
+										if hetero_data[edge_type].edge_index is not None:
+											type_group.create_dataset(
+												'edge_index',
+												data=hetero_data[edge_type].edge_index.numpy()
+											)
+
+										if (hasattr(hetero_data[edge_type], 'edge_attr') and
+											hetero_data[edge_type].edge_attr is not None):
+											type_group.create_dataset(
+												'edge_attr',
+												data=hetero_data[edge_type].edge_attr.numpy()
+											)
+
+								successful_count += 1
+								log_event("success", pdb_file)
+							except Exception as e:
+								if verbose:
+									print(f"Error storing data for {pdb_file}: {str(e)}")
+								log_event("store_error", pdb_file, error=str(e))
+								failed_files.append((pdb_file, f"Storage error: {str(e)}"))
+					pbar.update(1)
+				except Exception:
+					# No result yet; continue to timeout checks
+					pass
+
+				# Timeout checks
+				if timeout is not None:
+					now = time.time()
+					for pdb_file in list(active.keys()):
+						proc_info = active[pdb_file]
+						elapsed = now - proc_info["start"]
+						if elapsed > timeout:
+							proc = proc_info["proc"]
+							if proc.is_alive():
+								proc.terminate()
+								proc.join(timeout=1)
+							log_event("timeout", pdb_file, elapsed=elapsed)
+							active.pop(pdb_file, None)
+							if retry_on_timeout:
+								retry_data, retry_pdb, retry_error = self.process_single_pdb(pdb_file, **kwargs)
+								if retry_error:
+									log_event("retry_error", retry_pdb, error=retry_error)
+									failed_files.append((retry_pdb, f"Retry exception: {retry_error}"))
+								elif not retry_data:
+									log_event("retry_no_data", retry_pdb)
+									failed_files.append((retry_pdb, "Retry returned no data"))
+								else:
+									try:
+										if not hasattr(retry_data, 'identifier'):
+											log_event("retry_missing_identifier", retry_pdb)
+											failed_files.append((retry_pdb, "No identifier in hetero_data (retry)"))
+										else:
+											identifier = retry_data.identifier
+											struct_group = structs_group.create_group(identifier)
+											node_group = struct_group.create_group('node')
+											for node_type in retry_data.node_types:
+												if retry_data[node_type].x is not None:
+													type_group = node_group.create_group(node_type)
+													type_group.create_dataset('x', data=retry_data[node_type].x.numpy())
+
+											edge_group = struct_group.create_group('edge')
+											for edge_type in retry_data.edge_types:
+												edge_name = f'{edge_type[0]}_{edge_type[1]}_{edge_type[2]}'
+												type_group = edge_group.create_group(edge_name)
+												if retry_data[edge_type].edge_index is not None:
+													type_group.create_dataset(
+														'edge_index',
+														data=retry_data[edge_type].edge_index.numpy()
+													)
+												if (hasattr(retry_data[edge_type], 'edge_attr') and
+													retry_data[edge_type].edge_attr is not None):
+													type_group.create_dataset(
+														'edge_attr',
+														data=retry_data[edge_type].edge_attr.numpy()
+													)
+											successful_count += 1
+											log_event("retry_success", retry_pdb)
+									except Exception as retry_store_error:
+										if verbose:
+											print(f"Error storing retry data for {retry_pdb}: {str(retry_store_error)}")
+										log_event("retry_store_error", retry_pdb, error=str(retry_store_error))
+										failed_files.append((retry_pdb, f"Retry storage error: {str(retry_store_error)}"))
+							else:
+								failed_files.append((pdb_file, f"Timeout after {elapsed:.2f}s"))
+							pbar.update(1)
+
+				# Launch new tasks to keep workers busy
+				while pending and len(active) < ncpu:
+					launch_one(pending.pop(0))
+
+				# Detect crashed processes with no result
+				for pdb_file in list(active.keys()):
+					proc = active[pdb_file]["proc"]
+					if not proc.is_alive() and pdb_file not in completed:
+						proc.join(timeout=0.1)
+						log_event("process_exited", pdb_file)
+						active.pop(pdb_file, None)
+						failed_files.append((pdb_file, "Process exited without result"))
+						pbar.update(1)
+
+			pbar.close()
+
+		if debug_log is not None:
+			debug_log.close()
+
+		if verbose:
+			print(f"\nSuccessfully processed and stored: {successful_count}/{len(args_list)}")
+			if failed_files:
+				print(f"Failed files ({len(failed_files)}):")
+				for pdb_file, error in failed_files:
+					print(f"  {pdb_file}: {error}")
+
 		return failed_files
 
 	
@@ -1127,6 +1639,35 @@ class PDB2PyG:
 					print(f"Error processing PDB file {pdbfile}: {str(e)}")
 					if verbose:
 						traceback.print_exc()
+
+
+
+_PDB2PYG_WORKER = None
+_PDB2PYG_KWARGS = None
+
+
+def _init_pdb2pyg_worker(aapropcsv, kwargs):
+	global _PDB2PYG_WORKER, _PDB2PYG_KWARGS
+	_PDB2PYG_WORKER = PDB2PyG(aapropcsv=aapropcsv)
+	_PDB2PYG_KWARGS = kwargs or {}
+
+
+def _process_pdb_worker(pdb_file):
+	global _PDB2PYG_WORKER, _PDB2PYG_KWARGS
+	try:
+		hetero_data = _PDB2PYG_WORKER.struct2pyg(pdb_file, **_PDB2PYG_KWARGS)
+		return (hetero_data, pdb_file, None)
+	except Exception:
+		return (None, pdb_file, traceback.format_exc())
+
+
+def _process_pdb_worker_queue(pdb_file, aapropcsv, kwargs, result_queue):
+	try:
+		converter = PDB2PyG(aapropcsv=aapropcsv)
+		hetero_data = converter.struct2pyg(pdb_file, **(kwargs or {}))
+		result_queue.put((pdb_file, hetero_data, None))
+	except Exception:
+		result_queue.put((pdb_file, None, traceback.format_exc()))
 
 class ComplexDataset(Dataset):
 	"""

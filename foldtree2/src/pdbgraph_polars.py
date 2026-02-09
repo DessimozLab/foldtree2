@@ -838,7 +838,7 @@ class PDB2PyG:
 	def store_pyg_mp(self, pdbfiles, filename, foldxdir=None, verbose=True, ncpu=4):
 		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
 		# Prepare arguments for multiprocessing
-		args_list = [(pdb_file, foldxdir) for pdb_file in pdbfiles]
+		args_list = [(pdb_file, foldxdir, None) for pdb_file in pdbfiles]
 		# Process files in parallel and write to HDF5 as they complete
 		with h5py.File(filename, mode='w') as f:
 			structs_group = f.create_group('structs')
@@ -846,7 +846,7 @@ class PDB2PyG:
 				failed_files = []
 				successful_count = 0
 				# Submit all tasks and get futures
-				futures = [pool.schedule(self.process_single_pdb, args=(arg,), timeout=1000) for arg in args_list]
+				futures = [pool.schedule(self.process_single_pdb, args=(arg,), timeout=10) for arg in args_list]
 				# Process results as they complete
 				for future in tqdm.tqdm(futures, total=len(pdbfiles), desc="Processing and storing PDB files"):
 					try:

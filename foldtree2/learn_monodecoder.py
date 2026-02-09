@@ -84,24 +84,24 @@ parser.add_argument('--about', action='store_true',
                     help='Show information about this tool and exit')
 parser.add_argument('--config', '-c', type=str, default=None,
                     help='Path to config file (YAML or JSON). Command-line args override config file values.')
-parser.add_argument('--dataset', '-d', type=str, default='structs_traininffttest.h5',
-                    help='Path to the dataset file (default: structs_traininffttest.h5)')
-parser.add_argument('--hidden-size', '-hs', type=int, default=256,
-                    help='Hidden layer size (default: 256)')
+parser.add_argument('--dataset', '-d', type=str, default='structs_train_final.h5',
+                    help='Path to the dataset file (default: structs_train_final.h5)')
+parser.add_argument('--hidden-size', '-hs', type=int, default=150,
+                    help='Hidden layer size (default: 150)')
 parser.add_argument('--epochs', '-e', type=int, default=100,
                     help='Number of epochs for training (default: 100)')
 parser.add_argument('--device', type=str, default=None,
                     help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
 parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
                     help='Learning rate (default: 1e-4)')
-parser.add_argument('--batch-size', '-bs', type=int, default=20,
-                    help='Batch size (default: 20)')
+parser.add_argument('--batch-size', '-bs', type=int, default=10,
+                    help='Batch size (default: 10)')
 parser.add_argument('--output-dir', '-o', type=str, default='./models/',
                     help='Directory to save models/results (default: ./models/)')
 parser.add_argument('--model-name', type=str, default='monodecoder_model',
                     help='Model name for saving (default: monodecoder_model)')
-parser.add_argument('--num-embeddings', type=int, default=40,
-                    help='Number of embeddings for the encoder (default: 40)')
+parser.add_argument('--num-embeddings', type=int, default=30,
+                    help='Number of embeddings for the encoder (default: 30)')
 parser.add_argument('--embedding-dim', type=int, default=128,
                     help='Embedding dimension for the encoder (default: 128)')
 parser.add_argument('--se3-transformer', action='store_true',
@@ -138,8 +138,8 @@ parser.add_argument('--lr-schedule', type=str, default='plateau',
                     help='Learning rate schedule (default: plateau)')
 parser.add_argument('--lr-min', type=float, default=1e-6,
                     help='Minimum learning rate for cosine/linear schedules (default: 1e-6)')
-parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, default=1,
-                    help='Number of gradient accumulation steps (default: 1, no accumulation)')
+parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, default=2,
+                    help='Number of gradient accumulation steps (default: 2)')
 parser.add_argument('--num-cycles', type=int, default=3,
                     help='Number of cycles for cosine_restarts scheduler (default: 3)')
 parser.add_argument('--use-muon', action='store_true',
@@ -150,14 +150,29 @@ parser.add_argument('--use-muon-decoders', action='store_true',
                     help='Use Muon-compatible decoders in MultiMonoDecoder')
 parser.add_argument('--muon-lr', type=float, default=0.02,
                     help='Learning rate for Muon optimizer (default: 0.02)')
-parser.add_argument('--adamw-lr', type=float, default=3e-4,
-                    help='Learning rate for AdamW when using Muon (default: 3e-4)')
+parser.add_argument('--adamw-lr', type=float, default=1e-4,
+                    help='Learning rate for AdamW when using Muon (default: 1e-4)')
 parser.add_argument('--mixed-precision', action='store_true', default=True,
                     help='Use mixed precision training (default: True)')
 parser.add_argument('--mask-plddt', action='store_true',
                     help='Mask low pLDDT residues in loss calculations')
 parser.add_argument('--plddt-threshold', type=float, default=0.3,
                     help='pLDDT threshold for masking (default: 0.3)')
+
+# Early stopping parameters
+parser.add_argument('--early-stopping', action='store_true',
+                    help='Enable early stopping based on a monitored metric')
+parser.add_argument('--early-stopping-metric', type=str, default='val/loss',
+                    help='Metric key to monitor for early stopping (default: val/loss)')
+parser.add_argument('--early-stopping-mode', type=str, default='min',
+                    choices=['min', 'max'],
+                    help='Whether to minimize or maximize the monitored metric (default: min)')
+parser.add_argument('--early-stopping-patience', type=int, default=10,
+                    help='Number of epochs with no improvement before stopping (default: 10)')
+parser.add_argument('--early-stopping-min-delta', type=float, default=0.0,
+                    help='Minimum change to qualify as an improvement (default: 0.0)')
+parser.add_argument('--early-stopping-warmup-epochs', type=int, default=0,
+                    help='Number of initial epochs to skip early stopping checks (default: 0)')
 
 # Validation parameters
 parser.add_argument('--val-split', type=float, default=0.1,
@@ -173,26 +188,26 @@ parser.add_argument('--use-commitment-scheduling', action='store_true',
 parser.add_argument('--commitment-schedule', type=str, default='cosine',
                     choices=['cosine', 'linear', 'none'],
                     help='Commitment cost schedule type (default: cosine)')
-parser.add_argument('--commitment-warmup-steps', type=int, default=5000,
-                    help='Number of steps to warmup commitment cost (default: 5000)')
-parser.add_argument('--commitment-start', type=float, default=0.1,
-                    help='Starting commitment cost when using scheduling (default: 0.1)')
+parser.add_argument('--commitment-warmup-steps', type=int, default=1000,
+                    help='Number of steps to warmup commitment cost (default: 1000)')
+parser.add_argument('--commitment-start', type=float, default=0.5,
+                    help='Starting commitment cost when using scheduling (default: 0.5)')
 
 # Loss weight arguments
-parser.add_argument('--edge-weight', type=float, default=0.25,
-                    help='Weight for edge reconstruction loss (default: 0.25)')
-parser.add_argument('--logit-weight', type=float, default=0.25,
-                    help='Weight for logit loss (default: 0.25)')
-parser.add_argument('--x-weight', type=float, default=5.0,
-                    help='Weight for coordinate reconstruction loss (default: 5.0)')
+parser.add_argument('--edge-weight', type=float, default=0.1,
+                    help='Weight for edge reconstruction loss (default: 0.1)')
+parser.add_argument('--logit-weight', type=float, default=0.1,
+                    help='Weight for logit loss (default: 0.1)')
+parser.add_argument('--x-weight', type=float, default=0.1,
+                    help='Weight for AA reconstruction loss (default: 0.1)')
 parser.add_argument('--fft2-weight', type=float, default=0.01,
                     help='Weight for FFT2 loss (default: 0.01)')
-parser.add_argument('--vq-weight', type=float, default=0.1,
-                    help='Weight for VQ-VAE loss (default: 0.1)')
-parser.add_argument('--angles-weight', type=float, default=0.05,
-                    help='Weight for angles reconstruction loss (default: 0.05)')
-parser.add_argument('--ss-weight', type=float, default=0.25,
-                    help='Weight for secondary structure loss (default: 0.25)')
+parser.add_argument('--vq-weight', type=float, default=0.005,
+                    help='Weight for VQ-VAE loss (default: 0.005)')
+parser.add_argument('--angles-weight', type=float, default=0.1,
+                    help='Weight for angles reconstruction loss (default: 0.1)')
+parser.add_argument('--ss-weight', type=float, default=0.1,
+                    help='Weight for secondary structure loss (default: 0.1)')
 
 parser.add_argument('--nconv-layers', type=int, default=3,
                     help='Number of convolutional layers in the geometry decoder (default: 3)')
@@ -232,19 +247,33 @@ if args.config:
     else:
         raise ValueError("Config file must be YAML (.yaml/.yml) or JSON (.json)")
     
+    # Map config keys to argument names (handle underscore vs hyphen differences)
+    config_to_arg_map = {
+        'edgeweight': 'edge_weight',
+        'logitweight': 'logit_weight',
+        'xweight': 'x_weight',
+        'fft2weight': 'fft2_weight',
+        'vqweight': 'vq_weight',
+    }
+    
     # Set defaults from config file, but allow CLI args to override
     for key, value in config.items():
+        # Map config key to argument name if needed
+        arg_key = config_to_arg_map.get(key, key)
+        
         # Only set from config if not explicitly provided via CLI
-        if hasattr(args, key):
+        if hasattr(args, arg_key):
             # Check if the argument was provided via CLI (not default)
-            cli_value = getattr(args, key)
-            default_value = parser.get_default(key)
+            cli_value = getattr(args, arg_key)
+            default_value = parser.get_default(arg_key)
             if cli_value == default_value:
                 # Use config value since CLI didn't override
-                setattr(args, key, value)
-                print(f"  {key}: {value} (from config)")
+                setattr(args, arg_key, value)
+                print(f"  {arg_key}: {value} (from config key '{key}')")
             else:
-                print(f"  {key}: {cli_value} (from CLI, overriding config)")
+                print(f"  {arg_key}: {cli_value} (from CLI, overriding config)")
+        else:
+            print(f"  Warning: Unknown config key '{key}' - ignoring")
 else:
     print("No config file provided, using command-line arguments and defaults")
 
@@ -464,13 +493,13 @@ else:
         encoder_hidden=hidden_size,
         EMA=args.EMA,
         nheads=16,
-        dropout_p=0.01,
+        dropout_p=0.005,
         reset_codes=False,
         flavor='transformer',
         fftin=True,
         use_commitment_scheduling=args.use_commitment_scheduling,
         commitment_warmup_steps=args.commitment_warmup_steps,
-        commitment_schedule='cosine_with_restart',
+        commitment_schedule='linear',
         commitment_start=args.commitment_start,
         concat_positions=True,
         learn_positions=True
@@ -505,7 +534,7 @@ else:
 				'layers': 2,
 				'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2], 
 				'amino_mapper': converter.aaindex,
-				'nheads': 2,
+				'nheads': 5,
 				'dropout': 0.001,
 				'normalize': False,
 				'residual': False,
@@ -520,7 +549,7 @@ else:
 				'concat_positions': False,
 				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
 				'layers': 2,
-				'nheads': 2,
+				'nheads': 5,
 				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
 				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
 				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
@@ -538,8 +567,8 @@ else:
 			'geometry_cnn': {
 				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 				'concat_positions': False,
-				'conv_channels': [2*hidden_size, hidden_size, hidden_size],
-				'kernel_sizes': [3 ]*args.nconv_layers,
+				'conv_channels': [hidden_size, hidden_size, hidden_size],
+				'kernel_sizes': [3]*args.nconv_layers,
 				'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
 				'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
 				'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
@@ -664,7 +693,7 @@ def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_step
         return get_polynomial_decay_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, lr_end=0.0, power=1.0), 'step'
     elif scheduler_type == 'plateau':
         # ReduceLROnPlateau doesn't require distributed process groups - it only monitors loss values
-        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10), 'epoch'
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2), 'epoch'
     elif scheduler_type == 'none':
         return None, None
     else:
@@ -1062,7 +1091,18 @@ if args.mask_plddt:
 print(f"  Validation split: {args.val_split}")
 print(f"  Validation seed: {args.val_seed}")
 print(f"  Using device: {device}")
+print(f"  Early stopping: {'Enabled' if args.early_stopping else 'Disabled'}")
+if args.early_stopping:
+    print(f"    Monitor: {args.early_stopping_metric}")
+    print(f"    Mode: {args.early_stopping_mode}")
+    print(f"    Patience: {args.early_stopping_patience}")
+    print(f"    Min delta: {args.early_stopping_min_delta}")
+    print(f"    Warmup epochs: {args.early_stopping_warmup_epochs}")
 print()
+
+# Early stopping state
+early_stop_best = None
+early_stop_wait = 0
 
 for epoch in range(args.epochs):
     total_loss_x = 0
@@ -1184,6 +1224,9 @@ for epoch in range(args.epochs):
                 optimizer.step()
             optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
 
+
+
+
             # Step scheduler if it's a step-based scheduler
             if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
@@ -1295,6 +1338,32 @@ for epoch in range(args.epochs):
     writer.add_scalar('Weights/X', xweight, epoch)
     writer.add_scalar('Weights/FFT2', fft2weight, epoch)
     writer.add_scalar('Weights/VQ', vqweight, epoch)
+
+    # Early stopping check
+    if args.early_stopping and epoch >= args.early_stopping_warmup_epochs:
+        metric_key = args.early_stopping_metric
+        if metric_key not in val_metrics:
+            print(f"Warning: Early stopping metric '{metric_key}' not found in validation metrics. Available keys: {list(val_metrics.keys())}")
+        else:
+            current_metric = val_metrics[metric_key]
+            if early_stop_best is None:
+                early_stop_best = current_metric
+                early_stop_wait = 0
+            else:
+                if args.early_stopping_mode == 'min':
+                    improved = current_metric < (early_stop_best - args.early_stopping_min_delta)
+                else:
+                    improved = current_metric > (early_stop_best + args.early_stopping_min_delta)
+
+                if improved:
+                    early_stop_best = current_metric
+                    early_stop_wait = 0
+                else:
+                    early_stop_wait += 1
+                    print(f"Early stopping patience: {early_stop_wait}/{args.early_stopping_patience}")
+                    if early_stop_wait >= args.early_stopping_patience:
+                        print("Early stopping triggered. Stopping training.")
+                        break
     
     # Log gradient norms
     #encoder_grad_norms = analyze_gradient_norms(encoder, top_k=1)

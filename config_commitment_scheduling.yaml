@@ -4,9 +4,14 @@
 # To use: python learn_monodecoder.py --config config_commitment_scheduling.yaml
 
 # Dataset and data loading
-dataset: structs_traininffttest.h5
-batch_size: 20
-gradient_accumulation_steps: 1  # No gradient accumulation
+batch_size: 6
+gradient_accumulation_steps: 3  # No gradient accumulation
+
+# Dataset
+dataset: "structs_train_final.h5"
+data_dir: "../../datasets/foldtree2/"
+aapropcsv: "config/aaindex1.csv"
+
 
 # Model architecture
 hidden_size: 256
@@ -50,7 +55,17 @@ run_name: commitment_scheduling_demo
 # System settings
 device: null
 seed: 42
-overwrite: false
+overwrite: true
+
+
+# Loss Weights
+edgeweight: 0.1
+logitweight: 0.01
+xweight: 0.5
+# fft2weight = 0.01
+vqweight: 0.1
+angles_weight: 0.1
+ss_weight: 0.1
 
 # What is commitment cost scheduling?
 # - Commitment cost is the weight on the encoder loss in VQ-VAE

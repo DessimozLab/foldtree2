@@ -1,0 +1,85 @@
+# FoldTree2 Configuration: 40 Embeddings
+# All three decoders: Sequence + Geometry + FoldX
+
+model_name: "ft2_40_embeddings"
+output_dir: "./models/embedding_comparison/final/"
+run_name: "40_embeddings_all_decoders_final"
+
+# Dataset
+dataset: "structs_train_final.h5"
+data_dir: "../../datasets/foldtree2/"
+aapropcsv: "config/aaindex1.csv"
+
+# Training Parameters
+epochs: 100
+batch_size: 10
+gradient_accumulation_steps: 2
+
+use_muon: true
+muon_lr: 0.02      # Muon learning rate for hidden weights
+adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
+
+seed: 42
+
+# Model Dimensions - 40 EMBEDDINGS
+hidden_size: 150
+num_embeddings: 40
+embedding_dim: 128
+
+
+hetero_gae: false  # Use MultiMonoDecoder
+overwrite : true
+
+# Encoder Configuration
+EMA: true
+
+# Commitment cost scheduling - THE FOCUS OF THIS CONFIG
+commitment_cost: 0.90  # Final commitment cost (high value for strong regularization)
+use_commitment_scheduling: false  # Enable scheduling
+commitment_schedule: linear  # Smooth linear warmup
+commitment_warmup_steps: 10000  # Warmup over 1k steps (~5 epochs with batch_size=20)
+commitment_start: 0.05  # Start with very low commitment cost
+
+
+# Decoder Outputs
+output_fft: false
+output_rt: false
+output_foldx: false
+hetero_gae: false
+
+# Optimization
+clip_grad: true
+gradient_accumulation_steps: 2
+mixed_precision: true
+tensor_core_precision: "high"
+
+# Learning Rate Schedule
+lr_schedule: "plateau"
+lr_warmup_ratio: 0.1
+lr_min: 0.000001
+
+# Loss Weights
+edgeweight: 0.1
+logitweight: 0.01
+xweight: 0.1
+# fft2weight = 0.01
+vqweight: 0.001
+angles_weight: 0.001
+ss_weight: 0.1
+
+
+# pLDDT Masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Early Stopping
+early_stopping: true
+early_stopping_metric: "val/loss"
+early_stopping_mode: "min"
+early_stopping_patience: 20
+early_stopping_min_delta: 0.0
+early_stopping_warmup_epochs: 0
+
+# Logging
+tensorboard_dir: "./runs/"
+device: null

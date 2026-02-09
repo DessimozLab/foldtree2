@@ -91,22 +91,26 @@ class VectorQuantizerEMA(nn.Module):
 		start = self.commitment_start
 		end = self.commitment_end
 		
-		if self.commitment_schedule == 'cosine':
-			# Cosine annealing from start to end
-			c = 0.5 * (1 + math.cos(math.pi * t / T))
-			self.commitment_cost = end + (start - end) * c
-		elif self.commitment_schedule == 'linear':
-			# Linear interpolation from start to end
-			self.commitment_cost = start + (end - start) * (t / T)
-		elif self.commitment_schedule == 'cosine_with_restart':
-			# Cosine annealing with restarts
-			if self.restart_interval is not None:
-				restart_interval = self.restart_interval
+		if t <= T:
+			if self.commitment_schedule == 'cosine':
+				# Cosine annealing from start to end
+				c = 0.5 * (1 + math.cos(math.pi * t / T))
+				self.commitment_cost = end + (start - end) * c
+			elif self.commitment_schedule == 'linear':
+				# Linear interpolation from start to end
+				self.commitment_cost = start + (end - start) * (t / T)
+			elif self.commitment_schedule == 'cosine_with_restart':
+				# Cosine annealing with restarts
+				if self.restart_interval is not None:
+					restart_interval = self.restart_interval
+				else:
+					restart_interval = T // 5  # 5 restarts
+				t_mod = t % restart_interval
+				c = 0.5 * (1 + math.cos(math.pi * t_mod / restart_interval))
+				self.commitment_cost = end + (start - end) * c
 			else:
-				restart_interval = T // 5  # 5 restarts
-			t_mod = t % restart_interval
-			c = 0.5 * (1 + math.cos(math.pi * t_mod / restart_interval))
-			self.commitment_cost = end + (start - end) * c
+				# 'none' or any other value - use final value immediately
+				self.commitment_cost = end
 		else:  # 'none' or any other value - use final value immediately
 			self.commitment_cost = end
 

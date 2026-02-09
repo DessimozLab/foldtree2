@@ -48,7 +48,7 @@ if __name__ == '__main__':
     
     # Initialize converter with config
     converter = pdbgraph.PDB2PyG(
-        aapropcsv='foldtree2/config/aaindex1.csv'
+        aapropcsv='./config/aaindex1.csv'
     )
     
     # Set device to gpu if available
@@ -59,7 +59,7 @@ if __name__ == '__main__':
     parser.add_argument('output_h5', type=str, help='Output file with pytorch geometric graphs of pdbs')
     parser.add_argument('foldxdir', type=str, nargs='?', default=None, help='foldx directory with foldx output for all pdbs')
     parser.add_argument('--distance', type=float, default=15, help='Distance threshold for contact map (default: 15)')
-    parser.add_argument('--add-prody', action='store_true', default=True, help='Add ProDy features (default: True)')
+    parser.add_argument('--add-prody', action='store_true', default=False, help='Add ProDy features (default: True)')
     parser.add_argument('--verbose', action='store_true', default=False, help='Verbose output')
     parser.add_argument('--multiprocessing', action='store_true', default=False, help='Use multiprocessing for parallel processing')
     parser.add_argument('--ncpu', type=int, default=25, help='Number of CPUs for multiprocessing (default: 25)')
