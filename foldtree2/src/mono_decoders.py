@@ -1162,8 +1162,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
-				if not use_cnn or 'angles_cnn' in self.head:  # CNN already applies tanh
-					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
 		else:
 			# Single graph case
 			if use_cnn:

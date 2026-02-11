@@ -10,7 +10,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
 from foldtree2.src import encoder as ecdr
-from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss
+from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss, UncertaintyWeighting
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
 import tqdm
@@ -194,23 +194,37 @@ parser.add_argument('--commitment-start', type=float, default=0.5,
                     help='Starting commitment cost when using scheduling (default: 0.5)')
 
 # Loss weight arguments
-parser.add_argument('--edge-weight', type=float, default=0.1,
+parser.add_argument('--edgeweight', type=float, default=0.1,
                     help='Weight for edge reconstruction loss (default: 0.1)')
-parser.add_argument('--logit-weight', type=float, default=0.1,
+parser.add_argument('--logitweight', type=float, default=0.1,
                     help='Weight for logit loss (default: 0.1)')
-parser.add_argument('--x-weight', type=float, default=0.1,
+parser.add_argument('--xweight', type=float, default=0.1,
                     help='Weight for AA reconstruction loss (default: 0.1)')
-parser.add_argument('--fft2-weight', type=float, default=0.01,
+parser.add_argument('--fft2weight', type=float, default=0.01,
                     help='Weight for FFT2 loss (default: 0.01)')
-parser.add_argument('--vq-weight', type=float, default=0.005,
+parser.add_argument('--vqweight', type=float, default=0.005,
                     help='Weight for VQ-VAE loss (default: 0.005)')
 parser.add_argument('--angles-weight', type=float, default=0.1,
                     help='Weight for angles reconstruction loss (default: 0.1)')
 parser.add_argument('--ss-weight', type=float, default=0.1,
                     help='Weight for secondary structure loss (default: 0.1)')
 
+parser.add_argument('--jump-aa-loss', type=int, default=None,
+                    help='Jump amino acid reconstruction loss to .5 after n epochs (burn-in) to stabilize training (default: None)')
+parser.add_argument('--jump-ss-loss', type=int, default=None,
+                    help='Jump secondary structure loss to .5 after n epochs (burn-in) to stabilize training (default: None)')
+
+
+# Uncertainty weighting
+parser.add_argument('--use-uncertainty-weighting', action='store_true',
+                    help='Use uncertainty-based loss weighting (Kendall & Gal method, learns per-task weights)')
+
 parser.add_argument('--nconv-layers', type=int, default=3,
                     help='Number of convolutional layers in the geometry decoder (default: 3)')
+
+# Loss normalization
+parser.add_argument('--normalize-loss-weights', action='store_true',
+                    help='Normalize all loss weights to 1.0 (overrides individual weight settings)')
 
 # Tensor Core precision
 parser.add_argument('--tensor-core-precision', type=str, default='high',
@@ -378,14 +392,39 @@ if args.use_commitment_scheduling:
     print(f"  Commitment Schedule: {args.commitment_schedule}")
     print(f"  Commitment Warmup Steps: {args.commitment_warmup_steps}")
     print(f"  Commitment Start: {args.commitment_start}")
+
+
+
+
+# Loss weights (from args, with defaults matching notebook)
+if args.normalize_loss_weights:
+    print("Loss weight normalization enabled - setting all weights to imporance of task")
+    edgeweight = 2.0
+    logitweight = 1.0
+    xweight = 2.0
+    fft2weight = 1.0
+    vqweight = 1.0
+    angles_weight = 0.1
+    ss_weight = 0.1
+else:
+    edgeweight = args.edgeweight
+    logitweight = args.logitweight
+    xweight = args.xweight
+    fft2weight = args.fft2weight
+    vqweight = args.vqweight
+    angles_weight = args.angles_weight
+    ss_weight = args.ss_weight
+
+    
 print(f"Loss Weights:")
-print(f"  Edge Weight: {args.edge_weight}")
-print(f"  Logit Weight: {args.logit_weight}")
-print(f"  X Weight: {args.x_weight}")
-print(f"  FFT2 Weight: {args.fft2_weight}")
-print(f"  VQ Weight: {args.vq_weight}")
-print(f"  Angles Weight: {args.angles_weight}")
-print(f"  SS Weight: {args.ss_weight}")
+print(f"  Normalize Loss Weights: {args.normalize_loss_weights}")
+print(f"  Edge Weight: {edgeweight}")
+print(f"  Logit Weight: {logitweight}")
+print(f"  X Weight: {xweight}")
+print(f"  FFT2 Weight: {fft2weight}")
+print(f"  VQ Weight: {vqweight}")
+print(f"  Angles Weight: {angles_weight}")
+print(f"  SS Weight: {ss_weight}")
 
 # Save configuration if requested
 if args.save_config:
@@ -435,14 +474,6 @@ ndim_godnode = data_sample['godnode'].x.shape[1]
 ndim_fft2i = data_sample['fourier2di'].x.shape[1]
 ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
 
-# Loss weights (from args, with defaults matching notebook)
-edgeweight = args.edge_weight
-logitweight = args.logit_weight
-xweight = args.x_weight
-fft2weight = args.fft2_weight
-vqweight = args.vq_weight
-angles_weight = args.angles_weight
-ss_weight = args.ss_weight
 
 # Create output directory
 modeldir = args.output_dir
@@ -534,11 +565,11 @@ else:
 				'layers': 2,
 				'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2], 
 				'amino_mapper': converter.aaindex,
-				'nheads': 5,
+				'nheads': 10,
 				'dropout': 0.001,
 				'normalize': False,
 				'residual': False,
-				'use_cnn_decoder': False,
+				'use_cnn_decoder': True,
 				'output_ss': False,  # Don't output SS from sequence decoder
 				'learn_positions': True,
 				'concat_positions': False
@@ -549,7 +580,7 @@ else:
 				'concat_positions': False,
 				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
 				'layers': 2,
-				'nheads': 5,
+				'nheads': 10,
 				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
 				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
 				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
@@ -564,6 +595,7 @@ else:
 				'output_angles': True     # Bond angles prediction
 			},
 			
+            
 			'geometry_cnn': {
 				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 				'concat_positions': False,
@@ -599,6 +631,18 @@ encoder = encoder.to(device)
 decoder = decoder.to(device)
 print("Encoder:", encoder)
 print("Decoder:", decoder)
+
+# Initialize uncertainty weighting if requested
+if args.use_uncertainty_weighting:
+    print("Initializing uncertainty weighting...")
+    uncertainy_weighting = UncertaintyWeighting(
+        task_names=['aa_loss', 'edge_loss', 'vq_loss', 'fft2_loss', 'angles_loss', 'ss_loss', 'logit_loss'],
+        device=device
+    )
+    uncertainy_weighting = uncertainy_weighting.to(device)
+    print("Uncertainty weighting initialized")
+else:
+    uncertainy_weighting = None
 
 # Training setup - Optimizer
 if args.use_muon and MUON_AVAILABLE:
@@ -654,6 +698,11 @@ if args.use_muon and MUON_AVAILABLE:
             lr=args.adamw_lr, betas=(0.9, 0.95), weight_decay=0.01),
     ]
     
+    # Add uncertainty weighting parameters if enabled
+    if args.use_uncertainty_weighting:
+        param_groups.append(dict(params=uncertainy_weighting.parameters(), use_muon=False,
+                                lr=args.adamw_lr * 0.1, betas=(0.9, 0.95), weight_decay=0.01))
+    
     # Initialize process group for Muon optimizer (required even for single-GPU)
     import torch.distributed as dist
     if not dist.is_available() or not dist.is_initialized():
@@ -679,7 +728,16 @@ if args.use_muon and MUON_AVAILABLE:
         optimizer = MuonWithAuxAdam(param_groups)
 else:
     print("Using AdamW optimizer")
-    optimizer = torch.optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()), lr=args.learning_rate, weight_decay=0.000001)
+    params = list(encoder.parameters()) + list(decoder.parameters())
+    if args.use_uncertainty_weighting:
+        # Use separate parameter groups with different learning rates
+        param_groups = [
+            {'params': params, 'lr': args.learning_rate},
+            {'params': uncertainy_weighting.parameters(), 'lr': args.learning_rate * 0.1}
+        ]
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=0.000001)
+    else:
+        optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=0.000001)
 
 # Define scheduler function with process group initialization
 def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_steps, **kwargs):
@@ -759,7 +817,9 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
     f.write(f'Hidden size: {args.hidden_size}\n')
     f.write(f'Embedding dimension: {args.embedding_dim}\n')
     f.write(f'Number of embeddings: {args.num_embeddings}\n')
+    f.write(f'Normalize Loss Weights: {args.normalize_loss_weights}\n')
     f.write(f'Loss weights - Edge: {edgeweight}, X: {xweight}, FFT2: {fft2weight}, VQ: {vqweight}\n')
+    f.write(f'Loss weights - Angles: {angles_weight}, SS: {ss_weight}, Logit: {logitweight}\n')
     f.write(f'LR Schedule: {args.lr_schedule}\n')
     f.write(f'LR Warmup Steps: {warmup_steps}\n')
     f.write(f'Gradient Accumulation Steps: {args.gradient_accumulation_steps}\n')
@@ -996,7 +1056,8 @@ def validate(encoder, decoder, val_loader, device, args):
             # Forward pass
             z, vqloss = encoder(data)
             data['res'].x = z
-            
+            if args.normalize_loss_weights:
+                vqloss = vqloss / data['AA'].x.shape[0]  # Normalize by number of residues
             # Forward pass through decoder
             out = decoder(data, None)
             edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
@@ -1005,10 +1066,10 @@ def validate(encoder, decoder, val_loader, device, args):
             logitloss = torch.tensor(0.0, device=device)
             edgeloss = torch.tensor(0.0, device=device)
             if edge_index is not None:
-                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
-            
+                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs' , normalize = args.normalize_loss_weights)
+			
             # Amino acid reconstruction loss
-            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'] , normalize=args.normalize_loss_weights)
             
             # FFT2 loss
             fft2loss = torch.tensor(0.0, device=device)
@@ -1018,7 +1079,7 @@ def validate(encoder, decoder, val_loader, device, args):
             # Angles loss
             angles_loss = torch.tensor(0.0, device=device)
             if out.get('angles') is not None:
-                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
                  
             # Secondary structure loss
             ss_loss = torch.tensor(0.0, device=device)
@@ -1030,6 +1091,8 @@ def validate(encoder, decoder, val_loader, device, args):
                 else:
                     ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
             
+
+
             # Accumulate losses
             total_loss_x += float(xloss.item())
             total_logit_loss += float(logitloss.item())
@@ -1040,14 +1103,15 @@ def validate(encoder, decoder, val_loader, device, args):
             total_ss_loss += float(ss_loss.item())
             num_batches += 1
     
+    denominator = num_batches if args.normalize_loss_weights == False else 1 
     # Calculate average losses
-    avg_loss_x = total_loss_x / num_batches
-    avg_loss_edge = total_loss_edge / num_batches
-    avg_loss_vq = total_vq / num_batches
-    avg_loss_fft2 = total_loss_fft2 / num_batches
-    avg_angles_loss = total_angles_loss / num_batches
-    avg_logit_loss = total_logit_loss / num_batches
-    avg_ss_loss = total_ss_loss / num_batches
+    avg_loss_x = total_loss_x / denominator
+    avg_loss_edge = total_loss_edge / denominator
+    avg_loss_vq = total_vq / denominator
+    avg_loss_fft2 = total_loss_fft2 / denominator
+    avg_angles_loss = total_angles_loss / denominator
+    avg_logit_loss = total_logit_loss / denominator
+    avg_ss_loss = total_ss_loss / denominator
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
     
@@ -1130,10 +1194,10 @@ for epoch in range(args.epochs):
                 logitloss = torch.tensor(0.0, device=device)
                 edgeloss = torch.tensor(0.0, device=device)
                 if edge_index is not None:
-                    edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
+                    edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs' , normalize=args.normalize_loss_weights)
                 
                 # Amino acid reconstruction loss
-                xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+                xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
                 
                 # FFT2 loss
                 fft2loss = torch.tensor(0.0, device=device)
@@ -1143,7 +1207,7 @@ for epoch in range(args.epochs):
                 # Angles loss
                 angles_loss = torch.tensor(0.0, device=device)
                 if out.get('angles') is not None:
-                    angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+                    angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
                      
                 # Secondary structure loss
                 ss_loss = torch.tensor(0.0, device=device)
@@ -1154,12 +1218,16 @@ for epoch in range(args.epochs):
                             ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                     else:
                         ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
-
+                    
                 
-                # Total loss
-                loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                        fft2weight * fft2loss + angles_weight * angles_loss + 
-                        ss_weight * ss_loss + logitweight * logitloss)
+                if args.use_uncertainty_weighting:
+                    loss = uncertainy_weighting.forward(
+                        torch.stack([xweight*xloss, edgeweight*edgeloss, vqweight*vqloss, fft2weight*fft2loss, angles_weight*angles_loss, ss_weight*ss_loss, logitweight*logitloss])
+                    )
+                else:
+                    loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                            fft2weight * fft2loss + angles_weight * angles_loss + 
+                            ss_weight * ss_loss + logitweight * logitloss)
                 
                 # Scale loss by gradient accumulation steps
                 loss = loss / args.gradient_accumulation_steps
@@ -1168,15 +1236,17 @@ for epoch in range(args.epochs):
             z, vqloss = encoder(data)
             data['res'].x = z
             
+            if args.normalize_loss_weights:
+                vqloss = vqloss / data['AA'].x.shape[0]  # Normalize by number of residues
             out = decoder(data, None)
             edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
 
             logitloss = torch.tensor(0.0, device=device)
             edgeloss = torch.tensor(0.0, device=device)
             if edge_index is not None:
-                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs')
+                edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs', normalize=args.normalize_loss_weights)
             
-            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+            xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
             
             fft2loss = torch.tensor(0.0, device=device)
             if 'fft2pred' in out and out['fft2pred'] is not None:
@@ -1184,8 +1254,9 @@ for epoch in range(args.epochs):
 
             angles_loss = torch.tensor(0.0, device=device)
             if out.get('angles') is not None:
-                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+                angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
 
+            # Secondary structure loss
             ss_loss = torch.tensor(0.0, device=device)
             if out.get('ss_pred') is not None:
                 if args.mask_plddt:
@@ -1194,11 +1265,15 @@ for epoch in range(args.epochs):
                         ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                 else:
                     ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
-
-
-            loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                    fft2weight * fft2loss + angles_weight * angles_loss + 
-                    ss_weight * ss_loss + logitweight * logitloss)
+                
+            if args.use_uncertainty_weighting:
+                loss = uncertainy_weighting.forward(
+                    torch.stack([xweight*xloss, edgeweight*edgeloss, vqweight*vqloss, fft2weight*fft2loss, angles_weight*angles_loss, ss_weight*ss_loss, logitweight*logitloss])
+                )
+            else:
+                loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
+                        fft2weight * fft2loss + angles_weight * angles_loss + 
+                        ss_weight * ss_loss + logitweight * logitloss)
             
             loss = loss / args.gradient_accumulation_steps
         
@@ -1224,14 +1299,19 @@ for epoch in range(args.epochs):
                 optimizer.step()
             optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
 
-
-
-
             # Step scheduler if it's a step-based scheduler
             if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
             
             global_step += 1
+
+        
+        # Jump AA loss for initial epochs if specified
+        if args.jump_aa_loss is not None and epoch > args.jump_aa_loss :
+            xweight = .5  #ramp up AA loss
+
+        if args.jump_ss_loss is not None and epoch > args.jump_ss_loss:
+            ss_weight = .5  #ramp up SS loss
         
 
 
@@ -1257,15 +1337,18 @@ for epoch in range(args.epochs):
         else:
             optimizer.step()
         optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
-    
+
+    denominator = len(train_loader) if args.normalize_loss_weights == False else 1  # report total loss if not normalizing, otherwise report average loss
+
     # Calculate average losses
-    avg_loss_x = total_loss_x / len(train_loader)
-    avg_loss_edge = total_loss_edge / len(train_loader)
-    avg_loss_vq = total_vq / len(train_loader)
-    avg_loss_fft2 = total_loss_fft2 / len(train_loader)
-    avg_angles_loss = total_angles_loss / len(train_loader)
-    avg_logit_loss = total_logit_loss / len(train_loader)
-    avg_ss_loss = total_ss_loss / len(train_loader)
+    avg_loss_x = total_loss_x / denominator
+    avg_loss_edge = total_loss_edge / denominator
+    avg_loss_vq = total_vq / denominator
+    avg_loss_fft2 = total_loss_fft2 / denominator
+    avg_angles_loss = total_angles_loss / denominator
+    avg_logit_loss = total_logit_loss / denominator
+    avg_ss_loss = total_ss_loss / denominator
+
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
     

@@ -1,0 +1,250 @@
+Date: 2026-02-08 22:02:31
+Run name: 25_embeddings_all_decoders_final
+TensorBoard log dir: ./runs/25_embeddings_all_decoders_final
+Encoder: mk1_Encoder(
+  (position_mlp): Position_MLP(
+    (mlp): Sequential(
+      (0): Linear(in_features=256, out_features=128, bias=True)
+      (1): GELU(approximate='none')
+      (2): Dropout(p=0, inplace=False)
+      (3): Linear(in_features=128, out_features=128, bias=True)
+      (4): GELU(approximate='none')
+      (5): Dropout(p=0, inplace=False)
+      (6): Linear(in_features=128, out_features=64, bias=True)
+      (7): GELU(approximate='none')
+      (8): Dropout(p=0, inplace=False)
+      (9): Linear(in_features=64, out_features=32, bias=True)
+    )
+  )
+  (input): ModuleDict(
+    (dropout): Dropout(p=0.005, inplace=False)
+    (ln): LayerNorm((857,), eps=1e-06, elementwise_affine=True)
+    (inmlp): Sequential(
+      (0): Dropout(p=0.005, inplace=False)
+      (1): LayerNorm((889,), eps=1e-06, elementwise_affine=True)
+      (2): Linear(in_features=889, out_features=400, bias=True)
+      (3): GELU(approximate='none')
+      (4): Linear(in_features=400, out_features=200, bias=True)
+      (5): GELU(approximate='none')
+    )
+    (ffin): Sequential(
+      (0): Dropout(p=0.005, inplace=False)
+      (1): LayerNorm((160,), eps=1e-06, elementwise_affine=True)
+      (2): Linear(in_features=160, out_features=400, bias=True)
+      (3): GELU(approximate='none')
+      (4): Linear(in_features=400, out_features=200, bias=True)
+      (5): GELU(approximate='none')
+    )
+  )
+  (body): ModuleDict(
+    (convs): ModuleList(
+      (0-1): 2 x ModuleDict(
+        (res_contactPoints_res): TransformerConv(200, 200, heads=16)
+      )
+    )
+    (norms): ModuleList(
+      (0-1): 2 x GraphNorm(200)
+    )
+    (jk): JumpingKnowledge(cat)
+  )
+  (head): ModuleDict(
+    (lin): Sequential(
+      (0): Linear(in_features=400, out_features=200, bias=True)
+      (1): GELU(approximate='none')
+      (2): Linear(in_features=200, out_features=200, bias=True)
+      (3): GELU(approximate='none')
+    )
+    (out_dense): Sequential(
+      (0): Linear(in_features=220, out_features=200, bias=True)
+      (1): GELU(approximate='none')
+      (2): Linear(in_features=200, out_features=200, bias=True)
+      (3): GELU(approximate='none')
+      (4): Linear(in_features=200, out_features=128, bias=True)
+      (5): Tanh()
+    )
+  )
+  (vector_quantizer): VectorQuantizerEMA(
+    (embeddings): Embedding(25, 128)
+  )
+)
+Decoder: MultiMonoDecoder(
+  (decoders): ModuleDict(
+    (sequence_transformer): Transformer_AA_Decoder(
+      (input): ModuleDict(
+        (dropout): Dropout(p=0.001, inplace=False)
+        (position_mlp): Position_MLP(
+          (mlp): Sequential(
+            (0): Linear(in_features=256, out_features=128, bias=True)
+            (1): GELU(approximate='none')
+            (2): Dropout(p=0.001, inplace=False)
+            (3): Linear(in_features=128, out_features=64, bias=True)
+            (4): GELU(approximate='none')
+            (5): Dropout(p=0.001, inplace=False)
+            (6): Linear(in_features=64, out_features=32, bias=True)
+          )
+        )
+        (proj): Sequential(
+          (0): Linear(in_features=160, out_features=200, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=200, out_features=200, bias=True)
+          (3): GELU(approximate='none')
+        )
+      )
+      (body): ModuleDict(
+        (transformer_encoder): TransformerEncoder(
+          (layers): ModuleList(
+            (0-1): 2 x TransformerEncoderLayer(
+              (self_attn): MultiheadAttention(
+                (out_proj): NonDynamicallyQuantizableLinear(in_features=200, out_features=200, bias=True)
+              )
+              (linear1): Linear(in_features=200, out_features=2048, bias=True)
+              (dropout): Dropout(p=0.001, inplace=False)
+              (linear2): Linear(in_features=2048, out_features=200, bias=True)
+              (norm1): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+              (norm2): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+              (dropout1): Dropout(p=0.001, inplace=False)
+              (dropout2): Dropout(p=0.001, inplace=False)
+            )
+          )
+        )
+      )
+      (head): ModuleDict(
+        (dnn_decoder): Sequential(
+          (0): Linear(in_features=200, out_features=200, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=200, out_features=200, bias=True)
+          (3): GELU(approximate='none')
+          (4): Linear(in_features=200, out_features=100, bias=True)
+          (5): GELU(approximate='none')
+          (6): Linear(in_features=100, out_features=20, bias=True)
+        )
+      )
+    )
+    (geometry_transformer): Transformer_Geometry_Decoder(
+      (input): ModuleDict(
+        (dropout): Dropout(p=0.001, inplace=False)
+        (position_mlp): Position_MLP(
+          (mlp): Sequential(
+            (0): Linear(in_features=256, out_features=128, bias=True)
+            (1): GELU(approximate='none')
+            (2): Dropout(p=0.001, inplace=False)
+            (3): Linear(in_features=128, out_features=64, bias=True)
+            (4): GELU(approximate='none')
+            (5): Dropout(p=0.001, inplace=False)
+            (6): Linear(in_features=64, out_features=32, bias=True)
+          )
+        )
+        (proj): Sequential(
+          (0): Linear(in_features=160, out_features=200, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=200, out_features=200, bias=True)
+          (3): GELU(approximate='none')
+          (4): Tanh()
+        )
+      )
+      (body): ModuleDict(
+        (transformer_encoder): TransformerEncoder(
+          (layers): ModuleList(
+            (0-1): 2 x TransformerEncoderLayer(
+              (self_attn): MultiheadAttention(
+                (out_proj): NonDynamicallyQuantizableLinear(in_features=200, out_features=200, bias=True)
+              )
+              (linear1): Linear(in_features=200, out_features=2048, bias=True)
+              (dropout): Dropout(p=0.001, inplace=False)
+              (linear2): Linear(in_features=2048, out_features=200, bias=True)
+              (norm1): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+              (norm2): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+              (dropout1): Dropout(p=0.001, inplace=False)
+              (dropout2): Dropout(p=0.001, inplace=False)
+            )
+          )
+        )
+      )
+      (head): ModuleDict(
+        (prenorm): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+        (ss_cnn): Sequential(
+          (0): Conv1d(200, 200, kernel_size=(3,), stride=(1,), padding=(1,))
+          (1): GELU(approximate='none')
+          (2): Conv1d(200, 200, kernel_size=(3,), stride=(1,), padding=(1,))
+          (3): GELU(approximate='none')
+          (4): Conv1d(200, 100, kernel_size=(3,), stride=(1,), padding=(1,))
+          (5): GELU(approximate='none')
+          (6): Conv1d(100, 3, kernel_size=(1,), stride=(1,))
+        )
+        (angles_cnn): Sequential(
+          (0): Conv1d(200, 200, kernel_size=(3,), stride=(1,), padding=(1,))
+          (1): GELU(approximate='none')
+          (2): Conv1d(200, 200, kernel_size=(3,), stride=(1,), padding=(1,))
+          (3): GELU(approximate='none')
+          (4): Conv1d(200, 100, kernel_size=(3,), stride=(1,), padding=(1,))
+          (5): GELU(approximate='none')
+          (6): Conv1d(100, 3, kernel_size=(1,), stride=(1,))
+          (7): Tanh()
+        )
+      )
+    )
+    (geometry_cnn): CNN_geo_Decoder(
+      (input): ModuleDict(
+        (dropout): Dropout(p=0.001, inplace=False)
+        (input_lin): Sequential(
+          (0): Linear(in_features=128, out_features=200, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=200, out_features=200, bias=True)
+          (3): GELU(approximate='none')
+        )
+      )
+      (body): ModuleDict(
+        (convs): ModuleList(
+          (0-2): 3 x Conv1d(200, 200, kernel_size=(3,), stride=(1,), padding=(1,))
+        )
+        (norms): ModuleList(
+          (0-2): 3 x LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+        )
+        (lin): Sequential(
+          (0): Linear(in_features=200, out_features=200, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=200, out_features=200, bias=True)
+          (3): GELU(approximate='none')
+          (4): Linear(in_features=200, out_features=200, bias=True)
+        )
+      )
+      (head): ModuleDict(
+        (edge_logits_mlp): Sequential(
+          (0): LayerNorm((464,), eps=1e-06, elementwise_affine=True)
+          (1): Linear(in_features=464, out_features=200, bias=True)
+          (2): GELU(approximate='none')
+          (3): Linear(in_features=200, out_features=200, bias=True)
+          (4): GELU(approximate='none')
+          (5): Linear(in_features=200, out_features=100, bias=True)
+          (6): GELU(approximate='none')
+          (7): Linear(in_features=100, out_features=8, bias=True)
+          (8): Sigmoid()
+        )
+        (position_mlp): Position_MLP(
+          (mlp): Sequential(
+            (0): Linear(in_features=256, out_features=128, bias=True)
+            (1): GELU(approximate='none')
+            (2): Dropout(p=0.001, inplace=False)
+            (3): Linear(in_features=128, out_features=64, bias=True)
+            (4): GELU(approximate='none')
+            (5): Dropout(p=0.001, inplace=False)
+            (6): Linear(in_features=64, out_features=32, bias=True)
+          )
+        )
+      )
+      (sigmoid): Sigmoid()
+    )
+  )
+)
+Learning rate: 0.0001
+Batch size: 10
+Hidden size: 200
+Embedding dimension: 128
+Number of embeddings: 25
+Loss weights - Edge: 0.1, X: 0.1, FFT2: 0.01, VQ: 0.001
+LR Schedule: plateau
+LR Warmup Steps: 2250
+Gradient Accumulation Steps: 2
+Effective Batch Size: 20
+Commitment Cost: 0.9
+Use Commitment Scheduling: False

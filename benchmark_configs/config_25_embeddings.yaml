@@ -17,8 +17,8 @@ gradient_accumulation_steps: 2
 
 use_muon: true
 muon_lr: 0.02      # Muon learning rate for hidden weights
-adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
-
+adamw_lr: 0.0001   # AdamW learning rate (1e-5 from notebook)
+learning_rate: 0.0001
 
 seed: 42
 
@@ -29,14 +29,14 @@ embedding_dim: 128
 
 
 hetero_gae: false  # Use MultiMonoDecoder
-overwrite : true
+overwrite : false
 
 # Encoder Configuration
 EMA: true
 
 # Commitment cost scheduling - THE FOCUS OF THIS CONFIG
 commitment_cost: 0.90  # Final commitment cost (high value for strong regularization)
-use_commitment_scheduling: false  # Enable scheduling
+use_commitment_scheduling: true  # Enable scheduling
 commitment_schedule: linear  # Smooth linear warmup
 commitment_warmup_steps: 1000  # Warmup over 1k steps (~5 epochs with batch_size=20)
 commitment_start: 0.05  # Start with very low commitment cost

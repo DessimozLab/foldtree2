@@ -14,14 +14,14 @@ The losses support PyTorch Geometric heterogeneous graphs and incorporate
 structural biology domain knowledge for effective protein structure modeling.
 
 Example:
-    >>> # Contact map reconstruction with pLDDT masking
-    >>> edge_loss, logit_loss = recon_loss_diag(
-    ...     data, edge_index, decoder, plddt=True, plddt_thresh=0.3
-    ... )
-    >>> # Backbone angle reconstruction
-    >>> angle_loss = angles_reconstruction_loss(
-    ...     true_angles, pred_angles, plddt_mask=plddt, plddt_thresh=0.3
-    ... )
+	>>> # Contact map reconstruction with pLDDT masking
+	>>> edge_loss, logit_loss = recon_loss_diag(
+	...     data, edge_index, decoder, plddt=True, plddt_thresh=0.3
+	... )
+	>>> # Backbone angle reconstruction
+	>>> angle_loss = angles_reconstruction_loss(
+	...     true_angles, pred_angles, plddt_mask=plddt, plddt_thresh=0.3
+	... )
 """
 
 import torch
@@ -33,72 +33,75 @@ from torch_geometric.utils import negative_sampling , batched_negative_sampling
 EPS = 1e-8
 
 
+
+
+
 # ============================================================================
 # Multi-Task Learning Utilities
 # ============================================================================
 
 class GradNormBalancer:
-    """Gradient Norm Balancer for Multi-Task Learning.
-    
-    Automatically balances loss weights across multiple tasks by analyzing gradient
-    norms during training. This implements the GradNorm algorithm (Chen et al., 2018)
-    which dynamically adjusts task weights to equalize training rates.
-    
-    The algorithm maintains learnable task weights that are optimized to match
-    gradient norms to target values based on relative inverse training rates.
-    This helps prevent tasks with large gradients from dominating training.
-    
-    Args:
-        task_names (list[str]): Names of tasks to balance (e.g., ['sequence', 'contacts', 'angles']).
-        alpha (float, optional): Hyperparameter controlling asymmetry. Default: 0.5.
-            - alpha = 0: forces all tasks to train at same rate
-            - alpha = 1.5: allows tasks to train at different rates
-        lr_w (float, optional): Learning rate for task weight optimization. Default: 1e-3.
-        device (str, optional): Device to place weights on. Default: 'cuda'.
-    
-    Attributes:
-        task_names (list[str]): Task names for reference.
-        T (int): Number of tasks.
-        alpha (float): Asymmetry parameter.
-        w (torch.nn.Parameter): Learnable task weights (T,), normalized to sum to T.
-        opt_w (torch.optim.Adam): Optimizer for task weights.
-        L0 (torch.Tensor): Initial loss values snapshot for computing relative rates.
-    
-    Example:
-        >>> balancer = GradNormBalancer(['sequence', 'contacts', 'geometry'], alpha=1.0)
-        >>> # During training:
-        >>> losses = [seq_loss, contact_loss, geom_loss]
-        >>> weights = balancer.update_weights(losses, model.encoder.parameters())
-        >>> total_loss = sum(w * l for w, l in zip(weights, losses))
-    
-    Reference:
-        Chen, Z., Badrinarayanan, V., Lee, C. Y., & Rabinovich, A. (2018).
-        GradNorm: Gradient normalization for adaptive loss balancing in deep multitask networks.
-        In ICML.
-    """
-    
-    def __init__(self, task_names, alpha=0.5, lr_w=1e-3, device="cuda"):
-        self.task_names = task_names
-        self.T = len(task_names)  # Number of tasks
-        self.alpha = alpha
+	"""Gradient Norm Balancer for Multi-Task Learning.
+	
+	Automatically balances loss weights across multiple tasks by analyzing gradient
+	norms during training. This implements the GradNorm algorithm (Chen et al., 2018)
+	which dynamically adjusts task weights to equalize training rates.
+	
+	The algorithm maintains learnable task weights that are optimized to match
+	gradient norms to target values based on relative inverse training rates.
+	This helps prevent tasks with large gradients from dominating training.
+	
+	Args:
+		task_names (list[str]): Names of tasks to balance (e.g., ['sequence', 'contacts', 'angles']).
+		alpha (float, optional): Hyperparameter controlling asymmetry. Default: 0.5.
+			- alpha = 0: forces all tasks to train at same rate
+			- alpha = 1.5: allows tasks to train at different rates
+		lr_w (float, optional): Learning rate for task weight optimization. Default: 1e-3.
+		device (str, optional): Device to place weights on. Default: 'cuda'.
+	
+	Attributes:
+		task_names (list[str]): Task names for reference.
+		T (int): Number of tasks.
+		alpha (float): Asymmetry parameter.
+		w (torch.nn.Parameter): Learnable task weights (T,), normalized to sum to T.
+		opt_w (torch.optim.Adam): Optimizer for task weights.
+		L0 (torch.Tensor): Initial loss values snapshot for computing relative rates.
+	
+	Example:
+		>>> balancer = GradNormBalancer(['sequence', 'contacts', 'geometry'], alpha=1.0)
+		>>> # During training:
+		>>> losses = [seq_loss, contact_loss, geom_loss]
+		>>> weights = balancer.update_weights(losses, model.encoder.parameters())
+		>>> total_loss = sum(w * l for w, l in zip(weights, losses))
+	
+	Reference:
+		Chen, Z., Badrinarayanan, V., Lee, C. Y., & Rabinovich, A. (2018).
+		GradNorm: Gradient normalization for adaptive loss balancing in deep multitask networks.
+		In ICML.
+	"""
+	
+	def __init__(self, task_names, alpha=0.5, lr_w=1e-3, device="cuda"):
+		self.task_names = task_names
+		self.T = len(task_names)  # Number of tasks
+		self.alpha = alpha
 
-        # Initialize learnable task weights (constrained to be positive and sum to T)
-        self.w = torch.nn.Parameter(torch.ones(self.T, device=device))
-        self.opt_w = torch.optim.Adam([self.w], lr=lr_w)
+		# Initialize learnable task weights (constrained to be positive and sum to T)
+		self.w = torch.nn.Parameter(torch.ones(self.T, device=device))
+		self.opt_w = torch.optim.Adam([self.w], lr=lr_w)
 
-        self.L0 = None  # Snapshot of initial losses (set on first call to update_weights)
+		self.L0 = None  # Snapshot of initial losses (set on first call to update_weights)
 
-    @torch.no_grad()
-    def _renorm_(self):
-        """Renormalize task weights to be positive and sum to T.
-        
-        This constraint ensures that on average, tasks maintain their original scale.
-        Called after each optimizer step to enforce constraints.
-        """
-        # Ensure all weights are positive (prevent negative weights)
-        self.w.data.clamp_(min=1e-6)
-        # Normalize so weights sum to T (maintains average scale)
-        self.w.data *= (self.T / self.w.data.sum())
+	@torch.no_grad()
+	def _renorm_(self):
+		"""Renormalize task weights to be positive and sum to T.
+		
+		This constraint ensures that on average, tasks maintain their original scale.
+		Called after each optimizer step to enforce constraints.
+		"""
+		# Ensure all weights are positive (prevent negative weights)
+		self.w.data.clamp_(min=1e-6)
+		# Normalize so weights sum to T (maintains average scale)
+		self.w.data *= (self.T / self.w.data.sum())
 
 
 
@@ -176,6 +179,44 @@ def update_weights(self, losses, shared_params):
 		self._renorm_()  # Enforce constraints (positive, sum to T)
 
 		return self.w.detach()
+
+
+class UncertaintyWeighting(torch.nn.Module):
+	"""Uncertainty-based loss weighting (Kendall & Gal).
+	
+	Learns per-task log-variance parameters and computes:
+		sum_i (0.5 * exp(-2 * log_sigma_i) * L_i + log_sigma_i)
+	"""
+	def __init__(self, task_names, init_log_sigma=0.0, device="cuda"):
+		super().__init__()
+		self.task_names = list(task_names)
+		init = torch.full((len(self.task_names),), float(init_log_sigma))
+		self.log_sigma = torch.nn.Parameter(init)
+	
+	def forward(self, losses, active=None):
+		losses = torch.stack([
+			l if torch.is_tensor(l) else torch.tensor(l, device=self.log_sigma.device, dtype=self.log_sigma.dtype)
+			for l in losses
+		]).to(device=self.log_sigma.device, dtype=self.log_sigma.dtype)
+		if losses.numel() != self.log_sigma.numel():
+			raise ValueError(f"Expected {self.log_sigma.numel()} losses, got {losses.numel()}")
+
+		if active is None:
+			active_mask = torch.ones_like(losses)
+		else:
+			active_mask = torch.zeros_like(losses)
+			active = torch.as_tensor(active, device=losses.device, dtype=torch.long)
+			if active.numel() > 0:
+				active_mask[active] = 1.0
+
+		precision = torch.exp(-2.0 * self.log_sigma)  # 1/sigma^2
+		per_task = 0.5 * precision * losses + self.log_sigma
+		return (active_mask * per_task).sum()
+
+	def get_sigmas(self):
+		return torch.exp(self.log_sigma.detach())
+
+
 
 # ============================================================================
 # Regularization Losses
@@ -293,7 +334,7 @@ def jaccard_distance_multiset(A: torch.Tensor,
 # Graph Reconstruction Losses
 # ============================================================================
 
-def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3) -> Tensor:
+def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3 , normalize=False) -> Tensor:
 	"""Contact map reconstruction loss with diagonal removal and quality masking.
 	
 	This loss trains a decoder to predict protein contact maps (edges between residues)
@@ -325,7 +366,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 			If None, uses res[1]. If provided, uses res[key].
 		nbins (int, optional): Number of bins for distogram loss. Default: 8.
 		plddt_thresh (float, optional): Minimum pLDDT for masking. Default: 0.3.
-	
+		normalize (bool, optional): If True, normalize the loss by the number of residues. Default: False.
 	Returns:
 		tuple[torch.Tensor, torch.Tensor]: (edge_loss, distogram_loss)
 			- edge_loss: Binary cross-entropy loss for edge existence prediction
@@ -404,13 +445,14 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		neg_edge_index_filtered = neg_edge_index[:, mask]
 	else:
 		neg_edge_index_filtered = neg_edge_index
+	
 
-	neg_loss = neg_loss.mean()		
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
 		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins , plddt_thresh=plddt_thresh)
 
-	return poslossmod*pos_loss + neglossmod*neg_loss, disto_loss_pos * poslossmod + disto_loss_neg * neglossmod
+
+	return poslossmod*pos_loss.mean() + neglossmod*neg_loss.mean(), disto_loss_pos.mean() * poslossmod + disto_loss_neg.mean() * neglossmod
 
 
 
@@ -458,9 +500,8 @@ def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, pl
 # ============================================================================
 
 # Cross-entropy loss for categorical predictions (amino acid types)
-cce_loss = torch.nn.CrossEntropyLoss()
 
-def aa_reconstruction_loss(x, recon_x):
+def aa_reconstruction_loss(x, recon_x , normalize = False):
 	"""Compute amino acid sequence reconstruction loss.
 	
 	This loss trains the decoder to reconstruct amino acid identities from
@@ -488,9 +529,11 @@ def aa_reconstruction_loss(x, recon_x):
 		The function expects one-hot encoded targets (not class indices).
 		Cross-entropy will internally convert these to class indices.
 	"""
-	return cce_loss(recon_x, x)
 
-def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 , plddt_mask = None):
+	return F.cross_entropy(recon_x, x)
+
+
+def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 , plddt_mask = None , normalize = False):
 	"""Compute secondary structure reconstruction loss with optional quality masking.
 	
 	This loss trains the decoder to predict protein secondary structure (helix, sheet, coil)
@@ -542,7 +585,7 @@ def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 ,
 	return ss_loss
 
 	
-def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_thresh = 0.3):
+def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_thresh = 0.3 , normalize = False):
 	"""Compute backbone dihedral angle reconstruction loss with circular distance.
 	
 	This loss trains the decoder to predict protein backbone torsion angles (phi, psi, omega)
@@ -605,8 +648,7 @@ def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_
 	# Smooth L1 loss (Huber loss) - robust to outliers
 	# Target is zero since delta already represents the error
 	loss = F.smooth_l1_loss(delta, torch.zeros_like(delta), beta=beta)
-
-	return loss.mean()
+	return loss
 
 
 def gaussian_loss(mu , logvar , beta= 1.5):

@@ -1,9 +1,9 @@
 # FoldTree2 Configuration: 30 Embeddings
 # All three decoders: Sequence + Geometry + FoldX
 
-model_name: "ft2_30_embeddings_big"
+model_name: "ft2_30_embeddings"
 output_dir: "./models/embedding_comparison/final/"
-run_name: "30_embeddings_all_decoders_big_final"
+run_name: "30_embeddings_all_decoders_final"
 
 overwrite : false
 
@@ -19,8 +19,8 @@ gradient_accumulation_steps: 2
 
 use_muon: true
 muon_lr: 0.02      # Muon learning rate for hidden weights
-adamw_lr: 0.0001   # AdamW learning rate (1e-4 from notebook)
-learning_rate: 0.00001
+adamw_lr: 0.0001   # AdamW learning rate (1e-5 from notebook)
+learning_rate: 0.0001
 
 seed: 42
 
@@ -31,7 +31,6 @@ embedding_dim: 128
 
 
 hetero_gae: false  # Use MultiMonoDecoder
-overwrite : true
 
 # Encoder Configuration
 EMA: true

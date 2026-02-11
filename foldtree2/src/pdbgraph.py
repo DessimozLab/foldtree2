@@ -67,7 +67,8 @@ class PDB2PyG:
 		#self.metadata = { 'edge_types': [  ('res','contactPoints', 'res') ] }
 		self.aaindex = aaindex
 		self.revmap_aa = {v:k for k,v in aaindex.items()}
-
+		self.ssindex = {'N':0, 'CA':1 , 'C':2, 'O':3}
+		self.ss_revmap = {v:k for k,v in self.ssindex.items()}
 	@staticmethod
 	def read_pdb(filename):
 		#silence all warnings
