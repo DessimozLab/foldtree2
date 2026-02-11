@@ -49,7 +49,8 @@ dependencies = [
   "statsmodels",
   "pydssp",
   "ete3",
-  "pyyaml"
+  "pyyaml",
+  "ProDy"
 ]
 
 [project.scripts]
