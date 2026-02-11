@@ -33,6 +33,7 @@ class treebuilder():
 		self.replace_dict_ord = { ord(k):ord(v) for k,v in self.replace_dict.items() }
 		self.raxml_path = raxml_path
 		self.raxmlng_path = raxml_path
+		self.modelname = model.split('/')[-1].split('.')[0]
 		if charmaps is None:
 			self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
 			self.raxml_path = raxml_path
@@ -453,8 +454,9 @@ class treebuilder():
 
 	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
 		#encode the structures
-		
-		outfasta = os.path.join(outdir, 'encoded.fasta')
+		if outdir is None:
+			outdir = output_prefix
+		outfasta = os.path.join(outdir, self.modelname + 'encoded.fasta')
 		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta )	
 		#replace special characters
 		#encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
