@@ -34,6 +34,7 @@ class treebuilder():
 		self.raxml_path = raxml_path
 		self.raxmlng_path = raxml_path
 		self.modelname = model.split('/')[-1].split('.')[0]
+		
 		if charmaps is None:
 			self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
 			self.raxml_path = raxml_path
@@ -666,9 +667,10 @@ def main():
 	
 	if args.outdir is not None:
 		if not os.path.exists(args.outdir):
-			os.makedirs(args.outdir)
+			os.makedirs(args.outdir , exist_ok=True)
+	
 	if args.output_prefix is None:
-		args.output_prefix = 'encoded'
+		args.output_prefix = os.path.join(args.outdir, args.model.split('/')[-1])
 	else:
 		if not args.output_prefix.endswith('_'):
 			args.output_prefix += '_'
