@@ -497,6 +497,29 @@ from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter(log_dir=tensorboard_log_dir)
 
 
+'''
+			'geometry_transformer': {
+				'in_channels': {'res': args.embedding_dim},
+				'concat_positions': False,
+				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+				'layers': 2,
+				'nheads': 10,
+				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
+				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
+				'dropout': 0.001,
+				'normalize': False,
+				'residual': False,
+				'learn_positions': True,
+				'use_cnn_decoder':True,
+				'concat_positions': False,
+				'output_rt': False,       # Enable if you want rotation-translation
+				'output_ss': True,        # Secondary structure prediction
+				'output_angles': True     # Bond angles prediction
+			},
+			
+'''
+
 # Initialize or load model
 encoder_path = os.path.join(modeldir, modelname + '_best_encoder.pt')
 decoder_path = os.path.join(modeldir, modelname + '_best_decoder.pt')
@@ -575,27 +598,6 @@ else:
 				'concat_positions': False
 			},
 			
-			'geometry_transformer': {
-				'in_channels': {'res': args.embedding_dim},
-				'concat_positions': False,
-				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-				'layers': 2,
-				'nheads': 10,
-				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
-				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
-				'dropout': 0.001,
-				'normalize': False,
-				'residual': False,
-				'learn_positions': True,
-				'use_cnn_decoder':True,
-				'concat_positions': False,
-				'output_rt': False,       # Enable if you want rotation-translation
-				'output_ss': True,        # Secondary structure prediction
-				'output_angles': True     # Bond angles prediction
-			},
-			
-            
 			'geometry_cnn': {
 				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 				'concat_positions': False,

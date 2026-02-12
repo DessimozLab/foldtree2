@@ -35,6 +35,15 @@ class treebuilder():
 		self.raxmlng_path = raxml_path
 		self.modelname = model.split('/')[-1].split('.')[0]
 		
+		if 'bs' in kwargs:
+			self.bs = kwargs['bs']
+		else:
+			self.bs = False
+		if 'redo' in kwargs:
+			self.redo = kwargs['redo']
+		else:
+			self.redo = False
+
 		if charmaps is None:
 			self.rev_replace_dict_ord = { ord(v):ord(k) for k,v in self.replace_dict.items() }
 			self.raxml_path = raxml_path
@@ -48,6 +57,7 @@ class treebuilder():
 			self.nchars = len(self.alphabet)
 			self.map = { c:i for i,c in enumerate(self.alphabet)}
 			self.revmap = { i:c for i,c in enumerate(self.alphabet)}
+
 		else:
 			print('loading charmaps from', charmaps)
 			
@@ -357,15 +367,19 @@ class treebuilder():
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
 		return outfile
 
-	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8 , bs =False):
+	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8 ):
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'} --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix  + ' --force perf_threads'
-		#raxml_cmd =raxmlng_path  + ' --model MULTI'+str(nsymbols)+'_GTR+I+G --redo  --all --bs-trees '+str(iterations)+' --seed 12345 --threads 8 --msa '+fasta_file+' --prefix '+output_prefix 
+		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'} --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
+		if self.bs == True:
+			raxml_cmd += ' --force perf_threads --bs-trees '+str(iterations)+' --bs-metric fbp'	
+		if self.redo == True:
+			raxml_cmd += ' --redo'
 		print(raxml_cmd)
 		subprocess.run(raxml_cmd, shell=True)
 		return output_prefix + '.raxml.bestTree'
+
 
 	#ancestral reconstruction
 	#raxml-ng --ancestral --msa ali.fa --tree best.tre --model HKY --prefix ASR
@@ -623,6 +637,9 @@ def main():
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 	parser.add_argument("--device", default=None, help="Device to run the model on (default: None, uses CPU or GPU if available)")
+	parser.add_argument( "--bs", action="store_true", help="Enable bootstrapping in RAxML-NG" )
+	parser.add_argument( "--redo", action="store_true", help="Enable --redo flag in RAxML-NG to overwrite existing results" )
+
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
 
@@ -685,7 +702,7 @@ def main():
 
 	# Create an instance of treebuilder
 	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, decoder_model=decoder_path, submat=args.submat , raxml_path=args.raxmlpath,
-	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device)
+	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device, bs=args.bs, redo=args.redo , verbose=args.verbose)
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix

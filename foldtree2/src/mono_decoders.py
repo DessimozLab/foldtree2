@@ -658,6 +658,242 @@ class CNN_geo_Decoder(torch.nn.Module):
 				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
 				'ss_pred': ss_pred, 'z': z}
 
+
+
+class CNN_AA_Decoder(torch.nn.Module):
+	"""
+	CNN-based Amino Acid Decoder with modular architecture.
+	Uses CNN layers for sequence processing instead of Transformer.
+	
+	- input: Preprocessing and initial projection
+	- body: CNN convolution layers for sequence modeling
+	- head: Prediction heads for amino acid and optional secondary structure prediction
+	"""
+	def __init__(
+		self,
+		in_channels={'res': 10},
+		conv_channels=[128, 256, 512],
+		kernel_sizes=[3, 3, 3],
+		AAdecoder_hidden=[256, 128, 64],
+		ssdecoder_hidden=[256, 128, 64],
+		concat_positions=True,
+		dropout=0.001,
+		normalize=True,
+		residual=True,
+		learn_positions=False,
+		amino_mapper=None,
+		output_ss=False,
+		**kwargs
+	):
+		super(CNN_AA_Decoder, self).__init__()
+		L.seed_everything(42)
+
+		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
+		self.normalize = normalize
+		self.residual = residual
+		self.amino_acid_indices = amino_mapper
+		self.output_ss = output_ss
+		
+		input_dim = in_channels['res']
+		if concat_positions:
+			input_dim = input_dim + 256
+		if learn_positions:
+			self.concat_positions = False
+			input_dim = input_dim + 32
+
+		# ===================== INPUT MODULE =====================
+		# Preprocessing and initial projection
+		self.input = nn.ModuleDict()
+		
+		self.input['dropout'] = nn.Dropout(dropout)
+		
+		if learn_positions:
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+		
+		self.input['proj'] = nn.Sequential(
+			nn.Linear(input_dim, conv_channels[0]),
+			nn.GELU(),
+			nn.Linear(conv_channels[0], conv_channels[0]),
+			nn.GELU(),
+		)
+
+		# ===================== BODY MODULE =====================
+		# CNN layers for sequence processing
+		self.body = nn.ModuleDict()
+		self.body['convs'] = nn.ModuleList()
+		self.body['norms'] = nn.ModuleList()
+		
+		for i, (channels, kernel_size) in enumerate(zip(conv_channels, kernel_sizes)):
+			self.body['convs'].append(
+				nn.Conv1d(
+					channels if i == 0 else conv_channels[i-1], 
+					channels, 
+					kernel_size=kernel_size, 
+					padding=kernel_size//2
+				)
+			)
+			self.body['norms'].append(nn.LayerNorm(channels, eps=1e-6))
+		
+		# Final linear transformation back to input-like dimension
+		if self.residual:
+			self.body['lin'] = nn.Sequential(
+				nn.Linear(conv_channels[-1], input_dim),
+				nn.GELU(),
+				nn.Linear(input_dim, input_dim),
+			)
+
+		# ===================== HEAD MODULE =====================
+		# Amino acid and secondary structure prediction heads
+		self.head = nn.ModuleDict()
+		
+		# Amino acid prediction head (CNN-based)
+		self.head['aa_cnn'] = nn.Sequential(
+			#nn.LayerNorm(conv_channels[-1], eps=1e-6),
+			nn.Conv1d(conv_channels[-1], AAdecoder_hidden[0], kernel_size=3, padding=1),
+			nn.GELU(),
+			nn.Conv1d(AAdecoder_hidden[0], AAdecoder_hidden[1], kernel_size=3, padding=1),
+			nn.GELU(),
+			nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2] if len(AAdecoder_hidden) > 2 else AAdecoder_hidden[1], kernel_size=3, padding=1),
+			nn.GELU(),
+			nn.Conv1d(AAdecoder_hidden[2] if len(AAdecoder_hidden) > 2 else AAdecoder_hidden[1], 20, kernel_size=1),  # 20 amino acids
+		)
+		
+		# Optional secondary structure prediction head
+		if output_ss:
+			self.head['ss_cnn'] = nn.Sequential(
+				#nn.LayerNorm(conv_channels[-1], eps=1e-6),
+				nn.Conv1d(conv_channels[-1], ssdecoder_hidden[0], kernel_size=3, padding=1),
+				nn.GELU(),
+				nn.Conv1d(ssdecoder_hidden[0], ssdecoder_hidden[1], kernel_size=3, padding=1),
+				nn.GELU(),
+				nn.Conv1d(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], kernel_size=3, padding=1),
+				nn.GELU(),
+				nn.Conv1d(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3, kernel_size=1),  # 3 SS classes
+			)
+
+	def forward(self, data, **kwargs):
+		x = data.x_dict['res']
+		
+		# ===================== INPUT PROCESSING =====================
+		if self.concat_positions:
+			x = torch.cat([x, data['positions'].x], dim=1)
+		if self.learn_positions:
+			pos_enc = self.input['position_mlp'](data['positions'].x)
+			x = torch.cat([x, pos_enc], dim=1)
+		
+		inz = x.clone()
+		x = self.input['dropout'](x)
+		x = self.input['proj'](x)
+		
+		# ===================== BODY PROCESSING =====================
+		# Handle batched data for CNN
+		batch = data['res'].batch if hasattr(data['res'], 'batch') and data['res'].batch is not None else None
+		
+		if batch is not None:
+			# Group by batch
+			num_graphs = batch.max().item() + 1
+			x_list = []
+			for i in range(num_graphs):
+				mask = batch == i
+				x_batch = x[mask]  # Shape: (seq_len, features)
+				
+				# Transpose for Conv1d: (features, seq_len)
+				x_batch = x_batch.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
+				
+				# Apply CNN layers
+				for conv, norm in zip(self.body['convs'], self.body['norms']):
+					x_batch = conv(x_batch)
+					x_batch = F.silu(x_batch)
+					# Transpose for LayerNorm: (1, seq_len, features)
+					x_batch = x_batch.transpose(1, 2)
+					x_batch = norm(x_batch)
+					# Transpose back for next conv: (1, features, seq_len)
+					x_batch = x_batch.transpose(1, 2)
+				
+				# Transpose back and remove batch dimension
+				x_batch = x_batch.squeeze(0).transpose(0, 1)  # (seq_len, features)
+				x_list.append(x_batch)
+			
+			# Concatenate back
+			x = torch.cat(x_list, dim=0)
+		else:
+			# Single graph case
+			x = x.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
+			
+			for conv, norm in zip(self.body['convs'], self.body['norms']):
+				x = conv(x)
+				x = F.silu(x)
+				# Transpose for LayerNorm: (1, seq_len, features)
+				x = x.transpose(1, 2)
+				x = norm(x)
+				# Transpose back for next conv: (1, features, seq_len)
+				x = x.transpose(1, 2)
+			
+			x = x.squeeze(0).transpose(0, 1)  # (seq_len, features)
+		
+		# Apply residual connection
+		if self.residual:
+			x = x + self.body['lin'](x)
+		
+		# Apply normalization
+		if self.normalize:
+			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
+		
+		# ===================== HEAD PROCESSING =====================
+		ss_pred = None
+		
+		# Amino acid prediction
+		# Prepare for Conv1d: (batch, channels, seq_len) but since we have individual sequences, handle per sequence
+		if batch is not None:
+			aa_list = []
+			ss_list = []
+			for i in range(num_graphs):
+				mask = batch == i
+				seq_len = mask.sum().item()
+				x_seq = x[mask]  # (seq_len, features)
+				
+				# Transpose for Conv1d: (features, seq_len) -> (1, features, seq_len)
+				x_cnn = x_seq.transpose(0, 1).unsqueeze(0)
+				
+				# AA prediction
+				aa_out = self.head['aa_cnn'](x_cnn)  # (1, 20, seq_len)
+				aa_out = aa_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 20)
+				aa_list.append(F.log_softmax(aa_out, dim=-1))
+				
+				# SS prediction if enabled
+				if self.output_ss and 'ss_cnn' in self.head:
+					ss_out = self.head['ss_cnn'](x_cnn)  # (1, 3, seq_len)
+					ss_out = ss_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+					ss_list.append(ss_out)
+			
+			aa = torch.cat(aa_list, dim=0)
+			if ss_list:
+				ss_pred = torch.cat(ss_list, dim=0)
+		else:
+			# Single sequence case
+			x_cnn = x.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
+			
+			# AA prediction
+			aa = self.head['aa_cnn'](x_cnn)  # (1, 20, seq_len)
+			aa = aa.permute(2, 0, 1).squeeze(1)  # (seq_len, 20)
+			aa = F.log_softmax(aa, dim=-1)
+			
+			# SS prediction if enabled
+			if self.output_ss and 'ss_cnn' in self.head:
+				ss_pred = self.head['ss_cnn'](x_cnn)  # (1, 3, seq_len)
+				ss_pred = ss_pred.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+		
+		return {'aa': aa, 'ss_pred': ss_pred}
+	
+	def x_to_amino_acid_sequence(self, x_r):
+		indices = torch.argmax(x_r, dim=1)
+		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
+		return amino_acid_sequence
+
+
+
+
 class Transformer_AA_Decoder(torch.nn.Module):
 	"""
 	Muon-compatible Transformer amino acid decoder with modular architecture.
@@ -877,6 +1113,8 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		indices = torch.argmax(x_r, dim=1)
 		amino_acid_sequence = ''.join(self.amino_acid_indices[idx.item()] for idx in indices)
 		return amino_acid_sequence
+
+
 
 
 class Transformer_Geometry_Decoder(torch.nn.Module):
@@ -1352,6 +1590,8 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['sequence'] = HeteroGAE_AA_Decoder(**configs['sequence'])
 			if task == 'sequence_transformer':
 				self.decoders['sequence_transformer'] = Transformer_AA_Decoder(**configs['sequence_transformer'])
+			elif task == 'sequence_cnn':
+				self.decoders['sequence_cnn'] = CNN_AA_Decoder(**configs['sequence_cnn'])
 			elif task == 'contacts':
 				self.decoders['contacts'] = HeteroGAE_geo_Decoder(**configs['contacts'])
 			elif task == 'foldx':
