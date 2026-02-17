@@ -29,8 +29,41 @@ def cosine_anneal(start, end, t, T):
     return end + (start - end) * c
 
 
+def second_order_entropy_rate(q, alpha=1e-3, eps=1e-8):
+    """
+    q: [B, L, K] soft code assignments (sum_K q=1)
+    returns: scalar H2 (estimated entropy rate)
+    """
+    B, L, K = q.shape
+    if L < 3:
+        return torch.tensor(0.0, device=q.device, dtype=q.dtype)
+
+    q0 = q[:, :-2, :]   # [B, L-2, K]  z_{t-2}
+    q1 = q[:, 1:-1, :]  # [B, L-2, K]  z_{t-1}
+    q2 = q[:, 2:, :]    # [B, L-2, K]  z_t
+
+    # Soft trigram counts C_{ij,k}: [K, K, K]
+    C = torch.einsum("btk,btm,btn->kmn", q0, q1, q2)  # i=k, j=m, k=n (just naming)
+
+    # Transition probs T_hat[i,j,k]
+    C_smooth = C + alpha
+    T_hat = C_smooth / (C_smooth.sum(dim=2, keepdim=True) + eps)  # normalize over next-state
+
+    # Pair weights pi_hat[i,j] from soft pair counts
+    C_pair = torch.einsum("btk,btn->kn", q[:, :-1, :], q[:, 1:, :])  # [K, K]
+    pi_hat = C_pair / (C_pair.sum() + eps)
+
+    # Conditional entropy per context (i,j): H(T_hat[i,j,*])
+    H_cond = -(T_hat * (T_hat + eps).log()).sum(dim=2)  # [K, K]
+
+    # Entropy rate: sum_{i,j} pi[i,j] * H_cond[i,j]
+    H2 = (pi_hat * H_cond).sum()
+    return H2
+
+
 class VectorQuantizerEMA(nn.Module):
-	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1, diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99, use_commitment_scheduling=False, commitment_warmup_steps=5000, commitment_schedule='cosine', commitment_start=0.1, commitment_end=None , **kwargs	):
+	def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay=0.99, epsilon=1e-5, reset_threshold=100000, reset=False, klweight=1,
+			  H2_weight = 0.1 , diversityweight=0, entropyweight=0, jsweight=0, prior_momentum=0.99, use_commitment_scheduling=False, commitment_warmup_steps=5000, commitment_schedule='cosine', commitment_start=0.1, commitment_end=None , **kwargs	):
 		super(VectorQuantizerEMA, self).__init__()
 		self.embedding_dim = embedding_dim
 		self.num_embeddings = num_embeddings
@@ -63,6 +96,7 @@ class VectorQuantizerEMA(nn.Module):
 		self.klweight = klweight
 		self.entropyweight = entropyweight
 		self.jsweight = jsweight
+		self.H2_weight = H2_weight
 
 		# Embeddings
 		self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
@@ -114,7 +148,7 @@ class VectorQuantizerEMA(nn.Module):
 		else:  # 'none' or any other value - use final value immediately
 			self.commitment_cost = end
 
-	def forward(self, x):
+	def forward(self, x , batch=None):
 		# Update commitment cost schedule during training (only if scheduling is enabled)
 		if self.training and self.use_commitment_scheduling:
 			self.update_commitment_cost()
@@ -154,12 +188,23 @@ class VectorQuantizerEMA(nn.Module):
 			kl_div_reg = 0
 		jensen_shannon = 0  # optional
 
+		if self.H2_weight > 0:
+			
+			qindices = distances.log_softmax(dim=-1)  # [B*L]
+			#add batch dimension back to qindices
+			qindices = qindices.view(batch.size(0), -1)  # [B, L]
+			#add batch dimension back to qindices
+			qindices = qindices.view(batch.size(0), -1, self.num_embeddings)  # [B, L, K]
+			H2 = second_order_entropy_rate(qindices )
+			# Note: H2 is an estimate of the second-order entropy rate, which can
+			# be used as a proxy for diversity and temporal structure in the code usage.
 		# Total loss
 		total_loss = loss \
 			- self.entropyweight * entropy_reg \
 			+ self.diversityweight * diversity_reg \
 			+ self.klweight * kl_div_reg \
-			- self.jsweight * jensen_shannon
+			- self.jsweight * jensen_shannon \
+			+ self.H2_weight * H2
 
 		# EMA updates (only during training)
 		# Wrap in no_grad() to prevent these buffer updates from interfering with DDP gradient computation

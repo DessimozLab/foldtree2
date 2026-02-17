@@ -246,9 +246,10 @@ class mk1_Encoder(torch.nn.Module):
 		# ===================== HEAD PROCESSING =====================
 		x = self.head['lin'](x)
 		x = self.head['out_dense'](torch.cat([x, x_dict['AA']], dim=1))
+		batch = data['res'].batch if hasattr(data['res'], 'batch') and data['res'].batch is not None else torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
 		
 		# Quantization
-		z_quantized, vq_loss = self.vector_quantizer(x)
+		z_quantized, vq_loss = self.vector_quantizer(x , batch=batch)
 		
 		if 'debug' in kwargs and kwargs['debug']:
 			print('z_quantized shape:', z_quantized.shape)

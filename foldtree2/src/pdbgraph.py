@@ -450,6 +450,11 @@ class PDB2PyG:
 		fft_a = np.angle(fft_1d)
 		fft2_m = np.abs(fft_2d)
 		fft2_a = np.angle(fft_2d)
+		
+		#make sure the output is the same shape
+		fft2_a = np.resize(fft2_a, fft2_m.shape)
+		fft_a = np.resize(fft_a, fft_m.shape)
+
 		return fft_m, fft_a, fft2_m , fft2_a
 
 	@staticmethod
