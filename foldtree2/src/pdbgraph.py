@@ -746,6 +746,77 @@ class PDB2PyG:
 
 		return R_true, t_true
 
+	
+	@staticmethod
+	def compute_sidechain_orientation(chain, res_idx1, res_idx2):
+		"""
+		Calculate the relative side chain orientation between two selected residues.
+		Returns the vector from the first residue's CB atom to the second's CB atom,
+		the angle between their side chain vectors (CA->CB), their cross product,
+		and the distance between the centers of the two side chains.
+
+		Args:
+			chain: List of Bio.PDB Residue objects (single chain).
+			res_idx1: Index of the first residue in the chain.
+			res_idx2: Index of the second residue in the chain.
+
+		Returns:
+			dict with keys:
+				'cb_vector': np.ndarray, vector from CB1 to CB2 (shape: (3,))
+				'sidechain_angle': float, angle (radians) between CA->CB vectors
+				'cross_product': np.ndarray, cross product of CA->CB vectors (shape: (3,))
+				'sidechain_center_distance': float, distance between side chain centers
+		"""
+		def get_sidechain_vector(res):
+			if 'CA' in res and 'CB' in res:
+				return res['CB'].get_coord() - res['CA'].get_coord()
+			else:
+				return None
+
+		def get_sidechain_center(res):
+			# Center of side chain: mean of all atoms except backbone (N, CA, C, O)
+			backbone_atoms = {'N', 'CA', 'C', 'O'}
+			coords = [atom.get_coord() for atom in res if atom.get_name() not in backbone_atoms]
+			if coords:
+				return np.mean(coords, axis=0)
+			else:
+				return None
+
+		res1 = chain[res_idx1]
+		res2 = chain[res_idx2]
+		if 'CB' not in res1 or 'CB' not in res2 or 'CA' not in res1 or 'CA' not in res2:
+			return None
+
+		cb_vector = res2['CB'].get_coord() - res1['CB'].get_coord()
+		vec1 = get_sidechain_vector(res1)
+		vec2 = get_sidechain_vector(res2)
+		if vec1 is None or vec2 is None:
+			return None
+
+		# Normalize vectors
+		vec1_norm = vec1 / (np.linalg.norm(vec1) + EPS)
+		vec2_norm = vec2 / (np.linalg.norm(vec2) + EPS)
+		# Compute angle between vectors
+		cos_angle = np.clip(np.dot(vec1_norm, vec2_norm), -1.0, 1.0)
+		angle = np.arccos(cos_angle)
+		# Compute cross product
+		cross_product = np.cross(vec1_norm, vec2_norm)
+
+		# Compute side chain centers and their distance
+		center1 = get_sidechain_center(res1)
+		center2 = get_sidechain_center(res2)
+		if center1 is not None and center2 is not None:
+			sidechain_center_distance = np.linalg.norm(center2 - center1)
+		else:
+			sidechain_center_distance = None
+
+		return {
+			'cb_vector': cb_vector,
+			'sidechain_angle': angle,
+			'cross_product': cross_product,
+			'sidechain_center_distance': sidechain_center_distance
+		}
+
 
 	@staticmethod
 	def sparse2pairs(sparsemat):

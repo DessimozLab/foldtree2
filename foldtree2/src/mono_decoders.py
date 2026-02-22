@@ -485,7 +485,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
 				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[1], 3)
+				nn.Linear(anglesdecoder_hidden[1], 3),
+				nn.Softmax(dim=-1)
 			)
 		
 		# Bond angles prediction
@@ -757,6 +758,7 @@ class CNN_AA_Decoder(torch.nn.Module):
 			nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2] if len(AAdecoder_hidden) > 2 else AAdecoder_hidden[1], kernel_size=3, padding=1),
 			nn.GELU(),
 			nn.Conv1d(AAdecoder_hidden[2] if len(AAdecoder_hidden) > 2 else AAdecoder_hidden[1], 20, kernel_size=1),  # 20 amino acids
+			nn.Softmax(dim=1)  # Probabilities for amino acid classes
 		)
 		
 		# Optional secondary structure prediction head
@@ -770,6 +772,7 @@ class CNN_AA_Decoder(torch.nn.Module):
 				nn.Conv1d(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], kernel_size=3, padding=1),
 				nn.GELU(),
 				nn.Conv1d(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3, kernel_size=1),  # 3 SS classes
+				nn.Softmax(dim=1)  # Probabilities for SS classes
 			)
 
 	def forward(self, data, **kwargs):
@@ -992,6 +995,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2], kernel_size=3, padding=1),
 				nn.GELU(),
 				nn.Conv1d(AAdecoder_hidden[2], 20, kernel_size=1),
+				nn.Softmax(dim=-1)
 			)
 		else:
 			# DNN decoder for amino acid prediction
@@ -1002,7 +1006,8 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
-				nn.Linear(AAdecoder_hidden[2], 20)
+				nn.Linear(AAdecoder_hidden[2], 20),
+				nn.Softmax(dim=-1)
 			)
 		
 		# Optional secondary structure prediction head
@@ -1014,7 +1019,8 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
-				nn.Linear(AAdecoder_hidden[2], 3)
+				nn.Linear(AAdecoder_hidden[2], 3),
+				nn.Softmax(dim=-1)
 			)
 
 	def forward(self, data, **kwargs):
@@ -1254,7 +1260,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					nn.GELU(),
 					nn.Conv1d(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], kernel_size=3, padding=1),
 					nn.GELU(),
-					nn.Conv1d(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3, kernel_size=1)
+					nn.Conv1d(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3, kernel_size=1),
+					nn.LogSoftmax(dim=-1)
+
 				)
 			else:
 				self.head['ss_head'] = nn.Sequential(
@@ -1265,7 +1273,8 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					nn.GELU(),
 					nn.Linear(ssdecoder_hidden[1], ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1]),
 					nn.GELU(),
-					nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3)
+					nn.Linear(ssdecoder_hidden[2] if len(ssdecoder_hidden) > 2 else ssdecoder_hidden[1], 3),
+					nn.LogSoftmax(dim=-1)
 				)
 		
 		# Bond angles prediction head (phi, psi, omega)

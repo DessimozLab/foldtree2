@@ -367,11 +367,11 @@ class treebuilder():
 				f.write('>' + i + '\n' + alndf.loc[i].remap_symbols + '\n')
 		return outfile
 
-	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8 ):
+	def run_raxml_ng(self, fasta_file, matrix_file, nsymbols, output_prefix , iterations = 10 , cores = 8 , evoflags = {'+I'} ):
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path  + ' --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'} --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
+		raxml_cmd = raxmlng_path  + ' --all --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}'+''.join(evoflags)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
 		if self.bs == True:
 			raxml_cmd += ' --force perf_threads --bs-trees '+str(iterations)+' --bs-metric fbp'	
 		if self.redo == True:
@@ -380,12 +380,11 @@ class treebuilder():
 		subprocess.run(raxml_cmd, shell=True)
 		return output_prefix + '.raxml.bestTree'
 
-
 	#ancestral reconstruction
 	#raxml-ng --ancestral --msa ali.fa --tree best.tre --model HKY --prefix ASR
 
 	def run_raxml_ng_ancestral_struct(self, fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
-		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I+G'
+		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I'
 		if self.raxmlng_path == None:
 			self.raxmlng_path = 'raxml-ng'
 		raxml_cmd = self.raxmlng_path + ' --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'

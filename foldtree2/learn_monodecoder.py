@@ -538,7 +538,7 @@ else:
     hidden_size = args.hidden_size
     encoder = ecdr.mk1_Encoder(
         in_channels=ndim,
-        hidden_channels=[hidden_size, hidden_size, hidden_size],
+        hidden_channels=[hidden_size, hidden_size],#, hidden_size],
         out_channels=args.embedding_dim,
         metadata={'edge_types': [('res','contactPoints','res')]},
         num_embeddings=args.num_embeddings,
