@@ -529,8 +529,8 @@ def aa_reconstruction_loss(x, recon_x , normalize = False):
 		The function expects one-hot encoded targets (not class indices).
 		Cross-entropy will internally convert these to class indices.
 	"""
-
-	return F.cross_entropy(recon_x, x)
+	target = x.argmax(dim=-1)   # integers in [0..19], no gradients needed
+	return F.cross_entropy(recon_x, target)
 
 
 def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 , plddt_mask = None , normalize = False):
@@ -570,18 +570,20 @@ def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 ,
 		Masking by pLDDT is recommended for AlphaFold structures where low-confidence
 		regions may have unreliable secondary structure assignments.
 	"""
+	
+	target = ss.argmax(dim=-1)
 	if mask_plddt:
 		# Create boolean mask for high-confidence residues
 		mask = (plddt_mask > plddt_threshold).squeeze()
 		if mask.sum() > 0:
 			# Compute loss only on masked residues
-			ss_loss = F.cross_entropy(recon_ss[mask], ss[mask])
+			ss_loss = F.cross_entropy(recon_ss[mask], target[mask])
 		else:
 			# No residues pass threshold - return zero loss to prevent NaN
 			ss_loss = torch.tensor(0.0, device=recon_ss.device)
 	else:
 		# Compute loss on all residues
-		ss_loss = F.cross_entropy(recon_ss, ss)
+		ss_loss = F.cross_entropy(recon_ss, target)
 	return ss_loss
 
 	
