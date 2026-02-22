@@ -241,7 +241,7 @@ class VectorQuantizerEMA(nn.Module):
 			reset_threshold=100000, 
 			reset=False, 
 			klweight= 0 ,
-			H2_weight = 0.1 ,
+			H2_weight = 0.25,
 			H2_tau = 0.1,
 			diversityweight=0.5, 
 			entropyweight=0, 

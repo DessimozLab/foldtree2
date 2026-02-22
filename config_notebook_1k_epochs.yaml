@@ -18,7 +18,7 @@ seed: 0
 # Model architecture (from notebook)
 hidden_size: 200
 num_embeddings: 30
-embedding_dim: 128
+embedding_dim: 16
 
 # Encoder configuration (mk1_Encoder from notebook)
 EMA: true
@@ -58,7 +58,7 @@ xweight: 0.1
 # fft2weight = 0.01
 vqweight: 0.1
 angles_weight: 0.01
-ss_weight: 0.01
+ss_weight: 0.1
 
 
 
