@@ -12,6 +12,8 @@ from foldtree2.src import pdbgraph
 from foldtree2.src import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss, UncertaintyWeighting
 from foldtree2.src.mono_decoders import MultiMonoDecoder
+from foldtree2.src.visualization import create_reconstruction_figure
+
 import os
 import tqdm
 import random
@@ -588,7 +590,7 @@ else:
 				'layers': 2,
 				'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2], 
 				'amino_mapper': converter.aaindex,
-				'nheads': 10,
+				'nheads': 5,
 				'dropout': 0.001,
 				'normalize': False,
 				'residual': False,
@@ -597,7 +599,27 @@ else:
 				'learn_positions': True,
 				'concat_positions': False
 			},
-			
+               
+			'geometry_transformer': {
+				'in_channels': {'res': args.embedding_dim},
+				'concat_positions': False,
+				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
+				'layers': 2,
+				'nheads': 5,
+				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
+				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
+				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
+				'dropout': 0.001,
+				'normalize': False,
+				'residual': False,
+				'learn_positions': True,
+				'use_cnn_decoder':True,
+				'concat_positions': False,
+				'output_rt': False,       # Enable if you want rotation-translation
+				'output_ss': True,        # Secondary structure prediction
+				'output_angles': True     # Bond angles prediction
+			},
+               
 			'geometry_cnn': {
 				'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 				'concat_positions': False,
@@ -848,194 +870,8 @@ hparams_dict = {
     'seed': args.seed,
 }
 metrics_dict = {}
+writer.add_hparams(hparams_dict, metrics_dict)
 
-def create_reconstruction_figure(data_sample, predictions, z_discrete, num_embeddings, 
-								epoch=None, save_path=None, figsize=(15, 10)):
-	"""
-	Create reconstruction visualization from pre-computed predictions.
-	
-	Args:
-		data_sample: Original data sample
-		predictions: Dictionary of predictions from decoder
-		z_discrete: Discrete embeddings
-		num_embeddings: Size of embedding alphabet
-		epoch: Epoch number (optional)
-		save_path: Path to save figure
-		figsize: Figure size
-		
-	Returns:
-		(fig, metrics_dict) tuple
-	"""
-	import numpy as np
-	import matplotlib.pyplot as plt
-	from colour import Color
-	
-	fig, axs = plt.subplots(2, 3, figsize=figsize)
-	epoch_str = f"Epoch {epoch} - " if epoch is not None else ""
-	
-	# Row 1: Predictions
-	# AA predictions
-	if 'aa' in predictions and predictions['aa'] is not None:
-		aa_probs = torch.softmax(predictions['aa'], dim=-1).cpu().numpy()
-		im0 = axs[0, 0].imshow(aa_probs.T, cmap='hot', aspect='auto')
-		axs[0, 0].set_title(f"{epoch_str}AA Predictions")
-		axs[0, 0].set_xlabel('Residue Index')
-		axs[0, 0].set_ylabel('AA Type')
-		fig.colorbar(im0, ax=axs[0, 0])
-	
-	# Contact predictions
-	if 'edge_probs' in predictions and predictions['edge_probs'] is not None:
-		edge_probs = predictions['edge_probs'].cpu().numpy()
-		im1 = axs[0, 1].imshow(1 - edge_probs, cmap='hot', interpolation='nearest')
-		axs[0, 1].set_title(f"{epoch_str}Predicted Contacts")
-		fig.colorbar(im1, ax=axs[0, 1])
-	
-	# Embedding sequence
-	if z_discrete is not None:
-		ord_colors = Color("red").range_to(Color("blue"), num_embeddings)
-		ord_colors = np.array([c.get_rgb() for c in ord_colors])
-		sequence_colors = ord_colors[z_discrete.cpu().numpy()]
-		
-		max_width = 64
-		seq_len = len(sequence_colors)
-		rows = int(np.ceil(seq_len / max_width))
-		canvas = np.ones((rows, max_width, 3))
-		
-		for i in range(rows):
-			start = i * max_width
-			end = min((i + 1) * max_width, seq_len)
-			row_colors = sequence_colors[start:end]
-			canvas[i, :len(row_colors), :] = row_colors
-		
-		axs[0, 2].imshow(canvas, aspect='auto')
-		axs[0, 2].set_title('Embedding Sequence')
-		axs[0, 2].axis('off')
-	
-	# Row 2: Additional predictions
-	# Angles
-	if 'angles' in predictions and predictions['angles'] is not None:
-		angles = predictions['angles'].cpu().numpy()
-		for i in range(min(3, angles.shape[1])):
-			axs[1, 0].plot(angles[:, i], label=f'Angle {i}', alpha=0.7)
-		axs[1, 0].set_title('Predicted Angles')
-		axs[1, 0].legend()
-		axs[1, 0].set_xlabel('Residue Index')
-		axs[1, 0].set_ylabel('Angle (radians)')
-	
-	# Secondary structure
-	if 'ss_pred' in predictions and predictions['ss_pred'] is not None:
-		ss_pred = torch.argmax(predictions['ss_pred'], dim=-1).cpu().numpy()
-		ss_colors = Color("red").range_to(Color("blue"), 3)
-		ss_colors = np.array([c.get_rgb() for c in ss_colors])
-		ss_sequence = ss_colors[ss_pred]
-		
-		max_width = 64
-		rows = int(np.ceil(len(ss_sequence) / max_width))
-		canvas = np.ones((rows, max_width, 3))
-		
-		for i in range(rows):
-			start = i * max_width
-			end = min((i + 1) * max_width, len(ss_sequence))
-			row_colors = ss_sequence[start:end]
-			canvas[i, :len(row_colors), :] = row_colors
-		
-		axs[1, 1].imshow(canvas, aspect='auto')
-		axs[1, 1].set_title('Predicted SS')
-		axs[1, 1].axis('off')
-	
-	# Edge logits heatmap
-	if 'edge_logits' in predictions and predictions['edge_logits'] is not None:
-		edge_logits = predictions['edge_logits']
-		if edge_logits.dim() == 3:
-			# Sum over categories if multi-dimensional
-			edge_logits = edge_logits.sum(dim=-1)
-		im2 = axs[1, 2].imshow(edge_logits.cpu().numpy(), cmap='hot', interpolation='nearest')
-		axs[1, 2].set_title('Edge Logits')
-		fig.colorbar(im2, ax=axs[1, 2])
-	
-	plt.tight_layout()
-	
-	if save_path:
-		fig.savefig(save_path, bbox_inches='tight', dpi=150)
-	
-	# Compute basic metrics
-	metrics = {
-		'num_residues': len(z_discrete) if z_discrete is not None else 0,
-		'has_aa': 'aa' in predictions,
-		'has_contacts': 'edge_probs' in predictions,
-		'has_angles': 'angles' in predictions,
-		'has_ss': 'ss_pred' in predictions
-	}
-	
-	return fig, metrics
-
-
-def visualize_batch_reconstructions(encoder, decoder, data_samples, device, num_embeddings, 
-									converter, epoch=None, save_dir=None, max_samples=4):
-	"""
-	Visualize reconstructions for a batch of samples.
-	
-	Args:
-		encoder: Trained encoder
-		decoder: Trained decoder
-		data_samples: List of data samples
-		device: PyTorch device
-		num_embeddings: Number of discrete embeddings
-		converter: PDB2PyG converter
-		epoch: Current epoch (for titles)
-		save_dir: Directory to save figures
-		max_samples: Maximum number of samples to visualize
-		
-	Returns:
-		List of (figure, metrics) tuples
-	"""
-	import os
-	from matplotlib import pyplot as plt
-	
-	encoder.eval()
-	decoder.eval()
-	
-	# Limit number of samples
-	data_samples = data_samples[:max_samples]
-	
-	# Encode all samples
-	z_batch = []
-	with torch.no_grad():
-		for data in data_samples:
-			data = data.to(device)
-			z, _ = encoder(data)
-			z_discrete = encoder.vector_quantizer.discretize_z(z.detach())[0]
-			z_batch.append(z_discrete)
-	
-	# Batch decode
-	results = decode_batch_reconstruction(encoder, decoder, z_batch, device, converter)
-	
-	# Visualize each sample
-	figures_and_metrics = []
-	
-	for idx, (data_sample, result, z_discrete) in enumerate(zip(data_samples, results, z_batch)):
-		try:
-			save_path = None
-			if save_dir:
-				os.makedirs(save_dir, exist_ok=True)
-				save_path = os.path.join(save_dir, f'reconstruction_sample{idx}.png')
-			
-			# Create visualization
-			fig, metrics = create_reconstruction_figure(
-				data_sample, result, z_discrete, num_embeddings, 
-				epoch=epoch, save_path=save_path
-			)
-			
-			figures_and_metrics.append((fig, metrics))
-			
-		except Exception as e:
-			print(f"Error visualizing sample {idx}: {e}")
-			continue
-	
-	encoder.train()
-	decoder.train()
-	
-	return figures_and_metrics
 
 def validate(encoder, decoder, val_loader, device, args):
     """Run validation and compute metrics."""
@@ -1308,14 +1144,6 @@ for epoch in range(args.epochs):
             global_step += 1
 
         
-        # Jump AA loss for initial epochs if specified
-        if args.jump_aa_loss is not None and epoch > args.jump_aa_loss :
-            xweight = .5  #ramp up AA loss
-
-        if args.jump_ss_loss is not None and epoch > args.jump_ss_loss:
-            ss_weight = .5  #ramp up SS loss
-        
-
 
         # Accumulate losses (unscaled for reporting)
         total_loss_x += float(xloss.item())
@@ -1340,7 +1168,7 @@ for epoch in range(args.epochs):
             optimizer.step()
         optimizer.zero_grad(set_to_none=True)  # Better than zero_grad()
 
-    denominator = len(train_loader) if args.normalize_loss_weights == False else 1  # report total loss if not normalizing, otherwise report average loss
+    denominator = len(train_loader)  # report total loss if not normalizing, otherwise report average loss
 
     # Calculate average losses
     avg_loss_x = total_loss_x / denominator
@@ -1386,16 +1214,9 @@ for epoch in range(args.epochs):
         current_commitment = encoder.vector_quantizer.get_commitment_cost()
         print(f"Commitment Cost: {current_commitment:.4f}")
     
-    #if avg_loss_edge > avg_loss_x:
-    #    edgeweight *= 1.5
-    #    print(f"Increasing xweight to {edgeweight:.4f} due to higher edge loss")        
-    #if avg_loss_x > avg_loss_edge:
-    #    xweight *= 1.5
-    #    print(f"Increasing AA weight to {xweight:.4f} due to higher AA loss")
-
     # Gradient analysis
-    #print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
-    #print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
+    print("Gradient norms (encoder):", analyze_gradient_norms(encoder))
+    print("Gradient norms (decoder):", analyze_gradient_norms(decoder))
     
     # Log to tensorboard
     writer.add_scalar('Train/AA_Loss', avg_loss_x, epoch)
@@ -1510,6 +1331,7 @@ for epoch in range(args.epochs):
                 print(f"Generating batched reconstruction visualization for {len(viz_samples)} samples...")
                 os.makedirs('figures', exist_ok=True)
                 
+                from foldtree2.src.visualization import visualize_batch_reconstructions
                 figs_and_metrics = visualize_batch_reconstructions(
                     encoder, decoder, viz_samples, device, args.num_embeddings,
                     converter, epoch=epoch+1, save_dir=f'figures/epoch_{epoch+1}'

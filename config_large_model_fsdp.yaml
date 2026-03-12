@@ -1,0 +1,65 @@
+# Configuration for training very large models using FSDP (Fully Sharded Data Parallel)
+# FSDP shards model parameters, gradients, and optimizer states across GPUs
+# allowing you to train models much larger than single GPU memory
+
+# Model settings - increase these for larger models
+hidden_size: 128          # Increase from default 256
+num_embeddings: 40         # Increase from default 40
+embedding_dim: 128         # Increase from default 128
+
+# Dataset
+dataset: structs_train_final.h5
+data_dir: ../../datasets/foldtree2/
+aapropcsv: config/aaindex1.csv
+
+# Training settings
+epochs: 100
+batch_size: 8              # Smaller batch per GPU with FSDP
+learning_rate: 0.0001
+lr_schedule: cosine
+lr_warmup_ratio: 0.05
+
+# FSDP Strategy for large models
+gpus: 2                    # Number of GPUs
+strategy: fsdp             # Use FSDP for model parallelism
+fsdp_cpu_offload: false    # Set to true if model still doesn't fit (slower)
+
+# Optimization
+mixed_precision: true      # Critical for large models
+gradient_accumulation_steps: 1  # Effective batch = 8 * 2 * 1 = 16
+clip_grad: true
+
+# Model architecture
+use_muon: false
+muon_lr: 0.02
+adamw_lr: 0.0003
+
+# Loss weights
+edge_weight: 0.25
+logit_weight: 0.25
+x_weight: 1.0
+fft2_weight: 0.01
+vq_weight: 0.1
+angles_weight: 0.05
+ss_weight: 0.25
+
+# VQ-VAE settings
+EMA: true
+commitment_cost: 0.9
+use_commitment_scheduling: true
+commitment_warmup_steps: 5000
+commitment_schedule: cosine
+commitment_start: 0.1
+
+# pLDDT masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Output
+output_dir: ./models/
+model_name: large_fsdp_model
+tensorboard_dir: ./runs/
+seed: 42
+
+# Other
+tensor_core_precision: high

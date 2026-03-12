@@ -1,0 +1,85 @@
+{% set name = "foldtree2" %}
+{% set version = "0.1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  noarch: python
+  entry_points:
+    - foldtree2 = foldtree2.ft2treebuilder:main
+    - ft2treebuilder = foldtree2.ft2treebuilder:main
+    - pdbs-to-graphs = foldtree2.encode_pdbs:main
+    - makesubmat = foldtree2.makesubmat:main
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+    - setuptools
+    - wheel
+  run:
+    - python >=3.8
+    # Core scientific computing
+    - numpy >=1.21.0
+    - pandas >=1.3.0
+    - scipy >=1.7.0
+    - matplotlib-base >=3.4.0
+    
+    # PyTorch (PyTorch Geometric will be pip installed)
+    - pytorch >=2.0.0
+    - torchvision
+    
+    # Bioinformatics tools
+    - biopython >=1.79
+    - prody >=2.0.0
+    
+    # Deep learning utilities
+    - pytorch-lightning >=2.0.0
+    - tensorboard >=2.10.0
+    - einops >=0.6.0
+    
+    # Phylogenetics
+    - ete3 >=3.1.2
+    # raxml-ng and mafft are bundled as external tools in the package
+    
+    # Utilities
+    - colour >=0.1.5
+    - datasketch >=1.5.0
+    - pebble >=5.0.0
+    - tqdm >=4.62.0
+    - h5py >=3.6.0
+    - pyyaml >=5.4.0
+    - pip  # for installing torch-geometric and pydssp via pip
+    
+test:
+  imports:
+    - foldtree2
+    - foldtree2.src.encoder
+    - foldtree2.src.mono_decoders
+    - foldtree2.src.pdbgraph
+  commands:
+    - foldtree2 --about
+    - pdbs-to-graphs --help
+    - makesubmat --help
+
+about:
+  home: https://github.com/DessimozLab/foldtree2
+  license: MIT
+  license_file: LICENSE.txt
+  summary: 'Maximum Likelihood Phylogenetic Tree Inference from Protein Structures'
+  description: |
+    FoldTree2 performs phylogenetic tree inference from protein 3D structures 
+    using neural network-based structural encoding. The core workflow: 
+    PDB → Graph → Encoder → Discrete Alphabet → Substitution Matrix → Tree Inference.
+  dev_url: https://github.com/DessimozLab/foldtree2
+  doc_url: https://github.com/DessimozLab/foldtree2/blob/main/README.md
+
+extra:
+  recipe-maintainers:
+    - dmoi

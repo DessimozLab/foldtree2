@@ -1,0 +1,64 @@
+# Configuration for training extremely large models using DeepSpeed ZeRO Stage 3
+# ZeRO Stage 3 shards parameters, gradients, AND optimizer states across GPUs
+# enabling models with billions of parameters
+
+# Model settings - very large model
+hidden_size: 256          # Large hidden dimension
+num_embeddings: 40        # Large codebook
+embedding_dim: 128         # Large embedding dimension
+
+# Dataset
+dataset: structs_train_final.h5
+data_dir: ../../datasets/foldtree2/
+aapropcsv: config/aaindex1.csv
+
+# Training settings
+epochs: 50
+batch_size: 4              # Small batch per GPU with DeepSpeed
+learning_rate: 0.00005     # Lower LR for large models
+lr_schedule: cosine
+lr_warmup_ratio: 0.1
+
+# DeepSpeed Strategy for extreme model sizes
+gpus: 2                    # Use many GPUs
+strategy: deepspeed
+deepspeed_stage: 3         # Stage 3 = shard everything (params + gradients + optimizer)
+
+# Optimization
+mixed_precision: false     # Disabled to troubleshoot FP16 issues
+gradient_accumulation_steps: 8  # Effective batch = 4 * 8 * 8 = 256
+clip_grad: true
+
+# Model architecture
+use_muon: false            # DeepSpeed works best with standard optimizers
+# AdamW is configured automatically by DeepSpeed
+
+# Loss weights
+edge_weight: 0.25
+logit_weight: 0.25
+x_weight: 1.0
+fft2_weight: 0.01
+vq_weight: 0.1
+angles_weight: 0.05
+ss_weight: 0.25
+
+# VQ-VAE settings
+EMA: true
+commitment_cost: 0.9
+use_commitment_scheduling: true
+commitment_warmup_steps: 10000
+commitment_schedule: cosine
+commitment_start: 0.1
+
+# pLDDT masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Output
+output_dir: ./models/
+model_name: extreme_deepspeed_model
+tensorboard_dir: ./runs/
+seed: 42
+
+# Other
+tensor_core_precision: high

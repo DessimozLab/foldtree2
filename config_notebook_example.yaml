@@ -1,0 +1,92 @@
+# Example Configuration File for test_monodecoders_config.ipynb
+# This file demonstrates how to configure all hyperparameters from a YAML file
+# Place this file in the project root and reference it in the notebook's config_file variable
+
+# ============================================================================
+# DATA PARAMETERS
+# ============================================================================
+datadir: '../../datasets/foldtree2/'
+dataset_path: 'structs_train_final.h5'
+aapropcsv: './foldtree2/config/aaindex1.csv'
+
+# ============================================================================
+# MODEL ARCHITECTURE PARAMETERS
+# ============================================================================
+# Alphabet/Embedding parameters
+num_embeddings: 30
+embedding_dim: 128
+
+# Network size
+hidden_size: 150
+
+# Encoder parameters
+encoder_type: 'mk1_Encoder'
+encoder_hidden_channels: [150, 150, 150]
+encoder_nheads: 16
+encoder_dropout: 0.005
+encoder_flavor: 'transformer'
+encoder_fftin: true
+encoder_learn_positions: true
+encoder_concat_positions: false
+
+# Decoder parameters
+use_monodecoder: true
+use_muon_decoders: true
+
+# ============================================================================
+# TRAINING PARAMETERS
+# ============================================================================
+num_epochs: 300
+batch_size: 10
+gradient_accumulation_steps: 2
+clip_grad: true
+mask_plddt: true
+plddt_threshold: 0.3
+num_workers: 4
+
+# Learning rate and scheduler
+learning_rate: 0.00001  # 1e-5
+scheduler_type: 'plateau'  # Options: 'plateau', 'linear', 'cosine', 'cosine_with_restarts', 'polynomial'
+warmup_steps: 20
+warmup_ratio: 0.05
+
+# Optimizer parameters
+use_muon: true
+muon_lr: 0.02
+adamw_lr: 0.0001  # 1e-4
+weight_decay: 0.01
+
+# ============================================================================
+# LOSS WEIGHTS
+# ============================================================================
+edgeweight: 0.1
+logitweight: 0.1
+xweight: 0.1
+fft2weight: 0.01
+vqweight: 0.005
+angles_weight: 0.1
+ss_weight: 0.1
+
+# Loss weight scheduler
+use_weight_scheduler: true
+loss_scheduler_type: 'linear'
+loss_warmup_steps: 20
+
+# ============================================================================
+# COMMITMENT COST SCHEDULING
+# ============================================================================
+use_commitment_scheduling: true
+commitment_cost_final: 0.9
+commitment_warmup_steps: 1000
+commitment_schedule: 'linear'  # Options: 'cosine', 'linear', 'none'
+commitment_start: 0.5
+
+# ============================================================================
+# MIXED PRECISION TRAINING
+# ============================================================================
+use_mixed_precision: true
+
+# ============================================================================
+# REPRODUCIBILITY
+# ============================================================================
+random_seed: 0

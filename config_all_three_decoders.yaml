@@ -1,0 +1,71 @@
+# FoldTree2 Configuration: All Three Decoders (Sequence + Geometry + FoldX)
+# This config trains a model with:
+# - Sequence Transformer decoder (amino acid prediction + SS)
+# - Geometry CNN decoder (contacts, angles, secondary structure)
+# - FoldX decoder (energy prediction)
+
+# Model Architecture
+model_name: "ft2_all_decoders"
+output_dir: "./models/all_three_decoders_run/"
+run_name: "all_decoders_seq_geo_foldx"
+
+# Dataset
+dataset: "structs_train_final.h5"
+data_dir: "../../datasets/foldtree2/"
+aapropcsv: "config/aaindex1.csv"
+
+# Training Parameters
+epochs: 100
+batch_size: 8
+learning_rate: 0.0001
+seed: 42
+
+# Model Dimensions
+hidden_size: 200
+num_embeddings: 40
+embedding_dim: 128
+
+# Encoder Configuration
+EMA: true
+use_commitment_scheduling: true
+commitment_cost: 0.9
+commitment_start: 0.1
+commitment_schedule: "cosine"
+commitment_warmup_steps: 5000
+
+# Decoder Outputs
+output_fft: false
+output_rt: false
+output_foldx: true  # Enable FoldX decoder
+hetero_gae: false
+
+# Optimization
+clip_grad: true
+gradient_accumulation_steps: 2
+mixed_precision: true
+tensor_core_precision: "high"
+
+# Learning Rate Schedule
+lr_schedule: "cosine"
+lr_warmup_ratio: 0.1
+lr_min: 0.000001
+
+# Loss Weights - Balanced for all three decoders
+edge_weight: 0.25      # Geometry: contact reconstruction
+logit_weight: 0.25     # Geometry: edge logits
+x_weight: 1.0          # Sequence: amino acid prediction
+vq_weight: 0.1         # VQ-VAE commitment
+angles_weight: 0.05    # Geometry: backbone angles
+ss_weight: 0.25        # Sequence/Geometry: secondary structure
+fft2_weight: 0.01      # Optional: FFT features
+
+# pLDDT Masking (for low-confidence regions)
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Logging
+tensorboard_dir: "./runs/"
+
+# GPU Settings (for single GPU training)
+# For multi-GPU, use learn_lightning.py instead
+device: null  # auto-select

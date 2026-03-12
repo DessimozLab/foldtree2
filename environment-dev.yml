@@ -1,0 +1,63 @@
+name: foldtree2-dev
+channels:
+  - pytorch
+  - pyg
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  - python=3.10
+  
+  # Build tools
+  - conda-build
+  - anaconda-client
+  - setuptools
+  - wheel
+  - pip
+  
+  # Core scientific computing
+  - numpy>=1.21.0
+  - pandas>=1.3.0
+  - scipy>=1.7.0
+  - matplotlib-base>=3.4.0
+  
+  # PyTorch ecosystem
+  - pytorch>=2.0.0
+  - pytorch-cuda=11.8  # or cpuonly for CPU-only builds
+  - pytorch-geometric>=2.3.0
+  
+  # Bioinformatics tools
+  - biopython>=1.79
+  - prody>=2.0.0
+  - pydssp>=1.0.0
+  
+  # Deep learning utilities
+  - pytorch-lightning>=2.0.0
+  - tensorboard>=2.10.0
+  - einops>=0.6.0
+  
+  # Phylogenetics
+  - ete3>=3.1.2
+  - raxml-ng>=1.1.0
+  - mafft>=7.450
+  
+  # Utilities
+  - colour>=0.1.5
+  - datasketch>=1.5.0
+  - pebble>=5.0.0
+  - tqdm>=4.62.0
+  - h5py>=3.6.0
+  - pyyaml>=5.4.0
+  
+  # Optional dependencies
+  - transformers>=4.20.0
+  
+  # Development tools
+  - pytest
+  - pytest-cov
+  - black
+  - flake8
+  - mypy
+  - sphinx
+  - sphinx_rtd_theme
