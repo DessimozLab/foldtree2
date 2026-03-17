@@ -20,6 +20,8 @@ parts/
 sdist/
 var/
 wheels/
+benchmark_output/
+families/
 *.egg-info/
 .installed.cfg
 *.egg

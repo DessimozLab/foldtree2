@@ -33,7 +33,7 @@ overwrite : false
 
 # Encoder Configuration
 EMA: true
-
+use_uncertainty_weighting: true
 # Commitment cost scheduling - THE FOCUS OF THIS CONFIG
 commitment_cost: 0.90  # Final commitment cost (high value for strong regularization)
 use_commitment_scheduling: true  # Enable scheduling

@@ -3,46 +3,15 @@
 
 import copy
 import importlib
-import warnings
-import torch_geometric
-import glob
-import h5py
-from scipy import sparse
-from copy import deepcopy
-import pebble
-import time
 import torch
-import networkx as nx
-import matplotlib.pyplot as plt
-from torch_geometric.utils import to_networkx, to_undirected
 from torch_geometric.data import HeteroData
-from torch_geometric.nn import GraphNorm, Linear, AGNNConv, TransformerConv, GATv2Conv, GCNConv, SAGEConv, MFConv, GENConv, JumpingKnowledge, HeteroConv
-from einops import rearrange
-from torch_geometric.nn.dense import dense_diff_pool as DiffPool
-from torch.nn import ModuleDict, ModuleList, L1Loss
-from torch_geometric.nn import global_mean_pool
-from torch_geometric.nn.aggr import SoftmaxAggregation
-from torch_geometric.utils import negative_sampling
-import os
-import urllib.request
-from urllib.error import HTTPError
+from torch_geometric.nn import GraphNorm, TransformerConv, GATv2Conv, SAGEConv, MFConv, JumpingKnowledge, HeteroConv
 import pytorch_lightning as L
 import scipy.sparse
-import tqdm
 import torch.nn.functional as F
-import torch.optim as optim
-from torch_geometric.data import Data, Dataset
-from pytorch_lightning.callbacks import ModelCheckpoint
-from torch import Tensor
 import torch.nn as nn
-import traceback
-from datasketch import WeightedMinHashGenerator, MinHashLSHForest
 import numpy as np
-import pandas as pd
-from Bio import PDB
-from Bio.PDB import PDBParser
 from foldtree2.src.chebconv import StableChebConv
-from scipy.spatial.distance import cdist
 EPS = 1e-6
 datadir = '../../datasets/foldtree2/'
 
@@ -52,7 +21,6 @@ from foldtree2.src.layers import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 
-from  torch_geometric.utils import to_undirected
 #encoder super class
 
 
@@ -295,6 +263,10 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		rt_pred = None
 		if self.rt_mlp is not None:
 			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
+			# Normalize quaternion part (first 4 dims) for proper geometry
+			quat = rt_pred[..., :4]
+			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
 		
 		ss_pred = None
 		if self.ss_mlp is not None:
@@ -608,6 +580,10 @@ class CNN_geo_Decoder(torch.nn.Module):
 		rt_pred = None
 		if 'rt_mlp' in self.head:
 			rt_pred = self.head['rt_mlp'](torch.cat([inz, z], axis=1))
+			# Normalize quaternion part (first 4 dims) for proper geometry
+			quat = rt_pred[..., :4]
+			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
 		
 		# Secondary structure prediction
 		ss_pred = None
@@ -1445,6 +1421,12 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					angles = self.head['angles_head'](x)
 					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
 		
+		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
+		if rt_pred is not None:
+			quat = rt_pred[..., :4]
+			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
+		
 		return {
 			'rt_pred': rt_pred,
 			'ss_pred': ss_pred,
@@ -1527,6 +1509,99 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 			pooled = pooled / (torch.norm(pooled, dim=-1, keepdim=True) + 1e-6)
 		foldx_out = self.lin(pooled)
 		return { 'foldx_out' : foldx_out }
+
+
+class Quaternion_Coarse_Geometry_Decoder(torch.nn.Module):
+	"""
+	Predicts coarse geometry directly in quaternion representation.
+
+	Outputs per-residue:
+	- `quat_pred`: normalized quaternion (w, x, y, z), shape (N, 4)
+	- `trans_pred`: translation vector, shape (N, 3)
+	- `rt_pred`: concatenated quaternion + translation, shape (N, 7)
+
+	This decoder is intentionally lightweight so it can be used as an auxiliary
+	coarse-geometry head on top of residue embeddings.
+	"""
+	def __init__(
+		self,
+		in_channels={'res': 10},
+		hidden_dims=[128, 64],
+		dropout=0.001,
+		normalize_latent=True,
+		concat_positions=False,
+		learn_positions=False,
+		position_dim=32,
+	):
+		super(Quaternion_Coarse_Geometry_Decoder, self).__init__()
+		L.seed_everything(42)
+
+		self.normalize_latent = normalize_latent
+		self.concat_positions = concat_positions
+		self.learn_positions = learn_positions
+
+		input_dim = in_channels['res']
+		if concat_positions:
+			input_dim = input_dim + 256
+		if learn_positions:
+			self.concat_positions = False
+			input_dim = input_dim + position_dim
+
+		self.input_dropout = nn.Dropout(dropout)
+
+		if learn_positions:
+			self.position_mlp = Position_MLP(
+				in_channels=256,
+				hidden_channels=[128, 64],
+				out_channels=position_dim,
+				dropout=dropout,
+			)
+		else:
+			self.position_mlp = None
+
+		self.backbone = nn.Sequential(
+			nn.Linear(input_dim, hidden_dims[0]),
+			nn.GELU(),
+			nn.Dropout(dropout),
+			nn.Linear(hidden_dims[0], hidden_dims[1]),
+			nn.GELU(),
+		)
+
+		self.quat_head = nn.Linear(hidden_dims[1], 4)
+		self.trans_head = nn.Linear(hidden_dims[1], 3)
+
+	def forward(self, data, contact_pred_index=None, **kwargs):
+		x = data.x_dict['res']
+
+		if self.concat_positions:
+			x = torch.cat([x, data['positions'].x], dim=1)
+		if self.position_mlp is not None:
+			pos_enc = self.position_mlp(data['positions'].x)
+			x = torch.cat([x, pos_enc], dim=1)
+
+		x = self.input_dropout(x)
+		z = self.backbone(x)
+
+		if self.normalize_latent:
+			z = z / (torch.norm(z, dim=-1, keepdim=True) + 1e-6)
+
+		quat_pred = self.quat_head(z)
+		quat_pred = quat_pred / (torch.norm(quat_pred, dim=-1, keepdim=True) + 1e-6)
+		trans_pred = self.trans_head(z)
+		rt_pred = torch.cat([quat_pred, trans_pred], dim=-1)
+
+		return {
+			'quat_pred': quat_pred,
+			'trans_pred': trans_pred,
+			'rt_pred': rt_pred,
+			'z': z,
+			'edge_probs': None,
+			'edge_logits': None,
+			'zgodnode': None,
+			'fft2pred': None,
+			'angles': None,
+			'ss_pred': None,
+		}
 
 
 def save_model(model, optimizer, epoch, file_path):
@@ -1612,6 +1687,8 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['geometry_transformer'] = Transformer_Geometry_Decoder(**configs['geometry_transformer'])
 			elif task == 'geometry_cnn':
 				self.decoders['geometry_cnn'] = CNN_geo_Decoder(**configs['geometry_cnn'])
+			elif task == 'quaternion_geometry':
+				self.decoders['quaternion_geometry'] = Quaternion_Coarse_Geometry_Decoder(**configs['quaternion_geometry'])
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():

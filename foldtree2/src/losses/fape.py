@@ -2,6 +2,9 @@ import torch
 import torch.nn.functional as F
 import einops
 from typing import Callable, Any, Union
+from foldtree2.losses.fape import *
+
+
 
 def invert_rigid(R: torch.Tensor, t: torch.Tensor):
     """Invert rigid transformation.

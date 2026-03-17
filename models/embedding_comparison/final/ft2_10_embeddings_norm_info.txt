@@ -1,4 +1,4 @@
-Date: 2026-02-09 19:14:38
+Date: 2026-02-23 11:14:31
 Run name: 10_embeddings_all_decoders_final_norm
 TensorBoard log dir: ./runs/10_embeddings_all_decoders_final_norm
 Encoder: mk1_Encoder(
@@ -38,18 +38,18 @@ Encoder: mk1_Encoder(
   )
   (body): ModuleDict(
     (convs): ModuleList(
-      (0-1): 2 x ModuleDict(
+      (0): ModuleDict(
         (res_contactPoints_res): TransformerConv(150, 150, heads=16)
       )
     )
     (norms): ModuleList(
-      (0-1): 2 x GraphNorm(150)
+      (0): GraphNorm(150)
     )
     (jk): JumpingKnowledge(cat)
   )
   (head): ModuleDict(
     (lin): Sequential(
-      (0): Linear(in_features=300, out_features=150, bias=True)
+      (0): Linear(in_features=150, out_features=150, bias=True)
       (1): GELU(approximate='none')
       (2): Linear(in_features=150, out_features=150, bias=True)
       (3): GELU(approximate='none')
@@ -109,14 +109,15 @@ Decoder: MultiMonoDecoder(
         )
       )
       (head): ModuleDict(
-        (dnn_decoder): Sequential(
-          (0): Linear(in_features=150, out_features=150, bias=True)
+        (prenorm): LayerNorm((150,), eps=1e-06, elementwise_affine=True)
+        (cnn_decoder): Sequential(
+          (0): Conv1d(150, 150, kernel_size=(3,), stride=(1,), padding=(1,))
           (1): GELU(approximate='none')
-          (2): Linear(in_features=150, out_features=150, bias=True)
+          (2): Conv1d(150, 150, kernel_size=(3,), stride=(1,), padding=(1,))
           (3): GELU(approximate='none')
-          (4): Linear(in_features=150, out_features=75, bias=True)
+          (4): Conv1d(150, 75, kernel_size=(3,), stride=(1,), padding=(1,))
           (5): GELU(approximate='none')
-          (6): Linear(in_features=75, out_features=20, bias=True)
+          (6): Conv1d(75, 20, kernel_size=(1,), stride=(1,))
         )
       )
     )
