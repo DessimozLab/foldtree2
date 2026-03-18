@@ -21,6 +21,7 @@ from torch_geometric.nn import (
 from foldtree2.src.layers import *
 from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
+import copy
 from torch_geometric.data import DataLoader
 
 # Note: datadir is defined but may not be used throughout the module
@@ -35,14 +36,63 @@ class mk1_Encoder(torch.nn.Module):
 	- input: Preprocessing and initial MLPs (optimized with AdamW)
 	- body: Graph convolution layers (weights optimized with Muon, gains/biases with AdamW)
 	- head: Output projection and quantization (optimized with AdamW)
+	
+	Args:
+		in_channels (int): Number of input node features (e.g., from aaindex properties).
+		hidden_channels (list[int]): Hidden layer sizes for graph convolutions.
+		out_channels (int): Dimensionality of the output embedding / codebook vectors.
+		num_embeddings (int): Number of discrete codes in the VQ codebook (alphabet size).
+		commitment_cost (float): VQ-VAE commitment loss weight (beta).
+		metadata (dict): Graph metadata with 'edge_types' for heterogeneous graphs.
+		edge_dim (int): Edge feature dimension for TransformerConv (default: 1).
+		encoder_hidden (int): Hidden size for final MLP before quantization (default: 100).
+		dropout_p (float): Dropout probability throughout the encoder (default: 0.05).
+		EMA (bool): Use EMA codebook updates instead of gradient descent (default: False).
+		reset_codes (bool): Reset unused codebook entries during training (default: True).
+		nheads (int): Number of attention heads for GAT/Transformer convs (default: 3).
+		flavor (str): GNN type - 'sage', 'gat', or 'transformer' (default: 'sage').
+		fftin (bool): Use Fourier feature input branch (default: False).
+		use_commitment_scheduling (bool): Enable commitment cost warmup (default: False).
+		commitment_warmup_steps (int): Steps for commitment schedule warmup (default: 5000).
+		commitment_schedule (str): Schedule type - 'cosine' or 'linear' (default: 'cosine').
+		commitment_start (float): Initial commitment cost during warmup (default: 0.1).
+		concat_positions (bool): Concatenate raw positional encodings to input (default: True).
+		learn_positions (bool): Use learned MLP for positional encoding (default: True).
+		**kwargs: Additional arguments (stored but not used).
 	"""
-	def __init__(self, in_channels, hidden_channels, out_channels, 
-				num_embeddings, commitment_cost, metadata={}, edge_dim=1,
-				encoder_hidden=100, dropout_p=0.05, EMA=False, 
-				reset_codes=True, nheads=3, flavor='sage', fftin=False,
-				use_commitment_scheduling=False, commitment_warmup_steps=5000,
-				commitment_schedule='cosine', commitment_start=0.1, concat_positions=True ,
-				learn_positions=True, **kwargs):
+	
+	def __init__(
+		self,
+		# === Architecture ===
+		in_channels: int,
+		hidden_channels: list,
+		out_channels: int,
+		# === Vector Quantization ===
+		num_embeddings: int,
+		commitment_cost: float,
+		# === Graph Structure ===
+		metadata: dict = {},
+		edge_dim: int = 1,
+		# === Network Config ===
+		encoder_hidden: int = 100,
+		dropout_p: float = 0.05,
+		nheads: int = 3,
+		flavor: str = 'sage',
+		# === Codebook Options ===
+		EMA: bool = False,
+		reset_codes: bool = True,
+		# === Commitment Scheduling ===
+		use_commitment_scheduling: bool = False,
+		commitment_warmup_steps: int = 5000,
+		commitment_schedule: str = 'cosine',
+		commitment_start: float = 0.1,
+		# === Position Encoding ===
+		concat_positions: bool = True,
+		learn_positions: bool = True,
+		# === Optional Features ===
+		fftin: bool = False,
+		**kwargs
+	):
 		super(mk1_Encoder, self).__init__()
 
 		# Save all arguments to constructor
@@ -63,6 +113,7 @@ class mk1_Encoder(torch.nn.Module):
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 		self.concat_positions = concat_positions
 		self.learn_positions = learn_positions
+		self.edge_dim = edge_dim
 		self.fftin = fftin
 		
 
@@ -70,7 +121,7 @@ class mk1_Encoder(torch.nn.Module):
 		# Determine input channels
 		self.in_channels = in_channels
 		
-		self.in_with_positions = self.in_channels
+		self.in_with_positions = copy.deepcopy(self.in_channels)
 		if self.concat_positions and self.learn_positions==False:
 			self.in_with_positions += 256
 		if self.learn_positions == True:
@@ -84,12 +135,13 @@ class mk1_Encoder(torch.nn.Module):
 		# Preprocessing layers: LayerNorm, input MLPs, dropout
 		self.input = nn.ModuleDict()
 		
+
 		self.input['dropout'] = nn.Dropout(p=dropout_p)
 		self.input['ln'] = nn.LayerNorm(self.in_channels, eps=1e-6)
+		print(self.input['ln'])
 
 		self.input['inmlp'] = nn.Sequential(
 			nn.Dropout(dropout_p),
-			nn.LayerNorm(self.in_with_positions, eps=1e-6),
 			nn.Linear(self.in_with_positions, hidden_channels[0] * 2),
 			nn.GELU(),
 			nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
@@ -129,7 +181,8 @@ class mk1_Encoder(torch.nn.Module):
 				conv_dict = nn.ModuleDict({
 					'_'.join(edge_type): TransformerConv(
 						hidden_channels[i-1], 
-						hidden_channels[i], 
+						hidden_channels[i],
+						edge_dim=self.edge_dim,  
 						heads=nheads, 
 						dropout=dropout_p,
 						concat=False
@@ -187,27 +240,28 @@ class mk1_Encoder(torch.nn.Module):
 			self.vector_quantizer = VectorQuantizer(num_embeddings, out_channels, commitment_cost)
 	
 	def forward(self, data, edge_attr_dict=None, **kwargs):
-		x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
+		x_dict, edge_index_dict, edge_attr_dict = data.x_dict, data.edge_index_dict, data.edge_attr_dict
 		
 		# ===================== INPUT PROCESSING =====================
 		# Ensure input is contiguous and has the correct dtype for LayerNorm
 		# This fixes DeepSpeed FP16 compatibility issues
-		x_res = x_dict['res'].contiguous()
+		x_dict['res'] = x_dict['res'].contiguous()
 		
 		if 'debug' in kwargs and kwargs['debug']:
-			print(f"Input shape: {x_res.shape}, dtype: {x_res.dtype}")
+			print(f"Input shape: {x_dict['res'].shape}, dtype: {x_dict['res'].dtype}")
 			print(f"LayerNorm normalized_shape: {self.input['ln'].normalized_shape}")
 		
 		# Cast to float32 for LayerNorm (required for numerical stability with FP16)
 		# Also ensure LayerNorm weights are in FP32
-		original_dtype = x_res.dtype
+		original_dtype = x_dict['res'].dtype
 		if original_dtype != torch.float32:
 			# Temporarily move LayerNorm to float32 if needed
 			ln = self.input['ln'].float()
-			x_dict['res'] = ln(x_res.float()).to(original_dtype)
+			x_dict['res'] = ln(x_dict['res'].float()).to(original_dtype)
 		else:
-			x_dict['res'] = self.input['ln'](x_res)
-		
+			x_dict['res'] = self.input['ln'](x_dict['res'])
+	
+
 		if self.concat_positions and not self.learn_positions:
 			x_dict['res'] = torch.cat([x_dict['res'], data['positions'].x], dim=1)
 		if self.learn_positions == True and self.position_mlp is not None:
@@ -217,9 +271,7 @@ class mk1_Encoder(torch.nn.Module):
 		if 'debug' in kwargs and kwargs['debug']:
 			print(x_dict['res'].shape, 'x_dict[res] shape')
 		
-		xin = self.input['dropout'](x_dict['res'])
-		x = self.input['inmlp'](xin)
-		
+		x = self.input['inmlp'](x_dict['res'])
 		# Add fourier features if present
 		if self.fftin and 'ffin' in self.input:
 			x += self.input['ffin'](torch.cat([data['fourier1dr'].x, data['fourier1di'].x], dim=1))
@@ -229,11 +281,11 @@ class mk1_Encoder(torch.nn.Module):
 		for i, convs in enumerate(self.body['convs']):
 			# Apply graph convolutions and average over all edge types
 			if edge_attr_dict is not None:
-				x_list = [conv(x, edge_index_dict[tuple(edge_type.split('_'))], 
-							  edge_attr_dict[tuple(edge_type.split('_'))]) 
+				x_list = [conv(x, edge_index=edge_index_dict[tuple(edge_type.split('_'))], 
+							  edge_attr = edge_attr_dict[tuple(edge_type.split('_') )] ) 
 						 for edge_type, conv in convs.items()]
 			else:
-				x_list = [conv(x, edge_index_dict[tuple(edge_type.split('_'))]) 
+				x_list = [conv(x, edge_index=edge_index_dict[tuple(edge_type.split('_'))]) 
 						 for edge_type, conv in convs.items()]
 			
 			x = torch.stack(x_list, dim=0).mean(dim=0)

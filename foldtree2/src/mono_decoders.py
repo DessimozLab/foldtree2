@@ -35,7 +35,6 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				Xdecoder_hidden=30, 
 				anglesdecoder_hidden=30,
 				RTdecoder_hidden=30,
-				metadata={}, 
 				flavor = None,
 				dropout= .001,
 				output_fft = False,
@@ -64,7 +63,6 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		self.normalize = normalize
 		self.concat_positions = concat_positions
 		in_channels_orig = copy.deepcopy(in_channels )
-		self.metadata = metadata
 		self.hidden_channels = hidden_channels
 		self.in_channels = in_channels
 		self.nlayers = layers
@@ -323,7 +321,6 @@ class CNN_geo_Decoder(torch.nn.Module):
 				Xdecoder_hidden=[30, 30], 
 				anglesdecoder_hidden=[30, 30],
 				RTdecoder_hidden=[30, 30],
-				metadata={}, 
 				dropout=.001,
 				output_fft=False,
 				output_rt=False,
@@ -347,7 +344,6 @@ class CNN_geo_Decoder(torch.nn.Module):
 		self.concat_positions = concat_positions
 		self.learn_positions = learn_positions
 		in_channels_orig = copy.deepcopy(in_channels)
-		self.metadata = metadata
 		self.output_fft = output_fft
 		self.residual = residual
 		self.pool_type = pool_type
@@ -1014,8 +1010,11 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		# ===================== BODY PROCESSING =====================
 		# Transformer expects (seq_len, batch, d_model)
-		batch = data['res'].batch
-		
+		try:
+			batch = data['res'].batch
+		except:
+			batch = None
+				
 		if batch is not None:
 			# Find the number of graphs in the batch
 			num_graphs = batch.max().item() + 1

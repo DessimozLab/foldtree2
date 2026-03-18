@@ -19,6 +19,8 @@ from scipy import sparse
 from scipy.spatial import cKDTree, distance
 from torch_geometric.data import Dataset, HeteroData
 
+from foldtree2.src.rigid_utils import rot_to_quat
+
 
 AA3_TO_1 = {
     "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
@@ -29,6 +31,58 @@ AA3_TO_1 = {
 }
 
 BIN_ALPHABET_BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+# Chi angle atom definitions for each residue type
+# Each entry is a list of 4-atom tuples defining dihedral angles (chi1, chi2, chi3, chi4)
+CHI_ATOMS = {
+    "ALA": [],  # No chi angles
+    "GLY": [],  # No chi angles
+    "VAL": [["N", "CA", "CB", "CG1"]],  # chi1 only
+    "ILE": [["N", "CA", "CB", "CG1"], ["CA", "CB", "CG1", "CD1"]],
+    "LEU": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+    "MET": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "SD"], ["CB", "CG", "SD", "CE"]],
+    "PHE": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+    "TYR": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+    "TRP": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD1"]],
+    "SER": [["N", "CA", "CB", "OG"]],
+    "THR": [["N", "CA", "CB", "OG1"]],
+    "CYS": [["N", "CA", "CB", "SG"]],
+    "PRO": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"]],
+    "ASP": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "OD1"]],
+    "ASN": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "OD1"]],
+    "GLU": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "OE1"]],
+    "GLN": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "OE1"]],
+    "HIS": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "ND1"]],
+    "LYS": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "CE"], ["CG", "CD", "CE", "NZ"]],
+    "ARG": [["N", "CA", "CB", "CG"], ["CA", "CB", "CG", "CD"], ["CB", "CG", "CD", "NE"], ["CG", "CD", "NE", "CZ"]],
+}
+
+# Maximum number of chi angles (for padding)
+MAX_CHI = 4
+
+# Sidechain heavy atoms for centroid calculation (excluding backbone N, CA, C, O)
+SIDECHAIN_ATOMS = {
+    "ALA": ["CB"],
+    "ARG": ["CB", "CG", "CD", "NE", "CZ", "NH1", "NH2"],
+    "ASN": ["CB", "CG", "OD1", "ND2"],
+    "ASP": ["CB", "CG", "OD1", "OD2"],
+    "CYS": ["CB", "SG"],
+    "GLN": ["CB", "CG", "CD", "OE1", "NE2"],
+    "GLU": ["CB", "CG", "CD", "OE1", "OE2"],
+    "GLY": [],  # No sidechain
+    "HIS": ["CB", "CG", "ND1", "CD2", "CE1", "NE2"],
+    "ILE": ["CB", "CG1", "CG2", "CD1"],
+    "LEU": ["CB", "CG", "CD1", "CD2"],
+    "LYS": ["CB", "CG", "CD", "CE", "NZ"],
+    "MET": ["CB", "CG", "SD", "CE"],
+    "PHE": ["CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ"],
+    "PRO": ["CB", "CG", "CD"],
+    "SER": ["CB", "OG"],
+    "THR": ["CB", "OG1", "CG2"],
+    "TRP": ["CB", "CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2"],
+    "TYR": ["CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],
+    "VAL": ["CB", "CG1", "CG2"],
+}
 
 
 def _atom_pos(res: gemmi.Residue, atom_name: str) -> Optional[np.ndarray]:
@@ -110,6 +164,72 @@ def _dihedral_deg(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray
     x = np.dot(v, w)
     y = np.dot(np.cross(b1u, v), w)
     return float(np.degrees(np.arctan2(y, x)))
+
+
+def _compute_chi_angles(res, res_name: str) -> np.ndarray:
+    """
+    Compute chi angles for a residue.
+    
+    Returns:
+        np.ndarray: Shape (MAX_CHI * 2,) containing [sin(chi1), cos(chi1), sin(chi2), cos(chi2), ...].
+                    Missing chi angles are filled with (0, 0).
+    """
+    chi_defs = CHI_ATOMS.get(res_name, [])
+    result = np.zeros(MAX_CHI * 2, dtype=np.float32)
+    
+    for i, atom_names in enumerate(chi_defs):
+        if i >= MAX_CHI:
+            break
+        
+        # Get atom positions
+        positions = []
+        for atom_name in atom_names:
+            atom = res.find_atom(atom_name, '\0')  # Gemmi API
+            if atom is None:
+                break
+            positions.append(np.array([atom.pos.x, atom.pos.y, atom.pos.z]))
+        
+        if len(positions) == 4:
+            angle_deg = _dihedral_deg(positions[0], positions[1], positions[2], positions[3])
+            angle_rad = np.radians(angle_deg)
+            result[i * 2] = np.sin(angle_rad)
+            result[i * 2 + 1] = np.cos(angle_rad)
+    
+    return result
+
+
+def _compute_sidechain_centroid(res, res_name: str, ca_pos: np.ndarray) -> np.ndarray:
+    """
+    Compute sidechain centroid direction and distance from CA.
+    
+    Returns:
+        np.ndarray: Shape (4,) containing [dir_x, dir_y, dir_z, distance].
+                    If no sidechain atoms, returns zeros.
+    """
+    sc_atoms = SIDECHAIN_ATOMS.get(res_name, [])
+    result = np.zeros(4, dtype=np.float32)
+    
+    if not sc_atoms:
+        return result
+    
+    positions = []
+    for atom_name in sc_atoms:
+        atom = res.find_atom(atom_name, '\0')
+        if atom is not None:
+            positions.append(np.array([atom.pos.x, atom.pos.y, atom.pos.z]))
+    
+    if not positions:
+        return result
+    
+    centroid = np.mean(positions, axis=0)
+    direction = centroid - ca_pos
+    distance = np.linalg.norm(direction)
+    
+    if distance > 1e-6:
+        result[:3] = direction / distance  # Normalized direction
+        result[3] = distance
+    
+    return result
 
 
 def _make_torsion_bins(ca_xyz: np.ndarray, n_bins: int = 12) -> np.ndarray:
@@ -346,6 +466,8 @@ class PDB2PyG:
         o_list = []
         sg_list = []
         plddt_list = []
+        chi_list = []
+        sc_centroid_list = []
 
         for res in chain:
             aa = AA3_TO_1.get(res.name.upper(), 'X')
@@ -380,8 +502,13 @@ class PDB2PyG:
             if sg is None:
                 sg = np.array([np.nan, np.nan, np.nan], dtype=np.float32)
 
+            # Compute chi angles and sidechain centroid
+            res_name = res.name.upper()
+            chi_angles = _compute_chi_angles(res, res_name)
+            sc_centroid = _compute_sidechain_centroid(res, res_name, ca)
+
             residues.append(res)
-            residue_names.append(res.name.upper())
+            residue_names.append(res_name)
             aa_chars.append(aa)
             ca_list.append(ca)
             cb_list.append(cb)
@@ -390,6 +517,8 @@ class PDB2PyG:
             o_list.append(o)
             sg_list.append(sg)
             plddt_list.append(plddt)
+            chi_list.append(chi_angles)
+            sc_centroid_list.append(sc_centroid)
 
         if not residues:
             return None
@@ -405,6 +534,8 @@ class PDB2PyG:
             'o': np.asarray(o_list, dtype=np.float32),
             'sg': np.asarray(sg_list, dtype=np.float32),
             'plddt': np.asarray(plddt_list, dtype=np.float32),
+            'chi': np.asarray(chi_list, dtype=np.float32),  # Shape: (N, MAX_CHI*2)
+            'sc_centroid': np.asarray(sc_centroid_list, dtype=np.float32),  # Shape: (N, 4)
         }
 
     def _gemmi_angles(self, chain: gemmi.Chain, residues: list[gemmi.Residue]):
@@ -478,31 +609,48 @@ class PDB2PyG:
         cb_xyz: np.ndarray,
         residue_names: list[str],
         sg_xyz: np.ndarray,
+        n_xyz: np.ndarray,
+        o_xyz: np.ndarray,
+        c_xyz: np.ndarray,
         peptide_cutoff: float = 4.2,
         contact_cutoff: float = 8.0,
         pi_cutoff: float = 5.5,
         ionic_cutoff: float = 6.0,
         disulfide_cutoff: float = 2.5,
+        hbond_cutoff: float = 3.5,
+        hbond_angle_cutoff: float = 120.0,
     ):
+        """
+        Compute various bond type maps between residues.
+        
+        Returns:
+            peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map
+        """
         length = ca_xyz.shape[0]
         peptide_map = np.zeros((length, length), dtype=np.float32)
         contact_map = np.zeros((length, length), dtype=np.float32)
         pi_stacking_map = np.zeros((length, length), dtype=np.float32)
         ionic_map = np.zeros((length, length), dtype=np.float32)
         disulfide_map = np.zeros((length, length), dtype=np.float32)
+        hbond_map = np.zeros((length, length), dtype=np.float32)
+        
         if length == 0:
-            return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map
+            return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map
 
         ca_dmat = distance.cdist(ca_xyz, ca_xyz)
         cb_dmat = distance.cdist(cb_xyz, cb_xyz)
         valid_sg = np.all(np.isfinite(sg_xyz), axis=1)
         sg_dmat = distance.cdist(sg_xyz, sg_xyz)
+        
+        # N-O distance matrix for hydrogen bond detection
+        # Backbone H-bond: N-H...O=C where N is donor and O is acceptor
+        # N of residue i donates to O of residue j
+        n_o_dmat = distance.cdist(n_xyz, o_xyz)
 
         aromatic = {'PHE', 'TYR', 'TRP', 'HIS'}
         cationic = {'ARG', 'LYS', 'HIS'}
         anionic = {'ASP', 'GLU'}
 
-        # Similar logic to the old hbond proxy: distance threshold + sequence separation filter.
         # Peptide bonds: only immediate sequence neighbors with short CA-CA distance.
         for i in range(length - 1):
             j = i + 1
@@ -512,6 +660,12 @@ class PDB2PyG:
 
         # Contacts: close in 3D, but not immediate sequence neighbors.
         contact_mask = (cb_dmat > 1e-8) & (cb_dmat <= contact_cutoff)
+        
+        # Vectorized angle computation for H-bonds
+        # For H-bond from N[i] to O[j], check angle at N: C[i-1]-N[i]-O[j]
+        # This approximates the N-H...O angle without explicit H positions
+        cos_angle_cutoff = np.cos(np.radians(180.0 - hbond_angle_cutoff))
+        
         for i in range(length):
             for j in range(length):
                 if i == j:
@@ -546,8 +700,41 @@ class PDB2PyG:
                     and sg_dmat[i, j] <= disulfide_cutoff
                 ):
                     disulfide_map[i, j] = 1.0
+                
+                # Hydrogen bonds: backbone N-H...O=C
+                # N of residue i donates to O of residue j
+                # Distance criterion: N-O distance < hbond_cutoff (typically 3.5Å)
+                # Angle criterion: approximate N-H...O angle using C-N...O angle
+                if n_o_dmat[i, j] <= hbond_cutoff:
+                    # Check angle: use C[i]-N[i]-O[j] as proxy for N-H...O angle
+                    # Since H is approximately along C->N direction extended
+                    if i > 0:
+                        # Vector from C of previous residue to N of current
+                        c_to_n = n_xyz[i] - c_xyz[i - 1]
+                        c_to_n_norm = np.linalg.norm(c_to_n)
+                        if c_to_n_norm > 1e-8:
+                            c_to_n = c_to_n / c_to_n_norm
+                            
+                            # Vector from N to O
+                            n_to_o = o_xyz[j] - n_xyz[i]
+                            n_to_o_norm = np.linalg.norm(n_to_o)
+                            if n_to_o_norm > 1e-8:
+                                n_to_o = n_to_o / n_to_o_norm
+                                
+                                # Angle between C-N and N-O vectors
+                                # H is roughly opposite to C, so we want angle > 120° (cos < -0.5)
+                                cos_angle = np.dot(c_to_n, n_to_o)
+                                # We want the N-H...O angle, H is opposite to C direction
+                                # So the actual H-N-O angle is ~180 - acos(cos_angle)
+                                # For good H-bond: N-H...O > 120°, meaning H-N-O < 60°
+                                # But since H is opposite C: C-N-O should be > 120°
+                                if cos_angle <= cos_angle_cutoff:
+                                    hbond_map[i, j] = 1.0
+                    else:
+                        # For first residue, just use distance criterion
+                        hbond_map[i, j] = 1.0
 
-        return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map
+        return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map
 
     def _fft_tracks(self, xyz: np.ndarray, cutoff_1d: int = 80, cutoff_2d: int = 25):
         dist_matrix = distance.cdist(xyz, xyz)
@@ -580,24 +767,52 @@ class PDB2PyG:
 
     @staticmethod
     def compute_local_frame(coords):
+        """
+        Compute local residue frames from backbone atom coordinates.
+        
+        Args:
+            coords: [N, 3, 3] tensor where coords[:, 0, :] = N atoms,
+                    coords[:, 1, :] = CA atoms, coords[:, 2, :] = C atoms
+        
+        Returns:
+            r_true: [N, 3, 3] rotation matrices (local frames)
+            t_true: [N, 3] translation vectors (CA to next CA)
+            q_true: [N, 4] quaternions representing the same rotations
+        """
+        # Build orthonormal frame using Gram-Schmidt orthogonalization
+        # x_axis: CA -> C direction (along peptide bond)
         x_axis = coords[:, 2, :] - coords[:, 1, :]
-        x_axis = x_axis / torch.clamp(torch.norm(x_axis, dim=-1, keepdim=True), min=1e-8)
+        x_norm = torch.norm(x_axis, dim=-1, keepdim=True)
+        x_axis = x_axis / torch.clamp(x_norm, min=1e-8)
 
+        # y_axis: start with CA -> N, then orthogonalize against x_axis
         y_axis = coords[:, 0, :] - coords[:, 1, :]
+        # Gram-Schmidt: y = y - (y·x)x
         y_axis = y_axis - (torch.sum(y_axis * x_axis, dim=-1, keepdim=True) * x_axis)
-        y_axis = y_axis / torch.clamp(torch.norm(y_axis, dim=-1, keepdim=True), min=1e-8)
+        y_norm = torch.norm(y_axis, dim=-1, keepdim=True)
+        y_axis = y_axis / torch.clamp(y_norm, min=1e-8)
 
+        # z_axis: cross product to complete right-handed frame
         z_axis = torch.cross(x_axis, y_axis, dim=-1)
-        z_axis = z_axis / torch.clamp(torch.norm(z_axis, dim=-1, keepdim=True), min=1e-8)
+        z_norm = torch.norm(z_axis, dim=-1, keepdim=True)
+        z_axis = z_axis / torch.clamp(z_norm, min=1e-8)
 
+        # Stack axes as columns to form rotation matrix [N, 3, 3]
+        # Each row of r_true[i] transforms from local to global coordinates
         r_true = torch.stack([x_axis, y_axis, z_axis], dim=-1)
 
+        # Translation: vector from current CA to next CA
         t_true = coords[1:, 1, :] - coords[:-1, 1, :]
         t_pad = torch.zeros((1, 3), device=coords.device, dtype=coords.dtype)
         t_true = torch.cat([t_true, t_pad], dim=0)
-        return r_true, t_true
+        
+        # Convert rotation matrices to quaternions using rigid_utils
+        # rot_to_quat expects [*, 3, 3] and returns [*, 4] quaternions (w, x, y, z)
+        q_true = rot_to_quat(r_true)
+        
+        return r_true, t_true, q_true
 
-    def create_features(self, pdb_file: str, distance_cutoff: float = 8.0, compute_hbonds: bool = True):
+    def create_features(self, pdb_file: str, distance_cutoff: float = 8.0):
         st = self.read_structure(pdb_file)
         if len(st) == 0:
             return None
@@ -651,11 +866,14 @@ class PDB2PyG:
         }
 
         fft1r, fft1i, fft2r, fft2i = self._fft_tracks(arr['cb'], cutoff_1d=80, cutoff_2d=25)
-        peptide_bond_map, contact_bond_map, pi_stacking_map, ionic_map, disulfide_map = self._compute_bond_type_maps(
+        peptide_bond_map, contact_bond_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map = self._compute_bond_type_maps(
             ca_xyz=arr['ca'],
             cb_xyz=arr['cb'],
             residue_names=arr['residue_names'],
             sg_xyz=arr['sg'],
+            n_xyz=arr['n'],
+            o_xyz=arr['o'],
+            c_xyz=arr['c'],
             peptide_cutoff=4.2,
             contact_cutoff=distance_cutoff,
         )
@@ -676,16 +894,21 @@ class PDB2PyG:
             'pi_stacking_map': pi_stacking_map,
             'ionic_map': ionic_map,
             'disulfide_map': disulfide_map,
+            'hbond_map': hbond_map,
             'plddt': (arr['plddt'] / 100.0).reshape(-1, 1).astype(np.float32),
             'coords': arr['ca'].astype(np.float32),
             'ncoords': arr['n'].astype(np.float32),
             'ccoords': arr['c'].astype(np.float32),
+            'ocoords': arr['o'].astype(np.float32),
+            'cbcoords': arr['cb'].astype(np.float32),
             'positional_encoding': positional_encoding.astype(np.float32),
             'fft1r': fft1r,
             'fft1i': fft1i,
             'fft2r': fft2r,
             'fft2i': fft2i,
             'track_features': track_features,
+            'chi': arr['chi'].astype(np.float32),  # Shape: (N, MAX_CHI*2) = (N, 8)
+            'sc_centroid': arr['sc_centroid'].astype(np.float32),  # Shape: (N, 4)
         }
 
     def struct2pyg(self, pdbchain, identifier=None, include_chain=False, verbose=False, compute_hbonds=True, **kwargs):
@@ -696,7 +919,7 @@ class PDB2PyG:
         if not isinstance(pdbchain, str):
             raise ValueError('pdbgraphmk2 expects pdbchain as a path string')
 
-        feat = self.create_features(pdbchain, compute_hbonds=compute_hbonds)
+        feat = self.create_features(pdbchain)
         if feat is None:
             return None
 
@@ -713,16 +936,20 @@ class PDB2PyG:
             torch.tensor(feat['coords'], dtype=torch.float32),
             torch.tensor(feat['ccoords'], dtype=torch.float32),
         ], dim=1)
-        r_true, t_true = self.compute_local_frame(residue_frames)
+        r_true, t_true, q_true = self.compute_local_frame(residue_frames)
 
         data['AA'].x = torch.tensor(feat['aa'], dtype=torch.float32)
         data['coords'].x = torch.tensor(feat['coords'], dtype=torch.float32)
+        data['cbcoords'].x = torch.tensor(feat['cbcoords'], dtype=torch.float32)
         data['R_true'].x = r_true
         data['t_true'].x = t_true
+        data['q_true'].x = q_true  # Quaternion representation of rotation (w, x, y, z)
         data['bondangles'].x = torch.tensor(feat['bondangles'], dtype=torch.float32)
         data['plddt'].x = torch.tensor(feat['plddt'], dtype=torch.float32)
         data['positions'].x = torch.tensor(feat['positional_encoding'], dtype=torch.float32)
         data['ss'].x = torch.tensor(feat['ss'], dtype=torch.float32)
+        data['chi'].x = torch.tensor(feat['chi'], dtype=torch.float32)  # Shape: (N, 8) - sin/cos for chi1-4
+        data['sc_centroid'].x = torch.tensor(feat['sc_centroid'], dtype=torch.float32)  # Shape: (N, 4) - dir_xyz + distance
 
         track_names = ['contact_number', 'local_contacts', 'global_contacts', 'range_bin', 'burial_bin', 'bend_bin', 'torsion_bin', 'wcn']
         track_stack = []
@@ -749,19 +976,20 @@ class PDB2PyG:
         window = sparse.csr_matrix(feat['window'])
         window_rev = sparse.csr_matrix(feat['window_rev'])
 
-        # Edge attribute layout: [distance_or_weight, relation_onehot_5..., bond_type_onehot_5...]
+        # Edge attribute layout: [distance_or_weight, relation_onehot_5..., bond_type_onehot_6...]
         # relation_onehot_5 index mapping: 0=backbone, 1=backbonerev, 2=contactPoints, 3=window, 4=windowrev
-        # bond_type_onehot_5 index mapping:
-        # 0=peptide_bond, 1=contact, 2=pi_stacking, 3=ionic, 4=disulfide
+        # bond_type_onehot_6 index mapping:
+        # 0=peptide_bond, 1=contact, 2=pi_stacking, 3=ionic, 4=disulfide, 5=hbond
         bond_type_names = ['backbone', 'backbonerev', 'contactPoints', 'window', 'windowrev']
         bond_type_index = {name: idx for idx, name in enumerate(bond_type_names)}
-        chem_bond_type_names = ['peptide_bond', 'contact', 'pi_stacking', 'ionic', 'disulfide']
+        chem_bond_type_names = ['peptide_bond', 'contact', 'pi_stacking', 'ionic', 'disulfide', 'hbond']
 
         peptide_bond_map = feat['peptide_bond_map']
         contact_bond_map = feat['contact_bond_map']
         pi_stacking_map = feat['pi_stacking_map']
         ionic_map = feat['ionic_map']
         disulfide_map = feat['disulfide_map']
+        hbond_map = feat['hbond_map']
 
         def build_edge_attr(values: np.ndarray, edge_name: str, edge_index: np.ndarray) -> torch.Tensor:
             scalar = torch.tensor(values, dtype=torch.float32).view(-1, 1)
@@ -778,11 +1006,13 @@ class PDB2PyG:
                     pi_vals = pi_stacking_map[src, dst]
                     ionic_vals = ionic_map[src, dst]
                     disulfide_vals = disulfide_map[src, dst]
+                    hbond_vals = hbond_map[src, dst]
                     bond_onehot[:, 0] = torch.tensor(peptide_vals, dtype=torch.float32)
                     bond_onehot[:, 1] = torch.tensor(contact_vals, dtype=torch.float32)
                     bond_onehot[:, 2] = torch.tensor(pi_vals, dtype=torch.float32)
                     bond_onehot[:, 3] = torch.tensor(ionic_vals, dtype=torch.float32)
                     bond_onehot[:, 4] = torch.tensor(disulfide_vals, dtype=torch.float32)
+                    bond_onehot[:, 5] = torch.tensor(hbond_vals, dtype=torch.float32)
 
             return torch.cat([scalar, relation_onehot, bond_onehot], dim=1)
 
