@@ -1405,7 +1405,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				if self.output_angles and 'angles_cnn' in self.head:
 					angles = self.head['angles_cnn'](x_cnn)  # (1, 3, seq_len)
 					angles = angles.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
-					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+					angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
 			else:
 				# DNN decoder path
 				x = x.squeeze(1)  # (seq_len, d_model)
@@ -1418,15 +1418,23 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				
 				if self.output_angles and 'angles_head' in self.head:
 					angles = self.head['angles_head'](x)
-					angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+					angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
 		
 		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
 		if rt_pred is not None:
 			quat = rt_pred[..., :4]
 			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
-			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
+			trans = rt_pred[..., 4:]
+			rt_pred = torch.cat([quat, trans], dim=-1)
+			quat_pred = quat
+			trans_pred = trans
+		else:
+			quat_pred = None
+			trans_pred = None
 		
 		return {
+			'quat_pred': quat_pred,
+			'trans_pred': trans_pred,
 			'rt_pred': rt_pred,
 			'ss_pred': ss_pred,
 			'angles': angles,

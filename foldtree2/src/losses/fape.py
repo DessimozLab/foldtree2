@@ -692,22 +692,23 @@ def rotation_matrix_to_quaternion(rot_matrices):
 
 def reconstruct_positions(R, T):
 	"""
-	Reconstruct 3D positions from a sequence of rotation matrices and translation vectors.
-	
+	Reconstruct 3D CA positions from CA-to-CA displacement vectors.
+
+	T[i] = CA[i+1] - CA[i] in the global frame, so positions are simply the
+	cumulative sum of translations starting from the origin.  The rotation
+	matrices R are kept as a parameter for API compatibility but are not used
+	here — they represent the *local frame orientation*, not a transform that
+	should be applied to global-frame displacements.
+
 	Args:
-		R (torch.Tensor): Rotation matrices of shape (N, 3, 3)
-		T (torch.Tensor): Translation vectors of shape (N, 3)
-		
+		R (torch.Tensor): Local rotation matrices, shape (N, 3, 3)  [unused]
+		T (torch.Tensor): CA-to-CA displacement vectors, shape (N, 3)
+
 	Returns:
-		torch.Tensor: Reconstructed positions of shape (N+1, 3), starting from origin
+		torch.Tensor: Reconstructed CA positions of shape (N+1, 3), starting
+		              from the origin.
 	"""
-	positions = torch.zeros(len(T) + 1, 3, dtype=T.dtype, device=T.device)
-	current_pos = torch.zeros(3, dtype=T.dtype, device=T.device)
-	
-	for i in range(len(T)):
-		current_pos = R[i] @ current_pos + T[i]
-		positions[i + 1] = current_pos
-	
-	return positions
+	origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
+	return torch.cat([origin, torch.cumsum(T, dim=0)], dim=0)
 
 
