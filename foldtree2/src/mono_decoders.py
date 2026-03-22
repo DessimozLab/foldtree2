@@ -332,7 +332,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 				ncat=16,
 				contact_mlp=True,
 				pool_type='global_mean',
-				learn_positions=False):
+				learn_positions=False,
+				**kwargs
+				):
 		super(CNN_geo_Decoder, self).__init__()
 		
 		# Setting the seed

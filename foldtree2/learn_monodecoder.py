@@ -23,6 +23,7 @@ import argparse
 import sys
 import time
 import gc
+import math
 import warnings
 import yaml
 from matplotlib import pyplot as plt
@@ -38,6 +39,14 @@ try:
 except ImportError:
     print("Warning: Muon optimizer not available. Install with: pip install git+https://github.com/KellerJordan/Muon")
     MUON_AVAILABLE = False
+
+# Try to import Lion optimizer
+try:
+    from foldtree2.src.lion_optimizer import Lion
+    LION_AVAILABLE = True
+except ImportError:
+    print("Warning: Lion optimizer not available. Lion option will fall back to AdamW.")
+    LION_AVAILABLE = False
 
 # Try to import transformers schedulers, fall back to PyTorch schedulers
 try:
@@ -146,6 +155,8 @@ parser.add_argument('--num-cycles', type=int, default=3,
                     help='Number of cycles for cosine_restarts scheduler (default: 3)')
 parser.add_argument('--use-muon', action='store_true',
                     help='Use Muon optimizer for modular encoder/decoder (requires Muon package)')
+parser.add_argument('--optimizer-type', type=str, default='adamw', choices=['adamw', 'lion', 'muon'],
+                    help='Optimizer type (default: adamw). If --use-muon is set, this is overridden to muon.')
 parser.add_argument('--use-muon-encoder', action='store_true',
                     help='Use Muon-compatible encoder (mk1_MuonEncoder)')
 parser.add_argument('--use-muon-decoders', action='store_true',
@@ -154,6 +165,14 @@ parser.add_argument('--muon-lr', type=float, default=0.02,
                     help='Learning rate for Muon optimizer (default: 0.02)')
 parser.add_argument('--adamw-lr', type=float, default=1e-4,
                     help='Learning rate for AdamW when using Muon (default: 1e-4)')
+parser.add_argument('--lion-lr', type=float, default=1e-5,
+                    help='Learning rate for Lion optimizer (default: 1e-5)')
+parser.add_argument('--lion-beta1', type=float, default=0.9,
+                    help='Beta1 for Lion optimizer (default: 0.9)')
+parser.add_argument('--lion-beta2', type=float, default=0.99,
+                    help='Beta2 for Lion optimizer (default: 0.99)')
+parser.add_argument('--lion-weight-decay', type=float, default=0.1,
+                    help='Weight decay for Lion optimizer (default: 0.1)')
 parser.add_argument('--mixed-precision', action='store_true', default=True,
                     help='Use mixed precision training (default: True)')
 parser.add_argument('--mask-plddt', action='store_true',
@@ -227,6 +246,39 @@ parser.add_argument('--nconv-layers', type=int, default=3,
 # Loss normalization
 parser.add_argument('--normalize-loss-weights', action='store_true',
                     help='Normalize all loss weights to 1.0 (overrides individual weight settings)')
+parser.add_argument('--use-weight-scheduler', action='store_true',
+                    help='Enable per-loss weight scheduling during training')
+parser.add_argument('--loss-warmup-steps', type=int, default=0,
+                    help='Warmup steps for per-loss weight scheduling (default: 0)')
+parser.add_argument('--loss-schedule-x', type=str, default='linear',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for amino-acid reconstruction weight (default: linear)')
+parser.add_argument('--loss-schedule-logit', type=str, default='linear',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for edge logit weight (default: linear)')
+parser.add_argument('--loss-schedule-edge', type=str, default='cosine_restarts',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for edge reconstruction weight (default: cosine_restarts)')
+parser.add_argument('--loss-schedule-vq', type=str, default='cosine_restarts',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for VQ loss weight (default: cosine_restarts)')
+parser.add_argument('--loss-schedule-fft2', type=str, default='cosine_restarts',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for FFT2 loss weight (default: cosine_restarts)')
+parser.add_argument('--loss-schedule-angles', type=str, default='linear',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for angles loss weight (default: linear)')
+parser.add_argument('--loss-schedule-ss', type=str, default='linear',
+                    choices=['constant', 'linear', 'cosine', 'cosine_restarts', 'polynomial'],
+                    help='Schedule for SS loss weight (default: linear)')
+parser.add_argument('--loss-power-ss', type=float, default=2.0,
+                    help='Polynomial power parameter used for SS loss schedule (default: 2.0)')
+parser.add_argument('--loss-cycles-edge', type=int, default=3,
+                    help='Cycles for edge cosine_restarts schedule (default: 3)')
+parser.add_argument('--loss-cycles-vq', type=int, default=10,
+                    help='Cycles for VQ cosine_restarts schedule (default: 10)')
+parser.add_argument('--loss-cycles-fft2', type=int, default=5,
+                    help='Cycles for FFT2 cosine_restarts schedule (default: 5)')
 
 # Tensor Core precision
 parser.add_argument('--tensor-core-precision', type=str, default='high',
@@ -263,19 +315,23 @@ if args.config:
     else:
         raise ValueError("Config file must be YAML (.yaml/.yml) or JSON (.json)")
     
-    # Map config keys to argument names (handle underscore vs hyphen differences)
+    # Legacy aliases accepted from older notebook/config naming
     config_to_arg_map = {
-        'edgeweight': 'edge_weight',
-        'logitweight': 'logit_weight',
-        'xweight': 'x_weight',
-        'fft2weight': 'fft2_weight',
-        'vqweight': 'vq_weight',
+        'dataset_path': 'dataset',
+        'num_epochs': 'epochs',
+        'random_seed': 'seed',
+        'scheduler_type': 'lr_schedule',
+        'warmup_steps': 'lr_warmup_steps',
+        'warmup_ratio': 'lr_warmup_ratio',
+        'use_mixed_precision': 'mixed_precision',
+        'use_weight_scheduler': 'use_weight_scheduler',
     }
     
     # Set defaults from config file, but allow CLI args to override
     for key, value in config.items():
         # Map config key to argument name if needed
-        arg_key = config_to_arg_map.get(key, key)
+        normalized_key = key.replace('-', '_')
+        arg_key = config_to_arg_map.get(normalized_key, normalized_key)
         
         # Only set from config if not explicitly provided via CLI
         if hasattr(args, arg_key):
@@ -292,6 +348,9 @@ if args.config:
             print(f"  Warning: Unknown config key '{key}' - ignoring")
 else:
     print("No config file provided, using command-line arguments and defaults")
+
+if args.use_muon:
+    args.optimizer_type = 'muon'
 
 # Set seeds for reproducibility
 torch.manual_seed(args.seed)
@@ -381,6 +440,7 @@ print(f"  Exponential Moving Average: {'Enabled' if args.EMA else 'Disabled'}")
 print(f"  TensorBoard Directory: {args.tensorboard_dir}")
 print(f"  Run Name: {args.run_name if args.run_name else 'auto-generated'}")
 print(f"  LR Schedule: {args.lr_schedule}")
+print(f"  Optimizer Type: {args.optimizer_type}")
 print(f"  LR Warmup Steps: {args.lr_warmup_steps}")
 print(f"  LR Warmup Ratio: {args.lr_warmup_ratio}")
 print(f"  Gradient Accumulation Steps: {args.gradient_accumulation_steps}")
@@ -394,6 +454,10 @@ if args.use_commitment_scheduling:
     print(f"  Commitment Schedule: {args.commitment_schedule}")
     print(f"  Commitment Warmup Steps: {args.commitment_warmup_steps}")
     print(f"  Commitment Start: {args.commitment_start}")
+print(f"  Use Weight Scheduler: {args.use_weight_scheduler}")
+if args.use_weight_scheduler:
+    print(f"  Loss Warmup Steps: {args.loss_warmup_steps}")
+    print(f"  Loss Schedules: x={args.loss_schedule_x}, logit={args.loss_schedule_logit}, edge={args.loss_schedule_edge}, vq={args.loss_schedule_vq}, fft2={args.loss_schedule_fft2}, angles={args.loss_schedule_angles}, ss={args.loss_schedule_ss}")
 
 
 
@@ -545,7 +609,7 @@ else:
         metadata={'edge_types': [('res','contactPoints','res')]},
         num_embeddings=args.num_embeddings,
         commitment_cost=args.commitment_cost,
-        edge_dim=1,
+        edge_dim=12,
         encoder_hidden=hidden_size,
         EMA=args.EMA,
         nheads=16,
@@ -669,7 +733,7 @@ else:
     uncertainy_weighting = None
 
 # Training setup - Optimizer
-if args.use_muon and MUON_AVAILABLE:
+if args.optimizer_type == 'muon' and MUON_AVAILABLE:
     print("Using Muon optimizer")
     hidden_weights = []
     hidden_gains_biases = []
@@ -750,6 +814,29 @@ if args.use_muon and MUON_AVAILABLE:
 
     else:
         optimizer = MuonWithAuxAdam(param_groups)
+elif args.optimizer_type == 'lion':
+    if not LION_AVAILABLE:
+        print("Lion optimizer not available, falling back to AdamW")
+        params = list(encoder.parameters()) + list(decoder.parameters())
+        if args.use_uncertainty_weighting:
+            param_groups = [
+                {'params': params, 'lr': args.learning_rate},
+                {'params': uncertainy_weighting.parameters(), 'lr': args.learning_rate * 0.1}
+            ]
+            optimizer = torch.optim.AdamW(param_groups, weight_decay=0.000001)
+        else:
+            optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=0.000001)
+    else:
+        print("Using Lion optimizer")
+        lion_betas = (args.lion_beta1, args.lion_beta2)
+        params = list(encoder.parameters()) + list(decoder.parameters())
+        if args.use_uncertainty_weighting:
+            optimizer = Lion([
+                {'params': params, 'lr': args.lion_lr, 'betas': lion_betas, 'weight_decay': args.lion_weight_decay},
+                {'params': uncertainy_weighting.parameters(), 'lr': args.lion_lr / 10.0, 'betas': lion_betas, 'weight_decay': 0.0},
+            ])
+        else:
+            optimizer = Lion(params, lr=args.lion_lr, betas=lion_betas, weight_decay=args.lion_weight_decay)
 else:
     print("Using AdamW optimizer")
     params = list(encoder.parameters()) + list(decoder.parameters())
@@ -781,6 +868,31 @@ def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_step
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}")
 
+
+def loss_weight_scheduler(step, total_steps, schedule_type='linear', warmup_steps=0, power=1.0, num_cycles=1):
+    """Return scale in [0,1] for per-loss weight scheduling."""
+    if total_steps <= 0:
+        return 1.0
+    if warmup_steps > 0 and step < warmup_steps:
+        return step / max(warmup_steps, 1)
+
+    post_warmup_total = max(total_steps - warmup_steps, 1)
+    progress = (step - warmup_steps) / post_warmup_total
+    progress = min(max(progress, 0.0), 1.0)
+
+    if schedule_type == 'constant':
+        return 1.0
+    if schedule_type == 'linear':
+        return 1.0 - progress
+    if schedule_type == 'cosine':
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+    if schedule_type == 'cosine_restarts':
+        cycle_progress = (progress * num_cycles) % 1.0
+        return 0.5 * (1.0 + math.cos(math.pi * cycle_progress))
+    if schedule_type == 'polynomial':
+        return (1.0 - progress) ** power
+    raise ValueError(f"Unknown loss schedule type: {schedule_type}")
+
 # Learning rate scheduler setup
 total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps  # Adjust for gradient accumulation
 
@@ -790,6 +902,8 @@ if args.lr_warmup_ratio > 0:
     print(f"Using warmup ratio {args.lr_warmup_ratio:.2%}, calculated warmup_steps: {warmup_steps}")
 else:
     warmup_steps = args.lr_warmup_steps
+
+loss_warmup_steps = args.loss_warmup_steps if args.loss_warmup_steps > 0 else warmup_steps
 
 # Initialize scheduler using the new function
 scheduler, scheduler_step_mode = get_scheduler(
@@ -854,6 +968,8 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
         f.write(f'Commitment Schedule: {args.commitment_schedule}\n')
         f.write(f'Commitment Warmup Steps: {args.commitment_warmup_steps}\n')
         f.write(f'Commitment Start: {args.commitment_start}\n')
+    f.write(f'Optimizer Type: {args.optimizer_type}\n')
+    f.write(f'Use Weight Scheduler: {args.use_weight_scheduler}\n')
 
 # Save configuration to TensorBoard
 config_text = "\n".join([f"{k}: {v}" for k, v in vars(args).items()])
@@ -871,6 +987,74 @@ hparams_dict = {
 }
 metrics_dict = {}
 writer.add_hparams(hparams_dict, metrics_dict)
+
+
+def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
+    """Run a quick validation on a small random subset of the validation set."""
+    encoder.eval()
+    decoder.eval()
+
+    indices = torch.randperm(len(val_dataset))[:min(n_samples, len(val_dataset))].tolist()
+    samples = [val_dataset[i] for i in indices]
+    from torch_geometric.data import Batch
+    data = Batch.from_data_list(samples).to(device)
+
+    total_loss_x = total_loss_edge = total_vq = 0.0
+    total_angles_loss = total_loss_fft2 = total_logit_loss = total_ss_loss = 0.0
+
+    with torch.no_grad():
+        z, vqloss = encoder(data)
+        data['res'].x = z
+        out = decoder(data, None)
+        edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
+
+        logitloss = torch.tensor(0.0, device=device)
+        edgeloss = torch.tensor(0.0, device=device)
+        if edge_index is not None:
+            edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs', normalize=args.normalize_loss_weights)
+
+        xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
+
+        fft2loss = torch.tensor(0.0, device=device)
+        if 'fft2pred' in out and out['fft2pred'] is not None:
+            fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+
+        angles_loss = torch.tensor(0.0, device=device)
+        if out.get('angles') is not None:
+            angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
+
+        ss_loss = torch.tensor(0.0, device=device)
+        if out.get('ss_pred') is not None:
+            if args.mask_plddt:
+                mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
+                if mask.sum() > 0:
+                    ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
+            else:
+                ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+
+    vq_val = float(vqloss.item()) if isinstance(vqloss, torch.Tensor) else float(vqloss)
+    avg_loss_x      = float(xloss.item())
+    avg_logit_loss  = float(logitloss.item())
+    avg_loss_edge   = float(edgeloss.item())
+    avg_loss_fft2   = float(fft2loss.item())
+    avg_angles_loss = float(angles_loss.item())
+    avg_loss_vq     = vq_val
+    avg_ss_loss     = float(ss_loss.item())
+    avg_total_loss  = avg_loss_x + avg_loss_edge + avg_loss_vq + avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss
+
+    encoder.train()
+    decoder.train()
+
+    return {
+        'val/loss':        avg_total_loss,
+        'val/aa_loss':     avg_loss_x,
+        'val/edge_loss':   avg_loss_edge,
+        'val/vq_loss':     avg_loss_vq,
+        'val/fft2_loss':   avg_loss_fft2,
+        'val/angles_loss': avg_angles_loss,
+        'val/ss_loss':     avg_ss_loss,
+        'val/logit_loss':  avg_logit_loss,
+    }
 
 
 def validate(encoder, decoder, val_loader, device, args):
@@ -1014,6 +1198,10 @@ for epoch in range(args.epochs):
     total_loss_fft2 = 0
     total_logit_loss = 0
     total_ss_loss = 0
+
+    # Notebook parity: allow coarse reweighting after burn-in-like epochs.
+    xweight_epoch = max(xweight, 0.5) if (args.jump_aa_loss is not None and epoch >= args.jump_aa_loss) else xweight
+    ss_weight_epoch = max(ss_weight, 0.5) if (args.jump_ss_loss is not None and epoch >= args.jump_ss_loss) else ss_weight
     
     for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
         data = data.to(device)
@@ -1056,16 +1244,45 @@ for epoch in range(args.epochs):
                             ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                     else:
                         ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+
+                if args.use_weight_scheduler:
+                    x_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_x, warmup_steps=loss_warmup_steps)
+                    logit_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_logit, warmup_steps=loss_warmup_steps)
+                    edge_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_edge, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_edge)
+                    vq_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_vq, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_vq)
+                    fft2_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_fft2, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_fft2)
+                    angles_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_angles, warmup_steps=loss_warmup_steps)
+                    ss_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_ss, warmup_steps=loss_warmup_steps, power=args.loss_power_ss)
+                else:
+                    x_scale = logit_scale = edge_scale = vq_scale = fft2_scale = angles_scale = ss_scale = 1.0
+
+                current_xweight = xweight_epoch * x_scale
+                current_logitweight = logitweight * logit_scale
+                current_edgeweight = edgeweight * edge_scale
+                current_vqweight = vqweight * vq_scale
+                current_fft2weight = fft2weight * fft2_scale
+                current_angles_weight = angles_weight * angles_scale
+                current_ss_weight = ss_weight_epoch * ss_scale
                     
                 
                 if args.use_uncertainty_weighting:
                     loss = uncertainy_weighting.forward(
-                        torch.stack([xweight*xloss, edgeweight*edgeloss, vqweight*vqloss, fft2weight*fft2loss, angles_weight*angles_loss, ss_weight*ss_loss, logitweight*logitloss])
+                        torch.stack([
+                            current_xweight * xloss,
+                            current_edgeweight * edgeloss,
+                            current_vqweight * vqloss,
+                            current_fft2weight * fft2loss,
+                            current_angles_weight * angles_loss,
+                            current_ss_weight * ss_loss,
+                            current_logitweight * logitloss,
+                        ])
                     )
                 else:
-                    loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                            fft2weight * fft2loss + angles_weight * angles_loss + 
-                            ss_weight * ss_loss + logitweight * logitloss)
+                    loss = (
+                        current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
+                        current_fft2weight * fft2loss + current_angles_weight * angles_loss +
+                        current_ss_weight * ss_loss + current_logitweight * logitloss
+                    )
                 
                 # Scale loss by gradient accumulation steps
                 loss = loss / args.gradient_accumulation_steps
@@ -1103,15 +1320,44 @@ for epoch in range(args.epochs):
                         ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
                 else:
                     ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+
+            if args.use_weight_scheduler:
+                x_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_x, warmup_steps=loss_warmup_steps)
+                logit_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_logit, warmup_steps=loss_warmup_steps)
+                edge_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_edge, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_edge)
+                vq_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_vq, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_vq)
+                fft2_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_fft2, warmup_steps=loss_warmup_steps, num_cycles=args.loss_cycles_fft2)
+                angles_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_angles, warmup_steps=loss_warmup_steps)
+                ss_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_ss, warmup_steps=loss_warmup_steps, power=args.loss_power_ss)
+            else:
+                x_scale = logit_scale = edge_scale = vq_scale = fft2_scale = angles_scale = ss_scale = 1.0
+
+            current_xweight = xweight_epoch * x_scale
+            current_logitweight = logitweight * logit_scale
+            current_edgeweight = edgeweight * edge_scale
+            current_vqweight = vqweight * vq_scale
+            current_fft2weight = fft2weight * fft2_scale
+            current_angles_weight = angles_weight * angles_scale
+            current_ss_weight = ss_weight_epoch * ss_scale
                 
             if args.use_uncertainty_weighting:
                 loss = uncertainy_weighting.forward(
-                    torch.stack([xweight*xloss, edgeweight*edgeloss, vqweight*vqloss, fft2weight*fft2loss, angles_weight*angles_loss, ss_weight*ss_loss, logitweight*logitloss])
+                    torch.stack([
+                        current_xweight * xloss,
+                        current_edgeweight * edgeloss,
+                        current_vqweight * vqloss,
+                        current_fft2weight * fft2loss,
+                        current_angles_weight * angles_loss,
+                        current_ss_weight * ss_loss,
+                        current_logitweight * logitloss,
+                    ])
                 )
             else:
-                loss = (xweight * xloss + edgeweight * edgeloss + vqweight * vqloss + 
-                        fft2weight * fft2loss + angles_weight * angles_loss + 
-                        ss_weight * ss_loss + logitweight * logitloss)
+                loss = (
+                    current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
+                    current_fft2weight * fft2loss + current_angles_weight * angles_loss +
+                    current_ss_weight * ss_loss + current_logitweight * logitloss
+                )
             
             loss = loss / args.gradient_accumulation_steps
         
@@ -1186,8 +1432,8 @@ for epoch in range(args.epochs):
     torch.cuda.empty_cache()
     gc.collect()
 
-    # Run validation
-    val_metrics = validate(encoder, decoder, val_loader, device, args)
+    # Run quick validation on 10 random proteins
+    val_metrics = quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10)
     
     # Update learning rate scheduler (for epoch-based schedulers)
     if scheduler is not None and scheduler_step_mode == 'epoch':
@@ -1244,6 +1490,8 @@ for epoch in range(args.epochs):
     writer.add_scalar('Weights/X', xweight, epoch)
     writer.add_scalar('Weights/FFT2', fft2weight, epoch)
     writer.add_scalar('Weights/VQ', vqweight, epoch)
+    writer.add_scalar('Weights/SS', ss_weight_epoch, epoch)
+    writer.add_scalar('Weights/Logit', logitweight, epoch)
 
     # Early stopping check
     if args.early_stopping and epoch >= args.early_stopping_warmup_epochs:

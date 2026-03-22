@@ -464,7 +464,8 @@ def quaternion_fape_loss(q_pred, t_pred, q_target, t_target, points):
 	points_target = points_rot_target + t_target.unsqueeze(1) # shape: (batch, num_points, 3)
 	
 	# Compute the point-wise L2 distances and then the mean error
-	loss = torch.mean(torch.norm(points_pred - points_target, dim=-1))
+	# Use eps inside sqrt to avoid NaN gradients when points coincide
+	loss = torch.mean(torch.sqrt(torch.sum((points_pred - points_target) ** 2, dim=-1) + 1e-8))
 	return loss
 
 
@@ -511,8 +512,9 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt=None, d_clamp=10.0, e
 		local_true = torch.einsum("mij,mnj->mni", true_R[idx].transpose(1,2), diff_true)
 		
 		# Compute the L2 error per residue pair and clamp it.
+		# eps is placed inside sqrt (not added to the vector) to avoid NaN gradients at zero.
 		if soft == False:
-			error = torch.norm(local_pred - local_true + eps, dim=-1)
+			error = torch.sqrt(torch.sum((local_pred - local_true) ** 2, dim=-1) + eps)
 			if plddt is not None:
 				pass  # Apply pLDDT masking if needed
 			error = torch.clamp(error, max=d_clamp)
@@ -553,20 +555,128 @@ def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):
 def lddt_loss(coord_true, pred_R, pred_t, batch, plddt=None, d_clamp=10.0, eps=1e-8, reduction='mean'):
 	"""
 	Compute lDDT loss for rotation/translation predictions.
+	pred_t contains CA-to-CA displacement vectors so coordinates are derived via
+	reconstruct_positions (cumulative sum).
 	"""
 	losses = []
 	unique_batches = torch.unique(batch)
 	for b in unique_batches:
 		idx = (batch == b).nonzero(as_tuple=True)[0]
-		coord_pred = transform_rt_to_coordinates(pred_R[idx], pred_t[idx])		
-		lddt_loss_val = compute_lddt_loss(coord_true, coord_pred)
+		R_b = pred_R[idx]
+		t_b = pred_t[idx]
+		# coords: (N+1, 3) -> drop origin -> (N, 3)
+		coord_pred = reconstruct_positions(R_b, t_b)[1:]
+		c_true_b = coord_true[idx] if coord_true.shape[0] == batch.shape[0] else coord_true
 		if plddt is not None:
-			pass  # Apply pLDDT masking if needed
+			pmask = (plddt[idx] >= 0.3).squeeze()
+			if pmask.sum() < 2:
+				continue
+			c_true_b = c_true_b[pmask]
+			coord_pred = coord_pred[pmask]
+		lddt_loss_val = compute_lddt_loss(c_true_b, coord_pred)
 		losses.append(lddt_loss_val)
 	if losses:
 		return torch.stack(losses).mean()
 	else:
 		return torch.tensor(0.0, device=coord_true.device)
+
+
+def differentiable_lddt_loss(
+	pred_q: torch.Tensor,
+	pred_t: torch.Tensor,
+	true_coords: torch.Tensor,
+	batch: torch.Tensor = None,
+	cutoff: float = 15.0,
+	thresholds: list = None,
+	plddt: torch.Tensor = None,
+	plddt_thresh: float = 0.3,
+) -> torch.Tensor:
+	"""
+	Differentiable lDDT loss from predicted quaternions + CA-to-CA translations.
+
+	Converts predicted translations to global CA positions via cumulative sum
+	(since t_true[i] = CA[i+1] - CA[i] in the global frame), then evaluates
+	a soft lDDT score against the ground-truth CA coordinates.
+
+	The soft lDDT uses a Cauchy-like kernel  1 / (1 + (Δd/τ)²)  for each
+	threshold τ, which is fully differentiable, smoothly rewards small errors,
+	and vanishes for large errors.
+
+	Args:
+		pred_q: Predicted unit quaternions (N, 4) — unused for coordinate
+		        derivation but kept for API consistency.
+		pred_t: Predicted CA-to-CA displacements (N, 3).
+		true_coords: Ground-truth CA coordinates (N, 3).
+		batch: Per-residue batch indices (N,). None = single structure.
+		cutoff: Neighbour inclusion distance in Å. Default: 15.0.
+		thresholds: lDDT distance thresholds in Å.
+		            Default: [0.5, 1.0, 2.0, 4.0].
+		plddt: Per-residue pLDDT scores (N,) or (N, 1). Optional.
+		plddt_thresh: Minimum pLDDT to include a residue. Default: 0.3.
+
+	Returns:
+		Scalar loss = 1 - mean_soft_lDDT  (lower is better).
+	"""
+	if thresholds is None:
+		thresholds = [0.5, 1.0, 2.0, 4.0]
+
+	def _lddt_single(t_b, coords_true_b):
+		"""Compute soft lDDT loss for one structure."""
+		# Derive predicted CA positions from cumulative displacements.
+		# reconstruct_positions returns (N+1, 3); drop the origin row.
+		pred_coords = torch.cumsum(t_b, dim=0)  # (N, 3) – directly the CA positions relative to origin
+
+		# Pairwise true and predicted distances, shape (N, N)
+		# Clamp to avoid NaN gradients when two predicted positions coincide (||x-y||=0).
+		d_true = torch.cdist(coords_true_b, coords_true_b).clamp(min=1e-8)
+		d_pred = torch.cdist(pred_coords, pred_coords).clamp(min=1e-8)
+
+		# Neighbour mask: pairs within cutoff, excluding diagonal
+		N = d_true.shape[0]
+		diag = torch.eye(N, dtype=torch.bool, device=d_true.device)
+		neighbour = (d_true < cutoff) & ~diag  # (N, N)
+
+		if neighbour.sum() == 0:
+			return torch.tensor(0.0, device=t_b.device)
+
+		delta = torch.abs(d_pred - d_true)  # (N, N)
+
+		# Soft score per threshold: Cauchy kernel instead of hard indicator
+		per_thresh = []
+		for thr in thresholds:
+			score = 1.0 / (1.0 + (delta / thr) ** 2)
+			per_thresh.append(score[neighbour].mean())
+
+		soft_lddt = torch.stack(per_thresh).mean()
+		return 1.0 - soft_lddt  # loss form
+
+	if batch is None:
+		mask = None
+		if plddt is not None:
+			mask = (plddt.squeeze() >= plddt_thresh)
+			if mask.sum() < 2:
+				return torch.tensor(0.0, device=pred_t.device)
+			return _lddt_single(pred_t[mask], true_coords[mask])
+		return _lddt_single(pred_t, true_coords)
+
+	losses = []
+	for b in torch.unique(batch):
+		idx = (batch == b).nonzero(as_tuple=True)[0]
+		t_b = pred_t[idx]
+		c_b = true_coords[idx]
+		if plddt is not None:
+			pmask = (plddt[idx].squeeze() >= plddt_thresh)
+			if pmask.sum() < 2:
+				continue
+			t_b = t_b[pmask]
+			c_b = c_b[pmask]
+		if t_b.shape[0] < 2:
+			continue
+		losses.append(_lddt_single(t_b, c_b))
+
+	if losses:
+		return torch.stack(losses).mean()
+	return torch.tensor(0.0, device=pred_t.device)
 
 
 def compute_lddt_quaternions(pred_quats, pred_trans, target_coords, cutoff=15.0, thresholds=[0.5, 1.0, 2.0, 4.0]):
@@ -646,9 +756,10 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	quat = torch.zeros(*rot_matrices.shape[:-2], 4, dtype=rot_matrices.dtype, device=rot_matrices.device)
 	
 	# Case 1: trace > 0
+	# clamp sqrt arguments to guard against tiny negative values from floating-point drift
 	mask1 = trace > 0
 	if mask1.any():
-		s = torch.sqrt(trace[mask1] + 1.0) * 2  # s = 4*w
+		s = torch.sqrt(torch.clamp(trace[mask1] + 1.0, min=0)) * 2  # s = 4*w
 		quat[mask1, 0] = 0.25 * s  # w
 		quat[mask1, 1] = (rot_matrices[mask1, 2, 1] - rot_matrices[mask1, 1, 2]) / s  # x
 		quat[mask1, 2] = (rot_matrices[mask1, 0, 2] - rot_matrices[mask1, 2, 0]) / s  # y
@@ -657,7 +768,7 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	# Case 2: r00 is largest diagonal
 	mask2 = (~mask1) & (r00 > r11) & (r00 > r22)
 	if mask2.any():
-		s = torch.sqrt(1.0 + r00[mask2] - r11[mask2] - r22[mask2]) * 2  # s = 4*x
+		s = torch.sqrt(torch.clamp(1.0 + r00[mask2] - r11[mask2] - r22[mask2], min=0)) * 2  # s = 4*x
 		quat[mask2, 0] = (rot_matrices[mask2, 2, 1] - rot_matrices[mask2, 1, 2]) / s  # w
 		quat[mask2, 1] = 0.25 * s  # x
 		quat[mask2, 2] = (rot_matrices[mask2, 0, 1] + rot_matrices[mask2, 1, 0]) / s  # y
@@ -666,7 +777,7 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	# Case 3: r11 is largest diagonal
 	mask3 = (~mask1) & (~mask2) & (r11 > r22)
 	if mask3.any():
-		s = torch.sqrt(1.0 + r11[mask3] - r00[mask3] - r22[mask3]) * 2  # s = 4*y
+		s = torch.sqrt(torch.clamp(1.0 + r11[mask3] - r00[mask3] - r22[mask3], min=0)) * 2  # s = 4*y
 		quat[mask3, 0] = (rot_matrices[mask3, 0, 2] - rot_matrices[mask3, 2, 0]) / s  # w
 		quat[mask3, 1] = (rot_matrices[mask3, 0, 1] + rot_matrices[mask3, 1, 0]) / s  # x
 		quat[mask3, 2] = 0.25 * s  # y
@@ -675,14 +786,14 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	# Case 4: r22 is largest diagonal
 	mask4 = (~mask1) & (~mask2) & (~mask3)
 	if mask4.any():
-		s = torch.sqrt(1.0 + r22[mask4] - r00[mask4] - r11[mask4]) * 2  # s = 4*z
+		s = torch.sqrt(torch.clamp(1.0 + r22[mask4] - r00[mask4] - r11[mask4], min=0)) * 2  # s = 4*z
 		quat[mask4, 0] = (rot_matrices[mask4, 1, 0] - rot_matrices[mask4, 0, 1]) / s  # w
 		quat[mask4, 1] = (rot_matrices[mask4, 0, 2] + rot_matrices[mask4, 2, 0]) / s  # x
 		quat[mask4, 2] = (rot_matrices[mask4, 1, 2] + rot_matrices[mask4, 2, 1]) / s  # y
 		quat[mask4, 3] = 0.25 * s  # z
 	
-	# Normalize quaternions
-	quat = quat / torch.norm(quat, dim=-1, keepdim=True)
+	# Normalize quaternions — clamp denominator to avoid division by zero
+	quat = quat / torch.norm(quat, dim=-1, keepdim=True).clamp(min=1e-8)
 	
 	if squeeze_output:
 		quat = quat.squeeze(0)

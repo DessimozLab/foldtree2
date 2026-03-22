@@ -1117,6 +1117,45 @@ def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_
 	return loss
 
 
+def lddt_reconstruction_loss(
+	pred_q: torch.Tensor,
+	pred_t: torch.Tensor,
+	true_coords: torch.Tensor,
+	batch: torch.Tensor = None,
+	cutoff: float = 15.0,
+	thresholds: list = None,
+	plddt: torch.Tensor = None,
+	plddt_thresh: float = 0.3,
+) -> torch.Tensor:
+	"""
+	Differentiable lDDT loss.
+
+	Derives predicted CA positions from the cumulative sum of `pred_t`
+	(CA-to-CA displacement vectors in the global frame) and evaluates
+	a soft lDDT score against `true_coords`.
+
+	Args:
+		pred_q: Predicted unit quaternions (N, 4). Not used for coordinate
+		        derivation but retained for API consistency.
+		pred_t: Predicted CA-to-CA displacements (N, 3).
+		true_coords: Ground-truth CA coordinates (N, 3).
+		batch: Per-residue batch indices (N,). None = single structure.
+		cutoff: Neighbour inclusion distance in Å. Default: 15.0.
+		thresholds: lDDT distance thresholds. Default: [0.5, 1.0, 2.0, 4.0].
+		plddt: Per-residue pLDDT scores (N,) or (N, 1). Optional.
+		plddt_thresh: Minimum pLDDT. Default: 0.3.
+
+	Returns:
+		Scalar loss = 1 - mean_soft_lDDT.
+	"""
+	from foldtree2.src.losses.fape import differentiable_lddt_loss
+	return differentiable_lddt_loss(
+		pred_q, pred_t, true_coords,
+		batch=batch, cutoff=cutoff, thresholds=thresholds,
+		plddt=plddt, plddt_thresh=plddt_thresh,
+	)
+
+
 def gaussian_loss(mu , logvar , beta= 1.5):
 	"""Compute KL divergence loss for variational autoencoders (VAE).
 	
