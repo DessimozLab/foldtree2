@@ -634,11 +634,12 @@ def differentiable_lddt_loss(
 		# Pairwise true and predicted distances, shape (N, N)
 		# Manual computation with eps inside sqrt to avoid NaN gradients at zero distance.
 		true_diff = coords_true_b.unsqueeze(0) - coords_true_b.unsqueeze(1)
-		d_true = torch.sqrt((true_diff ** 2).sum(dim=-1) + 1e-8)
+		d_true = torch.sqrt((true_diff ** 2).sum(dim=-1) + 1e-6)
 		pred_diff = pred_coords.unsqueeze(0) - pred_coords.unsqueeze(1)
 		pred_diff = pred_diff.clamp(-500, 500)  # prevent overflow when squaring
-		d_pred = torch.sqrt((pred_diff ** 2).sum(dim=-1) + 1e-8)
-
+		d_pred = torch.sqrt((pred_diff ** 2).sum(dim=-1) + 1e-6)
+		d_pred = d_pred.clamp(1e-6, 1e6)  # prevent NaN gradients and overflow
+		
 		# Neighbour mask: pairs within cutoff, excluding diagonal
 		N = d_true.shape[0]
 		diag = torch.eye(N, dtype=torch.bool, device=d_true.device)

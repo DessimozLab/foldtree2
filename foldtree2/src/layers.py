@@ -24,18 +24,19 @@ class Learnable_Positional_Encoding(nn.Module):
 		return x + pos_embeddings
 
 class Position_MLP(torch.nn.Module):
-	def __init__(self, in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=0.1):
+	def __init__(self, in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=0.01):
 		super(Position_MLP, self).__init__()
 		layers = []
-		layers.append( nn.Linear(in_channels, hidden_channels[0]) )
-		layers.append( nn.GELU() )
+		#layernorm and dropout
+		layers.append( nn.LayerNorm(in_channels) )
 		layers.append( nn.Dropout(dropout) )
+		layers.append( nn.Linear(in_channels, hidden_channels[0]) )
+		layers.append( nn.ReLU() )
 		for i in range(1, len(hidden_channels)):
 			layers.append( nn.Linear(hidden_channels[i-1], hidden_channels[i]) )
-			layers.append( nn.GELU() )
-			layers.append( nn.Dropout(dropout) )
+			layers.append( nn.ReLU() )
 		layers.append( nn.Linear(hidden_channels[-1], out_channels) )
-		layers.append( nn.Tanh() )
+		layers.append( nn.Tanh() )  # constrain outputs to [-1, 1]
 		self.mlp = nn.Sequential( *layers )
 
 	def forward(self, x):

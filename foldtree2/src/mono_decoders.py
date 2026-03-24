@@ -320,7 +320,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 				Xdecoder_hidden=[30, 30], 
 				anglesdecoder_hidden=[30, 30],
 				RTdecoder_hidden=[30, 30],
-				dropout=.001,
+				dropout=.01,
 				output_fft=False,
 				output_rt=False,
 				output_angles=False,
@@ -477,7 +477,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 			)
 		
 		if learn_positions:
-			self.head['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+			self.head['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128,128,128], out_channels=32, dropout=dropout)
 
 
 		
@@ -637,7 +637,7 @@ class CNN_AA_Decoder(torch.nn.Module):
 		AAdecoder_hidden=[256, 128, 64],
 		ssdecoder_hidden=[256, 128, 64],
 		concat_positions=True,
-		dropout=0.001,
+		dropout=0.01,
 		normalize=True,
 		residual=True,
 		learn_positions=False,
@@ -669,7 +669,7 @@ class CNN_AA_Decoder(torch.nn.Module):
 		self.input['dropout'] = nn.Dropout(dropout)
 		
 		if learn_positions:
-			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 128, 128], out_channels=32, dropout=dropout)
 		
 		self.input['proj'] = nn.Sequential(
 			nn.Linear(input_dim, conv_channels[0]),
@@ -906,7 +906,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		self.input['dropout'] = nn.Dropout(dropout)
 		
 		if learn_positions:
-			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 128, 128], out_channels=32, dropout=dropout)
 		
 		self.input['proj'] = nn.Sequential(
 			nn.Linear(input_dim, d_model),
@@ -1103,7 +1103,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		RTdecoder_hidden=[128, 64, 32],
 		ssdecoder_hidden=[128, 64, 32],
 		anglesdecoder_hidden=[128, 64, 32],
-		dropout=0.001,
+		dropout=0.01,
 		normalize=True,
 		residual=True,
 		learn_positions=False,
@@ -1140,7 +1140,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		self.input['dropout'] = nn.Dropout(dropout)
 		
 		if learn_positions:
-			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=dropout)
+			self.input['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128, 128 , 128], out_channels=32, dropout=dropout)
 		
 		self.input['proj'] = nn.Sequential(
 			nn.Linear(input_dim, d_model),
@@ -1454,7 +1454,7 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 		num_layers=2,
 		foldx_hidden=[128, 64, 32],
 		attn_hidden=64,
-		dropout=0.001,
+		dropout=0.01,
 		normalize=True,
 		residual=True,
 	):
@@ -1520,7 +1520,7 @@ class Quaternion_Coarse_Geometry_Decoder(torch.nn.Module):
 		self,
 		in_channels={'res': 10},
 		hidden_dims=[128, 64],
-		dropout=0.001,
+		dropout=0.01,
 		normalize_latent=True,
 		concat_positions=False,
 		learn_positions=False,
@@ -1545,7 +1545,7 @@ class Quaternion_Coarse_Geometry_Decoder(torch.nn.Module):
 		if learn_positions:
 			self.position_mlp = Position_MLP(
 				in_channels=256,
-				hidden_channels=[128, 64],
+				hidden_channels=[128, 128, 128],
 				out_channels=position_dim,
 				dropout=dropout,
 			)

@@ -261,12 +261,23 @@ parser.add_argument('--adamw-lr', type=float, default=3e-4,
                     help='Learning rate for AdamW when using Muon (default: 3e-4)')
 
 # Mixed precision and pLDDT masking
+
 parser.add_argument('--mixed-precision', action='store_true', default=True,
                     help='Use mixed precision training (default: True)')
 parser.add_argument('--mask-plddt', action='store_true',
                     help='Mask low pLDDT residues in loss calculations')
 parser.add_argument('--plddt-threshold', type=float, default=0.3,
                     help='pLDDT threshold for masking (default: 0.3)')
+
+# lDDT and FAPE loss arguments
+parser.add_argument('--lddt-loss', action='store_true', default=False,
+                    help='Enable lDDT loss during training')
+parser.add_argument('--lddt-weight', type=float, default=0.0,
+                    help='Weight for lDDT loss (default: 0.0)')
+parser.add_argument('--fape-loss', action='store_true', default=False,
+                    help='Enable FAPE loss during training')
+parser.add_argument('--fape-weight', type=float, default=0.0,
+                    help='Weight for FAPE loss (default: 0.0)')
 
 # Multi-GPU settings
 parser.add_argument('--gpus', type=int, default=-1,
@@ -470,36 +481,50 @@ class FoldTree2Model(pl.LightningModule):
         data['res'].x = z
         out = self.decoder(data, None)
         return out, vqloss
+
+    @staticmethod
+    def _batch_has_invalid_inputs(data):
+        for node_type in getattr(data, 'node_types', []):
+            node_x = getattr(data[node_type], 'x', None)
+            if node_x is not None and (torch.isnan(node_x).any() or torch.isinf(node_x).any()):
+                return True
+        return False
     
     def training_step(self, batch, batch_idx):
         data = batch
-        
+
+        batch_size = data['res'].batch.max().item() + 1 if hasattr(data['res'], 'batch') and data['res'].batch is not None else 1
+
+        if self._batch_has_invalid_inputs(data):
+            self.log('train/skipped_bad_batch', 1.0, on_step=True, on_epoch=True, batch_size=batch_size)
+            return torch.zeros((), device=self.device, requires_grad=True)
+
         # Forward pass
         out, vqloss = self(data)
-        
+
         # Get edge index
         edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
-        
+
         # Edge reconstruction loss
         logitloss = torch.tensor(0.0, device=self.device)
         edgeloss = torch.tensor(0.0, device=self.device)
         if edge_index is not None:
             edgeloss, logitloss = recon_loss_diag(data, edge_index, self.decoder, plddt=self.args.mask_plddt, key='edge_probs')
-        
+
         # Amino acid reconstruction loss
         xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
-        
+
         # FFT2 loss
         fft2loss = torch.tensor(0.0, device=self.device)
         if 'fft2pred' in out and out['fft2pred'] is not None:
             fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
-        
+
         # Angles loss
         angles_loss = torch.tensor(0.0, device=self.device)
         if out.get('angles') is not None:
             angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, 
                                                      plddt_mask=data['plddt'].x if self.args.mask_plddt else None)
-        
+
         # Secondary structure loss
         ss_loss = torch.tensor(0.0, device=self.device)
         if out.get('ss_pred') is not None:
@@ -509,16 +534,40 @@ class FoldTree2Model(pl.LightningModule):
                     ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
             else:
                 ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
-        
+
+        # lDDT loss
+        lddt_loss = torch.tensor(0.0, device=self.device)
+        if getattr(self.args, 'lddt_loss', False):
+            from foldtree2.src.losses.losses import lddt_reconstruction_loss
+            # Use predicted and true coordinates (assume out['coords'] and data['coords'].x)
+            if out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+                lddt_loss = lddt_reconstruction_loss(
+                    out['coords'], data['coords'].x,
+                    plddt=data['plddt'].x if self.args.mask_plddt else None,
+                    plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0
+                )
+
+        # FAPE loss
+        fape_loss = torch.tensor(0.0, device=self.device)
+        if getattr(self.args, 'fape_loss', False):
+            from foldtree2.src.losses.losses import quaternion_fape_loss
+            # Use predicted and true quaternion frames (assume out['quat'], out['trans'], data['quat'].x, data['trans'].x)
+            if all([out.get('quat') is not None, out.get('trans') is not None, hasattr(data, 'quat'), hasattr(data['quat'], 'x'), hasattr(data, 'trans'), hasattr(data['trans'], 'x')]):
+                fape_loss = quaternion_fape_loss(
+                    data['quat'].x, data['trans'].x,
+                    out['quat'], out['trans']
+                )
+
         # Total loss
         loss = (self.xweight * xloss + self.edgeweight * edgeloss + self.vqweight * vqloss +
                 self.fft2weight * fft2loss + self.angles_weight * angles_loss +
-                self.ss_weight * ss_loss + self.logitweight * logitloss)
-        
-        # Get batch size from PyG batch (number of graphs in batch)
-        # For PyTorch Geometric, we need to count unique batch indices
-        batch_size = data['res'].batch.max().item() + 1 if hasattr(data['res'], 'batch') and data['res'].batch is not None else 1
-        
+                self.ss_weight * ss_loss + self.logitweight * logitloss +
+                self.args.lddt_weight * lddt_loss + self.args.fape_weight * fape_loss)
+
+        if not torch.isfinite(loss):
+            self.log('train/skipped_nonfinite_loss', 1.0, on_step=True, on_epoch=True, batch_size=batch_size)
+            return torch.zeros((), device=self.device, requires_grad=True)
+
         # Log metrics with explicit batch_size to avoid iteration over FeatureStore
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
         self.log('train/aa_loss', xloss, on_step=False, on_epoch=True, batch_size=batch_size)
@@ -528,13 +577,15 @@ class FoldTree2Model(pl.LightningModule):
         self.log('train/angles_loss', angles_loss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/ss_loss', ss_loss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/logit_loss', logitloss, on_step=False, on_epoch=True, batch_size=batch_size)
-        
+        self.log('train/lddt_loss', lddt_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/fape_loss', fape_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+
         # Log commitment cost if using scheduling
         if self.args.use_commitment_scheduling and hasattr(self.encoder, 'vector_quantizer'):
             current_commitment = self.encoder.vector_quantizer.get_commitment_cost()
             self.log('train/commitment_cost', current_commitment, on_step=False, on_epoch=True, batch_size=batch_size)
-        
-            
+
+        return loss
         # Clear CUDA cache
         torch.cuda.empty_cache()
         gc.collect()
@@ -884,12 +935,29 @@ if devices > 1 or devices == -1:
 else:
     strategy = 'auto'
 
+# Mirror notebook stability settings: avoid flash/mem-efficient SDP kernels.
+if torch.cuda.is_available() and hasattr(torch.backends, 'cuda'):
+    try:
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        print("Using math SDP kernel (flash and mem-efficient disabled for stability)")
+    except Exception as e:
+        print(f"Warning: could not configure SDP kernels: {e}")
+
+trainer_precision = 32
+if args.mixed_precision:
+    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+        trainer_precision = 'bf16-mixed'
+    else:
+        trainer_precision = '16-mixed'
+
 trainer = pl.Trainer(
     max_epochs=args.epochs,
     accelerator='gpu' if torch.cuda.is_available() else 'cpu',
     devices=devices,
     strategy=strategy,
-    precision='16-mixed' if args.mixed_precision else 32,
+    precision=trainer_precision,
     gradient_clip_val=1.0 if args.clip_grad else 0,
     # Lightning automatically passes this to DeepSpeed config as gradient_accumulation_steps
     accumulate_grad_batches=args.gradient_accumulation_steps,
@@ -908,6 +976,8 @@ print(f"  Mask pLDDT: {args.mask_plddt}")
 if args.mask_plddt:
     print(f"  pLDDT threshold: {args.plddt_threshold}")
 print(f"  Mixed precision: {args.mixed_precision}")
+if args.mixed_precision:
+    print(f"  Trainer precision mode: {trainer_precision}")
 print(f"  Gradient clipping: {args.clip_grad}")
 print()
 

@@ -293,6 +293,15 @@ parser.add_argument('--mask-plddt', action='store_true',
                     help='Mask low pLDDT residues in loss calculations')
 parser.add_argument('--plddt-threshold', type=float, default=0.3,
                     help='pLDDT threshold for masking (default: 0.3)')
+# lDDT and FAPE loss arguments
+parser.add_argument('--lddt-loss', action='store_true', default=False,
+                    help='Enable lDDT loss during training')
+parser.add_argument('--lddt-weight', type=float, default=0.0,
+                    help='Weight for lDDT loss (default: 0.0)')
+parser.add_argument('--fape-loss', action='store_true', default=False,
+                    help='Enable FAPE loss during training')
+parser.add_argument('--fape-weight', type=float, default=0.0,
+                    help='Weight for FAPE loss (default: 0.0)')
 
 # Early stopping parameters
 parser.add_argument('--early-stopping', action='store_true',
@@ -468,7 +477,6 @@ if args.use_muon:
 
 # Set seeds for reproducibility
 torch.manual_seed(args.seed)
-np.random.seed(args.seed)
 random.seed(args.seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -505,9 +513,29 @@ def decode_batch_reconstruction(encoder, decoder, z_batch, device, converter, ve
 	Args:
 		encoder: Trained encoder model
 		decoder: Trained decoder model  
+                # lDDT loss
+                lddt_loss = torch.tensor(0.0, device=device)
+                if getattr(args, 'lddt_loss', False):
+                    from foldtree2.src.losses.losses import lddt_reconstruction_loss
+                    if out.get('coords') is not None and hasattr(batch, 'coords') and hasattr(batch['coords'], 'x'):
+                        lddt_loss = lddt_reconstruction_loss(
+                            out['coords'], batch['coords'].x,
+                            plddt=batch['plddt'].x if args.mask_plddt else None,
+                            plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0
+                        )
+                # FAPE loss
+                fape_loss = torch.tensor(0.0, device=device)
+                if getattr(args, 'fape_loss', False):
+                    from foldtree2.src.losses.losses import quaternion_fape_loss
+                    if all([out.get('quat') is not None, out.get('trans') is not None, hasattr(batch, 'quat'), hasattr(batch['quat'], 'x'), hasattr(batch, 'trans'), hasattr(batch['trans'], 'x')]):
+                        fape_loss = quaternion_fape_loss(
+                            batch['quat'].x, batch['trans'].x,
+                            out['quat'], out['trans']
+                        )
 		z_batch: List of discrete embedding index tensors
 		device: PyTorch device
 		converter: PDB2PyG converter
+                        args.lddt_weight * lddt_loss + args.fape_weight * fape_loss)
 		verbose: Print debug information
 		
 	Returns:
@@ -785,7 +813,17 @@ print("Decoder:", decoder)
 if args.use_uncertainty_weighting:
     print("Initializing uncertainty weighting...")
     uncertainy_weighting = UncertaintyWeighting(
-        task_names=['aa_loss', 'edge_loss', 'vq_loss', 'fft2_loss', 'angles_loss', 'ss_loss', 'logit_loss'],
+        task_names=[
+            'aa_loss',
+            'edge_loss',
+            'vq_loss',
+            'fft2_loss',
+            'angles_loss',
+            'ss_loss',
+            'logit_loss',
+            'lddt_loss',
+            'fape_loss',
+        ],
         device=device
     )
     uncertainy_weighting = uncertainy_weighting.to(device)
@@ -1219,10 +1257,26 @@ clip_grad = args.clip_grad  # Enable gradient clipping
 best_loss = float('inf')
 global_step = 0  # Track global training steps for warmup and scheduling
 
+# Mirror notebook stability settings: avoid flash/mem-efficient SDP kernels.
+if torch.cuda.is_available() and hasattr(torch.backends, 'cuda'):
+    try:
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        print("Using math SDP kernel (flash and mem-efficient disabled for stability)")
+    except Exception as e:
+        print(f"Warning: could not configure SDP kernels: {e}")
+
+amp_dtype = torch.float16
+if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+    amp_dtype = torch.bfloat16
+
+use_scaler = bool(args.mixed_precision and amp_dtype == torch.float16)
+
 # Initialize GradScaler for mixed precision training
 if args.mixed_precision:
-    scaler = GradScaler()
-    print("Mixed Precision Training Enabled")
+    scaler = GradScaler(enabled=use_scaler, init_scale=2**8, growth_interval=2000)
+    print(f"Mixed Precision Training Enabled (autocast dtype={amp_dtype}, scaler={'on' if use_scaler else 'off'})")
 else:
     scaler = None
     print("Mixed Precision Training Disabled")
@@ -1259,6 +1313,8 @@ for epoch in range(args.epochs):
     total_loss_fft2 = 0
     total_logit_loss = 0
     total_ss_loss = 0
+    total_lddt_loss = 0
+    total_fape_loss = 0
 
     # Notebook parity: allow coarse reweighting after burn-in-like epochs.
     xweight_epoch = max(xweight, 0.5) if (args.jump_aa_loss is not None and epoch >= args.jump_aa_loss) else xweight
@@ -1266,10 +1322,22 @@ for epoch in range(args.epochs):
     
     for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
         data = data.to(device)
+
+        # Skip unstable batches early if any input node features contain NaN/Inf.
+        bad_batch = False
+        for node_type in getattr(data, 'node_types', []):
+            node_x = getattr(data[node_type], 'x', None)
+            if node_x is not None and (torch.isnan(node_x).any() or torch.isinf(node_x).any()):
+                bad_batch = True
+                break
+        if bad_batch:
+            print(f"Skipping batch {batch_idx}: input contains NaN/Inf")
+            optimizer.zero_grad(set_to_none=True)
+            continue
         
         # Forward pass with autocast for mixed precision
         if args.mixed_precision:
-            with autocast():
+            with autocast(enabled=True, dtype=amp_dtype):
                 z, vqloss = encoder(data)
                 data['res'].x = z
                 
@@ -1306,6 +1374,25 @@ for epoch in range(args.epochs):
                     else:
                         ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
 
+                # lDDT loss
+                lddt_loss = torch.tensor(0.0, device=device)
+                if args.lddt_loss and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+                    from foldtree2.src.losses.losses import lddt_reconstruction_loss
+                    lddt_loss = lddt_reconstruction_loss(
+                        out['coords'], data['coords'].x,
+                        plddt=data['plddt'].x if args.mask_plddt else None,
+                        plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0
+                    )
+
+                # FAPE loss
+                fape_loss = torch.tensor(0.0, device=device)
+                if args.fape_loss and out.get('quat') is not None and out.get('trans') is not None and hasattr(data, 'quat') and hasattr(data['quat'], 'x') and hasattr(data, 'trans') and hasattr(data['trans'], 'x'):
+                    from foldtree2.src.losses.losses import quaternion_fape_loss
+                    fape_loss = quaternion_fape_loss(
+                        data['quat'].x, data['trans'].x,
+                        out['quat'], out['trans']
+                    )
+
                 if args.use_weight_scheduler:
                     x_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_x, warmup_steps=loss_warmup_steps)
                     logit_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_logit, warmup_steps=loss_warmup_steps)
@@ -1336,13 +1423,16 @@ for epoch in range(args.epochs):
                             current_angles_weight * angles_loss,
                             current_ss_weight * ss_loss,
                             current_logitweight * logitloss,
+                            args.lddt_weight * lddt_loss,
+                            args.fape_weight * fape_loss,
                         ])
                     )
                 else:
                     loss = (
                         current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
                         current_fft2weight * fft2loss + current_angles_weight * angles_loss +
-                        current_ss_weight * ss_loss + current_logitweight * logitloss
+                        current_ss_weight * ss_loss + current_logitweight * logitloss +
+                        args.lddt_weight * lddt_loss + args.fape_weight * fape_loss
                     )
                 
                 # Scale loss by gradient accumulation steps
@@ -1421,9 +1511,14 @@ for epoch in range(args.epochs):
                 )
             
             loss = loss / args.gradient_accumulation_steps
+
+        if not torch.isfinite(loss):
+            print(f"Skipping batch {batch_idx}: loss is non-finite")
+            optimizer.zero_grad(set_to_none=True)
+            continue
         
         # Backward pass with gradient scaling
-        if args.mixed_precision:
+        if args.mixed_precision and use_scaler:
             scaler.scale(loss).backward()
         else:
             loss.backward()
@@ -1431,13 +1526,13 @@ for epoch in range(args.epochs):
         # Only update weights every gradient_accumulation_steps
         if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
             if clip_grad:
-                if args.mixed_precision:
+                if args.mixed_precision and use_scaler:
                     scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
                 torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
             
             # Step optimizer with scaler
-            if args.mixed_precision:
+            if args.mixed_precision and use_scaler:
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -1460,15 +1555,17 @@ for epoch in range(args.epochs):
         total_angles_loss += float(angles_loss.item())
         total_vq += float(vqloss.item()) if isinstance(vqloss, torch.Tensor) else float(vqloss)
         total_ss_loss += float(ss_loss.item())
+        total_lddt_loss += float(lddt_loss.item())
+        total_fape_loss += float(fape_loss.item())
     
     # Clean up any remaining gradients at epoch end
     if len(train_loader) % args.gradient_accumulation_steps != 0:
         if clip_grad:
-            if args.mixed_precision:
+            if args.mixed_precision and use_scaler:
                 scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-        if args.mixed_precision:
+        if args.mixed_precision and use_scaler:
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -1485,9 +1582,12 @@ for epoch in range(args.epochs):
     avg_angles_loss = total_angles_loss / denominator
     avg_logit_loss = total_logit_loss / denominator
     avg_ss_loss = total_ss_loss / denominator
+    avg_lddt_loss = total_lddt_loss / denominator
+    avg_fape_loss = total_fape_loss / denominator
 
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
-                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss)
+                      avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss +
+                      args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss)
     
     # Clear CUDA cache
     torch.cuda.empty_cache()
@@ -1508,7 +1608,7 @@ for epoch in range(args.epochs):
     print(f"  Train - AA Loss: {avg_loss_x:.4f}, Edge Loss: {avg_loss_edge:.4f}, "
           f"VQ Loss: {avg_loss_vq:.4f}, FFT2 Loss: {avg_loss_fft2:.4f}")
     print(f"  Train - Angles Loss: {avg_angles_loss:.4f}, SS Loss: {avg_ss_loss:.4f}, "
-          f"Logit Loss: {avg_logit_loss:.4f}")
+          f"Logit Loss: {avg_logit_loss:.4f}, lDDT Loss: {avg_lddt_loss:.4f}, FAPE Loss: {avg_fape_loss:.4f}")
     print(f"  Val   - AA Loss: {val_metrics['val/aa_loss']:.4f}, Edge Loss: {val_metrics['val/edge_loss']:.4f}, "
           f"VQ Loss: {val_metrics['val/vq_loss']:.4f}, FFT2 Loss: {val_metrics['val/fft2_loss']:.4f}")
     print(f"  Val   - Angles Loss: {val_metrics['val/angles_loss']:.4f}, SS Loss: {val_metrics['val/ss_loss']:.4f}, "
