@@ -243,7 +243,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		if self.residual == True:
 			z = z + inz
 		if self.normalize == True:
-			znorm =  z / ( torch.norm(z, dim=1, keepdim=True) + 1e-6)
+			znorm = F.normalize(z, p=2, dim=1)
 		else:
 			znorm = z
 		
@@ -261,9 +261,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		rt_pred = None
 		if self.rt_mlp is not None:
 			rt_pred = self.rt_mlp( torch.cat( [ inz , z ] , axis = 1 ) )
-			# Normalize quaternion part (first 4 dims) for proper geometry
-			quat = rt_pred[..., :4]
-			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			# Bound quaternion part (first 4 dims) with tanh for numerical stability
+			quat = torch.tanh(rt_pred[..., :4])
 			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
 		
 		ss_pred = None
@@ -423,16 +422,6 @@ class CNN_geo_Decoder(torch.nn.Module):
 				nn.Linear(FFT2decoder_hidden[1], in_channels['fft2i'] + in_channels['fft2r']),
 			)
 		
-		# Contact prediction MLP
-		if contact_mlp:
-			self.head['contact_mlp'] = nn.Sequential(
-				nn.Dropout(dropout),
-				nn.Linear(2*lastlin, contactdecoder_hidden[0]),
-				nn.GELU(),
-				nn.Linear(contactdecoder_hidden[0], contactdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(contactdecoder_hidden[1], 1)
-			)
 		
 		# Rotation-translation prediction
 		if output_rt:
@@ -562,7 +551,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 		if self.residual:
 			z = z + inz
 		if self.normalize:
-			znorm = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
+			#znorm = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
+			znorm = F.normalize(z, p=2, dim=1)
 		else:
 			znorm = z
 		# ===================== HEAD PROCESSING =====================
@@ -578,9 +568,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 		rt_pred = None
 		if 'rt_mlp' in self.head:
 			rt_pred = self.head['rt_mlp'](torch.cat([inz, z], axis=1))
-			# Normalize quaternion part (first 4 dims) for proper geometry
-			quat = rt_pred[..., :4]
-			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			# Bound quaternion part (first 4 dims) with tanh for numerical stability
+			quat = torch.tanh(rt_pred[..., :4])
 			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
 		
 		# Secondary structure prediction
@@ -601,15 +590,11 @@ class CNN_geo_Decoder(torch.nn.Module):
 					'rt_pred': None, 'angles': angles, 'edge_logits': edge_logits, 
 					'ss_pred': ss_pred, 'z': z}
 		else:
-			if 'contact_mlp' not in self.head:
-				score = self.contact_temp * (znorm[contact_pred_index[0]] * znorm[contact_pred_index[1]]).sum(dim=-1) + self.contact_bias
-				edge_probs = self.sigmoid(score)
-			else:
-				edge_scores = self.head['contact_mlp'](
-					torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]]], axis=1)
-				).squeeze()
-				edge_probs = self.sigmoid(edge_scores)
-			
+			score = self.contact_temp * (znorm[contact_pred_index[0]] * znorm[contact_pred_index[1]]).sum(dim=-1) + self.contact_bias
+			edge_probs = self.sigmoid(score)
+			#make sure to clamp edge_probs to avoid log(0) in loss
+			edge_probs = torch.clamp(edge_probs, min=1e-6, max=1-1e-6)
+
 			if 'edge_logits_mlp' in self.head:
 				if self.learn_positions:
 					pos_enc = self.head['position_mlp'](data['positions'].x)
@@ -815,7 +800,7 @@ class CNN_AA_Decoder(torch.nn.Module):
 		
 		# Apply normalization
 		if self.normalize:
-			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
+			x = F.normalize(x, p=2, dim=-1)
 		
 		# ===================== HEAD PROCESSING =====================
 		ss_pred = None
@@ -1046,7 +1031,7 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		
 		# Apply normalization
 		if self.normalize:
-			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
+			x = F.normalize(x, p=2, dim=-1)
 		
 		# ===================== HEAD PROCESSING =====================
 		if batch is not None:
@@ -1324,7 +1309,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		
 		# Apply normalization
 		if self.normalize:
-			x = x / (torch.norm(x, dim=-1, keepdim=True) + 1e-6)
+			x = F.normalize(x, p=2, dim=-1)
 		
 		# ===================== HEAD PROCESSING =====================
 		rt_pred = None
@@ -1424,8 +1409,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		
 		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
 		if rt_pred is not None:
-			quat = rt_pred[..., :4]
-			quat = quat / (torch.norm(quat, dim=-1, keepdim=True) + 1e-6)
+			quat = torch.tanh(rt_pred[..., :4])
 			trans = rt_pred[..., 4:]
 			rt_pred = torch.cat([quat, trans], dim=-1)
 			quat_pred = quat
@@ -1515,7 +1499,7 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 			# No residual connection here, as pooled is a single vector
 			pass
 		if self.normalize:
-			pooled = pooled / (torch.norm(pooled, dim=-1, keepdim=True) + 1e-6)
+			pooled = F.normalize(pooled, p=2, dim=-1)
 		foldx_out = self.lin(pooled)
 		return { 'foldx_out' : foldx_out }
 
@@ -1592,10 +1576,10 @@ class Quaternion_Coarse_Geometry_Decoder(torch.nn.Module):
 		z = self.backbone(x)
 
 		if self.normalize_latent:
-			z = z / (torch.norm(z, dim=-1, keepdim=True) + 1e-6)
+			z = F.normalize(z, p=2, dim=-1)
 
 		quat_pred = self.quat_head(z)
-		quat_pred = quat_pred / (torch.norm(quat_pred, dim=-1, keepdim=True) + 1e-6)
+		quat_pred = torch.tanh(quat_pred)
 		trans_pred = self.trans_head(z)
 		rt_pred = torch.cat([quat_pred, trans_pred], dim=-1)
 

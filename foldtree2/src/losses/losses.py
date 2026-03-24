@@ -757,7 +757,7 @@ def _fape_single_structure(
     pred_R: torch.Tensor,
     pred_t: torch.Tensor,
     d_clamp: float = 10.0,
-    eps: float = 1e-8,
+    eps: float = 1e-6,
     reduction: str = "mean",
 ) -> torch.Tensor:
     """

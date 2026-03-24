@@ -28,6 +28,96 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
+def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i):
+    """Build MultiMonoDecoder configs matching the notebook defaults as closely as possible."""
+    geometry_output_rt = args.output_rt if args.geometry_output_rt is None else args.geometry_output_rt
+    geometry_cnn_output_fft = args.output_fft if args.geometry_cnn_output_fft is None else args.geometry_cnn_output_fft
+
+    mono_configs = {
+        'sequence_transformer': {
+            'in_channels': {'res': args.embedding_dim},
+            'xdim': 20,
+            'concat_positions': False,
+            'hidden_channels': {('res', 'backbone', 'res'): [hidden_size], ('res', 'backbonerev', 'res'): [hidden_size]},
+            'layers': 2,
+            'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+            'amino_mapper': converter.aaindex,
+            'nheads': 5,
+            'dropout': 0.001,
+            'normalize': False,
+            'residual': False,
+            'use_cnn_decoder': args.sequence_use_cnn_decoder,
+            'output_ss': args.sequence_output_ss,
+            'learn_positions': True,
+        },
+    }
+
+    if args.use_geometry_transformer:
+        mono_configs['geometry_transformer'] = {
+            'in_channels': {'res': args.embedding_dim},
+            'concat_positions': False,
+            'hidden_channels': {('res', 'backbone', 'res'): [hidden_size], ('res', 'backbonerev', 'res'): [hidden_size]},
+            'layers': 2,
+            'nheads': 5,
+            'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+            'ssdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+            'anglesdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+            'dropout': 0.001,
+            'normalize': False,
+            'residual': False,
+            'learn_positions': True,
+            'output_rt': geometry_output_rt,
+            'output_ss': args.geometry_output_ss,
+            'output_angles': args.geometry_output_angles,
+        }
+
+    if args.use_geometry_cnn:
+        mono_configs['geometry_cnn'] = {
+            'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
+            'concat_positions': False,
+            'conv_channels': [2 * hidden_size, hidden_size, hidden_size],
+            'kernel_sizes': [3, 3, 3],
+            'FFT2decoder_hidden': [hidden_size // 2, hidden_size // 2],
+            'contactdecoder_hidden': [hidden_size // 2, hidden_size // 4],
+            'ssdecoder_hidden': [hidden_size // 2, hidden_size // 2],
+            'Xdecoder_hidden': [hidden_size, hidden_size],
+            'anglesdecoder_hidden': [hidden_size, hidden_size, hidden_size // 2],
+            'RTdecoder_hidden': [hidden_size // 2, hidden_size // 4],
+            'metadata': converter.metadata,
+            'dropout': 0.001,
+            'output_fft': geometry_cnn_output_fft,
+            'output_rt': args.geometry_cnn_output_rt,
+            'output_angles': args.geometry_cnn_output_angles,
+            'output_ss': args.geometry_cnn_output_ss,
+            'normalize': True,
+            'residual': False,
+            'output_edge_logits': args.geometry_cnn_output_edge_logits,
+            'ncat': 8,
+            'contact_mlp': False,
+            'pool_type': 'global_mean',
+            'learn_positions': True,
+        }
+
+    if args.output_foldx:
+        mono_configs['foldx'] = {
+            'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
+            'concat_positions': False,
+            'hidden_channels': {('res', 'backbone', 'res'): [hidden_size] * 3, ('res', 'backbonerev', 'res'): [hidden_size] * 3,
+                               ('res', 'informs', 'godnode4decoder'): [hidden_size] * 3,
+                               ('godnode4decoder', 'informs', 'res'): [hidden_size] * 3},
+            'layers': 3,
+            'foldx_hidden': [hidden_size, hidden_size // 2],
+            'nheads': 2,
+            'metadata': converter.metadata,
+            'flavor': 'sage',
+            'dropout': 0.005,
+            'normalize': True,
+            'residual': False,
+        }
+
+    return mono_configs
+
 # Try to import Muon optimizer
 try:
     from muon import MuonWithAuxAdam
@@ -109,6 +199,30 @@ parser.add_argument('--overwrite', action='store_true', help='Overwrite saved mo
 parser.add_argument('--output-fft', action='store_true', help='Train the model with FFT output')
 parser.add_argument('--output-rt', action='store_true', help='Train the model with rotation and translation output')
 parser.add_argument('--output-foldx', action='store_true', help='Train the model with Foldx energy prediction output')
+parser.add_argument('--use-geometry-transformer', action=argparse.BooleanOptionalAction, default=True,
+                    help='Enable the notebook-style geometry_transformer decoder (default: True)')
+parser.add_argument('--use-geometry-cnn', action=argparse.BooleanOptionalAction, default=True,
+                    help='Enable the notebook-style geometry_cnn decoder (default: True)')
+parser.add_argument('--sequence-use-cnn-decoder', action=argparse.BooleanOptionalAction, default=True,
+                    help='Use the CNN AA head inside sequence_transformer, matching the notebook (default: True)')
+parser.add_argument('--sequence-output-ss', action=argparse.BooleanOptionalAction, default=False,
+                    help='Allow sequence_transformer to emit secondary structure predictions (default: False)')
+parser.add_argument('--geometry-output-rt', action=argparse.BooleanOptionalAction, default=None,
+                    help='Allow geometry_transformer to emit rotation/translation outputs (default: follows --output-rt)')
+parser.add_argument('--geometry-output-ss', action=argparse.BooleanOptionalAction, default=True,
+                    help='Allow geometry_transformer to emit secondary structure predictions (default: True)')
+parser.add_argument('--geometry-output-angles', action=argparse.BooleanOptionalAction, default=True,
+                    help='Allow geometry_transformer to emit bond angle predictions (default: True)')
+parser.add_argument('--geometry-cnn-output-fft', action=argparse.BooleanOptionalAction, default=None,
+                    help='Allow geometry_cnn to emit FFT predictions (default: follows --output-fft)')
+parser.add_argument('--geometry-cnn-output-rt', action=argparse.BooleanOptionalAction, default=False,
+                    help='Allow geometry_cnn to emit rotation/translation outputs (default: False)')
+parser.add_argument('--geometry-cnn-output-angles', action=argparse.BooleanOptionalAction, default=False,
+                    help='Allow geometry_cnn to emit bond angle predictions (default: False)')
+parser.add_argument('--geometry-cnn-output-ss', action=argparse.BooleanOptionalAction, default=False,
+                    help='Allow geometry_cnn to emit secondary structure predictions (default: False)')
+parser.add_argument('--geometry-cnn-output-edge-logits', action=argparse.BooleanOptionalAction, default=True,
+                    help='Allow geometry_cnn to emit contact edge logits/probabilities (default: True)')
 parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility')
 parser.add_argument('--clip-grad', action='store_true', help='Enable gradient clipping during training')
 parser.add_argument('--burn-in', type=int, default=0, help='Burn-in period for training (default: 0, no burn-in)')
@@ -279,6 +393,18 @@ print(f"  Overwrite Existing Models: {'Yes' if args.overwrite else 'No'}")
 print(f"  Output FFT: {'Enabled' if args.output_fft else 'Disabled'}")
 print(f"  Output RT: {'Enabled' if args.output_rt else 'Disabled'}")
 print(f"  Output Foldx: {'Enabled' if args.output_foldx else 'Disabled'}")
+print(f"  Sequence CNN Head: {'Enabled' if args.sequence_use_cnn_decoder else 'Disabled'}")
+print(f"  Geometry Transformer: {'Enabled' if args.use_geometry_transformer else 'Disabled'}")
+print(f"  Geometry CNN: {'Enabled' if args.use_geometry_cnn else 'Disabled'}")
+print(f"  Sequence Output SS: {'Enabled' if args.sequence_output_ss else 'Disabled'}")
+print(f"  Geometry Output RT: {'Enabled' if (args.output_rt if args.geometry_output_rt is None else args.geometry_output_rt) else 'Disabled'}")
+print(f"  Geometry Output SS: {'Enabled' if args.geometry_output_ss else 'Disabled'}")
+print(f"  Geometry Output Angles: {'Enabled' if args.geometry_output_angles else 'Disabled'}")
+print(f"  Geometry CNN Output FFT: {'Enabled' if (args.output_fft if args.geometry_cnn_output_fft is None else args.geometry_cnn_output_fft) else 'Disabled'}")
+print(f"  Geometry CNN Output RT: {'Enabled' if args.geometry_cnn_output_rt else 'Disabled'}")
+print(f"  Geometry CNN Output Angles: {'Enabled' if args.geometry_cnn_output_angles else 'Disabled'}")
+print(f"  Geometry CNN Output SS: {'Enabled' if args.geometry_cnn_output_ss else 'Disabled'}")
+print(f"  Geometry CNN Edge Logits: {'Enabled' if args.geometry_cnn_output_edge_logits else 'Disabled'}")
 print(f"  Hetero GAE Decoder: {'Enabled' if args.hetero_gae else 'Disabled'}")
 print(f"  Gradient Clipping: {'Enabled' if args.clip_grad else 'Disabled'}")
 print(f"  Burn-in Period: {args.burn_in} epochs")
@@ -573,48 +699,8 @@ else:
     
     # Encoder
     if args.se3_transformer:
-        encoder = se3e.se3_Encoder(
-            in_channels=ndim,
-            hidden_channels=[hidden_size//2, hidden_size//2],
-            out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res'), ('res','hbond','res')]},
-            num_embeddings=args.num_embeddings,
-            commitment_cost=args.commitment_cost,
-            edge_dim=1,
-            encoder_hidden=hidden_size,
-            EMA=args.EMA,
-            nheads=5,
-            dropout_p=0.005,
-            reset_codes=False,
-            flavor='transformer',
-            fftin=True,
-            use_commitment_scheduling=args.use_commitment_scheduling,
-            commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule=args.commitment_schedule,
-            commitment_start=args.commitment_start
-        )
-    elif args.use_muon_encoder and MUON_AVAILABLE:
-        print("Using Muon-compatible mk1_MuonEncoder")
-        encoder = ecdr.mk1_MuonEncoder(
-            in_channels=ndim,
-            hidden_channels=[hidden_size, hidden_size, hidden_size],
-            out_channels=args.embedding_dim,
-            metadata={'edge_types': [('res','contactPoints','res')]},
-            num_embeddings=args.num_embeddings,
-            commitment_cost=args.commitment_cost,
-            edge_dim=1,
-            encoder_hidden=hidden_size,
-            EMA=args.EMA,
-            nheads=16,
-            dropout_p=0.01,
-            reset_codes=False,
-            flavor='transformer',
-            fftin=True,
-            use_commitment_scheduling=args.use_commitment_scheduling,
-            commitment_warmup_steps=args.commitment_warmup_steps,
-            commitment_schedule='cosine_with_restart',
-            commitment_start=args.commitment_start,
-            concat_positions=True
+        raise NotImplementedError(
+            "--se3-transformer is not supported in learn_lightning.py because no se3_Encoder implementation is available in foldtree2.src.encoder."
         )
     else:
         print("Using standard mk1_Encoder with dd.ipynb configuration")
@@ -643,7 +729,7 @@ else:
     
     if args.hetero_gae:
         # HeteroGAE_Decoder config
-        decoder = ft2.HeteroGAE_Decoder(
+        decoder = ecdr.HeteroGAE_Decoder(
             in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
             concat_positions=False,
             hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
@@ -662,117 +748,11 @@ else:
     else:
         # MultiMonoDecoder for sequence and geometry
         if args.use_muon_decoders and MUON_AVAILABLE:
-            print("Using Muon-compatible decoders")
-            mono_configs = {
-                'sequence_transformer': {
-                    'decoder_type': 'Transformer_AA_MuonDecoder',
-                    'in_channels': {'res': args.embedding_dim},
-                    'xdim': 20,
-                    'concat_positions': True,
-                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-                    'layers': 2,
-                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                    'amino_mapper': converter.aaindex,
-                    'flavor': 'sage',
-                    'nheads': 5,
-                    'dropout': 0.001,
-                    'normalize': False,
-                    'residual': False,
-                    'use_cnn_decoder': True,
-                    'output_ss': True
-                },
-                
-                'geometry_cnn': {
-                    'decoder_type': 'CNN_geo_MuonDecoder',
-                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                    'concat_positions': True,
-                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
-                    'kernel_sizes': [3, 3, 3],
-                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
-                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
-                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'metadata': converter.metadata,
-                    'dropout': 0.001,
-                    'output_fft': False,
-                    'output_rt': False,
-                    'output_angles': True,
-                    'output_ss': False,
-                    'normalize': True,
-                    'residual': False,
-                    'output_edge_logits': True,
-                    'ncat': 8,
-                    'contact_mlp': False,
-                    'pool_type': 'global_mean'
-                },
-            }
+            print("Using notebook-style decoders (already compatible with Muon parameter grouping)")
         else:
-            print("Using standard decoders with dd.ipynb configuration")
-            mono_configs = {
-                'sequence_transformer': {
-                    'in_channels': {'res': args.embedding_dim},
-                    'xdim': 20,
-                    'concat_positions': False,
-                    'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-                    'layers': 2,
-                    'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-                    'amino_mapper': converter.aaindex,
-                    'flavor': 'sage',
-                    'nheads': 8,
-                    'dropout': 0.001,
-                    'normalize': False,
-                    'residual': False,
-                    'use_cnn_decoder': False,
-                    'output_ss': False,
-                    'learn_positions': True
-                },
-                
-                'geometry_cnn': {
-                    'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
-                    'concat_positions': False,
-                    'conv_channels': [hidden_size, hidden_size//2, hidden_size//2],
-                    'kernel_sizes': [3, 3, 3],
-                    'FFT2decoder_hidden': [hidden_size//2, hidden_size//2],
-                    'contactdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'ssdecoder_hidden': [hidden_size//2, hidden_size//2],
-                    'Xdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'anglesdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'RTdecoder_hidden': [hidden_size//2, hidden_size//4],
-                    'metadata': converter.metadata,
-                    'dropout': 0.001,
-                    'output_fft': False,
-                    'output_rt': False,
-                    'output_angles': True,
-                    'output_ss': True,
-                    'normalize': True,
-                    'residual': False,
-                    'output_edge_logits': True,
-                    'ncat': 8,
-                    'contact_mlp': False,
-                    'pool_type': 'global_mean',
-                    'learn_positions': True
-                },
-            }
-        
-        if args.output_foldx:
-            mono_configs['foldx'] = {
-                'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
-                'concat_positions': True,
-                'hidden_channels': {('res','backbone','res'): [hidden_size]*3, ('res','backbonerev','res'): [hidden_size]*3,
-                                   ('res','informs','godnode4decoder'): [hidden_size]*3,
-                                   ('godnode4decoder','informs','res'): [hidden_size]*3},
-                'layers': 3,
-                'foldx_hidden': [hidden_size, hidden_size//2],
-                'nheads': 2,
-                'metadata': converter.metadata,
-                'flavor': 'sage',
-                'dropout': 0.005,
-                'normalize': True,
-                'residual': False
-            }
-        
+            print("Using notebook-style decoder configuration")
+
+        mono_configs = build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i)
         decoder = MultiMonoDecoder(configs=mono_configs)
 
 print("Encoder:", encoder)

@@ -520,8 +520,8 @@ def fape_loss(true_R, true_t, pred_R, pred_t, batch, plddt=None, d_clamp=10.0, e
 			error = torch.clamp(error, max=d_clamp)
 			losses.append(error.mean())
 		else:				
-			# Compute pairwise squared Euclidean distances
-			dist_sq = torch.cdist(local_pred, local_true, p=2).pow(2)
+			# Compute pairwise squared Euclidean distances (manual for safe gradients)
+			dist_sq = ((local_pred.unsqueeze(1) - local_true.unsqueeze(0)) ** 2).sum(dim=-1)
 			dist_sq = torch.clamp(dist_sq, max=d_clamp**2)
 			# Compute soft alignment probabilities using a Gaussian kernel
 			soft_alignment = F.softmax(-dist_sq / temperature, dim=-1)
@@ -541,8 +541,12 @@ def compute_lddt_loss(true_coords, pred_coords, cutoff=15.0):
 	"""
 	num_pairs = 0
 	num_matching_pairs = 0
-	true_dists = torch.cdist(true_coords, true_coords)  # (N, N)
-	pred_dists = torch.cdist(pred_coords, pred_coords)  # (N, N)
+	# Manual pairwise distances with eps inside sqrt for safe gradients
+	true_diff = true_coords.unsqueeze(0) - true_coords.unsqueeze(1)
+	true_dists = torch.sqrt((true_diff ** 2).sum(dim=-1) + 1e-8)
+	pred_diff = pred_coords.unsqueeze(0) - pred_coords.unsqueeze(1)
+	pred_diff = pred_diff.clamp(-1000, 1000)  # prevent overflow when squaring
+	pred_dists = torch.sqrt((pred_diff ** 2).sum(dim=-1) + 1e-8)
 	mask = (true_dists < cutoff).float()
 	diff = torch.abs(true_dists - pred_dists)
 	valid_pairs = (diff < 0.5 * true_dists) * mask
@@ -625,11 +629,15 @@ def differentiable_lddt_loss(
 		# Derive predicted CA positions from cumulative displacements.
 		# reconstruct_positions returns (N+1, 3); drop the origin row.
 		pred_coords = torch.cumsum(t_b, dim=0)  # (N, 3) – directly the CA positions relative to origin
+		pred_coords = pred_coords.clamp(-1000, 1000)  # prevent overflow in pairwise distances
 
 		# Pairwise true and predicted distances, shape (N, N)
-		# Clamp to avoid NaN gradients when two predicted positions coincide (||x-y||=0).
-		d_true = torch.cdist(coords_true_b, coords_true_b).clamp(min=1e-8)
-		d_pred = torch.cdist(pred_coords, pred_coords).clamp(min=1e-8)
+		# Manual computation with eps inside sqrt to avoid NaN gradients at zero distance.
+		true_diff = coords_true_b.unsqueeze(0) - coords_true_b.unsqueeze(1)
+		d_true = torch.sqrt((true_diff ** 2).sum(dim=-1) + 1e-8)
+		pred_diff = pred_coords.unsqueeze(0) - pred_coords.unsqueeze(1)
+		pred_diff = pred_diff.clamp(-500, 500)  # prevent overflow when squaring
+		d_pred = torch.sqrt((pred_diff ** 2).sum(dim=-1) + 1e-8)
 
 		# Neighbour mask: pairs within cutoff, excluding diagonal
 		N = d_true.shape[0]

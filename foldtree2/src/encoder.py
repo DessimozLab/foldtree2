@@ -126,8 +126,8 @@ class mk1_Encoder(torch.nn.Module):
 			self.in_with_positions += 256
 		if self.learn_positions == True:
 			self.concat_positions = False
-			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[128,128, 64], out_channels=32, dropout=0)
-			self.in_with_positions += 32
+			self.position_mlp = Position_MLP(in_channels=256, hidden_channels=[256,256, 256], out_channels=64, dropout=0.05)
+			self.in_with_positions += 64
 		else:
 			self.position_mlp = None
 
@@ -266,6 +266,7 @@ class mk1_Encoder(torch.nn.Module):
 			x_dict['res'] = torch.cat([x_dict['res'], data['positions'].x], dim=1)
 		if self.learn_positions == True and self.position_mlp is not None:
 			pos_enc = self.position_mlp(data['positions'].x)
+			
 			x_dict['res'] = torch.cat([x_dict['res'], pos_enc], dim=1)
 		
 		if 'debug' in kwargs and kwargs['debug']:

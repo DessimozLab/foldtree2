@@ -35,6 +35,7 @@ class Position_MLP(torch.nn.Module):
 			layers.append( nn.GELU() )
 			layers.append( nn.Dropout(dropout) )
 		layers.append( nn.Linear(hidden_channels[-1], out_channels) )
+		layers.append( nn.Tanh() )
 		self.mlp = nn.Sequential( *layers )
 
 	def forward(self, x):
