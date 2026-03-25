@@ -28,6 +28,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 from torch_geometric.utils import negative_sampling , batched_negative_sampling
+from foldtree2.src.losses.fape import  reconstruct_positions, quaternion_to_rotation_matrix , delta_loss
 
 # Small epsilon value to prevent numerical instabilities (division by zero, log(0))
 EPS = 1e-8
@@ -711,6 +712,152 @@ def quaternion_fape_loss(
                 return stacked
         else:
             return torch.tensor(0.0, device=true_q.device)
+
+
+def batch_structure_losses(
+    true_q: torch.Tensor,
+    true_t: torch.Tensor,
+    pred_q: torch.Tensor,
+    pred_t: torch.Tensor,
+    true_ca: torch.Tensor,
+    batch: torch.Tensor = None,
+    plddt: torch.Tensor = None,
+    plddt_thresh: float = 0.3,
+    d_clamp: float = 10.0,
+    eps: float = 1e-8,
+    lddt_cutoff: float = 15.0,
+    lddt_thresholds: list = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute FAPE, lDDT, and delta losses with batch indexing and mean aggregation."""
+    if lddt_thresholds is None:
+        lddt_thresholds = [0.5, 1.0, 2.0, 4.0]
+
+    fape_val = quaternion_fape_loss(
+        true_q=true_q,
+        true_t=true_t,
+        pred_q=pred_q,
+        pred_t=pred_t,
+        batch=batch,
+        d_clamp=d_clamp,
+        eps=eps,
+        reduction="mean",
+    )
+
+    lddt_val = lddt_reconstruction_loss(
+        pred_q=pred_q,
+        pred_t=pred_t,
+        true_coords=true_ca,
+        batch=batch,
+        cutoff=lddt_cutoff,
+        thresholds=lddt_thresholds,
+        plddt=plddt,
+        plddt_thresh=plddt_thresh,
+    )
+
+    # Determine predicted CA positions for delta. Use quaternion chain path via reconstruct positions
+    if batch is None:
+        pred_ca = reconstruct_positions(quaternion_to_rotation_matrix(pred_q.unsqueeze(0))[0], pred_t)[1:]
+        delta_val = delta_loss(true_ca.unsqueeze(0), pred_ca.unsqueeze(0), plddt=(plddt.unsqueeze(0) if plddt is not None else None), plddt_thresh=plddt_thresh)
+    else:
+        batch_deltas = []
+        for b in torch.unique(batch):
+            idx = (batch == b).nonzero(as_tuple=True)[0]
+            if idx.numel() < 2:
+                continue
+            true_ca_b = true_ca[idx]
+            pred_q_b = pred_q[idx]
+            pred_t_b = pred_t[idx]
+            pred_ca_b = reconstruct_positions(quaternion_to_rotation_matrix(pred_q_b), pred_t_b)[1:]
+            plddt_b = plddt[idx] if plddt is not None else None
+            batch_deltas.append(delta_loss(true_ca_b.unsqueeze(0), pred_ca_b.unsqueeze(0), plddt=(plddt_b.unsqueeze(0) if plddt_b is not None else None), plddt_thresh=plddt_thresh))
+
+        if len(batch_deltas) > 0:
+            delta_val = torch.stack(batch_deltas).mean()
+        else:
+            delta_val = torch.tensor(0.0, device=true_q.device, dtype=true_q.dtype)
+
+    return fape_val, lddt_val, delta_val
+
+
+def batch_fape_loss(
+    true_q: torch.Tensor,
+    true_t: torch.Tensor,
+    pred_q: torch.Tensor,
+    pred_t: torch.Tensor,
+    batch: torch.Tensor = None,
+    d_clamp: float = 10.0,
+    eps: float = 1e-8,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    """Batch-aware FAPE for PyG batch indices."""
+    return quaternion_fape_loss(
+        true_q=true_q,
+        true_t=true_t,
+        pred_q=pred_q,
+        pred_t=pred_t,
+        batch=batch,
+        d_clamp=d_clamp,
+        eps=eps,
+        reduction=reduction,
+    )
+
+
+def batch_lddt_loss(
+    pred_q: torch.Tensor,
+    pred_t: torch.Tensor,
+    true_coords: torch.Tensor,
+    batch: torch.Tensor = None,
+    cutoff: float = 15.0,
+    thresholds: list = None,
+    plddt: torch.Tensor = None,
+    plddt_thresh: float = 0.3,
+) -> torch.Tensor:
+    """Batch-aware differentiable lDDT loss."""
+    return lddt_reconstruction_loss(
+        pred_q=pred_q,
+        pred_t=pred_t,
+        true_coords=true_coords,
+        batch=batch,
+        cutoff=cutoff,
+        thresholds=thresholds,
+        plddt=plddt,
+        plddt_thresh=plddt_thresh,
+    )
+
+
+def batch_delta_loss(
+    true_ca: torch.Tensor,
+    pred_q: torch.Tensor,
+    pred_t: torch.Tensor,
+    batch: torch.Tensor = None,
+    plddt: torch.Tensor = None,
+    plddt_thresh: float = 0.3,
+) -> torch.Tensor:
+    """Batch-aware delta local displacement loss using chain building."""
+    if batch is None:
+        pred_ca = reconstruct_positions(quaternion_to_rotation_matrix(pred_q.unsqueeze(0))[0], pred_t)[1:]
+        return delta_loss(true_ca.unsqueeze(0), pred_ca.unsqueeze(0), plddt=(plddt.unsqueeze(0) if plddt is not None else None), plddt_thresh=plddt_thresh)
+    batch_loss = []
+    for b in torch.unique(batch):
+        mask_b = (batch == b).nonzero(as_tuple=True)[0]
+        if mask_b.numel() < 2:
+            continue
+        true_ca_b = true_ca[mask_b]
+        pred_q_b = pred_q[mask_b]
+        pred_t_b = pred_t[mask_b]
+        pred_ca_b = reconstruct_positions(quaternion_to_rotation_matrix(pred_q_b), pred_t_b)[1:]
+        plddt_b = plddt[mask_b] if plddt is not None else None
+        batch_loss.append(
+            delta_loss(
+                true_ca_b,
+                pred_ca_b,
+                plddt=(plddt_b if plddt_b is not None else None),
+                plddt_thresh=plddt_thresh,
+            )
+        )
+    if len(batch_loss) == 0:
+        return torch.tensor(0.0, device=true_ca.device, dtype=true_ca.dtype)
+    return torch.stack(batch_loss).mean()
 
 
 def rt_fape_loss(

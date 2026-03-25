@@ -302,6 +302,10 @@ parser.add_argument('--fape-loss', action='store_true', default=False,
                     help='Enable FAPE loss during training')
 parser.add_argument('--fape-weight', type=float, default=0.0,
                     help='Weight for FAPE loss (default: 0.0)')
+parser.add_argument('--delta-loss', action='store_true', default=False,
+                    help='Enable delta loss during training')
+parser.add_argument('--delta-weight', type=float, default=0.0,
+                    help='Weight for delta loss (default: 0.0)')
 
 # Early stopping parameters
 parser.add_argument('--early-stopping', action='store_true',
@@ -677,8 +681,8 @@ train_dataset, val_dataset = torch.utils.data.random_split(struct_dat, [train_si
 
 print(f"Dataset split: {train_size} training samples, {val_size} validation samples")
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=True)
 data_sample = next(iter(train_loader))
 
 # Set device
@@ -717,28 +721,6 @@ from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter(log_dir=tensorboard_log_dir)
 
 
-'''
-			'geometry_transformer': {
-				'in_channels': {'res': args.embedding_dim},
-				'concat_positions': False,
-				'hidden_channels': {('res','backbone','res'): [hidden_size], ('res','backbonerev','res'): [hidden_size]},
-				'layers': 2,
-				'nheads': 10,
-				'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size//2],
-				'ssdecoder_hidden': [hidden_size,hidden_size, hidden_size//2],
-				'anglesdecoder_hidden': [hidden_size, hidden_size,hidden_size//2],
-				'dropout': 0.001,
-				'normalize': False,
-				'residual': False,
-				'learn_positions': True,
-				'use_cnn_decoder':True,
-				'concat_positions': False,
-				'output_rt': False,       # Enable if you want rotation-translation
-				'output_ss': True,        # Secondary structure prediction
-				'output_angles': True     # Bond angles prediction
-			},
-			
-'''
 
 # Initialize or load model
 encoder_path = os.path.join(modeldir, modelname + '_best_encoder.pt')
@@ -823,6 +805,7 @@ if args.use_uncertainty_weighting:
             'logit_loss',
             'lddt_loss',
             'fape_loss',
+            'delta_loss',
         ],
         device=device
     )
@@ -1315,12 +1298,18 @@ for epoch in range(args.epochs):
     total_ss_loss = 0
     total_lddt_loss = 0
     total_fape_loss = 0
+    total_delta_loss = 0
 
     # Notebook parity: allow coarse reweighting after burn-in-like epochs.
     xweight_epoch = max(xweight, 0.5) if (args.jump_aa_loss is not None and epoch >= args.jump_aa_loss) else xweight
     ss_weight_epoch = max(ss_weight, 0.5) if (args.jump_ss_loss is not None and epoch >= args.jump_ss_loss) else ss_weight
     
     for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
+        # Periodically clear CUDA cache to avoid OOM errors
+        if torch.cuda.is_available() and batch_idx % 10 == 0 and batch_idx > 0:
+            import gc
+            torch.cuda.empty_cache()
+            gc.collect()
         data = data.to(device)
 
         # Skip unstable batches early if any input node features contain NaN/Inf.
@@ -1376,21 +1365,53 @@ for epoch in range(args.epochs):
 
                 # lDDT loss
                 lddt_loss = torch.tensor(0.0, device=device)
-                if args.lddt_loss and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
-                    from foldtree2.src.losses.losses import lddt_reconstruction_loss
-                    lddt_loss = lddt_reconstruction_loss(
-                        out['coords'], data['coords'].x,
+                if (args.lddt_weight > 0 or args.lddt_loss) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+                    from foldtree2.src.losses.losses import batch_lddt_loss
+                    lddt_loss = batch_lddt_loss(
+                        pred_q=out.get('quat', None),
+                        pred_t=out.get('trans', None),
+                        true_coords=data['coords'].x,
+                        batch=getattr(data['res'], 'batch', None),
                         plddt=data['plddt'].x if args.mask_plddt else None,
-                        plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0
+                        plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0,
                     )
+
+                # Delta loss
+                delta_loss_val = torch.tensor(0.0, device=device)
+                if (args.delta_weight > 0 or args.delta_loss) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+                    from foldtree2.src.losses.losses import batch_delta_loss
+                    try:
+                        if out.get('quat') is not None and out.get('trans') is not None:
+                            delta_loss_val = batch_delta_loss(
+                                true_ca=data['coords'].x,
+                                pred_q=out['quat'],
+                                pred_t=out['trans'],
+                                batch=getattr(data['res'], 'batch', None),
+                                plddt=data['plddt'].x if args.mask_plddt else None,
+                                plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0,
+                            )
+                        else:
+                            from foldtree2.src.losses.fape import delta_loss
+                            delta_loss_val = delta_loss(
+                                data['coords'].x,
+                                out['coords'],
+                                plddt=data['plddt'].x if args.mask_plddt else None,
+                                plddt_thresh=args.plddt_threshold if args.mask_plddt else 0.0,
+                            )
+                    except Exception as exc:
+                        print(f"Warning: delta_loss calculation failed: {exc}")
+                        delta_loss_val = torch.tensor(0.0, device=device)
 
                 # FAPE loss
                 fape_loss = torch.tensor(0.0, device=device)
-                if args.fape_loss and out.get('quat') is not None and out.get('trans') is not None and hasattr(data, 'quat') and hasattr(data['quat'], 'x') and hasattr(data, 'trans') and hasattr(data['trans'], 'x'):
-                    from foldtree2.src.losses.losses import quaternion_fape_loss
-                    fape_loss = quaternion_fape_loss(
-                        data['quat'].x, data['trans'].x,
-                        out['quat'], out['trans']
+                if (args.fape_weight > 0 or args.fape_loss) and out.get('quat') is not None and out.get('trans') is not None and hasattr(data, 'quat') and hasattr(data['quat'], 'x') and hasattr(data, 'trans') and hasattr(data['trans'], 'x'):
+                    from foldtree2.src.losses.losses import batch_fape_loss
+                    fape_loss = batch_fape_loss(
+                        true_q=data['quat'].x,
+                        true_t=data['trans'].x,
+                        pred_q=out['quat'],
+                        pred_t=out['trans'],
+                        batch=getattr(data['res'], 'batch', None),
                     )
 
                 if args.use_weight_scheduler:
@@ -1425,6 +1446,7 @@ for epoch in range(args.epochs):
                             current_logitweight * logitloss,
                             args.lddt_weight * lddt_loss,
                             args.fape_weight * fape_loss,
+                            args.delta_weight * delta_loss_val,
                         ])
                     )
                 else:
@@ -1432,7 +1454,7 @@ for epoch in range(args.epochs):
                         current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
                         current_fft2weight * fft2loss + current_angles_weight * angles_loss +
                         current_ss_weight * ss_loss + current_logitweight * logitloss +
-                        args.lddt_weight * lddt_loss + args.fape_weight * fape_loss
+                        args.lddt_weight * lddt_loss + args.fape_weight * fape_loss + args.delta_weight * delta_loss_val
                     )
                 
                 # Scale loss by gradient accumulation steps
@@ -1557,6 +1579,7 @@ for epoch in range(args.epochs):
         total_ss_loss += float(ss_loss.item())
         total_lddt_loss += float(lddt_loss.item())
         total_fape_loss += float(fape_loss.item())
+        total_delta_loss += float(delta_loss_val.item())
     
     # Clean up any remaining gradients at epoch end
     if len(train_loader) % args.gradient_accumulation_steps != 0:
@@ -1584,10 +1607,11 @@ for epoch in range(args.epochs):
     avg_ss_loss = total_ss_loss / denominator
     avg_lddt_loss = total_lddt_loss / denominator
     avg_fape_loss = total_fape_loss / denominator
+    avg_delta_loss = total_delta_loss / denominator
 
     avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
                       avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss +
-                      args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss)
+                      args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss)
     
     # Clear CUDA cache
     torch.cuda.empty_cache()
@@ -1608,7 +1632,7 @@ for epoch in range(args.epochs):
     print(f"  Train - AA Loss: {avg_loss_x:.4f}, Edge Loss: {avg_loss_edge:.4f}, "
           f"VQ Loss: {avg_loss_vq:.4f}, FFT2 Loss: {avg_loss_fft2:.4f}")
     print(f"  Train - Angles Loss: {avg_angles_loss:.4f}, SS Loss: {avg_ss_loss:.4f}, "
-          f"Logit Loss: {avg_logit_loss:.4f}, lDDT Loss: {avg_lddt_loss:.4f}, FAPE Loss: {avg_fape_loss:.4f}")
+          f"Logit Loss: {avg_logit_loss:.4f}, lDDT Loss: {avg_lddt_loss:.4f}, FAPE Loss: {avg_fape_loss:.4f}, Delta Loss: {avg_delta_loss:.4f}")
     print(f"  Val   - AA Loss: {val_metrics['val/aa_loss']:.4f}, Edge Loss: {val_metrics['val/edge_loss']:.4f}, "
           f"VQ Loss: {val_metrics['val/vq_loss']:.4f}, FFT2 Loss: {val_metrics['val/fft2_loss']:.4f}")
     print(f"  Val   - Angles Loss: {val_metrics['val/angles_loss']:.4f}, SS Loss: {val_metrics['val/ss_loss']:.4f}, "

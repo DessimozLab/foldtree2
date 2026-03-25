@@ -537,32 +537,60 @@ class FoldTree2Model(pl.LightningModule):
 
         # lDDT loss
         lddt_loss = torch.tensor(0.0, device=self.device)
-        if getattr(self.args, 'lddt_loss', False):
-            from foldtree2.src.losses.losses import lddt_reconstruction_loss
-            # Use predicted and true coordinates (assume out['coords'] and data['coords'].x)
-            if out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
-                lddt_loss = lddt_reconstruction_loss(
-                    out['coords'], data['coords'].x,
-                    plddt=data['plddt'].x if self.args.mask_plddt else None,
-                    plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0
-                )
+        if (self.args.lddt_weight > 0 or getattr(self.args, 'lddt_loss', False)) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+            from foldtree2.src.losses.losses import batch_lddt_loss
+            lddt_loss = batch_lddt_loss(
+                pred_q=out.get('quat', None),
+                pred_t=out.get('trans', None),
+                true_coords=data['coords'].x,
+                batch=getattr(data['res'], 'batch', None),
+                plddt=data['plddt'].x if self.args.mask_plddt else None,
+                plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0
+            )
 
         # FAPE loss
         fape_loss = torch.tensor(0.0, device=self.device)
-        if getattr(self.args, 'fape_loss', False):
-            from foldtree2.src.losses.losses import quaternion_fape_loss
-            # Use predicted and true quaternion frames (assume out['quat'], out['trans'], data['quat'].x, data['trans'].x)
-            if all([out.get('quat') is not None, out.get('trans') is not None, hasattr(data, 'quat'), hasattr(data['quat'], 'x'), hasattr(data, 'trans'), hasattr(data['trans'], 'x')]):
-                fape_loss = quaternion_fape_loss(
-                    data['quat'].x, data['trans'].x,
-                    out['quat'], out['trans']
-                )
+        if (self.args.fape_weight > 0 or getattr(self.args, 'fape_loss', False)) and out.get('quat') is not None and out.get('trans') is not None and hasattr(data, 'quat') and hasattr(data['quat'], 'x') and hasattr(data, 'trans') and hasattr(data['trans'], 'x'):
+            from foldtree2.src.losses.losses import batch_fape_loss
+            fape_loss = batch_fape_loss(
+                true_q=data['quat'].x,
+                true_t=data['trans'].x,
+                pred_q=out['quat'],
+                pred_t=out['trans'],
+                batch=getattr(data['res'], 'batch', None),
+            )
+
+        # Delta loss
+        delta_loss_val = torch.tensor(0.0, device=self.device)
+        if (self.args.delta_weight > 0 or getattr(self.args, 'delta_loss', False)) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+            from foldtree2.src.losses.losses import batch_delta_loss
+            try:
+                if out.get('quat') is not None and out.get('trans') is not None:
+                    delta_loss_val = batch_delta_loss(
+                        true_ca=data['coords'].x,
+                        pred_q=out['quat'],
+                        pred_t=out['trans'],
+                        batch=getattr(data['res'], 'batch', None),
+                        plddt=data['plddt'].x if self.args.mask_plddt else None,
+                        plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0,
+                    )
+                else:
+                    from foldtree2.src.losses.fape import delta_loss
+                    delta_loss_val = delta_loss(
+                        data['coords'].x,
+                        out['coords'],
+                        plddt=data['plddt'].x if self.args.mask_plddt else None,
+                        plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0,
+                    )
+            except Exception as exc:
+                print(f"Warning: delta_loss calculation failed: {exc}")
+                delta_loss_val = torch.tensor(0.0, device=self.device)
 
         # Total loss
         loss = (self.xweight * xloss + self.edgeweight * edgeloss + self.vqweight * vqloss +
                 self.fft2weight * fft2loss + self.angles_weight * angles_loss +
                 self.ss_weight * ss_loss + self.logitweight * logitloss +
-                self.args.lddt_weight * lddt_loss + self.args.fape_weight * fape_loss)
+                self.args.lddt_weight * lddt_loss + self.args.fape_weight * fape_loss + self.args.delta_weight * delta_loss_val)
 
         if not torch.isfinite(loss):
             self.log('train/skipped_nonfinite_loss', 1.0, on_step=True, on_epoch=True, batch_size=batch_size)
@@ -573,6 +601,9 @@ class FoldTree2Model(pl.LightningModule):
         self.log('train/aa_loss', xloss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/edge_loss', edgeloss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/vq_loss', vqloss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/lddt_loss', lddt_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/fape_loss', fape_loss, on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log('train/delta_loss', delta_loss_val, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/fft2_loss', fft2loss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/angles_loss', angles_loss, on_step=False, on_epoch=True, batch_size=batch_size)
         self.log('train/ss_loss', ss_loss, on_step=False, on_epoch=True, batch_size=batch_size)

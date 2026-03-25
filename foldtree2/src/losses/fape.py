@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import einops
 from typing import Callable, Any, Union
-from foldtree2.src.losses.fape import *
 
 
 
@@ -415,6 +414,54 @@ def compute_chain_positions_rotmat(rotations, translations):
 	return positions
 
 
+
+def compute_chain_positions_rotmat_batch_idx(rotations, translations, batch_idx=None):
+	"""
+	Computes the global coordinates for a chain of transformations using a batch index.
+
+	Args:
+		rotations (Tensor): Shape (M, 3, 3) or (B, N, 3, 3) if pre-grouped on batch axis.
+		translations (Tensor): Shape (M, 3) or (B, N, 3) if pre-grouped on batch axis.
+		batch_idx (Tensor, optional): If provided, shape (B, N) with indices into the first
+			dimension of `rotations`/`translations` for each batch sequence.
+
+	Returns:
+		Tensor: Shape (B, N, 3) global coordinates for each position.
+	"""
+	if batch_idx is None:
+		# Fallback: no index, 3D input expected
+		return compute_chain_positions_rotmat(rotations, translations)
+
+	batch_idx = batch_idx.long()
+	if batch_idx.ndim == 1:
+		batch_idx = batch_idx.unsqueeze(0)
+
+	B, N = batch_idx.shape
+
+	# support both flattened sources and grouped sources
+	if rotations.ndim == 3 and translations.ndim == 2 and rotations.shape[0] != B:
+		rot_sel = rotations[batch_idx]  # (B, N, 3, 3)
+		trans_sel = translations[batch_idx]  # (B, N, 3)
+	else:
+		# if user already passed shapes (B,N,3,3) and (B,N,3)
+		rot_sel = rotations
+		trans_sel = translations
+
+	positions = torch.zeros((B, N, 3), dtype=translations.dtype, device=translations.device)
+	global_R = torch.eye(3, dtype=translations.dtype, device=translations.device).unsqueeze(0).expand(B, -1, -1)
+	curr_pos = torch.zeros((B, 3), dtype=translations.dtype, device=translations.device)
+
+	for i in range(N):
+		positions[:, i] = curr_pos
+		R_i = rot_sel[:, i]
+		t_i = trans_sel[:, i]
+		global_R = torch.matmul(global_R, R_i)
+		curr_pos = curr_pos + torch.matmul(global_R, t_i.unsqueeze(-1)).squeeze(-1)
+
+	return positions
+
+
+
 def transform_rt_to_coordinates(rotations, translations):
 	"""
 	Convert R, t matrices into global 3D coordinates.
@@ -687,8 +734,88 @@ def differentiable_lddt_loss(
 		return torch.stack(losses).mean()
 	return torch.tensor(0.0, device=pred_t.device)
 
+def delta_loss(coords, predcoords, plddt=None, plddt_thresh=0.3):
+    """
+    Compute local coordinate differences for each residue to next residue.
 
-def compute_lddt_quaternions(pred_quats, pred_trans, target_coords, cutoff=15.0, thresholds=[0.5, 1.0, 2.0, 4.0]):
+    Args:
+        coords (Tensor): Shape (N, 3) or (B, N, 3) ground-truth coordinates.
+        predcoords (Tensor): Shape (N, 3) or (B, N, 3) predicted coordinates.
+        plddt (Tensor, optional): Shape (N), (B, N), (N, 1), or (B, N, 1) confidence scores.
+        plddt_thresh (float): pLDDT cutoff to include residues in loss.
+
+    Returns:
+        Tensor: Scalar loss.
+    """
+
+    was_single = False
+    if coords.ndim == 2:
+        coords = coords.unsqueeze(0)
+        predcoords = predcoords.unsqueeze(0)
+        was_single = True
+
+    if coords.ndim != 3 or predcoords.ndim != 3:
+        raise ValueError(f"coords and predcoords must be 2D or 3D tensors. Got {coords.shape}, {predcoords.shape}")
+
+    if coords.shape != predcoords.shape:
+        raise ValueError(f"coords and predcoords shapes must match. Got {coords.shape} vs {predcoords.shape}")
+
+    B, N, _ = coords.shape
+
+    true_deltas = coords[:, 1:] - coords[:, :-1]
+    pred_deltas = predcoords[:, 1:] - predcoords[:, :-1]
+
+    delta_dist = torch.sqrt(torch.sum((pred_deltas - true_deltas) ** 2, dim=-1) + 1e-6)  # (B, N-1)
+
+    if plddt is not None:
+        if plddt.ndim == 3 and plddt.shape[-1] == 1:
+            plddt = plddt.squeeze(-1)
+
+        if plddt.ndim == 1:
+            plddt = plddt.unsqueeze(0)
+
+        if plddt.ndim == 2 and plddt.shape[0] == N and plddt.shape[1] == B:
+            plddt = plddt.T
+
+        if plddt.ndim != 2:
+            raise ValueError(f"plddt must be shape (B,N), got {plddt.shape}")
+
+        if plddt.shape[0] != B or plddt.shape[1] != N:
+            raise ValueError(f"plddt shape {plddt.shape} does not match coords shape {coords.shape}")
+
+        good = plddt >= plddt_thresh
+        edge_mask = good[:, 1:] & good[:, :-1]
+        valid = edge_mask.sum()
+
+        if valid == 0:
+            return torch.tensor(0.0, device=coords.device, dtype=coords.dtype)
+
+        delta_loss_val = (delta_dist * edge_mask.float()).sum() / edge_mask.float().sum()
+    else:
+        delta_loss_val = delta_dist.mean()
+
+    clamped_loss = torch.clamp(delta_loss_val, max=10.0)
+    return clamped_loss
+
+
+def delta_loss_quaternions(pred_quats, pred_trans, target_coords , plddt=None, plddt_thresh=0.3):
+	"""
+	Compute local coordinate differences for each residue to next residue from predicted quaternions and translations.
+	
+	Args:
+		pred_quats (Tensor): Shape (B,N, 4) predicted unit quaternions.
+		pred_trans (Tensor): Shape (B,N, 3) predicted translations.
+		target_coords (Tensor): Shape (B,N, 3) ground-truth global coordinates.
+
+	Returns:
+		Tensor: Scalar tensor representing the local coordinate difference loss.
+	"""
+	pred_coords = compute_chain_positions(pred_quats, pred_trans)
+	#call delta_loss with pred_coords and target_coords
+	return delta_loss(target_coords, pred_coords, plddt, plddt_thresh)
+
+
+def compute_lddt_quaternions(pred_quats, pred_trans, target_coords, cutoff=15.0, thresholds=[0.5, 1.0, 2.0, 4.0] , batches=None):
 	"""
 	Computes a local distance difference test (lDDT) score for a structure represented
 	by a sequence of quaternion and translation transforms.
@@ -810,7 +937,7 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	return quat
 
 
-def reconstruct_positions(R, T):
+def reconstruct_positions(R, T , batch_idx=None):
 	"""
 	Reconstruct 3D CA positions from CA-to-CA displacement vectors.
 
@@ -828,7 +955,18 @@ def reconstruct_positions(R, T):
 		torch.Tensor: Reconstructed CA positions of shape (N+1, 3), starting
 		              from the origin.
 	"""
-	origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
-	return torch.cat([origin, torch.cumsum(T, dim=0)], dim=0)
+	if batch_idx is not None:
+		# Handle batched input
+		unique_batches = batch_idx.unique()
+		positions = []
+		for b in unique_batches:
+			mask = batch_idx == b
+			T_b = T[mask]
+			origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
+			positions.append(torch.cat([origin, torch.cumsum(T_b, dim=0)], dim=0))
+		return torch.cat(positions, dim=0)
+	else:
+		origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
+		return torch.cat([origin, torch.cumsum(T, dim=0)], dim=0)
 
 
