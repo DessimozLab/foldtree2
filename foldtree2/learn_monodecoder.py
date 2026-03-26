@@ -197,6 +197,8 @@ parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
                     help='Learning rate (default: 1e-4)')
 parser.add_argument('--batch-size', '-bs', type=int, default=10,
                     help='Batch size (default: 10)')
+parser.add_argument('--max-residues', type=int, default=None,
+                    help='Maximum residue count per structure; larger entries are skipped (default: None)')
 parser.add_argument('--output-dir', '-o', type=str, default='./models/',
                     help='Directory to save models/results (default: ./models/)')
 parser.add_argument('--model-name', type=str, default='monodecoder_model',
@@ -650,6 +652,10 @@ print(f"  VQ Weight: {vqweight}")
 print(f"  Angles Weight: {angles_weight}")
 print(f"  SS Weight: {ss_weight}")
 
+# Per-epoch weight values (for optional scheduling/visualization)
+xweight_epoch = xweight
+ss_weight_epoch = ss_weight
+
 # Save configuration if requested
 if args.save_config:
     config_dict = vars(args).copy()
@@ -672,6 +678,19 @@ datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
 converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
 struct_dat = pdbgraph.StructureDataset(dataset_path)
+
+# Filter by maximum protein size (residue count) if requested
+if args.max_residues is not None:
+    max_residues = args.max_residues
+    print(f"Filtering dataset to max_residues={max_residues}")
+    keep_indices = []
+    for i in tqdm.tqdm(range(len(struct_dat)), desc='Filtering structs by residue count', leave=False):
+        sample = struct_dat[i]
+        n_res = sample['res'].x.shape[0] if 'res' in sample else 0
+        if n_res <= max_residues:
+            keep_indices.append(i)
+    print(f"Kept {len(keep_indices)} / {len(struct_dat)} structures after max_residues filter")
+    struct_dat = torch.utils.data.Subset(struct_dat, keep_indices)
 
 # Create train/validation split
 torch.manual_seed(args.val_seed)
@@ -1240,15 +1259,6 @@ clip_grad = args.clip_grad  # Enable gradient clipping
 best_loss = float('inf')
 global_step = 0  # Track global training steps for warmup and scheduling
 
-# Mirror notebook stability settings: avoid flash/mem-efficient SDP kernels.
-if torch.cuda.is_available() and hasattr(torch.backends, 'cuda'):
-    try:
-        torch.backends.cuda.enable_flash_sdp(False)
-        torch.backends.cuda.enable_mem_efficient_sdp(False)
-        torch.backends.cuda.enable_math_sdp(True)
-        print("Using math SDP kernel (flash and mem-efficient disabled for stability)")
-    except Exception as e:
-        print(f"Warning: could not configure SDP kernels: {e}")
 
 amp_dtype = torch.float16
 if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
@@ -1289,6 +1299,10 @@ early_stop_best = None
 early_stop_wait = 0
 
 for epoch in range(args.epochs):
+    # Keep per-epoch weights accessible for scheduling and TensorBoard logging
+    xweight_epoch = xweight
+    ss_weight_epoch = ss_weight
+
     total_loss_x = 0
     total_loss_edge = 0
     total_vq = 0
@@ -1299,10 +1313,6 @@ for epoch in range(args.epochs):
     total_lddt_loss = 0
     total_fape_loss = 0
     total_delta_loss = 0
-
-    # Notebook parity: allow coarse reweighting after burn-in-like epochs.
-    xweight_epoch = max(xweight, 0.5) if (args.jump_aa_loss is not None and epoch >= args.jump_aa_loss) else xweight
-    ss_weight_epoch = max(ss_weight, 0.5) if (args.jump_ss_loss is not None and epoch >= args.jump_ss_loss) else ss_weight
     
     for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
         # Periodically clear CUDA cache to avoid OOM errors
@@ -1565,6 +1575,8 @@ for epoch in range(args.epochs):
             if scheduler is not None and scheduler_step_mode == 'step':
                 scheduler.step()
             
+            torch.cuda.empty_cache()  # Clear cache after each update to reduce fragmentation
+            gc.collect()  # Run garbage collection to free memory
             global_step += 1
 
         
@@ -1618,8 +1630,13 @@ for epoch in range(args.epochs):
     gc.collect()
 
     # Run quick validation on 10 random proteins
-    val_metrics = quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10)
+    val_metrics = quick_validate(encoder, decoder, val_dataset, device, args, n_samples=5)
     
+    # Clear CUDA cache
+    torch.cuda.empty_cache()
+    gc.collect()
+
+
     # Update learning rate scheduler (for epoch-based schedulers)
     if scheduler is not None and scheduler_step_mode == 'epoch':
         if args.lr_schedule == 'plateau':
