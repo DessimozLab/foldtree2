@@ -274,8 +274,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		if self.angles_mlp is not None:
 			angles = self.angles_mlp( z )
-			#tanh is -1 to 1, multiply by pi to get angles in radians
-			angles = angles * np.pi
+			#tanh is -1 to 1, multiply by 180 to get angles in degrees
+			angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
 
 		if contact_pred_index is None:
 			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
@@ -581,7 +581,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		angles = None
 		if 'angles_mlp' in self.head:
 			angles = self.head['angles_mlp'](z)
-			angles = angles * np.pi
+			angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
 		
 		# Contact prediction
 		edge_logits = None
@@ -1370,7 +1370,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
-				angles = angles * np.pi  # Scale from [-1, 1] to [-π, π]
+				angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
 		else:
 			# Single graph case
 			if use_cnn:
