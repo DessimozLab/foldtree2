@@ -537,11 +537,11 @@ class FoldTree2Model(pl.LightningModule):
 
         # lDDT loss
         lddt_loss = torch.tensor(0.0, device=self.device)
-        if (self.args.lddt_weight > 0 or getattr(self.args, 'lddt_loss', False)) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+        if (self.args.lddt_weight > 0 or getattr(self.args, 'lddt_loss', False)) and out.get('quat_pred') is not None and out.get('trans_pred') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
             from foldtree2.src.losses.losses import batch_lddt_loss
             lddt_loss = batch_lddt_loss(
-                pred_q=out.get('quat', None),
-                pred_t=out.get('trans', None),
+                pred_q=out.get('quat_pred'),
+                pred_t=out.get('trans_pred'),
                 true_coords=data['coords'].x,
                 batch=getattr(data['res'], 'batch', None),
                 plddt=data['plddt'].x if self.args.mask_plddt else None,
@@ -550,26 +550,37 @@ class FoldTree2Model(pl.LightningModule):
 
         # FAPE loss
         fape_loss = torch.tensor(0.0, device=self.device)
-        if (self.args.fape_weight > 0 or getattr(self.args, 'fape_loss', False)) and out.get('quat') is not None and out.get('trans') is not None and hasattr(data, 'quat') and hasattr(data['quat'], 'x') and hasattr(data, 'trans') and hasattr(data['trans'], 'x'):
+        if (self.args.fape_weight > 0 or getattr(self.args, 'fape_loss', False)) and out.get('quat_pred') is not None and out.get('trans_pred') is not None and hasattr(data, 'q_true') and hasattr(data['q_true'], 'x') and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
             from foldtree2.src.losses.losses import batch_fape_loss
+            _fape_batch = getattr(data['res'], 'batch', None)
+            _pred_disp = out['trans_pred']
+            # Convert CA-to-CA displacements to CA positions (cumsum per structure)
+            # FAPE requires absolute positions; cumsum from origin is translation-invariant
+            if _fape_batch is not None:
+                _pred_pos = torch.zeros_like(_pred_disp)
+                for _b in torch.unique(_fape_batch):
+                    _m = (_fape_batch == _b).nonzero(as_tuple=True)[0]
+                    _pred_pos[_m] = torch.cumsum(_pred_disp[_m], dim=0)
+            else:
+                _pred_pos = torch.cumsum(_pred_disp, dim=0)
             fape_loss = batch_fape_loss(
-                true_q=data['quat'].x,
-                true_t=data['trans'].x,
-                pred_q=out['quat'],
-                pred_t=out['trans'],
-                batch=getattr(data['res'], 'batch', None),
+                true_q=data['q_true'].x,
+                true_t=data['coords'].x,
+                pred_q=out['quat_pred'],
+                pred_t=_pred_pos,
+                batch=_fape_batch,
             )
 
         # Delta loss
         delta_loss_val = torch.tensor(0.0, device=self.device)
-        if (self.args.delta_weight > 0 or getattr(self.args, 'delta_loss', False)) and out.get('coords') is not None and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
+        if (self.args.delta_weight > 0 or getattr(self.args, 'delta_loss', False)) and (out.get('quat_pred') is not None or out.get('coords') is not None) and hasattr(data, 'coords') and hasattr(data['coords'], 'x'):
             from foldtree2.src.losses.losses import batch_delta_loss
             try:
-                if out.get('quat') is not None and out.get('trans') is not None:
+                if out.get('quat_pred') is not None and out.get('trans_pred') is not None:
                     delta_loss_val = batch_delta_loss(
                         true_ca=data['coords'].x,
-                        pred_q=out['quat'],
-                        pred_t=out['trans'],
+                                pred_q=out['quat_pred'],
+                                pred_t=out['trans_pred'],
                         batch=getattr(data['res'], 'batch', None),
                         plddt=data['plddt'].x if self.args.mask_plddt else None,
                         plddt_thresh=self.args.plddt_threshold if self.args.mask_plddt else 0.0,

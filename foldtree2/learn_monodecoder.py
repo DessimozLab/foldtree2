@@ -37,9 +37,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i):
 	"""Build MultiMonoDecoder configs matching the notebook defaults as closely as possible."""
-	geometry_output_rt = args.output_rt if args.geometry_output_rt is None else args.geometry_output_rt
-	geometry_cnn_output_fft = args.output_fft if args.geometry_cnn_output_fft is None else args.geometry_cnn_output_fft
-
+	
 	mono_configs = {
 		'sequence_transformer': {
 			'in_channels': {'res': args.embedding_dim},
@@ -59,8 +57,7 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 		},
 	}
 
-	if args.use_geometry_transformer:
-		mono_configs['geometry_transformer'] = {
+	mono_configs['geometry_transformer'] = {
 			'in_channels': {'res': args.embedding_dim},
 			'concat_positions': False,
 			'hidden_channels': {('res', 'backbone', 'res'): [hidden_size], ('res', 'backbonerev', 'res'): [hidden_size]},
@@ -73,13 +70,12 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 			'normalize': False,
 			'residual': False,
 			'learn_positions': True,
-			'output_rt': geometry_output_rt,
-			'output_ss': args.geometry_output_ss,
-			'output_angles': args.geometry_output_angles,
+			'output_rt': args.geometry_output_rt if args.geometry_output_rt is not None else args.output_rt,
+			'output_ss': args.geometry_output_ss if args.geometry_output_ss is not None else args.output_ss,
+			'output_angles': args.geometry_output_angles if args.geometry_output_angles is not None else args.output_angles,
 		}
 
-	if args.use_geometry_cnn:
-		mono_configs['geometry_cnn'] = {
+	mono_configs['geometry_cnn'] = {
 			'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 			'concat_positions': False,
 			'conv_channels': [2 * hidden_size, hidden_size, hidden_size],
@@ -92,13 +88,11 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 			'RTdecoder_hidden': [hidden_size // 2, hidden_size // 4],
 			'metadata': converter.metadata,
 			'dropout': 0.001,
-			'output_fft': geometry_cnn_output_fft,
-			'output_rt': args.geometry_cnn_output_rt,
-			'output_angles': args.geometry_cnn_output_angles,
-			'output_ss': args.geometry_cnn_output_ss,
+			'output_fft': args.geometry_cnn_output_fft if args.geometry_cnn_output_fft is not None else args.output_fft,
+			'output_ss': args.geometry_cnn_output_ss if args.geometry_cnn_output_ss is not None else args.output_ss,
 			'normalize': True,
 			'residual': False,
-			'output_edge_logits': args.geometry_cnn_output_edge_logits,
+			'output_edge_logits': args.geometry_cnn_output_edge_logits if args.geometry_cnn_output_edge_logits is not None else args.output_edge_logits,
 			'ncat': 8,
 			'contact_mlp': False,
 			'pool_type': 'global_mean',
@@ -121,7 +115,7 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 			'normalize': True,
 			'residual': False,
 		}
-
+	print(mono_configs)
 	return mono_configs
 
 # Try to import Muon optimizer
@@ -621,29 +615,18 @@ if args.use_weight_scheduler:
 	print(f"  Loss Warmup Steps: {args.loss_warmup_steps}")
 	print(f"  Loss Schedules: x={args.loss_schedule_x}, logit={args.loss_schedule_logit}, edge={args.loss_schedule_edge}, vq={args.loss_schedule_vq}, fft2={args.loss_schedule_fft2}, angles={args.loss_schedule_angles}, ss={args.loss_schedule_ss}")
 
-
-
-
 # Loss weights (from args, with defaults matching notebook)
-if args.normalize_loss_weights:
-	print("Loss weight normalization enabled - setting all weights to imporance of task")
-	edgeweight = 2.0
-	logitweight = 1.0
-	xweight = 2.0
-	fft2weight = 1.0
-	vqweight = 1.0
-	angles_weight = 0.1
-	ss_weight = 0.1
-else:
-	edgeweight = args.edgeweight
-	logitweight = args.logitweight
-	xweight = args.xweight
-	fft2weight = args.fft2weight
-	vqweight = args.vqweight
-	angles_weight = args.angles_weight
-	ss_weight = args.ss_weight
+edgeweight = args.edgeweight
+logitweight = args.logitweight
+xweight = args.xweight
+fft2weight = args.fft2weight
+vqweight = args.vqweight
+angles_weight = args.angles_weight
+ss_weight = args.ss_weight
+fape_weight = args.fape_weight if getattr(args, 'fape_loss', False) else 0.0
+lddt_weight = args.lddt_weight if getattr(args, 'lddt_loss', False) else 0.0
+delta_weight = args.delta_weight if getattr(args, 'delta_loss', False) else 0.0
 
-	
 print(f"Loss Weights:")
 print(f"  Normalize Loss Weights: {args.normalize_loss_weights}")
 print(f"  Edge Weight: {edgeweight}")
@@ -653,6 +636,9 @@ print(f"  FFT2 Weight: {fft2weight}")
 print(f"  VQ Weight: {vqweight}")
 print(f"  Angles Weight: {angles_weight}")
 print(f"  SS Weight: {ss_weight}")
+print(f"  FAPE Weight: {fape_weight}")
+print(f"  lDDT Weight: {lddt_weight}")
+print(f"  Delta Weight: {delta_weight}")
 
 # Per-epoch weight values (for optional scheduling/visualization)
 xweight_epoch = xweight
@@ -779,30 +765,12 @@ else:
 		concat_positions=True,
 		learn_positions=True
 	)
-	if args.hetero_gae:
-		# HeteroGAE_Decoder config (example, adjust as needed)
-		decoder = ecdr.HeteroGAE_Decoder(
-			in_channels={'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
-			concat_positions=False,
-			hidden_channels={('res','backbone','res'): [hidden_size]*5, ('res','backbonerev','res'): [hidden_size]*5},
-			layers=3,
-			AAdecoder_hidden=[hidden_size, hidden_size, hidden_size//2],
-			Xdecoder_hidden=[hidden_size, hidden_size, hidden_size],
-			contactdecoder_hidden=[hidden_size//2, hidden_size//2],
-			nheads=5,
-			amino_mapper=converter.aaindex,
-			flavor='mfconv',
-			dropout=0.005,
-			normalize=True,
-			residual=False,
-			contact_mlp=False,
-		)
-	else:
-		# MultiMonoDecoder for sequence and geometry
-		print("Using notebook-style decoder configuration")
-		mono_configs = build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i)
-		# Initialize decoder
-		decoder = MultiMonoDecoder( configs=mono_configs)
+
+	# MultiMonoDecoder for sequence and geometry
+	print("Using notebook-style decoder configuration")
+	mono_configs = build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i)
+	# Initialize decoder
+	decoder = MultiMonoDecoder( configs=mono_configs)
 
 # Move models to device
 encoder = encoder.to(device)
@@ -1488,7 +1456,7 @@ for epoch in range(args.epochs):
 				delta_loss = torch.tensor(0.0, device=device)
 
 				if out.get('quat_pred') is not None and out.get('trans_pred') is not None and 'R_true' in data.node_types and 't_true' in data.node_types:
-					batch_idx = data['res'].batch if 'res' in data.node_types else None
+					batch_idx_rt = data['res'].batch if 'res' in data.node_types else None
 
 					true_R = data['R_true'].x.float()
 					true_t = data['t_true'].x.float()
@@ -1503,25 +1471,25 @@ for epoch in range(args.epochs):
 							true_t=true_t,
 							pred_q=pred_q,
 							pred_t=pred_t,
-							batch=batch_idx,
+							batch=batch_idx_rt,
 						)
 					if args.lddt_weight > 0:
 						lddt_loss = batch_lddt_loss(
 							pred_q=pred_q,
 							pred_t=pred_t,
 							true_coords=true_ca,
-							batch=batch_idx,
-							plddt=(data['plddt'].x if mask_plddt else None),
-							plddt_thresh=plddt_threshold,
+							batch=batch_idx_rt,
+							plddt=(data['plddt'].x if args.mask_plddt else None),
+							plddt_thresh=args.plddt_threshold,
 						)
 					if args.delta_weight > 0:
 						delta_loss = batch_delta_loss(
 							true_ca=true_ca,
 							pred_q=pred_q,
 							pred_t=pred_t,
-							batch=batch_idx,
-							plddt=(data['plddt'].x if mask_plddt else None),
-							plddt_thresh=plddt_threshold,
+							batch=batch_idx_rt,
+							plddt=(data['plddt'].x if args.mask_plddt else None),
+							plddt_thresh=args.plddt_threshold,
 						)
 
 				if args.use_weight_scheduler:

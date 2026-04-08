@@ -3,6 +3,8 @@
 
 import importlib
 import os
+import queue
+import threading
 from foldtree2.src.pdbgraph import StructureDataset
 import numpy as np
 import pandas as pd
@@ -22,7 +24,7 @@ from foldtree2.src.layers import *
 from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
 import copy
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 
 # Note: datadir is defined but may not be used throughout the module
 datadir = '../../datasets/foldtree2/'
@@ -525,6 +527,130 @@ class mk1_Encoder(torch.nn.Module):
 					f.write(outstr)
 					f.write('\n')
 		
+		return filename
+
+	def encode_foldcomp_fasta(
+		self,
+		foldcomp_db,
+		filename,
+		ids=None,
+		max_structures=None,
+		chunk_size=1024,
+		queue_size=4,
+		batch_size=16,
+		cache_size=0,
+		replace=True,
+		alphabet=None,
+		verbose=False,
+	):
+		"""Encode a Foldcomp DB directly to token FASTA using chunked prefetch.
+
+		This is intended for very large databases (e.g., AlphaFold DB). It avoids
+		materializing an HDF5 graph dataset and streams chunks into encoder batches.
+		"""
+		from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, _load_foldcomp_ids
+
+		if filename is None:
+			raise ValueError('Filename must be provided for fasta encoding')
+		if self.vector_quantizer.num_embeddings > 248:
+			raise ValueError('Encoding size too large for fasta encoding')
+
+		replace_dict = {
+			chr(0): chr(246), '"': chr(248), '#': chr(247), '>': chr(249),
+			'=': chr(250), '<': chr(251), '-': chr(252), ' ': chr(253),
+			'\r': chr(254), '\n': chr(255)
+		}
+
+		if ids is None:
+			ids = _load_foldcomp_ids(foldcomp_db)
+		else:
+			ids = list(ids)
+
+		if max_structures is not None:
+			ids = ids[:int(max_structures)]
+
+		if len(ids) == 0:
+			raise ValueError('No Foldcomp IDs provided/found to encode')
+
+		dataset = FoldcompStructureDataset(
+			foldcomp_db,
+			ids=ids,
+			converter=None,
+			cache_size=int(cache_size),
+			persistent_db=False,
+		)
+
+		q = queue.Queue(maxsize=max(1, int(queue_size)))
+		sentinel = object()
+
+		def _producer():
+			try:
+				for i in range(0, len(ids), int(chunk_size)):
+					chunk_ids = ids[i:i + int(chunk_size)]
+					graphs = dataset.get_many(chunk_ids)
+					q.put(graphs)
+			except Exception as e:
+				q.put(e)
+			finally:
+				q.put(sentinel)
+
+		producer = threading.Thread(target=_producer, daemon=True)
+		producer.start()
+
+		encoded_count = 0
+		with open(filename, 'w') as f:
+			pbar = tqdm.tqdm(total=len(ids), desc='Encoding Foldcomp DB to FASTA', disable=not verbose)
+			while True:
+				item = q.get()
+				if item is sentinel:
+					break
+				if isinstance(item, Exception):
+					raise item
+
+				chunk_graphs = item
+				batch_loader = DataLoader(chunk_graphs, batch_size=max(1, int(batch_size)), shuffle=False)
+
+				for batch in batch_loader:
+					batch = batch.to(self.device)
+					z, _ = self.forward(batch)
+					strdata_indices, _ = self.vector_quantizer.discretize_z(z)
+
+					if hasattr(batch['res'], 'batch') and batch['res'].batch is not None:
+						batch_indices = batch['res'].batch
+						num_graphs = int(batch_indices.max().item()) + 1
+					else:
+						num_graphs = 1
+						batch_indices = torch.zeros(z.shape[0], dtype=torch.long, device=z.device)
+
+					for graph_idx in range(num_graphs):
+						mask = (batch_indices == graph_idx)
+						graph_tokens = strdata_indices[mask]
+
+						if hasattr(batch, 'identifier'):
+							if isinstance(batch.identifier, list):
+								identifier = batch.identifier[graph_idx]
+							else:
+								identifier = batch.identifier
+						else:
+							identifier = f'structure_{encoded_count}'
+
+						f.write(f'>{identifier}\n')
+						outstr = ''
+						for char_idx in graph_tokens:
+							if alphabet is not None:
+								char = alphabet[char_idx.item()]
+							else:
+								char = chr(char_idx.item() + 1)
+							if replace and char in replace_dict:
+								char = replace_dict[char]
+							outstr += char
+						f.write(outstr + '\n')
+						encoded_count += 1
+						pbar.update(1)
+
+			pbar.close()
+
+		producer.join()
 		return filename
 
 

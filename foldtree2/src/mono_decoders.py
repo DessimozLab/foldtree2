@@ -1350,6 +1350,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					if self.output_angles and 'angles_cnn' in self.head:
 						angles_out = self.head['angles_cnn'](xi_cnn)  # (1, 3, seq_len)
 						angles_out = angles_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
+						angles_out = angles_out * 180  # Scale from [-1, 1] to [-180, 180]
 						angles_list.append(angles_out)
 				else:
 					# DNN decoder path
@@ -1410,7 +1411,8 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
 		if rt_pred is not None:
 			quat = torch.tanh(rt_pred[..., :4])
-			trans = rt_pred[..., 4:]
+			trans = rt_pred[..., 4:]  # tanh bounds to ±20 Å, allowing negative displacements
+			trans = torch.tanh(trans) * 20.0
 			rt_pred = torch.cat([quat, trans], dim=-1)
 			quat_pred = quat
 			trans_pred = trans
