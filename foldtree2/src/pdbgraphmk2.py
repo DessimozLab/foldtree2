@@ -4,10 +4,15 @@ import os
 import time
 import traceback
 import warnings
+from collections import OrderedDict
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import gemmi
+try:
+    import foldcomp
+except ImportError:
+    foldcomp = None
 import h5py
 import numpy as np
 import pandas as pd
@@ -28,6 +33,13 @@ AA3_TO_1 = {
     "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
     "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
     "MSE": "M",
+}
+
+AA1_TO_3 = {
+    'A': 'ALA', 'R': 'ARG', 'N': 'ASN', 'D': 'ASP', 'C': 'CYS',
+    'Q': 'GLN', 'E': 'GLU', 'G': 'GLY', 'H': 'HIS', 'I': 'ILE',
+    'L': 'LEU', 'K': 'LYS', 'M': 'MET', 'F': 'PHE', 'P': 'PRO',
+    'S': 'SER', 'T': 'THR', 'W': 'TRP', 'Y': 'TYR', 'V': 'VAL',
 }
 
 BIN_ALPHABET_BASE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -133,17 +145,17 @@ def _make_bend_bins(ca_xyz: np.ndarray, n_bins: int = 8) -> np.ndarray:
     denom = np.maximum(n1 * n2, 1e-8)
     cosang = np.sum(v1 * v2, axis=1) / denom
     cosang = np.clip(cosang, -1.0, 1.0)
-    ang = np.degrees(np.arccos(cosang)).astype(np.float32)
+    ang = np.arccos(cosang).astype(np.float32)
 
     out[1:-1] = ang
     out[0] = ang[0]
     out[-1] = ang[-1]
 
-    edges = np.linspace(0.0, 180.0, n_bins + 1, dtype=np.float32)[1:-1].tolist()
+    edges = np.linspace(0.0, np.pi, n_bins + 1, dtype=np.float32)[1:-1].tolist()
     return _digitize_to_uint(out, edges)
 
 
-def _dihedral_deg(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
+def _dihedral_rad(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
     b0 = p1 - p0
     b1 = p2 - p1
     b2 = p3 - p2
@@ -163,7 +175,7 @@ def _dihedral_deg(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray
 
     x = np.dot(v, w)
     y = np.dot(np.cross(b1u, v), w)
-    return float(np.degrees(np.arctan2(y, x)))
+    return float(np.arctan2(y, x))
 
 
 def _compute_chi_angles(res, res_name: str) -> np.ndarray:
@@ -190,8 +202,7 @@ def _compute_chi_angles(res, res_name: str) -> np.ndarray:
             positions.append(np.array([atom.pos.x, atom.pos.y, atom.pos.z]))
         
         if len(positions) == 4:
-            angle_deg = _dihedral_deg(positions[0], positions[1], positions[2], positions[3])
-            angle_rad = np.radians(angle_deg)
+            angle_rad = _dihedral_rad(positions[0], positions[1], positions[2], positions[3])
             result[i * 2] = np.sin(angle_rad)
             result[i * 2 + 1] = np.cos(angle_rad)
     
@@ -239,14 +250,14 @@ def _make_torsion_bins(ca_xyz: np.ndarray, n_bins: int = 12) -> np.ndarray:
         return np.zeros(length, dtype=np.uint8)
 
     for i in range(length - 3):
-        out[i + 1] = _dihedral_deg(ca_xyz[i], ca_xyz[i + 1], ca_xyz[i + 2], ca_xyz[i + 3])
+        out[i + 1] = _dihedral_rad(ca_xyz[i], ca_xyz[i + 1], ca_xyz[i + 2], ca_xyz[i + 3])
 
     out[0] = out[1]
     out[-2] = out[length - 3]
     out[-1] = out[length - 3]
 
-    wrapped = (out + 180.0) % 360.0
-    edges = np.linspace(0.0, 360.0, n_bins + 1, dtype=np.float32)[1:-1].tolist()
+    wrapped = (out + np.pi) % (2.0 * np.pi)
+    edges = np.linspace(0.0, 2.0 * np.pi, n_bins + 1, dtype=np.float32)[1:-1].tolist()
     return _digitize_to_uint(wrapped, edges)
 
 
@@ -364,6 +375,41 @@ class PDB2PyG:
 
     @staticmethod
     def read_structure(path: str) -> gemmi.Structure:
+        """Read a structure from PDB or Foldcomp (FCZ) root input.
+
+        Args:
+            path: file path or bytes content (for FCZ/pdb). For FCZ, accepts string path ending in .fcz.
+
+        Returns:
+            gemmi.Structure
+        """
+        if isinstance(path, (bytes, bytearray)):
+            raw = bytes(path)
+            stripped = raw.lstrip()
+
+            # Direct PDB content in bytes.
+            if stripped.startswith((b'ATOM', b'HETATM', b'HEADER', b'MODEL', b'data_')):
+                return gemmi.read_structure_string(raw)
+
+            # Otherwise treat as FCZ bytes and decompress first.
+            if foldcomp is None:
+                raise RuntimeError('foldcomp is required to read bytes FCZ data')
+            _, pdb_str = foldcomp.decompress(raw)
+            pdb_bytes = pdb_str if isinstance(pdb_str, (bytes, bytearray)) else pdb_str.encode('utf8')
+            return gemmi.read_structure_string(pdb_bytes)
+
+        if isinstance(path, str) and ('\n' in path or path.lstrip().startswith(('ATOM', 'HETATM', 'HEADER', 'MODEL', 'data_'))):
+            return gemmi.read_structure_string(path.encode('utf8'))
+
+        if isinstance(path, str) and path.lower().endswith('.fcz'):
+            if foldcomp is None:
+                raise RuntimeError('foldcomp is required to read .fcz files')
+            with open(path, 'rb') as f:
+                fc_bytes = f.read()
+            _, pdb_str = foldcomp.decompress(fc_bytes)
+            return gemmi.read_structure_string(pdb_str if isinstance(pdb_str, (bytes, bytearray)) else pdb_str.encode('utf8'))
+
+        # Standard PDB/cif paths
         return gemmi.read_structure(path)
 
     @staticmethod
@@ -551,8 +597,8 @@ class PDB2PyG:
             try:
                 if prev_res is not None and next_res is not None:
                     p, s = gemmi.calculate_phi_psi(prev_res, res, next_res)
-                    phi = float(np.degrees(p)) if np.isfinite(p) else 0.0
-                    psi = float(np.degrees(s)) if np.isfinite(s) else 0.0
+                    phi = float(p) if np.isfinite(p) else 0.0
+                    psi = float(s) if np.isfinite(s) else 0.0
             except Exception:
                 phi = 0.0
                 psi = 0.0
@@ -560,7 +606,7 @@ class PDB2PyG:
             try:
                 if next_res is not None:
                     w = gemmi.calculate_omega(res, next_res)
-                    omega = float(np.degrees(w)) if np.isfinite(w) else 0.0
+                    omega = float(w) if np.isfinite(w) else 0.0
             except Exception:
                 omega = 0.0
 
@@ -578,16 +624,115 @@ class PDB2PyG:
         return pd.DataFrame(rows)
 
     @staticmethod
+    def _validate_radians(values: np.ndarray, field_name: str) -> np.ndarray:
+        vals = np.asarray(values, dtype=np.float32)
+        if vals.size == 0:
+            return vals
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0:
+            return vals
+        if float(np.nanmax(np.abs(finite))) > (2.0 * np.pi + 1e-3):
+            raise ValueError(
+                f"{field_name} appears to contain degree values. Angles must be in radians."
+            )
+        return vals.astype(np.float32)
+
+    def _angles_from_foldcomp(self, foldcomp_data: Optional[dict], chain_name: str, residues: list[gemmi.Residue]):
+        if not foldcomp_data:
+            return None
+
+        phi = np.asarray(foldcomp_data.get('phi', []), dtype=np.float32)
+        psi = np.asarray(foldcomp_data.get('psi', []), dtype=np.float32)
+        omega = np.asarray(foldcomp_data.get('omega', []), dtype=np.float32)
+        seq = foldcomp_data.get('residues', '')
+
+        n = len(residues)
+        if phi.size != n or psi.size != n or omega.size != n:
+            return None
+
+        phi = self._validate_radians(phi, 'phi')
+        psi = self._validate_radians(psi, 'psi')
+        omega = self._validate_radians(omega, 'omega')
+
+        if isinstance(seq, (list, tuple)):
+            seq = ''.join([str(x) for x in seq])
+        seq = str(seq)
+        if len(seq) != n:
+            seq = ''.join([AA3_TO_1.get(res.name.upper(), 'X') for res in residues])
+
+        rows = []
+        for i, res in enumerate(residues):
+            seqid = int(res.seqid.num)
+            rows.append({
+                'Chain': chain_name,
+                'Residue_Number': seqid,
+                'Residue_Name': res.name,
+                'single_letter_code': seq[i] if i < len(seq) else AA3_TO_1.get(res.name.upper(), 'X'),
+                'Phi_Angle': float(phi[i]),
+                'Psi_Angle': float(psi[i]),
+                'Omega_Angle': float(omega[i]),
+            })
+        return pd.DataFrame(rows)
+
+    def _apply_foldcomp_backbone(self, arr: dict, foldcomp_data: Optional[dict]):
+        """Patch backbone coords from Foldcomp descriptors when shape is recognizable.
+
+        Foldcomp may expose coordinates either as CA-only [L,3] or backbone [L*3,3]
+        in N,CA,C order. This method updates available arrays in-place and keeps
+        safe fallbacks when the payload is incompatible.
+        """
+        if not foldcomp_data:
+            return
+
+        coords = np.asarray(foldcomp_data.get('coordinates', []), dtype=np.float32)
+        if coords.size == 0:
+            return
+        if coords.ndim == 1:
+            if coords.size % 3 != 0:
+                return
+            coords = coords.reshape(-1, 3)
+        if coords.ndim != 2 or coords.shape[1] != 3:
+            return
+
+        length = arr['ca'].shape[0]
+        if coords.shape[0] == length:
+            arr['ca'] = coords.astype(np.float32)
+            return
+
+        if coords.shape[0] == length * 3:
+            bb = coords.reshape(length, 3, 3).astype(np.float32)
+            n_xyz = bb[:, 0, :]
+            ca_xyz = bb[:, 1, :]
+            c_xyz = bb[:, 2, :]
+
+            arr['n'] = n_xyz
+            arr['ca'] = ca_xyz
+            arr['c'] = c_xyz
+
+            cb = []
+            for i in range(length):
+                cb.append(_pseudo_cb_from_ca_n_c(ca_xyz[i], n_xyz[i], c_xyz[i]))
+            arr['cb'] = np.asarray(cb, dtype=np.float32)
+
+    @staticmethod
     def _angles_to_ss_onehot(phi_psi_omega: np.ndarray) -> np.ndarray:
         length = phi_psi_omega.shape[0]
         ss = np.zeros((length, 3), dtype=np.float32)
+        helix_phi_min = -2.792526803190927
+        helix_phi_max = -0.3490658503988659
+        helix_psi_min = -1.5707963267948966
+        helix_psi_max = 0.7853981633974483
+        sheet_phi_min = -np.pi
+        sheet_phi_max = -0.6981317007977318
+        sheet_psi_hi = 1.5707963267948966
+        sheet_psi_lo = -2.0943951023931953
         for i in range(length):
             phi = float(phi_psi_omega[i, 0])
             psi = float(phi_psi_omega[i, 1])
 
-            if (-160.0 <= phi <= -20.0) and (-90.0 <= psi <= 45.0):
+            if (helix_phi_min <= phi <= helix_phi_max) and (helix_psi_min <= psi <= helix_psi_max):
                 ss[i, 0] = 1.0
-            elif (-180.0 <= phi <= -40.0) and (psi >= 90.0 or psi <= -120.0):
+            elif (sheet_phi_min <= phi <= sheet_phi_max) and (psi >= sheet_psi_hi or psi <= sheet_psi_lo):
                 ss[i, 1] = 1.0
             else:
                 ss[i, 2] = 1.0
@@ -618,7 +763,7 @@ class PDB2PyG:
         ionic_cutoff: float = 6.0,
         disulfide_cutoff: float = 2.5,
         hbond_cutoff: float = 3.5,
-        hbond_angle_cutoff: float = 120.0,
+        hbond_angle_cutoff: float = 2.0943951023931953,
     ):
         """
         Compute various bond type maps between residues.
@@ -661,10 +806,10 @@ class PDB2PyG:
         # Contacts: close in 3D, but not immediate sequence neighbors.
         contact_mask = (cb_dmat > 1e-8) & (cb_dmat <= contact_cutoff)
         
-        # Vectorized angle computation for H-bonds
-        # For H-bond from N[i] to O[j], check angle at N: C[i-1]-N[i]-O[j]
-        # This approximates the N-H...O angle without explicit H positions
-        cos_angle_cutoff = np.cos(np.radians(180.0 - hbond_angle_cutoff))
+        # For H-bond from N[i] to O[j], check angle at N: C[i-1]-N[i]-O[j].
+        # Uses radians.
+        hbond_angle_cutoff_rad = hbond_angle_cutoff
+        cos_angle_cutoff = np.cos(np.pi - hbond_angle_cutoff_rad)
         
         for i in range(length):
             for j in range(length):
@@ -812,7 +957,7 @@ class PDB2PyG:
         
         return r_true, t_true, q_true
 
-    def create_features(self, pdb_file: str, distance_cutoff: float = 8.0):
+    def create_features(self, pdb_file: Union[str, bytes, bytearray], distance_cutoff: float = 8.0, foldcomp_data: Optional[dict] = None):
         st = self.read_structure(pdb_file)
         if len(st) == 0:
             return None
@@ -826,7 +971,12 @@ class PDB2PyG:
         if arr is None:
             return None
 
-        angles = self._gemmi_angles(chain, residues)
+        # Use Foldcomp backbone descriptors directly when available.
+        self._apply_foldcomp_backbone(arr, foldcomp_data)
+
+        angles = self._angles_from_foldcomp(foldcomp_data, chain.name, residues)
+        if angles is None:
+            angles = self._gemmi_angles(chain, residues)
         if len(angles) == 0:
             return None
 
@@ -913,19 +1063,26 @@ class PDB2PyG:
 
     def struct2pyg(self, pdbchain, identifier=None, include_chain=False, verbose=False, compute_hbonds=True, **kwargs):
         del verbose
-        del kwargs
         del compute_hbonds
 
-        if not isinstance(pdbchain, str):
-            raise ValueError('pdbgraphmk2 expects pdbchain as a path string')
+        foldcomp_data = kwargs.pop('foldcomp_data', None)
+        del kwargs
 
-        feat = self.create_features(pdbchain)
+        if not isinstance(pdbchain, (str, bytes, bytearray)):
+            raise ValueError('pdbgraphmk2 expects pdbchain as a path string or PDB/FCZ bytes payload')
+
+        feat = self.create_features(pdbchain, foldcomp_data=foldcomp_data)
         if feat is None:
             return None
 
         data = HeteroData()
         if identifier is None:
-            identifier = feat['identifier'] if include_chain else Path(pdbchain).stem
+            if include_chain:
+                identifier = feat['identifier']
+            elif isinstance(pdbchain, str) and '\n' not in pdbchain:
+                identifier = Path(pdbchain).stem
+            else:
+                identifier = feat['identifier']
         data.identifier = identifier
 
         angles = feat['angles'].drop(['single_letter_code'], axis=1)
@@ -1202,4 +1359,193 @@ class StructureDataset(Dataset):
                 if 'edge_attr' in edge_group:
                     hetero_data[edge_type].edge_attr = torch.tensor(edge_group['edge_attr'][:])
 
+        return hetero_data
+
+
+def _load_foldcomp_ids(db_path: str) -> list[str]:
+    lookup_path = f'{db_path}.lookup'
+    if not os.path.exists(lookup_path):
+        raise FileNotFoundError(f'Foldcomp lookup file not found: {lookup_path}')
+
+    ids = []
+    with open(lookup_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            ids.append(parts[1])
+    return ids
+
+
+class FoldcompStructureDataset(Dataset):
+    """On-the-fly PyG dataset backed by a Foldcomp database.
+
+    Each item is converted lazily using PDB2PyG without pre-generating an HDF5 file.
+    """
+
+    def __init__(
+        self,
+        foldcomp_db: str,
+        ids: Optional[list[str]] = None,
+        converter: Optional[PDB2PyG] = None,
+        cache_size: int = 64,
+        persistent_db: bool = False,
+        persistent_window: int = 32,
+    ):
+        super().__init__()
+        if foldcomp is None:
+            raise RuntimeError('foldcomp is required for FoldcompStructureDataset')
+
+        self.foldcomp_db = foldcomp_db
+        self.converter = converter if converter is not None else PDB2PyG()
+        self.ids = ids if ids is not None else _load_foldcomp_ids(foldcomp_db)
+        self.cache_size = max(0, int(cache_size))
+        self._graph_cache = OrderedDict()
+        self.persistent_db = bool(persistent_db)
+        self.persistent_window = max(1, int(persistent_window))
+        self._getitem_buffer = OrderedDict()
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __iter__(self):
+        for idx in range(len(self)):
+            yield self[idx]
+
+    def _fetch_pdb_by_id(self, entry_id: str):
+        assert foldcomp is not None
+        with foldcomp.open(self.foldcomp_db, ids=[entry_id]) as db:
+            for name, pdb in db:
+                return name, pdb
+        return None, None
+
+    def _resolve_entry_id(self, idx) -> str:
+        if isinstance(idx, str):
+            return idx
+        return self.ids[int(idx)]
+
+    def _cache_get(self, entry_id: str):
+        if self.cache_size <= 0:
+            return None
+        graph = self._graph_cache.get(entry_id)
+        if graph is not None:
+            self._graph_cache.move_to_end(entry_id)
+        return graph
+
+    def _cache_put(self, entry_id: str, graph):
+        if self.cache_size <= 0:
+            return
+        self._graph_cache[entry_id] = graph
+        self._graph_cache.move_to_end(entry_id)
+        while len(self._graph_cache) > self.cache_size:
+            self._graph_cache.popitem(last=False)
+
+    def _buffer_get(self, entry_id: str):
+        graph = self._getitem_buffer.get(entry_id)
+        if graph is not None:
+            self._getitem_buffer.move_to_end(entry_id)
+        return graph
+
+    def _buffer_put(self, entry_id: str, graph):
+        self._getitem_buffer[entry_id] = graph
+        self._getitem_buffer.move_to_end(entry_id)
+        while len(self._getitem_buffer) > self.persistent_window:
+            self._getitem_buffer.popitem(last=False)
+
+    def _build_graph_from_pdb(self, entry_id: str, name: str, pdb):
+        # Build graph directly from Foldcomp descriptors/PDB content; no temporary files needed.
+        assert foldcomp is not None
+        try:
+            fc_data = foldcomp.get_data(pdb)
+        except Exception:
+            fc_data = None
+        hetero_data = self.converter.struct2pyg(pdb, identifier=name, foldcomp_data=fc_data)
+        if hetero_data is None:
+            raise ValueError(f'Graph conversion failed for foldcomp entry: {entry_id}')
+        return hetero_data
+
+    def _prefetch_window(self, idx: int):
+        assert foldcomp is not None
+        if idx < 0 or idx >= len(self.ids):
+            return
+
+        upper = min(len(self.ids), idx + self.persistent_window)
+        candidate_ids = self.ids[idx:upper]
+        missing = []
+        for entry_id in candidate_ids:
+            if self._cache_get(entry_id) is not None:
+                continue
+            if self._buffer_get(entry_id) is not None:
+                continue
+            missing.append(entry_id)
+
+        if not missing:
+            return
+
+        with foldcomp.open(self.foldcomp_db, ids=missing) as db:
+            for name, pdb in db:
+                key = name[:-4] if name.endswith('.pdb') else name
+                graph = self._build_graph_from_pdb(key, name, pdb)
+                self._buffer_put(key, graph)
+                self._cache_put(key, graph)
+
+    def get_many(self, items):
+        """Fetch and convert multiple entries with a single foldcomp DB open call.
+
+        items can be a sequence of integer indices and/or entry-id strings.
+        """
+        entry_ids = [self._resolve_entry_id(item) for item in items]
+
+        results = {}
+        missing = []
+        for entry_id in entry_ids:
+            cached = self._cache_get(entry_id)
+            if cached is not None:
+                results[entry_id] = cached
+            else:
+                missing.append(entry_id)
+
+        if missing:
+            assert foldcomp is not None
+            with foldcomp.open(self.foldcomp_db, ids=missing) as db:
+                for name, pdb in db:
+                    key = name[:-4] if name.endswith('.pdb') else name
+                    graph = self._build_graph_from_pdb(key, name, pdb)
+                    results[key] = graph
+                    self._cache_put(key, graph)
+
+            not_found = [entry_id for entry_id in missing if entry_id not in results]
+            if not_found:
+                raise KeyError(f'Entries not found in foldcomp DB: {not_found[:5]}')
+
+        return [results[entry_id] for entry_id in entry_ids]
+
+    def __getitem__(self, idx):
+        idx_pos = None if isinstance(idx, str) else int(idx)
+        entry_id = self._resolve_entry_id(idx)
+
+        cached = self._cache_get(entry_id)
+        if cached is not None:
+            return cached
+
+        buffered = self._buffer_get(entry_id)
+        if buffered is not None:
+            return buffered
+
+        if self.persistent_db and idx_pos is not None:
+            self._prefetch_window(idx_pos)
+            buffered = self._buffer_get(entry_id)
+            if buffered is not None:
+                return buffered
+
+        name, pdb = self._fetch_pdb_by_id(entry_id)
+        if pdb is None:
+            raise KeyError(f'Entry not found in foldcomp DB: {entry_id}')
+
+        hetero_data = self._build_graph_from_pdb(entry_id, name, pdb)
+        self._buffer_put(entry_id, hetero_data)
+        self._cache_put(entry_id, hetero_data)
         return hetero_data

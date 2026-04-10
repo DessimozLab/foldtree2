@@ -1198,7 +1198,7 @@ def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 ,
 	return ss_loss
 
 	
-def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_thresh = 0.3 , normalize = False , convert_to_radians = True):
+def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_thresh = 0.3 , normalize = False):
 	"""Compute backbone dihedral angle reconstruction loss with circular distance.
 	
 	This loss trains the decoder to predict protein backbone torsion angles (phi, psi, omega)
@@ -1237,19 +1237,14 @@ def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_
 		... )
 	
 	Note:
-		Angles are computed from PDB coordinates during preprocessing using
-		BioPython's calc_dihedral function. They represent protein backbone geometry.
-		Circular distance is essential because 179° and -179° are actually very close!
+		Angles are expected in radians throughout the training path.
+		Circular distance is essential because angles near +π and -π are actually very close.
 	
 	Reference:
 		Smooth L1 (Huber) loss: Girshick, R. (2015). Fast R-CNN. ICCV.
 	"""
 	# Compute circular angular difference in [-π, π]
-	# atan2 correctly handles the wrap-around at ±180°
-
-	if convert_to_radians:
-		true = true * (torch.pi / 180.0)
-		pred = pred * (torch.pi / 180.0)
+	# atan2 correctly handles the wrap-around at ±pi
 
 	delta = torch.atan2(torch.sin(pred - true), torch.cos(pred - true))
 	

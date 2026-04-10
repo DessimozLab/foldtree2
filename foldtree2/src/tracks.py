@@ -301,7 +301,7 @@ def make_bin_alphabet(n_bins: int) -> str:
 def make_bend_bins(ca_xyz: np.ndarray, n_bins: int = 8) -> np.ndarray:
     """
     CA bend angle bins per residue.
-    Angle at i uses CA(i-1)-CA(i)-CA(i+1), then digitized to 8 bins over 0..180.
+    Angle at i uses CA(i-1)-CA(i)-CA(i+1), then digitized to bins over [0, pi].
     Ends are padded from nearest valid interior value.
     """
     L = ca_xyz.shape[0]
@@ -316,17 +316,17 @@ def make_bend_bins(ca_xyz: np.ndarray, n_bins: int = 8) -> np.ndarray:
     denom = np.maximum(n1 * n2, 1e-8)
     cosang = np.sum(v1 * v2, axis=1) / denom
     cosang = np.clip(cosang, -1.0, 1.0)
-    ang = np.degrees(np.arccos(cosang)).astype(np.float32)
+    ang = np.arccos(cosang).astype(np.float32)
 
     out[1:-1] = ang
     out[0] = ang[0]
     out[-1] = ang[-1]
 
-    bend_edges = np.linspace(0.0, 180.0, n_bins + 1, dtype=np.float32)[1:-1].tolist()
+    bend_edges = np.linspace(0.0, np.pi, n_bins + 1, dtype=np.float32)[1:-1].tolist()
     return digitize_to_uint(out, bend_edges)
 
 
-def _dihedral_deg(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
+def _dihedral_rad(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
     b0 = p1 - p0
     b1 = p2 - p1
     b2 = p3 - p2
@@ -346,14 +346,14 @@ def _dihedral_deg(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray
 
     x = np.dot(v, w)
     y = np.dot(np.cross(b1u, v), w)
-    return float(np.degrees(np.arctan2(y, x)))
+    return float(np.arctan2(y, x))
 
 
 def make_torsion_bins(ca_xyz: np.ndarray, n_bins: int = 12) -> np.ndarray:
     """
     CA pseudo-dihedral bins per residue.
     Dihedral uses quadruplets CA(i-1),CA(i),CA(i+1),CA(i+2), assigned to residue i.
-    Ends are padded from nearest valid interior value, then digitized to 8 bins over 360°.
+    Ends are padded from nearest valid interior value, then digitized to bins over [0, 2pi].
     """
     L = ca_xyz.shape[0]
     out = np.zeros(L, dtype=np.float32)
@@ -361,14 +361,14 @@ def make_torsion_bins(ca_xyz: np.ndarray, n_bins: int = 12) -> np.ndarray:
         return np.zeros(L, dtype=np.uint8)
 
     for i in range(L - 3):
-        out[i + 1] = _dihedral_deg(ca_xyz[i], ca_xyz[i + 1], ca_xyz[i + 2], ca_xyz[i + 3])
+        out[i + 1] = _dihedral_rad(ca_xyz[i], ca_xyz[i + 1], ca_xyz[i + 2], ca_xyz[i + 3])
 
     out[0] = out[1]
     out[-2] = out[L - 3]
     out[-1] = out[L - 3]
 
-    wrapped = (out + 180.0) % 360.0
-    torsion_edges = np.linspace(0.0, 360.0, n_bins + 1, dtype=np.float32)[1:-1].tolist()
+    wrapped = (out + np.pi) % (2.0 * np.pi)
+    torsion_edges = np.linspace(0.0, 2.0 * np.pi, n_bins + 1, dtype=np.float32)[1:-1].tolist()
     return digitize_to_uint(wrapped, torsion_edges)
 
 

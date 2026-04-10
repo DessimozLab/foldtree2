@@ -50,7 +50,8 @@ dependencies = [
   "pydssp",
   "ete3",
   "pyyaml",
-  "ProDy"
+  "ProDy",
+  "foldcomp"
 ]
 
 [project.scripts]
@@ -62,6 +63,7 @@ hex2maffttext = "foldtree2.mafft_wrappers:hex2maffttext_main"
 maffttext2hex = "foldtree2.mafft_wrappers:maffttext2hex_main"
 mad = "foldtree2.mafft_wrappers:mad_main"
 raxml-ng = "foldtree2.mafft_wrappers:raxml_ng_main"
+foldcomp2fasta = "foldtree2.foldcomp2fasta:main"
 
 [tool.setuptools.packages.find]
 where = ["." , "src", "scripts"]

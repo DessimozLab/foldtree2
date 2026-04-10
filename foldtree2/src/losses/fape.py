@@ -334,40 +334,23 @@ def quaternion_to_rotation_matrix(quat):
 
 def compute_chain_positions(quaternions, translations, reference_coords=None):
 	"""
-	Apply rotation (quaternion) and translation to a set of 3D reference coordinates using PyTorch.
+	Build chain coordinates from quaternion + translation predictions.
 	
 	Parameters:
 	- quaternions: (N, 4) tensor of quaternions (w, x, y, z) - scalar first
-	- translations: (N, 3) tensor of translations (tx, ty, tz)
+	- translations: (N, 3) tensor of per-step translations
 	- reference_coords: (M, 3) tensor of reference points (default is [[0, 0, 0]])
 	
 	Returns:
-	- transformed_coords: (N, 3) tensor of transformed coordinates
+	- transformed_coords: (N, 3) tensor of reconstructed coordinates
 	"""
-	device = quaternions.device
-	quaternions = quaternions / quaternions.norm(dim=-1, keepdim=True)  # Normalize quaternions
-	
-	if reference_coords is None:
-		reference_coords = torch.zeros(1, 3, device=device)
-	
-	N = quaternions.shape[0]
-	
-	w, x, y, z = quaternions.unbind(-1)
-	
-	# Rotation matrix components
-	R = torch.stack([
-		1 - 2*(y**2 + z**2), 2*(x*y - z*w),     2*(x*z + y*w),
-		2*(x*y + z*w),     1 - 2*(x**2 + z**2), 2*(y*z - x*w),
-		2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x**2 + y**2)
-	], dim=-1).reshape(N, 3, 3)
-	
-	# Apply rotation to reference coordinates (take first point if multiple)
-	rotated = torch.matmul(reference_coords[0:1], R.transpose(1,2)).squeeze(0)  # (N, 3)
-	
-	# Apply translation
-	transformed_coords = rotated + translations
-	
-	return transformed_coords
+	if reference_coords is not None:
+		# Legacy argument kept for API compatibility. Chain reconstruction does not
+		# use an external reference point.
+		pass
+	R = quaternion_to_rotation_matrix(quaternions)
+	# For generic RT chain predictions, translations are interpreted in local frame.
+	return reconstruct_positions(R, translations, translation_frame='local', include_origin=False)
 
 
 def compute_chain_positions_rotmat(rotations, translations):
@@ -381,37 +364,14 @@ def compute_chain_positions_rotmat(rotations, translations):
 	Returns:
 		Tensor: Shape (*, N, 3) global coordinates for each position
 	"""
-	# Handle batched or unbatched input
-	orig_shape = rotations.shape[:-2]
 	if rotations.ndim == 3:
-		rotations = rotations.unsqueeze(0)
-		translations = translations.unsqueeze(0)
+		return reconstruct_positions(rotations, translations, translation_frame='local', include_origin=False)
 
-	batch_size = rotations.shape[0]
-	N = rotations.shape[1]
-	positions = []
-
-	for b in range(batch_size):
-		# Initialize starting position and rotation
-		global_R = torch.eye(3, dtype=rotations.dtype, device=rotations.device)
-		curr_pos = torch.zeros(3, dtype=translations.dtype, device=translations.device)
-		chain_positions = []
-
-		for i in range(N):
-			chain_positions.append(curr_pos.clone())
-			# Update global rotation and position
-			global_R = torch.matmul(global_R, rotations[b, i])
-			curr_pos = curr_pos + torch.matmul(global_R, translations[b, i])
-
-		positions.append(torch.stack(chain_positions))
-
-	positions = torch.stack(positions)
-	
-	# Return to original shape if unbatched input
-	if len(orig_shape) == 1:
-		positions = positions.squeeze(0)
-		
-	return positions
+	# Batched input: process each structure and stack
+	coords = []
+	for b in range(rotations.shape[0]):
+		coords.append(reconstruct_positions(rotations[b], translations[b], translation_frame='local', include_origin=False))
+	return torch.stack(coords, dim=0)
 
 
 
@@ -466,13 +426,14 @@ def transform_rt_to_coordinates(rotations, translations):
 	"""
 	Convert R, t matrices into global 3D coordinates.
 	"""
-	batch_size, num_residues, _ = rotations.shape
-	coords = torch.zeros((batch_size, num_residues, 3), device=rotations.device)
-	for b in range(batch_size):
-		transform = torch.eye(4, device=rotations.device)
-		for i in range(num_residues):
-			pass  # Implementation needed
-	return coords
+	if rotations.ndim == 3:
+		return reconstruct_positions(rotations, translations, translation_frame='local', include_origin=False)
+	if rotations.ndim != 4:
+		raise ValueError(f"Expected rotations ndim 3 or 4, got {rotations.ndim}")
+	coords = []
+	for b in range(rotations.shape[0]):
+		coords.append(reconstruct_positions(rotations[b], translations[b], translation_frame='local', include_origin=False))
+	return torch.stack(coords, dim=0)
 
 
 # ============================================================================
@@ -937,36 +898,60 @@ def rotation_matrix_to_quaternion(rot_matrices):
 	return quat
 
 
-def reconstruct_positions(R, T , batch_idx=None):
+def reconstruct_positions(R, T, batch_idx=None, translation_frame='global', include_origin=True):
 	"""
-	Reconstruct 3D CA positions from CA-to-CA displacement vectors.
+	Reconstruct CA positions from rotations and translations.
 
-	T[i] = CA[i+1] - CA[i] in the global frame, so positions are simply the
-	cumulative sum of translations starting from the origin.  The rotation
-	matrices R are kept as a parameter for API compatibility but are not used
-	here — they represent the *local frame orientation*, not a transform that
-	should be applied to global-frame displacements.
+	Supports two translation conventions:
+	- `global`: T[i] is already in global frame (e.g., CA[i+1] - CA[i]).
+	- `local`:  T[i] is in the current local frame and must be rotated into
+	  global coordinates as the chain is composed.
 
 	Args:
-		R (torch.Tensor): Local rotation matrices, shape (N, 3, 3)  [unused]
-		T (torch.Tensor): CA-to-CA displacement vectors, shape (N, 3)
+		R (torch.Tensor): Rotation matrices, shape (N, 3, 3).
+		T (torch.Tensor): Translation vectors, shape (N, 3).
+		batch_idx (torch.Tensor, optional): Per-residue batch indices (N,).
+		translation_frame (str): 'global' or 'local'.
+		include_origin (bool): If True, prepend origin row for each chain.
 
 	Returns:
-		torch.Tensor: Reconstructed CA positions of shape (N+1, 3), starting
-		              from the origin.
+		torch.Tensor:
+			- Unbatched: (N+1, 3) if include_origin else (N, 3)
+			- Batched: concatenation of per-chain outputs in batch order.
 	"""
-	if batch_idx is not None:
-		# Handle batched input
-		unique_batches = batch_idx.unique()
-		positions = []
-		for b in unique_batches:
-			mask = batch_idx == b
-			T_b = T[mask]
-			origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
-			positions.append(torch.cat([origin, torch.cumsum(T_b, dim=0)], dim=0))
-		return torch.cat(positions, dim=0)
-	else:
-		origin = torch.zeros(1, 3, dtype=T.dtype, device=T.device)
-		return torch.cat([origin, torch.cumsum(T, dim=0)], dim=0)
+	if translation_frame not in ('global', 'local'):
+		raise ValueError(f"Unknown translation_frame: {translation_frame}")
+
+	def _reconstruct_single(R_s, T_s):
+		if translation_frame == 'global':
+			pos_no_origin = torch.cumsum(T_s, dim=0)
+		else:
+			# Compose rigid transforms along chain: x_{i+1} = x_i + R_global @ t_i
+			N = T_s.shape[0]
+			curr_pos = torch.zeros(3, dtype=T_s.dtype, device=T_s.device)
+			curr_R = torch.eye(3, dtype=T_s.dtype, device=T_s.device)
+			positions = []
+			for i in range(N):
+				step_global = curr_R @ T_s[i]
+				curr_pos = curr_pos + step_global
+				positions.append(curr_pos.clone())
+				curr_R = curr_R @ R_s[i]
+			pos_no_origin = torch.stack(positions, dim=0) if positions else T_s.new_zeros((0, 3))
+
+		if include_origin:
+			origin = torch.zeros(1, 3, dtype=T_s.dtype, device=T_s.device)
+			return torch.cat([origin, pos_no_origin], dim=0)
+		return pos_no_origin
+
+	if batch_idx is None:
+		return _reconstruct_single(R, T)
+
+	outs = []
+	for b in torch.unique(batch_idx):
+		mask = batch_idx == b
+		outs.append(_reconstruct_single(R[mask], T[mask]))
+	if len(outs) == 0:
+		return torch.zeros((0, 3), dtype=T.dtype, device=T.device)
+	return torch.cat(outs, dim=0)
 
 

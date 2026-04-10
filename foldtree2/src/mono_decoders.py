@@ -274,8 +274,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		if self.angles_mlp is not None:
 			angles = self.angles_mlp( z )
-			#tanh is -1 to 1, multiply by 180 to get angles in degrees
-			angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
+			angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 
 		if contact_pred_index is None:
 			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
@@ -581,7 +580,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		angles = None
 		if 'angles_mlp' in self.head:
 			angles = self.head['angles_mlp'](z)
-			angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
+			angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 		
 		# Contact prediction
 		edge_logits = None
@@ -1350,7 +1349,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					if self.output_angles and 'angles_cnn' in self.head:
 						angles_out = self.head['angles_cnn'](xi_cnn)  # (1, 3, seq_len)
 						angles_out = angles_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
-						angles_out = angles_out * 180  # Scale from [-1, 1] to [-180, 180]
+						angles_out = angles_out * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 						angles_list.append(angles_out)
 				else:
 					# DNN decoder path
@@ -1371,7 +1370,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
-				angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
+				angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 		else:
 			# Single graph case
 			if use_cnn:
@@ -1393,7 +1392,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				if self.output_angles and 'angles_cnn' in self.head:
 					angles = self.head['angles_cnn'](x_cnn)  # (1, 3, seq_len)
 					angles = angles.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
-					angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
+					angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 			else:
 				# DNN decoder path
 				x = x.squeeze(1)  # (seq_len, d_model)
@@ -1406,7 +1405,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				
 				if self.output_angles and 'angles_head' in self.head:
 					angles = self.head['angles_head'](x)
-					angles = angles * 180  # Scale from [-1, 1] to [-180, 180]
+					angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 		
 		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
 		if rt_pred is not None:

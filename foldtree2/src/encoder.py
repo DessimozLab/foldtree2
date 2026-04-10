@@ -284,9 +284,22 @@ class mk1_Encoder(torch.nn.Module):
 		for i, convs in enumerate(self.body['convs']):
 			# Apply graph convolutions and average over all edge types
 			if edge_attr_dict is not None:
-				x_list = [conv(x, edge_index=edge_index_dict[tuple(edge_type.split('_'))], 
-							  edge_attr = edge_attr_dict[tuple(edge_type.split('_') )] ) 
-						 for edge_type, conv in convs.items()]
+				x_list = []
+				for edge_type, conv in convs.items():
+					edge_key = tuple(edge_type.split('_'))
+					edge_attr = edge_attr_dict[edge_key]
+
+					# Normalize edge attributes to [num_edges, edge_dim] for TransformerConv.
+					if edge_attr is not None and edge_attr.dim() == 1:
+						edge_attr = edge_attr.unsqueeze(-1)
+					if edge_attr is not None and edge_attr.size(-1) != self.edge_dim:
+						if edge_attr.size(-1) > self.edge_dim:
+							edge_attr = edge_attr[:, :self.edge_dim]
+						else:
+							pad_cols = self.edge_dim - edge_attr.size(-1)
+							edge_attr = F.pad(edge_attr, (0, pad_cols))
+
+					x_list.append(conv(x, edge_index=edge_index_dict[edge_key], edge_attr=edge_attr))
 			else:
 				x_list = [conv(x, edge_index=edge_index_dict[tuple(edge_type.split('_'))]) 
 						 for edge_type, conv in convs.items()]
