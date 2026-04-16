@@ -21,6 +21,17 @@ from foldtree2.src.layers import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 
+
+def _sincos_logits_to_angles(logits: torch.Tensor, eps: float = EPS) -> torch.Tensor:
+	"""Convert paired sin/cos logits into angles in radians.
+
+	The head predicts 6 channels ordered as [sin(phi), cos(phi), sin(psi), cos(psi), sin(omega), cos(omega)].
+	Each pair is normalized onto the unit circle before applying atan2.
+	"""
+	pairs = logits.view(*logits.shape[:-1], 3, 2)
+	pairs = pairs / pairs.norm(dim=-1, keepdim=True).clamp_min(eps)
+	return torch.atan2(pairs[..., 0], pairs[..., 1])
+
 #encoder super class
 
 
@@ -187,8 +198,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1] ) ,
 				torch.nn.GELU(),
-				torch.nn.Linear(anglesdecoder_hidden[1], 3) ,
-				torch.nn.Tanh()
+				torch.nn.Linear(anglesdecoder_hidden[1], 6)
 
 			)
 		else:
@@ -273,8 +283,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 		edge_logits = None
 
 		if self.angles_mlp is not None:
-			angles = self.angles_mlp( z )
-			angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
+			angles = _sincos_logits_to_angles(self.angles_mlp(z))
 
 		if contact_pred_index is None:
 			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
@@ -456,8 +465,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 				nn.GELU(),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
 				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[1], 3),
-				nn.Tanh()
+				nn.Linear(anglesdecoder_hidden[1], 6)
 			)
 		
 		# Edge logits prediction
@@ -579,8 +587,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 		# Bond angles prediction
 		angles = None
 		if 'angles_mlp' in self.head:
-			angles = self.head['angles_mlp'](z)
-			angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
+			angles = _sincos_logits_to_angles(self.head['angles_mlp'](z))
 		
 		# Contact prediction
 		edge_logits = None
@@ -589,6 +596,8 @@ class CNN_geo_Decoder(torch.nn.Module):
 					'rt_pred': None, 'angles': angles, 'edge_logits': edge_logits, 
 					'ss_pred': ss_pred, 'z': z}
 		else:
+			#https://arxiv.org/pdf/1709.05454
+			#Statistical inference on random dot product graphs: a survey
 			score = self.contact_temp * (znorm[contact_pred_index[0]] * znorm[contact_pred_index[1]]).sum(dim=-1) + self.contact_bias
 			edge_probs = self.sigmoid(score)
 			#make sure to clamp edge_probs to avoid log(0) in loss
@@ -1250,8 +1259,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					nn.GELU(),
 					nn.Conv1d(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], kernel_size=3, padding=1),
 					nn.GELU(),
-					nn.Conv1d(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3, kernel_size=1),
-					nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
+					nn.Conv1d(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 6, kernel_size=1)
 				)
 			else:
 				self.head['angles_head'] = nn.Sequential(
@@ -1261,8 +1269,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					nn.GELU(),
 					nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
 					nn.GELU(),
-					nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 3),
-					nn.Tanh()  # Output in [-1, 1], will be scaled to [-π, π]
+					nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], 6)
 				)
 
 	def forward(self, data, contact_pred_index=None, **kwargs):
@@ -1347,9 +1354,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					
 					# Angles prediction with CNN
 					if self.output_angles and 'angles_cnn' in self.head:
-						angles_out = self.head['angles_cnn'](xi_cnn)  # (1, 3, seq_len)
-						angles_out = angles_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
-						angles_out = angles_out * torch.pi  # Scale from [-1, 1] to [-pi, pi]
+						angles_out = self.head['angles_cnn'](xi_cnn)  # (1, 6, seq_len)
+						angles_out = angles_out.permute(2, 0, 1).squeeze(1)  # (seq_len, 6)
+						angles_out = _sincos_logits_to_angles(angles_out)
 						angles_list.append(angles_out)
 				else:
 					# DNN decoder path
@@ -1362,7 +1369,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 						ss_list.append(self.head['ss_head'](xi))
 					
 					if self.output_angles and 'angles_head' in self.head:
-						angles_list.append(self.head['angles_head'](xi))
+						angles_list.append(_sincos_logits_to_angles(self.head['angles_head'](xi)))
 			
 			if rt_list:
 				rt_pred = torch.cat(rt_list, dim=0)
@@ -1370,7 +1377,6 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
-				angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
 		else:
 			# Single graph case
 			if use_cnn:
@@ -1390,9 +1396,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				
 				# Angles prediction with CNN
 				if self.output_angles and 'angles_cnn' in self.head:
-					angles = self.head['angles_cnn'](x_cnn)  # (1, 3, seq_len)
-					angles = angles.permute(2, 0, 1).squeeze(1)  # (seq_len, 3)
-					angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
+					angles = self.head['angles_cnn'](x_cnn)  # (1, 6, seq_len)
+					angles = angles.permute(2, 0, 1).squeeze(1)  # (seq_len, 6)
+					angles = _sincos_logits_to_angles(angles)
 			else:
 				# DNN decoder path
 				x = x.squeeze(1)  # (seq_len, d_model)
@@ -1404,8 +1410,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					ss_pred = self.head['ss_head'](x)
 				
 				if self.output_angles and 'angles_head' in self.head:
-					angles = self.head['angles_head'](x)
-					angles = angles * torch.pi  # Scale from [-1, 1] to [-pi, pi]
+					angles = _sincos_logits_to_angles(self.head['angles_head'](x))
 		
 		# Normalize quaternion part (first 4 dims) of rt_pred for proper geometry
 		if rt_pred is not None:
