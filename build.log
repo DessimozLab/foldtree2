@@ -1,0 +1,97 @@
+Adding in variants from internal_defaults
+WARNING: No numpy version specified in conda_build_config.yaml.  Falling back to default numpy value of 1.22
+WARNING: Number of parsed outputs does not match detected raw metadata blocks. Identified output block may be wrong! If you are using Jinja conditionals to include or exclude outputs, consider using `skip: true  # [condition]` instead.
+Attempting to finalize metadata for foldtree2
+Reloading output folder: ...working... done
+Getting pinned dependencies: ...working... done
+Reloading output folder: ...working... done
+Getting pinned dependencies: ...working... done
+BUILD START: ['foldtree2-0.1.0-py_0.conda']
+Reloading output folder: ...working... done
+Solving environment (_h_env): ...working... done
+
+## Package Plan ##
+
+  environment location: /tmp/conda-bld/foldtree2_1770127601263/_h_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold
+
+
+The following NEW packages will be INSTALLED:
+
+    _libgcc_mutex:    0.1-conda_forge           conda-forge
+    _openmp_mutex:    4.5-2_gnu                 conda-forge
+    bzip2:            1.0.8-hda65f42_8          conda-forge
+    ca-certificates:  2026.1.4-hbd8a1cb_0       conda-forge
+    icu:              78.2-h33c6efd_0           conda-forge
+    ld_impl_linux-64: 2.45-default_hbd61a6d_105 conda-forge
+    libexpat:         2.7.3-hecca717_0          conda-forge
+    libffi:           3.5.2-h3435931_0          conda-forge
+    libgcc:           15.2.0-he0feb66_16        conda-forge
+    libgomp:          15.2.0-he0feb66_16        conda-forge
+    liblzma:          5.8.2-hb03c661_0          conda-forge
+    libmpdec:         4.0.0-hb03c661_1          conda-forge
+    libsqlite:        3.51.2-hf4e2dac_0         conda-forge
+    libstdcxx:        15.2.0-h934c35e_16        conda-forge
+    libuuid:          2.41.3-h5347b49_0         conda-forge
+    libzlib:          1.3.1-hb9d3cd8_2          conda-forge
+    ncurses:          6.5-h2d0b736_3            conda-forge
+    openssl:          3.6.1-h35e630c_1          conda-forge
+    packaging:        26.0-pyhcf101f3_0         conda-forge
+    pip:              26.0-pyh145f28c_0         conda-forge
+    python:           3.14.2-h32b2ec7_101_cp314 conda-forge
+    python_abi:       3.14-8_cp314              conda-forge
+    readline:         8.3-h853b02a_0            conda-forge
+    setuptools:       80.10.2-pyh332efcf_0      conda-forge
+    tk:               8.6.13-noxft_h366c992_103 conda-forge
+    tzdata:           2025c-hc9c84f9_1          conda-forge
+    wheel:            0.46.3-pyhd8ed1ab_0       conda-forge
+    zstd:             1.5.7-hb78ec9c_6          conda-forge
+
+Preparing transaction: ...working... done
+Verifying transaction: ...working... done
+Executing transaction: ...working... done
+Reloading output folder: ...working... done
+Solving environment (_test_env): ...working... failed
+WARNING: failed to get package records, retrying.  exception was: Unsatisfiable dependencies for platform linux-64: {MatchSpec("pydssp[version='>=1.0.0']")}
+Encountered problems while solving:
+  - unsupported request
+  - unsupported request
+  - unsupported request
+
+Could not solve for environment specs
+The following packages are incompatible
+├─ pydssp >=1.0.0 * does not exist (perhaps a typo or a missing channel);
+├─ pytorch-geometric >=2.3.0 * does not exist (perhaps a typo or a missing channel);
+└─ raxml-ng >=1.1.0 * does not exist (perhaps a typo or a missing channel).
+Reloading output folder: ...working... done
+Solving environment (_test_env): ...working... failed
+Reloading output folder: ...working... done
+Solving environment (_test_env): ...working... failed
+Reloading output folder: ...working... done
+Solving environment (_test_env): ...working... failed
+ERROR: Failed to get package records, max retries exceeded.
+
+ExplainedDependencyNeedsBuildingError: Unsatisfiable dependencies for platform linux-64: {MatchSpec("pydssp[version='>=1.0.0']")}
+Encountered problems while solving:
+  - unsupported request
+  - unsupported request
+  - unsupported request
+
+Could not solve for environment specs
+The following packages are incompatible
+├─ pydssp >=1.0.0 * does not exist (perhaps a typo or a missing channel);
+├─ pytorch-geometric >=2.3.0 * does not exist (perhaps a typo or a missing channel);
+└─ raxml-ng >=1.1.0 * does not exist (perhaps a typo or a missing channel).
+
+
+Leaving build/test directories:
+  Work:
+ /tmp/conda-bld/work 
+  Test:
+ /tmp/conda-bld/test_tmp 
+Leaving build/test environments:
+  Test:
+source activate  /tmp/conda-bld/_test_env_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehold_placehol 
+  Build:
+source activate  /tmp/conda-bld/_build_env 
+
+
