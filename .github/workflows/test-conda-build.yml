@@ -1,0 +1,216 @@
+name: Conda Validation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'foldtree2/**'
+      - 'conda-recipe/**'
+      - '.conda_build_ignore'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - '.github/workflows/test-conda-build.yml'
+      - '.github/workflows/build-conda-package.yml'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'foldtree2/**'
+      - 'conda-recipe/**'
+      - '.conda_build_ignore'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - '.github/workflows/test-conda-build.yml'
+      - '.github/workflows/build-conda-package.yml'
+
+  workflow_dispatch:  # Allow manual trigger
+
+concurrency:
+  group: conda-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: Build And Verify Conda Package
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: '3.10'
+          miniforge-variant: Mambaforge
+          use-mamba: true
+      
+      - name: Install conda-build
+        shell: bash -el {0}
+        run: |
+          mamba install -y conda-build
+      
+      - name: Test conda build
+        shell: bash -el {0}
+        run: |
+          echo "Testing conda build..."
+          conda build conda-recipe \
+            --croot /tmp/cb \
+            --prefix-length 80 \
+            --no-test
+          
+          echo "✅ Build successful!"
+          ls -lh /tmp/cb/noarch/
+      
+      - name: Verify package contents
+        shell: bash -el {0}
+        run: |
+          PACKAGE=$(ls /tmp/cb/noarch/foldtree2-*.conda)
+          echo "Package: $PACKAGE"
+          SIZE=$(du -h $PACKAGE | cut -f1)
+          echo "Size: $SIZE"
+
+          # Extract and verify
+          mkdir -p /tmp/check_pkg
+          cd /tmp/check_pkg
+
+          unzip -q "$PACKAGE" -d /tmp/check_pkg/outer
+          PKG_TAR=$(find /tmp/check_pkg/outer -maxdepth 1 -type f -name 'pkg-*.tar.*' | head -n1)
+          if [ -z "$PKG_TAR" ]; then
+            echo "❌ ERROR: Could not locate payload tar inside $PACKAGE"
+            exit 1
+          fi
+
+          case "$PKG_TAR" in
+            *.tar.zst)
+              tar --zstd -xf "$PKG_TAR"
+              ;;
+            *.tar.bz2)
+              tar -xjf "$PKG_TAR"
+              ;;
+            *.tar.gz)
+              tar -xzf "$PKG_TAR"
+              ;;
+            *.tar.xz)
+              tar -xJf "$PKG_TAR"
+              ;;
+            *)
+              echo "❌ ERROR: Unsupported payload format: $PKG_TAR"
+              exit 1
+              ;;
+          esac
+          
+          # Check for unwanted files
+          H5_COUNT=$(find . -name "*.h5" | wc -l)
+          IPYNB_COUNT=$(find . -name "*.ipynb" | wc -l)
+          PKL_COUNT=$(find . -type f -name "*.pkl" ! -path "*/models/production/*" | wc -l)
+          PT_COUNT=$(find . -type f \( -name "*.pt" -o -name "*.pth" \) ! -path "*/models/production/*" | wc -l)
+          
+          echo "Verification Results:"
+          echo "  .h5 files: $H5_COUNT (should be 0)"
+          echo "  .ipynb files: $IPYNB_COUNT (should be 0)"
+          echo "  .pkl files outside models/production: $PKL_COUNT (should be 0)"
+          echo "  .pt/.pth files outside models/production: $PT_COUNT (should be 0)"
+          
+          TOTAL_UNWANTED=$((H5_COUNT + IPYNB_COUNT + PKL_COUNT + PT_COUNT))
+          
+          if [ $TOTAL_UNWANTED -gt 0 ]; then
+            echo ""
+            echo "❌ ERROR: Package contains unwanted files!"
+            echo ""
+            echo "Found files:"
+            find . -type f \( -name "*.h5" -o -name "*.ipynb" -o -name "*.pkl" -o -name "*.pt" -o -name "*.pth" \) ! -path "*/models/production/*"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Package verification passed!"
+          
+          # Check for essential files
+          echo ""
+          echo "Checking for essential files..."
+
+          if ! find . -path "*/site-packages/foldtree2/__init__.py" | grep -q .; then
+            echo "❌ ERROR: Missing foldtree2/__init__.py"
+            exit 1
+          fi
+
+          if ! find . -path "*/site-packages/foldtree2/src/encoder.py" | grep -q .; then
+            echo "❌ ERROR: Missing foldtree2/src/encoder.py"
+            exit 1
+          fi
+
+          if ! find . -path "*/share/foldtree2/raxml-ng/raxml-ng" | grep -q .; then
+            echo "❌ ERROR: Missing bundled raxml-ng"
+            exit 1
+          fi
+
+          if ! find . -path "*/share/foldtree2/mafft_tools/hex2maffttext" | grep -q .; then
+            echo "❌ ERROR: Missing bundled MAFFT helper hex2maffttext"
+            exit 1
+          fi
+
+          if ! find . -path "*/share/foldtree2/models/production*" | grep -q .; then
+            echo "❌ ERROR: Missing models/production directory"
+            exit 1
+          fi
+          
+          echo "✅ Essential files and bundled resources present"
+      
+      - name: Test package size
+        shell: bash -el {0}
+        run: |
+          PACKAGE=$(ls /tmp/cb/noarch/foldtree2-*.conda)
+          SIZE_BYTES=$(stat -c%s "$PACKAGE")
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          
+          echo "Package size: ${SIZE_MB}MB"
+          
+          # Warn if package is too large (>50MB suggests data files leaked in)
+          if [ $SIZE_MB -gt 50 ]; then
+            echo "⚠️ WARNING: Package is larger than expected (${SIZE_MB}MB > 50MB)"
+            echo "This may indicate data files were included. Check .conda_build_ignore"
+            exit 1
+          fi
+          
+          # Warn if package is too small (<10MB suggests files missing)
+          if [ $SIZE_MB -lt 10 ]; then
+            echo "⚠️ WARNING: Package is smaller than expected (${SIZE_MB}MB < 10MB)"
+            echo "This may indicate source files are missing."
+            exit 1
+          fi
+          
+          echo "✅ Package size is reasonable"
+      
+      - name: Build summary
+        if: always()
+        shell: bash -el {0}
+        run: |
+          echo "## Build Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f /tmp/cb/noarch/foldtree2-*.conda ]; then
+            PACKAGE=$(ls /tmp/cb/noarch/foldtree2-*.conda)
+            SIZE=$(du -h $PACKAGE | cut -f1)
+            echo "✅ **Build Status:** Success" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Package Details:**" >> $GITHUB_STEP_SUMMARY
+            echo "- 📦 File: $(basename $PACKAGE)" >> $GITHUB_STEP_SUMMARY
+            echo "- 📏 Size: $SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Verification:**" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No .h5 data files" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No .ipynb notebooks" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ .pkl/.pt/.pth only under models/production" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Package size reasonable" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Essential files and bundled resources present" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build Status:** Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Package was not created. Check logs for errors." >> $GITHUB_STEP_SUMMARY
+          fi

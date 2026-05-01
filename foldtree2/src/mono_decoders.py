@@ -11,10 +11,12 @@ import scipy.sparse
 import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
+
+from foldtree2.src.xsatransformer import XSATransformerEncoderLayer
 from foldtree2.src.chebconv import StableChebConv
+
 EPS = 1e-6
 datadir = '../../datasets/foldtree2/'
-
 
 from foldtree2.src.losses import *
 from foldtree2.src.layers import *
@@ -933,6 +935,15 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			nhead=nheads, 
 			dropout=dropout
 		)
+
+		if kwargs.get('use_xsatransformer', False):
+			encoder_layer = XSATransformerEncoderLayer(
+				d_model=d_model,
+				nhead=nheads,
+				dropout=dropout,
+				batch_first=False,   # same default as nn.TransformerEncoderLayer
+			)
+
 		self.body['transformer_encoder'] = nn.TransformerEncoder(
 			encoder_layer, 
 			num_layers=layers

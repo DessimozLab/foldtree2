@@ -1,0 +1,53 @@
+# ── Stage 2: QuaternionFoldingRefiner training config ────────────────────────
+# Usage:
+#   python foldtree2/learn_folding.py --config config_folding_refiner.yaml \
+#       --encoder-path models/my_encoder_final.pt
+#
+# All values can be overridden on the command line.
+
+# ── I/O ──────────────────────────────────────────────────────────────────────
+dataset: structs_train_final.h5
+val-dataset: null                     # null → use val-split fraction
+val-split: 0.05
+# encoder-path: models/my_encoder_final.pt   # set via CLI or uncomment
+# decoder-path: models/my_decoder_final.pt   # optional coarse warm-start
+model-name: folding_refiner_v1
+output-dir: ./models
+overwrite: false
+
+# ── Refiner architecture ─────────────────────────────────────────────────────
+hidden-channels: 512      # Transformer d_model; bump to 1024 for very large runs
+nheads: 8
+nlayers: 8
+dropout: 0.05
+out-angles: false         # set true to add a backbone angle head
+max-refinement-steps: 4   # unrolling steps during the forward pass
+convergence-tol: 1.0e-4
+min-refinement-steps: 1
+
+# ── Loss weights ─────────────────────────────────────────────────────────────
+fape-weight: 1.0
+rt-weight: 0.1            # geodesic rotation + translation L1
+angles-weight: 0.0        # set > 0 when out-angles is true
+step-discount: 0.85       # geometric weight across unrolling steps
+
+# ── Training ─────────────────────────────────────────────────────────────────
+epochs: 500
+batch-size: 8
+learning-rate: 3.0e-4
+weight-decay: 1.0e-4
+warmup-ratio: 0.05
+lr-schedule: cosine       # cosine | linear | none
+clip-grad: true
+accumulate-grad-batches: 4
+num-workers: 8
+
+# ── pLDDT masking ────────────────────────────────────────────────────────────
+mask-plddt: true
+plddt-threshold: 0.7
+
+# ── Hardware ─────────────────────────────────────────────────────────────────
+gpus: 4
+mixed-precision: true
+strategy: ddp             # auto | ddp | ddp_find_unused_parameters_true
+seed: 42

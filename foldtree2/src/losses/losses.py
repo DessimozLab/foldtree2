@@ -26,6 +26,7 @@ Example:
 
 import torch
 import torch.nn.functional as F
+from typing import Optional
 from torch import Tensor
 from torch_geometric.utils import negative_sampling , batched_negative_sampling
 from foldtree2.src.losses.fape import  reconstruct_positions, quaternion_to_rotation_matrix , delta_loss
@@ -469,7 +470,7 @@ from torch_geometric.utils import batched_negative_sampling
 EPS = 1e-8
 
 
-def embedding_norm_regularizer(z: Tensor, target_norm: float | None = None) -> Tensor:
+def embedding_norm_regularizer(z: Tensor, target_norm: Optional[float] = None) -> Tensor:
     """
     z: [N, D] or [B, N, D]
     """
@@ -491,8 +492,8 @@ def embedding_norm_regularizer(z: Tensor, target_norm: float | None = None) -> T
 
 def embedding_smoothness_regularizer(
     z: Tensor,
-    batch: Tensor | None = None,
-    valid_mask: Tensor | None = None,
+    batch: Optional[Tensor] = None,
+    valid_mask: Optional[Tensor] = None,
 ) -> Tensor:
     """
     Encourage neighboring residues along sequence to have similar embeddings.
@@ -573,7 +574,7 @@ def sampled_sequence_separation_bias_loss(
     return loss / n_bins
 
 
-def maybe_get_latent_embeddings(data, res, latent_key: str | None = None) -> Tensor | None:
+def maybe_get_latent_embeddings(data, res, latent_key: Optional[str] = None) -> Optional[Tensor]:
     """
     Tries to find residue embeddings for embedding-based regularizers.
     Priority:
@@ -606,8 +607,8 @@ def recon_loss_diag_with_regs(
     plddt_thresh=0.3,
     normalize=False,
     # regularizer controls
-    reg_config: dict | None = None,
-    latent_key: str | None = None,
+    reg_config: Optional[dict] = None,
+    latent_key: Optional[str] = None,
     return_components: bool = False,
 ):
     """

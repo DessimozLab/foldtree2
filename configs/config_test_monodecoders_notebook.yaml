@@ -1,0 +1,86 @@
+# Notebook-matched config for foldtree2/learn_monodecoder.py
+# Source: foldtree2/notebooks/experiments/test_monodecoders.ipynb
+# Usage:
+#   python foldtree2/learn_monodecoder.py --config config_test_monodecoders_notebook.yaml
+
+dataset: "structs_train_final_big.h5"
+
+# Output settings
+output_dir: "./models/test_monodecoders_notebook/"
+model_name: "test_monodecoders_notebook"
+run_name: "test_monodecoders_notebook"
+tensorboard_dir: "./runs/"
+overwrite: false
+
+# Core model params
+num_embeddings: 30
+embedding_dim: 16
+hidden_size: 500
+nconv_layers: 3
+EMA: true
+
+# Training params
+epochs: 100
+batch_size: 10
+gradient_accumulation_steps: 1
+clip_grad: true
+mixed_precision: true
+seed: 0
+
+# Data quality masking
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Optimizer / LR scheduler
+optimizer_type: "muon"
+learning_rate: 1.0e-4
+muon_lr: 0.02
+adamw_lr: 1.0e-4
+lr_schedule: "plateau"
+lr_warmup_steps: 100
+lr_warmup_ratio: 0.05
+
+# Loss weights (from notebook)
+edgeweight: 1.0
+logitweight: 0.1
+xweight: 0.75
+fft2weight: 0.01
+vqweight: 0.05
+angles_weight: 0.25
+ss_weight: 0.25
+
+# Extra geometry losses (kept off, matching notebook weights)
+fape_loss: false
+fape_weight: 0.0
+lddt_loss: false
+lddt_weight: 0.0
+delta_loss: false
+delta_weight: 0.0
+
+# Loss handling
+normalize_loss_weights: true
+use_uncertainty_weighting: true
+
+# Per-loss scheduler params (from notebook scheduler cell)
+use_weight_scheduler: true
+loss_warmup_steps: 100
+loss_schedule_x: "linear"
+loss_schedule_logit: "linear"
+loss_schedule_edge: "cosine_restarts"
+loss_schedule_vq: "cosine_restarts"
+loss_schedule_fft2: "cosine_restarts"
+loss_schedule_angles: "linear"
+loss_schedule_ss: "linear"
+loss_power_ss: 2.0
+loss_cycles_edge: 3
+loss_cycles_vq: 10
+loss_cycles_fft2: 5
+
+# Regularized contact reconstruction (patched in script)
+use_regularized_recon_loss: true
+recon_reg_w_embed_norm: 1.0e-4
+recon_reg_w_embed_smooth: 1.0e-3
+recon_reg_w_seqsep: 0.02
+recon_reg_target_embed_norm: null
+recon_reg_seqsep_max_bin: 32
+recon_reg_latent_key: "z"

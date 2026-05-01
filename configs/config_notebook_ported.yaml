@@ -1,0 +1,102 @@
+# Notebook-parity training config for foldtree2/learn_monodecoder.py
+# Usage:
+#   python foldtree2/learn_monodecoder.py --config config_notebook_ported.yaml
+
+# Data
+# Matches notebook default experiment dataset.
+dataset: "structs_training_mk2.h5"
+
+# Output
+output_dir: "./models/notebook_ported/"
+model_name: "multi_geometry_ported"
+run_name: "notebook_ported_muon"
+tensorboard_dir: "./runs/"
+overwrite: true
+
+device: "cuda:0"
+
+# Core model shape (from notebook)
+hidden_size: 500
+num_embeddings: 30
+embedding_dim: 16
+EMA: true
+hetero_gae: false
+nconv_layers: 3
+
+# Training
+epochs: 400
+batch_size: 10
+gradient_accumulation_steps: 1
+clip_grad: true
+mixed_precision: true
+seed: 0
+
+# pLDDT masking (from notebook)
+mask_plddt: true
+plddt_threshold: 0.3
+
+# Optimizer (notebook style)
+optimizer_type: "muon"
+muon_lr: 0.02
+adamw_lr: 0.0001
+learning_rate: 0.0001
+use_uncertainty_weighting: true
+
+# LR scheduler (notebook style)
+lr_schedule: "plateau"
+lr_warmup_steps: 1000
+lr_warmup_ratio: 0.05
+num_cycles: 3
+
+# Commitment cost scheduling (from notebook encoder setup)
+use_commitment_scheduling: true
+commitment_cost: 0.9
+commitment_schedule: "linear"
+commitment_warmup_steps: 2000
+commitment_start: 0.1
+
+# Base loss weights (from notebook cells)
+edgeweight: 1.0
+logitweight: 0.25
+xweight: 1.0
+fft2weight: 0.0
+vqweight: 0.15
+angles_weight: 1.0
+ss_weight: 0.5
+
+normalize_loss_weights: true
+
+# Notebook loss-weight scheduler parity
+use_weight_scheduler: true
+loss_warmup_steps: 1000
+
+loss_schedule_x: "linear"
+loss_schedule_logit: "linear"
+loss_schedule_edge: "cosine_restarts"
+loss_schedule_vq: "cosine_restarts"
+loss_schedule_fft2: "cosine_restarts"
+loss_schedule_angles: "linear"
+loss_schedule_ss: "linear"
+geometry_output_rt: true
+
+geometry_output_rt: true
+# lDDT, FAPE, and Delta loss settings
+delta_loss: false
+delta_weight: 0.0
+lddt_loss: true
+lddt_weight: 0.0
+fape_loss: true
+fape_weight: 1.0
+
+loss_power_ss: 2.0
+loss_cycles_edge: 3
+loss_cycles_vq: 10
+loss_cycles_fft2: 5
+
+# Optional burn-in jumps used in some notebook runs
+# jump_aa_loss: 25
+# jump_ss_loss: 45
+
+# Validation split for script training
+val_split: 0.1
+val_seed: 42

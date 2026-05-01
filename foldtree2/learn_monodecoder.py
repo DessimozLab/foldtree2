@@ -12,7 +12,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
 from foldtree2.src import encoder as ecdr
-from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss
+from foldtree2.src.losses.losses import recon_loss_diag, recon_loss_diag_with_regs, aa_reconstruction_loss, angles_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 from foldtree2.src.visualization import create_reconstruction_figure
 
@@ -47,7 +47,7 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 			'layers': 2,
 			'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size],
 			'amino_mapper': converter.aaindex,
-			'nheads': 5,
+			'nheads': 10,
 			'dropout': 0.001,
 			'normalize': False,
 			'residual': False,
@@ -57,12 +57,13 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 		},
 	}
 
+	'''
 	mono_configs['geometry_transformer'] = {
 			'in_channels': {'res': args.embedding_dim},
 			'concat_positions': False,
 			'hidden_channels': {('res', 'backbone', 'res'): [hidden_size], ('res', 'backbonerev', 'res'): [hidden_size]},
 			'layers': 2,
-			'nheads': 5,
+			'nheads': 10,
 			'RTdecoder_hidden': [hidden_size, hidden_size, hidden_size],
 			'ssdecoder_hidden': [hidden_size, hidden_size, hidden_size],
 			'anglesdecoder_hidden': [hidden_size, hidden_size, hidden_size],
@@ -74,29 +75,25 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 			'output_ss': args.geometry_output_ss if args.geometry_output_ss is not None else args.output_ss,
 			'output_angles': args.geometry_output_angles if args.geometry_output_angles is not None else args.output_angles,
 		}
+	'''
 
 	mono_configs['geometry_cnn'] = {
 			'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 			'concat_positions': False,
 			'conv_channels': [2 * hidden_size, hidden_size, hidden_size],
 			'kernel_sizes': [3] * args.nconv_layers,
-			'FFT2decoder_hidden': [hidden_size // 2, hidden_size // 2],
-			'contactdecoder_hidden': [hidden_size // 2, hidden_size // 4],
-			'ssdecoder_hidden': [hidden_size // 2, hidden_size // 2],
 			'Xdecoder_hidden': [hidden_size, hidden_size],
-			'anglesdecoder_hidden': [hidden_size, hidden_size, hidden_size // 2],
-			'RTdecoder_hidden': [hidden_size // 2, hidden_size // 4],
 			'metadata': converter.metadata,
 			'dropout': 0.001,
-			'output_fft': args.geometry_cnn_output_fft if args.geometry_cnn_output_fft is not None else args.output_fft,
-			'output_ss': args.geometry_cnn_output_ss if args.geometry_cnn_output_ss is not None else args.output_ss,
+			'output_fft': False,
+			'output_ss': False,
 			'normalize': True,
 			'residual': False,
 			'output_edge_logits': args.geometry_cnn_output_edge_logits if args.geometry_cnn_output_edge_logits is not None else args.output_edge_logits,
 			'ncat': 8,
 			'contact_mlp': False,
 			'pool_type': 'global_mean',
-			'learn_positions': True,
+			'learn_positions': False,
 		}
 
 	if args.output_foldx:
@@ -354,6 +351,20 @@ parser.add_argument('--angles-weight', type=float, default=0.1,
 					help='Weight for angles reconstruction loss (default: 0.1)')
 parser.add_argument('--ss-weight', type=float, default=0.1,
 					help='Weight for secondary structure loss (default: 0.1)')
+parser.add_argument('--use-regularized-recon-loss', action='store_true',
+					help='Use recon_loss_diag_with_regs instead of recon_loss_diag for contact reconstruction')
+parser.add_argument('--recon-reg-w-embed-norm', type=float, default=1e-4,
+					help='Weight for embedding norm regularizer in regularized recon loss (default: 1e-4)')
+parser.add_argument('--recon-reg-w-embed-smooth', type=float, default=1e-3,
+					help='Weight for embedding smoothness regularizer in regularized recon loss (default: 1e-3)')
+parser.add_argument('--recon-reg-w-seqsep', type=float, default=0.02,
+					help='Weight for sequence-separation bias regularizer in regularized recon loss (default: 0.02)')
+parser.add_argument('--recon-reg-target-embed-norm', type=float, default=None,
+					help='Optional target embedding norm for embedding norm regularizer (default: None)')
+parser.add_argument('--recon-reg-seqsep-max-bin', type=int, default=32,
+					help='Maximum separation bin for seq-separation regularizer (default: 32)')
+parser.add_argument('--recon-reg-latent-key', type=str, default='z',
+					help="Latent key used by recon regularizer to fetch embeddings from decoder output (default: 'z')")
 
 parser.add_argument('--jump-aa-loss', type=int, default=None,
 					help='Jump amino acid reconstruction loss to .5 after n epochs (burn-in) to stabilize training (default: None)')
@@ -614,6 +625,7 @@ print(f"  Use Weight Scheduler: {args.use_weight_scheduler}")
 if args.use_weight_scheduler:
 	print(f"  Loss Warmup Steps: {args.loss_warmup_steps}")
 	print(f"  Loss Schedules: x={args.loss_schedule_x}, logit={args.loss_schedule_logit}, edge={args.loss_schedule_edge}, vq={args.loss_schedule_vq}, fft2={args.loss_schedule_fft2}, angles={args.loss_schedule_angles}, ss={args.loss_schedule_ss}")
+print(f"  Use Regularized Recon Loss: {args.use_regularized_recon_loss}")
 
 # Loss weights (from args, with defaults matching notebook)
 edgeweight = args.edgeweight
@@ -627,6 +639,18 @@ fape_weight = args.fape_weight if getattr(args, 'fape_loss', False) else 0.0
 lddt_weight = args.lddt_weight if getattr(args, 'lddt_loss', False) else 0.0
 delta_weight = args.delta_weight if getattr(args, 'delta_loss', False) else 0.0
 
+recon_reg_latent_key = args.recon_reg_latent_key
+if isinstance(recon_reg_latent_key, str) and recon_reg_latent_key.lower() in {'none', 'null', ''}:
+	recon_reg_latent_key = None
+
+recon_reg_config = {
+	"w_embed_norm": args.recon_reg_w_embed_norm,
+	"w_embed_smooth": args.recon_reg_w_embed_smooth,
+	"w_seqsep": args.recon_reg_w_seqsep,
+	"target_embed_norm": args.recon_reg_target_embed_norm,
+	"seqsep_max_bin": args.recon_reg_seqsep_max_bin,
+}
+
 print(f"Loss Weights:")
 print(f"  Normalize Loss Weights: {args.normalize_loss_weights}")
 print(f"  Edge Weight: {edgeweight}")
@@ -639,6 +663,9 @@ print(f"  SS Weight: {ss_weight}")
 print(f"  FAPE Weight: {fape_weight}")
 print(f"  lDDT Weight: {lddt_weight}")
 print(f"  Delta Weight: {delta_weight}")
+if args.use_regularized_recon_loss:
+	print(f"  Recon Reg Config: {recon_reg_config}")
+	print(f"  Recon Reg Latent Key: {recon_reg_latent_key}")
 
 # Per-epoch weight values (for optional scheduling/visualization)
 xweight_epoch = xweight
@@ -1039,6 +1066,10 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
 		f.write(f'Commitment Start: {args.commitment_start}\n')
 	f.write(f'Optimizer Type: {args.optimizer_type}\n')
 	f.write(f'Use Weight Scheduler: {args.use_weight_scheduler}\n')
+	f.write(f'Use Regularized Recon Loss: {args.use_regularized_recon_loss}\n')
+	if args.use_regularized_recon_loss:
+		f.write(f'Recon Reg Config: {recon_reg_config}\n')
+		f.write(f'Recon Reg Latent Key: {recon_reg_latent_key}\n')
 
 # Save configuration to TensorBoard
 config_text = "\n".join([f"{k}: {v}" for k, v in vars(args).items()])
@@ -1080,9 +1111,30 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 		logitloss = torch.tensor(0.0, device=device)
 		edgeloss = torch.tensor(0.0, device=device)
 		if edge_index is not None:
-			edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs', normalize=args.normalize_loss_weights)
+			if args.use_regularized_recon_loss:
+				recon_out = recon_loss_diag_with_regs(
+					data=data,
+					pos_edge_index=edge_index,
+					decoder=decoder,
+					key='edge_probs',
+					plddt=args.mask_plddt,
+					plddt_thresh=args.plddt_threshold,
+					reg_config=recon_reg_config,
+					latent_key=recon_reg_latent_key,
+					return_components=True,
+				)
+				edgeloss, logitloss = recon_out[0], recon_out[1]
+			else:
+				edgeloss, logitloss = recon_loss_diag(
+					data,
+					edge_index,
+					decoder,
+					plddt=args.mask_plddt,
+					key='edge_probs',
+					plddt_thresh=args.plddt_threshold
+				)
 
-		xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
+		xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
 
 		fft2loss = torch.tensor(0.0, device=device)
 		if 'fft2pred' in out and out['fft2pred'] is not None:
@@ -1090,7 +1142,7 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 
 		angles_loss = torch.tensor(0.0, device=device)
 		if out.get('angles') is not None:
-			angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
+			angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
 
 		ss_loss = torch.tensor(0.0, device=device)
 		if out.get('ss_pred') is not None:
@@ -1208,8 +1260,7 @@ def validate(encoder, decoder, val_loader, device, args):
 			# Forward pass
 			z, vqloss = encoder(data)
 			data['res'].x = z
-			if args.normalize_loss_weights:
-				vqloss = vqloss / data['AA'].x.shape[0]  # Normalize by number of residues
+
 			# Forward pass through decoder
 			out = decoder(data, None)
 			edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
@@ -1218,10 +1269,30 @@ def validate(encoder, decoder, val_loader, device, args):
 			logitloss = torch.tensor(0.0, device=device)
 			edgeloss = torch.tensor(0.0, device=device)
 			if edge_index is not None:
-				edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs' , normalize = args.normalize_loss_weights)
+				if args.use_regularized_recon_loss:
+					recon_out = recon_loss_diag_with_regs(
+						data=data,
+						pos_edge_index=edge_index,
+						decoder=decoder,
+						key='edge_probs',
+						plddt=args.mask_plddt,
+						plddt_thresh=args.plddt_threshold,
+						reg_config=recon_reg_config,
+						latent_key=recon_reg_latent_key,
+						return_components=True,
+					)
+					edgeloss, logitloss = recon_out[0], recon_out[1]
+				else:
+					edgeloss, logitloss = recon_loss_diag(
+						data,
+						edge_index,
+						decoder,
+						plddt=args.mask_plddt,
+						key='edge_probs',
+					)
 			
 			# Amino acid reconstruction loss
-			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'] , normalize=args.normalize_loss_weights)
+			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'] )
 			
 			# FFT2 loss
 			fft2loss = torch.tensor(0.0, device=device)
@@ -1231,7 +1302,7 @@ def validate(encoder, decoder, val_loader, device, args):
 			# Angles loss
 			angles_loss = torch.tensor(0.0, device=device)
 			if out.get('angles') is not None:
-				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
+				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
 				 
 			# Secondary structure loss
 			ss_loss = torch.tensor(0.0, device=device)
@@ -1296,7 +1367,7 @@ def validate(encoder, decoder, val_loader, device, args):
 			total_delta_loss += float(delta_loss.item())
 			num_batches += 1
 	
-	denominator = num_batches if args.normalize_loss_weights == False else 1 
+	denominator = 1 
 	# Calculate average losses
 	avg_loss_x = total_loss_x / denominator
 	avg_loss_edge = total_loss_edge / denominator
@@ -1425,10 +1496,30 @@ for epoch in range(args.epochs):
 				logitloss = torch.tensor(0.0, device=device)
 				edgeloss = torch.tensor(0.0, device=device)
 				if edge_index is not None:
-					edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs' , normalize=args.normalize_loss_weights)
+					if args.use_regularized_recon_loss:
+						recon_out = recon_loss_diag_with_regs(
+							data=data,
+							pos_edge_index=edge_index,
+							decoder=decoder,
+							key='edge_probs',
+							plddt=args.mask_plddt,
+							plddt_thresh=args.plddt_threshold,
+							reg_config=recon_reg_config,
+							latent_key=recon_reg_latent_key,
+							return_components=True,
+						)
+						edgeloss, logitloss = recon_out[0], recon_out[1]
+					else:
+						edgeloss, logitloss = recon_loss_diag(
+							data,
+							edge_index,
+							decoder,
+							plddt=args.mask_plddt,
+							key='edge_probs',
+						)
 				
 				# Amino acid reconstruction loss
-				xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
+				xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
 				
 				# FFT2 loss
 				fft2loss = torch.tensor(0.0, device=device)
@@ -1438,7 +1529,7 @@ for epoch in range(args.epochs):
 				# Angles loss
 				angles_loss = torch.tensor(0.0, device=device)
 				if out.get('angles') is not None:
-					angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
+					angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
 				
 				# Secondary structure loss
 				ss_loss = torch.tensor(0.0, device=device)
@@ -1542,17 +1633,35 @@ for epoch in range(args.epochs):
 			z, vqloss = encoder(data)
 			data['res'].x = z
 			
-			if args.normalize_loss_weights:
-				vqloss = vqloss / data['AA'].x.shape[0]  # Normalize by number of residues
 			out = decoder(data, None)
 			edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
 
 			logitloss = torch.tensor(0.0, device=device)
 			edgeloss = torch.tensor(0.0, device=device)
 			if edge_index is not None:
-				edgeloss, logitloss = recon_loss_diag(data, edge_index, decoder, plddt=args.mask_plddt, key='edge_probs', normalize=args.normalize_loss_weights)
+				if args.use_regularized_recon_loss:
+					recon_out = recon_loss_diag_with_regs(
+						data=data,
+						pos_edge_index=edge_index,
+						decoder=decoder,
+						key='edge_probs',
+						plddt=args.mask_plddt,
+						plddt_thresh=args.plddt_threshold,
+						reg_config=recon_reg_config,
+						latent_key=recon_reg_latent_key,
+						return_components=True,
+					)
+					edgeloss, logitloss = recon_out[0], recon_out[1]
+				else:
+					edgeloss, logitloss = recon_loss_diag(
+						data,
+						edge_index,
+						decoder,
+						plddt=args.mask_plddt,
+						key='edge_probs',
+					)
 			
-			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_loss_weights)
+			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
 			
 			fft2loss = torch.tensor(0.0, device=device)
 			if 'fft2pred' in out and out['fft2pred'] is not None:
@@ -1560,7 +1669,7 @@ for epoch in range(args.epochs):
 
 			angles_loss = torch.tensor(0.0, device=device)
 			if out.get('angles') is not None:
-				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_loss_weights)
+				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
 
 			# Secondary structure loss
 			ss_loss = torch.tensor(0.0, device=device)

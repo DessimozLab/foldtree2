@@ -1,0 +1,148 @@
+name: Conda Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v0.1.0, v1.0.0, etc.
+  workflow_dispatch:
+
+jobs:
+  build-conda-package:
+    name: Build and Upload Conda Package
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for versioning
+      
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: '3.10'
+          miniforge-variant: Mambaforge
+          use-mamba: true
+      
+      - name: Install conda-build
+        shell: bash -el {0}
+        run: |
+          mamba install -y conda-build anaconda-client
+      
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+      
+      - name: Build conda package
+        shell: bash -el {0}
+        run: |
+          echo "Building conda package..."
+          conda build conda-recipe \
+            --croot /tmp/cb \
+            --prefix-length 80 \
+            --no-test \
+            --output-folder ./conda-packages
+          
+          echo "Build complete!"
+          ls -lh ./conda-packages/noarch/
+      
+      - name: Verify package contents
+        shell: bash -el {0}
+        run: |
+          PACKAGE=$(ls ./conda-packages/noarch/foldtree2-*.conda)
+          echo "Package: $PACKAGE"
+          echo "Size: $(du -h $PACKAGE | cut -f1)"
+          
+          # Extract and check for unwanted files
+          mkdir -p /tmp/check_pkg
+          cd /tmp/check_pkg
+          tar -xzf "$GITHUB_WORKSPACE/$PACKAGE"
+          
+          H5_COUNT=$(find . -name "*.h5" | wc -l)
+          IPYNB_COUNT=$(find . -name "*.ipynb" | wc -l)
+          
+          echo "Found .h5 files: $H5_COUNT"
+          echo "Found .ipynb files: $IPYNB_COUNT"
+          
+          if [ $H5_COUNT -gt 0 ] || [ $IPYNB_COUNT -gt 0 ]; then
+            echo "ERROR: Package contains unwanted files!"
+            find . -name "*.h5" -o -name "*.ipynb"
+            exit 1
+          fi
+          
+          echo "✅ Package verification passed!"
+      
+      - name: Upload package as release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foldtree2-conda-package
+          path: ./conda-packages/noarch/foldtree2-*.conda
+          retention-days: 90
+      
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ./conda-packages/noarch/foldtree2-*.conda
+          body: |
+            ## FoldTree2 Conda Package
+            
+            **Installation:**
+            ```bash
+            # Download the .conda file from assets below
+            conda install ./foldtree2-${{ steps.get_version.outputs.VERSION }}-py_0.conda \
+              -c conda-forge -c pytorch -c bioconda
+            ```
+            
+            **Or install dependencies first:**
+            ```bash
+            conda create -n foldtree2 python=3.10
+            conda activate foldtree2
+            conda install pytorch pytorch-geometric -c pytorch -c pyg
+            conda install biopython pandas numpy -c conda-forge
+            conda install ./foldtree2-${{ steps.get_version.outputs.VERSION }}-py_0.conda
+            ```
+            
+            **Entry points available:**
+            - `foldtree2` - Main tree builder
+            - `ft2treebuilder` - Alternative entry point
+            - `makesubmat` - Substitution matrix generator
+            - `pdbs-to-graphs` - PDB to PyG converter
+            - Plus: `raxml-ng`, `mad`, `hex2maffttext`, `maffttext2hex`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload to Anaconda Cloud (optional)
+        shell: bash -el {0}
+        if: env.ANACONDA_TOKEN != ''
+        env:
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: |
+          echo "Uploading to Anaconda Cloud..."
+          anaconda -t $ANACONDA_TOKEN upload \
+            --user ${{ github.repository_owner }} \
+            --force \
+            ./conda-packages/noarch/foldtree2-*.conda
+          echo "✅ Uploaded to Anaconda Cloud!"
+        continue-on-error: true  # Don't fail if token not set
+      
+      - name: Build summary
+        if: always()
+        shell: bash -el {0}
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Build Status:** Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Details:**" >> $GITHUB_STEP_SUMMARY
+          PACKAGE=$(ls ./conda-packages/noarch/foldtree2-*.conda)
+          SIZE=$(du -h $PACKAGE | cut -f1)
+          echo "- 📦 File: $(basename $PACKAGE)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📏 Size: $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏷️ Version: ${{ steps.get_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Download:** Available in release assets" >> $GITHUB_STEP_SUMMARY

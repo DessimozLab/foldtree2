@@ -1,0 +1,46 @@
+# Include essential documentation
+include README.md
+include LICENSE.txt
+include foldtree2.yml
+include pyproject.toml
+
+# Include configuration files
+recursive-include foldtree2/config *.csv *.yaml *.yml
+
+# EXCLUDE pretrained models to reduce package size
+# Users should download models separately from GitHub releases or project repository
+# recursive-include models *.pt *.pth *.pkl
+recursive-exclude models *
+
+# Include bundled external tools (if present)
+recursive-include raxml-ng *
+recursive-include madroot *
+recursive-include mafft_tools *
+
+# Exclude Python cache and bytecode
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude * .git*
+
+# Exclude test data, notebooks, and temporary files
+recursive-exclude tests *
+recursive-exclude foldtree2/notebooks *
+recursive-exclude tmp *
+exclude *.log
+exclude *.egg-info
+
+# CRITICAL: Exclude large data files - these must NOT be copied during conda build
+recursive-exclude alphafold_benchmark *
+recursive-exclude families *
+recursive-exclude figures *
+recursive-exclude runs *
+exclude *.h5
+exclude *.pkl
+exclude *.pth
+exclude *.pt
+prune alphafold_benchmark
+prune families
+prune figures
+prune runs
+prune models
