@@ -1,0 +1,38 @@
+# Keep conda source staging minimal: package code, bundled tools, and production models only.
+
+# Exclude heavy data artifacts everywhere.
+**/*.h5
+**/*.ipynb
+
+# Exclude large project directories that are not needed for package build.
+/alphafold_benchmark
+/families
+/figures
+/runs
+/tmp
+/benchmark_output
+/alps
+
+# Exclude noisy package subfolders that are not runtime dependencies.
+/foldtree2/notebooks
+/foldtree2/results_rrnppa_test
+/foldtree2/results_fsx1_test
+
+# Exclude all models by default, then allow only production models.
+/models/*
+!/models/production/
+!/models/production/**
+
+# Build artifacts and caches.
+/dist
+/__pycache__
+**/__pycache__/
+*.pyc
+.pytest_cache
+.coverage
+
+# Development/IDE files.
+/.vscode
+/.idea
+*.swp
+*~

@@ -34,6 +34,9 @@ class treebuilder():
 		self.raxml_path = raxml_path
 		self.raxmlng_path = raxml_path
 		self.modelname = model.split('/')[-1].split('.')[0]
+		self.model = model
+		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
+		self.decoder = torch.load( decoder_model , map_location=torch.device('cpu') , weights_only=False ) if decoder_model is not None else None
 		
 		if 'bs' in kwargs:
 			self.bs = kwargs['bs']
@@ -86,10 +89,6 @@ class treebuilder():
 			self.raxmlchars = data['raxml_charset']
 		
 		self.ordset = set([ ord(c) for c in self.alphabet ])
-		#load pickled model
-		self.model = model
-		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
-		self.decoder = torch.load( decoder_model , map_location=torch.device('cpu') , weights_only=False ) if decoder_model is not None else None
 		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
 			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
 		else:
@@ -300,13 +299,15 @@ class treebuilder():
 			ID = ''
 			seqdict = {}
 			for line in encoded:
-				if line[0] == '>' and line[-1] == '\n':
+				if line and line[0] == '>' and line[-1] == '\n':
 					seqdict[ID] = seqstr
 					ID = line[1:].strip()
 					seqstr = ''
 				else:
 					seqstr += line.strip()
-			del seqdict['']
+			if ID:
+				seqdict[ID] = seqstr
+			seqdict.pop('', None)
 			encoded_df = pd.DataFrame( seqdict.items() , columns=['protid', 'seq'] )
 		#replace the characters that aren't allowed
 		encoded_df.seq = encoded_df.seq.map(lambda x : ''.join([ c if c not in self.replace_dict else self.replace_dict[c] for c in x]))

@@ -10,7 +10,6 @@ source:
 
 build:
   number: 0
-  noarch: python
   entry_points:
     - foldtree2 = foldtree2.ft2treebuilder:main
     - ft2treebuilder = foldtree2.ft2treebuilder:main
