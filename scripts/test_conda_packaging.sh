@@ -9,6 +9,11 @@ CROOT="${CROOT:-/tmp/cb}"
 MIN_SIZE_MB=10
 MAX_SIZE_MB=50
 RUN_SMOKE_INSTALL=0
+RUN_CLI_SMOKE=0
+CLI_SMOKE_PYTHON_VERSION="3.10"
+CLI_SMOKE_SAMPLE_PDB_DIR=""
+CLI_SMOKE_SAMPLE_MAX_FILES=1
+CLI_SMOKE_AAPROPCSV="${ROOT_DIR}/foldtree2/config/aaindex1.csv"
 KEEP_TMP=0
 
 WORK_DIR=""
@@ -44,6 +49,11 @@ Options:
   --min-size-mb N        Minimum allowed package size in MB (default: ${MIN_SIZE_MB})
   --max-size-mb N        Maximum allowed package size in MB (default: ${MAX_SIZE_MB})
   --smoke-install        Create temporary env and install package for import smoke test
+  --cli-smoke            Run CLI smoke tests in a fresh env using scripts/smoke_test_conda_cli.sh
+  --cli-smoke-python VER Python version for CLI smoke env (default: ${CLI_SMOKE_PYTHON_VERSION})
+  --sample-pdb-dir PATH  Optional sample .pdb directory for lightweight data smoke test
+  --sample-max-files N   Number of sample .pdb files for data smoke (default: ${CLI_SMOKE_SAMPLE_MAX_FILES})
+  --aapropcsv PATH       Amino acid CSV for pdbs-to-graphs data smoke (default: ${CLI_SMOKE_AAPROPCSV})
   --keep-tmp             Keep temporary extraction/install directory for debugging
   -h, --help             Show this help text
 EOF
@@ -74,6 +84,26 @@ while [[ $# -gt 0 ]]; do
     --smoke-install)
       RUN_SMOKE_INSTALL=1
       shift
+      ;;
+    --cli-smoke)
+      RUN_CLI_SMOKE=1
+      shift
+      ;;
+    --cli-smoke-python)
+      CLI_SMOKE_PYTHON_VERSION="$2"
+      shift 2
+      ;;
+    --sample-pdb-dir)
+      CLI_SMOKE_SAMPLE_PDB_DIR="$2"
+      shift 2
+      ;;
+    --sample-max-files)
+      CLI_SMOKE_SAMPLE_MAX_FILES="$2"
+      shift 2
+      ;;
+    --aapropcsv)
+      CLI_SMOKE_AAPROPCSV="$2"
+      shift 2
       ;;
     --keep-tmp)
       KEEP_TMP=1
@@ -268,6 +298,25 @@ import foldtree2
 from foldtree2.src import encoder
 print('smoke-import-ok')
 PY
+fi
+
+if (( RUN_CLI_SMOKE == 1 )); then
+  CLI_SMOKE_SCRIPT="${ROOT_DIR}/scripts/smoke_test_conda_cli.sh"
+  [[ -x "${CLI_SMOKE_SCRIPT}" ]] || fail "CLI smoke script missing or not executable: ${CLI_SMOKE_SCRIPT}"
+
+  log "Running optional CLI smoke test"
+  CLI_ARGS=(
+    --package "${PACKAGE}"
+    --python-version "${CLI_SMOKE_PYTHON_VERSION}"
+    --sample-max-files "${CLI_SMOKE_SAMPLE_MAX_FILES}"
+    --aapropcsv "${CLI_SMOKE_AAPROPCSV}"
+  )
+
+  if [[ -n "${CLI_SMOKE_SAMPLE_PDB_DIR}" ]]; then
+    CLI_ARGS+=(--sample-pdb-dir "${CLI_SMOKE_SAMPLE_PDB_DIR}")
+  fi
+
+  "${CLI_SMOKE_SCRIPT}" "${CLI_ARGS[@]}"
 fi
 
 log "All conda packaging checks passed"

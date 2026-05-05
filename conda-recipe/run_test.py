@@ -20,6 +20,9 @@ def test_imports():
         
         import foldtree2.src.pdbgraph
         print("  ✓ foldtree2.src.pdbgraph")
+
+        import foldtree2.src.pdbgraphmk2
+        print("  ✓ foldtree2.src.pdbgraphmk2")
         
         print("✓ All core modules imported successfully\n")
         return True

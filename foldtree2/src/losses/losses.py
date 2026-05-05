@@ -471,310 +471,333 @@ EPS = 1e-8
 
 
 def embedding_norm_regularizer(z: Tensor, target_norm: Optional[float] = None) -> Tensor:
-    """
-    z: [N, D] or [B, N, D]
-    """
-    if z is None:
-        raise ValueError("z is None")
+	"""
+	z: [N, D] or [B, N, D]
+	"""
+	if z is None:
+		raise ValueError("z is None")
 
-    if z.dim() == 2:
-        norms = torch.norm(z, dim=-1)
-    elif z.dim() == 3:
-        norms = torch.norm(z, dim=-1)
-    else:
-        raise ValueError(f"Unexpected z shape: {z.shape}")
+	if z.dim() == 2:
+		norms = torch.norm(z, dim=-1)
+	elif z.dim() == 3:
+		norms = torch.norm(z, dim=-1)
+	else:
+		raise ValueError(f"Unexpected z shape: {z.shape}")
 
-    if target_norm is None:
-        return (norms ** 2).mean()
+	if target_norm is None:
+		return (norms ** 2).mean()
 
-    return ((norms - target_norm) ** 2).mean()
+	return ((norms - target_norm) ** 2).mean()
 
 
 def embedding_smoothness_regularizer(
-    z: Tensor,
-    batch: Optional[Tensor] = None,
-    valid_mask: Optional[Tensor] = None,
+	z: Tensor,
+	batch: Optional[Tensor] = None,
+	valid_mask: Optional[Tensor] = None,
 ) -> Tensor:
-    """
-    Encourage neighboring residues along sequence to have similar embeddings.
+	"""
+	Encourage neighboring residues along sequence to have similar embeddings.
 
-    z: [N, D]
-    batch: [N] residue-to-graph assignment
-    valid_mask: optional [N] boolean mask
+	z: [N, D]
+	batch: [N] residue-to-graph assignment
+	valid_mask: optional [N] boolean mask
 
-    Only compares consecutive residues within the same graph.
-    """
-    if z.dim() != 2:
-        raise ValueError("This helper expects z with shape [N, D]")
+	Only compares consecutive residues within the same graph.
+	"""
+	if z.dim() != 2:
+		raise ValueError("This helper expects z with shape [N, D]")
 
-    if z.size(0) < 2:
-        return z.new_tensor(0.0)
+	if z.size(0) < 2:
+		return z.new_tensor(0.0)
 
-    diffs = z[1:] - z[:-1]
-    sq = (diffs ** 2).sum(dim=-1)
+	diffs = z[1:] - z[:-1]
+	sq = (diffs ** 2).sum(dim=-1)
 
-    mask = torch.ones_like(sq, dtype=torch.bool)
+	mask = torch.ones_like(sq, dtype=torch.bool)
 
-    if batch is not None:
-        same_graph = batch[1:] == batch[:-1]
-        mask = mask & same_graph
+	if batch is not None:
+		same_graph = batch[1:] == batch[:-1]
+		mask = mask & same_graph
 
-    if valid_mask is not None:
-        same_valid = valid_mask[1:] & valid_mask[:-1]
-        mask = mask & same_valid
+	if valid_mask is not None:
+		same_valid = valid_mask[1:] & valid_mask[:-1]
+		mask = mask & same_valid
 
-    if mask.sum() == 0:
-        return z.new_tensor(0.0)
+	if mask.sum() == 0:
+		return z.new_tensor(0.0)
 
-    return sq[mask].mean()
+	return sq[mask].mean()
 
 
 def sampled_sequence_separation_bias_loss(
-    pos_probs: Tensor,
-    neg_probs: Tensor,
-    pos_edge_index: Tensor,
-    neg_edge_index: Tensor,
-    max_sep_bin: int = 32,
+	pos_probs: Tensor,
+	neg_probs: Tensor,
+	pos_edge_index: Tensor,
+	neg_edge_index: Tensor,
+	max_sep_bin: int = 32,
 ) -> Tensor:
-    """
-    Match the average predicted probability as a function of sequence separation
-    between positive and negative sampled sets in a simple supervised way.
+	"""
+	Match the average predicted probability as a function of sequence separation
+	between positive and negative sampled sets in a simple supervised way.
 
-    This is not the same as a full dense separation profile loss, but it still
-    discourages pathological sequence-separation behavior.
+	This is not the same as a full dense separation profile loss, but it still
+	discourages pathological sequence-separation behavior.
 
-    Idea:
-      - positives should have higher probability than negatives at the same |i-j|
-      - encourages calibration across separation bins
-    """
-    device = pos_probs.device
-    loss = torch.tensor(0.0, device=device)
-    n_bins = 0
+	Idea:
+	  - positives should have higher probability than negatives at the same |i-j|
+	  - encourages calibration across separation bins
+	"""
+	device = pos_probs.device
+	loss = torch.tensor(0.0, device=device)
+	n_bins = 0
 
-    pos_sep = (pos_edge_index[0] - pos_edge_index[1]).abs().clamp(max=max_sep_bin)
-    neg_sep = (neg_edge_index[0] - neg_edge_index[1]).abs().clamp(max=max_sep_bin)
+	pos_sep = (pos_edge_index[0] - pos_edge_index[1]).abs().clamp(max=max_sep_bin)
+	neg_sep = (neg_edge_index[0] - neg_edge_index[1]).abs().clamp(max=max_sep_bin)
 
-    pos_probs = pos_probs.squeeze()
-    neg_probs = neg_probs.squeeze()
+	pos_probs = pos_probs.squeeze()
+	neg_probs = neg_probs.squeeze()
 
-    for s in range(1, max_sep_bin + 1):
-        pmask = pos_sep == s
-        nmask = neg_sep == s
+	for s in range(1, max_sep_bin + 1):
+		pmask = pos_sep == s
+		nmask = neg_sep == s
 
-        if pmask.any() and nmask.any():
-            # margin-like separation: positives should score above negatives
-            pos_mean = pos_probs[pmask].mean()
-            neg_mean = neg_probs[nmask].mean()
-            loss = loss + F.relu(0.1 - (pos_mean - neg_mean))
-            n_bins += 1
+		if pmask.any() and nmask.any():
+			# margin-like separation: positives should score above negatives
+			pos_mean = pos_probs[pmask].mean()
+			neg_mean = neg_probs[nmask].mean()
+			loss = loss + F.relu(0.1 - (pos_mean - neg_mean))
+			n_bins += 1
 
-    if n_bins == 0:
-        return torch.tensor(0.0, device=device)
+	if n_bins == 0:
+		return torch.tensor(0.0, device=device)
 
-    return loss / n_bins
+	return loss / n_bins
 
 
 def maybe_get_latent_embeddings(data, res, latent_key: Optional[str] = None) -> Optional[Tensor]:
-    """
-    Tries to find residue embeddings for embedding-based regularizers.
-    Priority:
-      1. res[latent_key] if provided
-      2. res['z'] if present
-      3. data['res'].z if present
-      4. data['res'].x if you intentionally want to regularize current node state
-    """
-    if latent_key is not None and isinstance(res, dict) and latent_key in res:
-        return res[latent_key]
+	"""
+	Tries to find residue embeddings for embedding-based regularizers.
+	Priority:
+	  1. res[latent_key] if provided
+	  2. res['z'] if present
+	  3. data['res'].z if present
+	  4. data['res'].x if you intentionally want to regularize current node state
+	"""
+	if latent_key is not None and isinstance(res, dict) and latent_key in res:
+		return res[latent_key]
 
-    if isinstance(res, dict) and 'z' in res:
-        return res['z']
+	if isinstance(res, dict) and 'z' in res:
+		return res['z']
 
-    if 'res' in data and hasattr(data['res'], 'z'):
-        return data['res'].z
+	if 'res' in data and hasattr(data['res'], 'z'):
+		return data['res'].z
 
-    return None
+	return None
 
 def recon_loss_diag_with_regs(
-    data,
-    pos_edge_index: Tensor,
-    decoder=None,
-    poslossmod=1.0,
-    neglossmod=1.0,
-    plddt=False,
-    nclamp=30,
-    key=None,
-    nbins=8,
-    plddt_thresh=0.3,
-    normalize=False,
-    # regularizer controls
-    reg_config: Optional[dict] = None,
-    latent_key: Optional[str] = None,
-    return_components: bool = False,
+	data,
+	pos_edge_index: Tensor,
+	decoder=None,
+	poslossmod=1.0,
+	neglossmod=1.0,
+	plddt=False,
+	nclamp=30,
+	key=None,
+	nbins=8,
+	plddt_thresh=0.3,
+	normalize=False,
+	# regularizer controls
+	reg_config: Optional[dict] = None,
+	latent_key: Optional[str] = None,
+	return_components: bool = False,
 ):
-    """
-    original sampled reconstruction loss with optional regularizers added.
+	"""
+	original sampled reconstruction loss with optional regularizers added.
 
-    Returns:
-      if return_components=False:
-          (edge_total, disto_total)
-      if return_components=True:
-          (edge_total, disto_total, components_dict)
-    """
-    if reg_config is None:
-        reg_config = {}
+	Returns:
+	  if return_components=False:
+		  (edge_total, disto_total)
+	  if return_components=True:
+		  (edge_total, disto_total, components_dict)
+	"""
+	if reg_config is None:
+		reg_config = {}
 
-    # weights for optional regularizers
-    w_embed_norm = reg_config.get("w_embed_norm", 0.0)
-    w_embed_smooth = reg_config.get("w_embed_smooth", 0.0)
-    w_seqsep = reg_config.get("w_seqsep", 0.0)
-    target_embed_norm = reg_config.get("target_embed_norm", None)
-    seqsep_max_bin = reg_config.get("seqsep_max_bin", 32)
+	# weights for optional regularizers
+	w_embed_norm = reg_config.get("w_embed_norm", 0.0)
+	w_embed_smooth = reg_config.get("w_embed_smooth", 0.0)
+	w_seqsep = reg_config.get("w_seqsep", 0.0)
+	target_embed_norm = reg_config.get("target_embed_norm", None)
+	seqsep_max_bin = reg_config.get("seqsep_max_bin", 32)
 
-    device = data['res'].x.device
+	device = data['res'].x.device
 
-    # Remove diagonal entries from positives
-    pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
+	# Remove diagonal entries from positives
+	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
 
-    # Positive pass
-    res_pos = decoder(data, pos_edge_index)
+	# Positive pass
+	res_pos = decoder(data, pos_edge_index)
 
-    disto_loss_pos = torch.tensor(0.0, device=device)
-    disto_loss_neg = torch.tensor(0.0, device=device)
+	disto_loss_pos = torch.tensor(0.0, device=device)
+	disto_loss_neg = torch.tensor(0.0, device=device)
 
-    if key is None:
-        pos = res_pos[1]
-    else:
-        pos = res_pos[key]
+	if key is None:
+		pos = res_pos[1]
+	else:
+		pos = res_pos[key]
 
-    pos = pos.squeeze()
-    pos_loss_vec = -torch.log(pos + EPS)
+	pos = pos.squeeze()
+	pos_loss_vec = -torch.log(pos + EPS)
 
-    if 'edge_logits' in res_pos and res_pos['edge_logits'] is not None:
-        disto_loss_pos = recon_loss_disto(
-            data,
-            res_pos,
-            pos_edge_index,
-            plddt=plddt,
-            key='edge_logits',
-            no_bins=nbins,
-            plddt_thresh=plddt_thresh,
-        )
+	if 'edge_logits' in res_pos and res_pos['edge_logits'] is not None:
+		disto_loss_pos = recon_loss_disto(
+			data,
+			res_pos,
+			pos_edge_index,
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
+		#add the complement
+		rev_pos = pos_edge_index.flip(0)
+		disto_loss_pos = disto_loss_pos + recon_loss_disto(
+			data, 
+			res_pos,
+			rev_pos,
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
 
-    if plddt:
-        c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1) > plddt_thresh
-        c2 = data['plddt'].x[pos_edge_index[1]].squeeze(1) > plddt_thresh
-        pos_mask = (c1 & c2).squeeze(0) if (c1 & c2).dim() > 1 else (c1 & c2)
-        pos_loss_vec = pos_loss_vec[pos_mask]
-        pos_edge_index_filtered = pos_edge_index[:, pos_mask]
-        pos_filtered = pos[pos_mask]
-    else:
-        pos_edge_index_filtered = pos_edge_index
-        pos_filtered = pos
+	if plddt:
+		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1) > plddt_thresh
+		c2 = data['plddt'].x[pos_edge_index[1]].squeeze(1) > plddt_thresh
+		pos_mask = (c1 & c2).squeeze(0) if (c1 & c2).dim() > 1 else (c1 & c2)
+		pos_loss_vec = pos_loss_vec[pos_mask]
+		pos_edge_index_filtered = pos_edge_index[:, pos_mask]
+		pos_filtered = pos[pos_mask]
+	else:
+		pos_edge_index_filtered = pos_edge_index
+		pos_filtered = pos
 
-    pos_loss = pos_loss_vec.mean() if pos_loss_vec.numel() > 0 else torch.tensor(0.0, device=device)
+	pos_loss = pos_loss_vec.mean() if pos_loss_vec.numel() > 0 else torch.tensor(0.0, device=device)
 
-    # Negative sampling
-    neg_edge_index = batched_negative_sampling(
-        pos_edge_index,
-        data['res'].batch,
-        force_undirected=True,
-    )
-    neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
+	# Negative sampling
+	neg_edge_index = batched_negative_sampling(
+		pos_edge_index,
+		data['res'].batch,
+		force_undirected=True,
+	)
+	
+	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
 
-    res_neg = decoder(data, neg_edge_index)
+	res_neg = decoder(data, neg_edge_index)
 
-    if key is None:
-        neg = res_neg[1]
-    else:
-        neg = res_neg[key]
+	if key is None:
+		neg = res_neg[1]
+	else:
+		neg = res_neg[key]
 
-    neg = neg.squeeze()
-    neg_loss_vec = -torch.log((1.0 - neg) + EPS)
+	neg = neg.squeeze()
+	neg_loss_vec = -torch.log((1.0 - neg) + EPS)
 
-    if plddt:
-        c1 = data['plddt'].x[neg_edge_index[0]].squeeze(1) > plddt_thresh
-        c2 = data['plddt'].x[neg_edge_index[1]].squeeze(1) > plddt_thresh
-        neg_mask = (c1 & c2).squeeze(0) if (c1 & c2).dim() > 1 else (c1 & c2)
-        neg_loss_vec = neg_loss_vec[neg_mask]
-        neg_edge_index_filtered = neg_edge_index[:, neg_mask]
-        neg_filtered = neg[neg_mask]
-    else:
-        neg_edge_index_filtered = neg_edge_index
-        neg_filtered = neg
+	if plddt:
+		c1 = data['plddt'].x[neg_edge_index[0]].squeeze(1) > plddt_thresh
+		c2 = data['plddt'].x[neg_edge_index[1]].squeeze(1) > plddt_thresh
+		neg_mask = (c1 & c2).squeeze(0) if (c1 & c2).dim() > 1 else (c1 & c2)
+		neg_loss_vec = neg_loss_vec[neg_mask]
+		neg_edge_index_filtered = neg_edge_index[:, neg_mask]
+		neg_filtered = neg[neg_mask]
+	else:
+		neg_edge_index_filtered = neg_edge_index
+		neg_filtered = neg
 
-    neg_loss = neg_loss_vec.mean() if neg_loss_vec.numel() > 0 else torch.tensor(0.0, device=device)
+	neg_loss = neg_loss_vec.mean() if neg_loss_vec.numel() > 0 else torch.tensor(0.0, device=device)
 
-    if 'edge_logits' in res_neg and res_neg['edge_logits'] is not None:
-        disto_loss_neg = recon_loss_disto(
-            data,
-            res_neg,
-            neg_edge_index,
-            plddt=plddt,
-            key='edge_logits',
-            no_bins=nbins,
-            plddt_thresh=plddt_thresh,
-        )
+	if 'edge_logits' in res_neg and res_neg['edge_logits'] is not None:
+		disto_loss_neg = recon_loss_disto(
+			data,
+			res_neg,
+			neg_edge_index,
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
+		#add the complement
+		rev_neg = neg_edge_index.flip(0)
+		disto_loss_neg = disto_loss_neg + recon_loss_disto(
+			data, 
+			res_neg,
+			rev_neg,
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
 
-    # Original losses
-    edge_recon = poslossmod * pos_loss + neglossmod * neg_loss
-    disto_total = disto_loss_pos.mean() * poslossmod + disto_loss_neg.mean() * neglossmod
+	# Original losses
+	edge_recon = poslossmod * pos_loss + neglossmod * neg_loss
+	disto_total = disto_loss_pos.mean() * poslossmod + disto_loss_neg.mean() * neglossmod
 
-    # Optional normalization
-    if normalize:
-        n_res = max(int(data['res'].x.size(0)), 1)
-        edge_recon = edge_recon / n_res
-        disto_total = disto_total / n_res
+	# Optional normalization
+	if normalize:
+		n_res = max(int(data['res'].x.size(0)), 1)
+		edge_recon = edge_recon / n_res
+		disto_total = disto_total / n_res
 
-    # -------------------------
-    # Optional regularizers
-    # -------------------------
-    reg_total = torch.tensor(0.0, device=device)
-    components = {
-        "edge_recon": edge_recon.detach(),
-        "disto": disto_total.detach(),
-        "pos_loss": pos_loss.detach(),
-        "neg_loss": neg_loss.detach(),
-    }
+	# -------------------------
+	# Optional regularizers
+	# -------------------------
+	reg_total = torch.tensor(0.0, device=device)
+	components = {
+		"edge_recon": edge_recon.detach(),
+		"disto": disto_total.detach(),
+		"pos_loss": pos_loss.detach(),
+		"neg_loss": neg_loss.detach(),
+	}
 
-    # Use positive-pass result to find latent embeddings
-    z = maybe_get_latent_embeddings(data, res_pos, latent_key=latent_key)
+	# Use positive-pass result to find latent embeddings
+	z = maybe_get_latent_embeddings(data, res_pos, latent_key=latent_key)
 
-    if w_embed_norm > 0.0 and z is not None:
-        l_embed_norm = embedding_norm_regularizer(z, target_norm=target_embed_norm)
-        reg_total = reg_total + w_embed_norm * l_embed_norm
-        components["embed_norm"] = l_embed_norm.detach()
+	if w_embed_norm > 0.0 and z is not None:
+		l_embed_norm = embedding_norm_regularizer(z, target_norm=target_embed_norm)
+		reg_total = reg_total + w_embed_norm * l_embed_norm
+		components["embed_norm"] = l_embed_norm.detach()
 
-    if w_embed_smooth > 0.0 and z is not None:
-        valid_mask = None
-        if plddt:
-            valid_mask = (data['plddt'].x.squeeze(-1) > plddt_thresh)
-        l_embed_smooth = embedding_smoothness_regularizer(
-            z=z,
-            batch=data['res'].batch if hasattr(data['res'], 'batch') else None,
-            valid_mask=valid_mask,
-        )
-        reg_total = reg_total + w_embed_smooth * l_embed_smooth
-        components["embed_smooth"] = l_embed_smooth.detach()
+	if w_embed_smooth > 0.0 and z is not None:
+		valid_mask = None
+		if plddt:
+			valid_mask = (data['plddt'].x.squeeze(-1) > plddt_thresh)
+		l_embed_smooth = embedding_smoothness_regularizer(
+			z=z,
+			batch=data['res'].batch if hasattr(data['res'], 'batch') else None,
+			valid_mask=valid_mask,
+		)
+		reg_total = reg_total + w_embed_smooth * l_embed_smooth
+		components["embed_smooth"] = l_embed_smooth.detach()
 
-    if w_seqsep > 0.0:
-        l_seqsep = sampled_sequence_separation_bias_loss(
-            pos_probs=pos_filtered,
-            neg_probs=neg_filtered,
-            pos_edge_index=pos_edge_index_filtered,
-            neg_edge_index=neg_edge_index_filtered,
-            max_sep_bin=seqsep_max_bin,
-        )
-        reg_total = reg_total + w_seqsep * l_seqsep
-        components["seqsep"] = l_seqsep.detach()
+	if w_seqsep > 0.0:
+		l_seqsep = sampled_sequence_separation_bias_loss(
+			pos_probs=pos_filtered,
+			neg_probs=neg_filtered,
+			pos_edge_index=pos_edge_index_filtered,
+			neg_edge_index=neg_edge_index_filtered,
+			max_sep_bin=seqsep_max_bin,
+		)
+		reg_total = reg_total + w_seqsep * l_seqsep
+		components["seqsep"] = l_seqsep.detach()
 
-    edge_total = edge_recon + reg_total
-    components["reg_total"] = reg_total.detach()
-    components["edge_total"] = edge_total.detach()
+	edge_total = edge_recon + reg_total
+	components["reg_total"] = reg_total.detach()
+	components["edge_total"] = edge_total.detach()
 
-    if return_components:
-        return edge_total, disto_total, components
+	if return_components:
+		return edge_total, disto_total, components
 
-    return edge_total, disto_total
+	return edge_total, disto_total
 
 
 

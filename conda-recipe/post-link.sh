@@ -8,18 +8,14 @@ cat << 'EOF'
 
 ⚠️  IMPORTANT: Additional setup required
 
-1️⃣  Install PyTorch Geometric (required for graph neural networks):
-   
-   pip install torch-geometric
-
-2️⃣  Download pretrained models (if needed):
+1️⃣  Download pretrained models (if needed):
    
    Visit: https://github.com/DessimozLab/foldtree2/releases
    
    Or train your own models using:
    python foldtree2/learn_lightning.py --config config.yaml
 
-3️⃣  Test your installation:
+2️⃣  Test your installation:
    
    foldtree2 --about
    pdbs-to-graphs --help

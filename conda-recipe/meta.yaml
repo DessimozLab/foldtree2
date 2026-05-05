@@ -29,14 +29,19 @@ requirements:
     - pandas >=1.3.0
     - scipy >=1.7.0
     - matplotlib-base >=3.4.0
+    - networkx
     
-    # PyTorch (PyTorch Geometric will be pip installed)
+    # PyTorch ecosystem
     - pytorch >=2.0.0
     - torchvision
+    - pytorch-geometric >=2.3.0
     
     # Bioinformatics tools
     - biopython >=1.79
     - prody >=2.0.0
+    - pydssp >=1.0.0
+    - gemmi >=0.6.0
+    - foldcomp
     
     # Deep learning utilities
     - pytorch-lightning >=2.0.0
@@ -51,10 +56,12 @@ requirements:
     - colour >=0.1.5
     - datasketch >=1.5.0
     - pebble >=5.0.0
+    - wget
+    - toytree
+    - toyplot
     - tqdm >=4.62.0
     - h5py >=3.6.0
     - pyyaml >=5.4.0
-    - pip  # for installing torch-geometric and pydssp via pip
     
 test:
   imports:
@@ -62,6 +69,7 @@ test:
     - foldtree2.src.encoder
     - foldtree2.src.mono_decoders
     - foldtree2.src.pdbgraph
+    - foldtree2.src.pdbgraphmk2
   commands:
     - foldtree2 --about
     - pdbs-to-graphs --help
