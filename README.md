@@ -94,7 +94,7 @@ The pipeline generates several output files in your results directory:
 
 ## Advanced Usage: Training Custom Models
 
-For advanced users who want to train their own models or work with specialized datasets, FoldTree2 provides a complete training pipeline.
+For advanced users who want to train their own models or work with specialized datasets, FoldTree2 provides a complete training pipeline. Foldtree2 production models are trained on a large, diverse set of protein structures from the AFDB cluster database, but you can train your own models on custom datasets.
 
 Why do this instead of using a pretrained model?
 - **Emphasize domain-specific structure signals**: If your proteins are enriched for particular folds, repeats, interfaces, or conformational regimes, a custom encoder can better capture those patterns than a general model.

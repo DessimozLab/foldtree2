@@ -38,7 +38,8 @@ class treebuilder():
 		self.model = model
 		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
 		self.decoder = torch.load( decoder_model , map_location=torch.device('cpu') , weights_only=False ) if decoder_model is not None else None
-		
+		self.root = kwargs.get('root', False)
+
 		if 'bs' in kwargs:
 			self.bs = kwargs['bs']
 		else:
@@ -533,6 +534,14 @@ class treebuilder():
 			ancestral_fasta = ancestral_fasta
 		else:
 			ancestral_fasta = None
+
+
+		if self.root == True:
+			print('rooting tree with mad')
+			treefile = self.madroot( treefile )
+			tree = ete3.Tree(treefile, format=1)	
+			print(tree)
+			
 		#return in dictionary form
 		return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
 def print_about():
@@ -643,6 +652,9 @@ def main():
 	parser.add_argument( "--bs", default=False, action="store_true", help="Enable bootstrapping in RAxML-NG" )
 	parser.add_argument( "--redo", default=False, action="store_true", help="Enable --redo flag in RAxML-NG to overwrite existing results" )
 
+	parser.add_argument("--root", default=False, action="store_true", help="Use mad root to root the tree after inference")
+
+
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
 
@@ -724,7 +736,8 @@ def main():
 
 	# Create an instance of treebuilder
 	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, decoder_model=decoder_path, submat=args.submat , raxml_path=args.raxmlpath,
-	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device, bs=args.bs, redo=args.redo , verbose=args.verbose)
+	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device, 
+	 bs=args.bs, redo=args.redo , verbose=args.verbose , root =args.root )
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
