@@ -9,6 +9,7 @@ import tempfile
 import shutil
 from importlib import import_module
 import numpy as np
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 
 try:
     PDB2PyG = import_module('foldtree2.src.pdbgraphmkII').PDB2PyG
@@ -22,7 +23,7 @@ class TestPDB2PyGInit(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         self.test_dir = tempfile.mkdtemp()
-        self.aaprop_csv = os.path.join(os.path.dirname(__file__), '..', 'config', 'aaindex1.csv')
+        self.aaprop_csv = resolve_aapropcsv_path(None)
     
     def tearDown(self):
         """Clean up test fixtures"""

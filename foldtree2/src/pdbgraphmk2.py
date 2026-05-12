@@ -25,6 +25,7 @@ from scipy.spatial import cKDTree, distance
 from torch_geometric.data import Dataset, HeteroData
 
 from foldtree2.src.rigid_utils import rot_to_quat
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 
 
 AA3_TO_1 = {
@@ -356,9 +357,9 @@ def _write_heterodata_group(structs_group, hetero_data):
 
 
 class PDB2PyG:
-    def __init__(self, aapropcsv: str = './foldtree2/config/aaindex1.csv'):
-        self.aapropcsv = aapropcsv
-        aaproperties = pd.read_csv(aapropcsv, header=0)
+    def __init__(self, aapropcsv: Optional[str] = None):
+        self.aapropcsv = resolve_aapropcsv_path(aapropcsv)
+        aaproperties = pd.read_csv(self.aapropcsv, header=0)
         colmap = {aaproperties.columns[i]: i for i in range(len(aaproperties.columns))}
         aaproperties.drop(['description', 'reference'], axis=1, inplace=True)
         onehot = pd.get_dummies(aaproperties.columns.unique()).astype(int)

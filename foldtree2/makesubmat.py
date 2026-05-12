@@ -4,21 +4,7 @@ makesubmat.py - Generate Structure-Based Substitution Matrices
 
 This tool creates custom substitution matrices for phylogenetic analysis based on 
 protein structural alignments. It uses trained FoldTree2 models to encode protein 
-structures into discrete sequences, then builds substitution matrices from the
-
-	char_set = set()
-	for seq in encoded_df.seq:
-		char_set = char_set.union(set(seq))
-	char_set = list(char_set)
-	char_set.sort()  # Sort to ensure consistent order
-	
-	print(f"Character set: {char_set}")
-	print('ord', [ord(c) for c in char_set])
-	print('hex', [hex(ord(c)) for c in char_set])
-	print(f"Number of characters: {len(char_set)}")
-	
-	char_position_map = {char: i for i, char in enumerate(char_set)}
-	return char_set, char_position_map from structural 
+structures into discrete sequences, then builds substitution matrices from structural 
 alignments to capture evolutionary relationships at the structural level.
 
 The workflow consists of several steps:
@@ -40,6 +26,7 @@ import os
 import argparse
 import pickle
 import glob
+import json
 import pandas as pd
 import numpy as np
 import tqdm
@@ -136,16 +123,38 @@ makesubmat --modelname my_model --encode_alns
 	# Output control
 	parser.add_argument('--plot', action='store_true', 
 						help='Generate and display visualization plots of the matrices')
+	parser.add_argument('--show-plots', action='store_true',
+						help='Display generated plots interactively (useful in notebooks/GUI sessions)')
 	parser.add_argument('--mafftmat', type=str, default=None, 
 						help='Output filename for MAFFT-compatible matrix (default: MODELNAME_mafftmat.mtx)')
 	parser.add_argument('--submat', type=str, default=None, 
 						help='Output filename for RAxML-compatible substitution matrix (default: MODELNAME_submat.txt)')
+	parser.add_argument('--convergence-plot-path', type=str, default=None,
+						help='Output path for convergence plot PNG (default: MODELNAME_convergence.png in modeldir)')
+	parser.add_argument('--final-matrices-plot-path', type=str, default=None,
+						help='Output path for final matrices summary PNG (default: MODELNAME_final_matrices.png in modeldir)')
+	parser.add_argument('--evolution-plot-path', type=str, default=None,
+						help='Output path for matrix evolution PNG (default: MODELNAME_evolution_analysis.png in modeldir)')
+	parser.add_argument('--metrics-json', type=str, default=None,
+						help='Output path for convergence/statistics JSON (default: MODELNAME_metrics.json in modeldir)')
+	parser.add_argument('--save-history', action='store_true',
+						help='Store convergence history snapshots in the pair-counts pickle file')
 	
 	# Processing parameters
 	parser.add_argument('--dataset', type=str, default='structalignmk4.h5', 
 						help='HDF5 dataset filename for storing PyG-converted structures')
 	parser.add_argument('--fident_thresh', type=float, default=0.3, 
 						help='Sequence identity threshold for including alignment pairs in matrix computation (default: 0.3)')
+	parser.add_argument('--monitor-convergence', action='store_true',
+						help='Track notebook-style convergence metrics during alignment processing')
+	parser.add_argument('--update-interval', type=int, default=5,
+						help='Update interval (in alignment files) for convergence snapshots (default: 5)')
+	parser.add_argument('--aln-limit', type=int, default=None,
+						help='Optional limit on number of alignment files to process (default: all)')
+	parser.add_argument('--convergence-threshold', type=float, default=0.01,
+						help='Gradient-norm threshold used to label convergence (default: 0.01)')
+	parser.add_argument('--live-plot', action='store_true',
+						help='Render live convergence plots while processing alignments')
 	parser.add_argument('--rawcounts', action='store_true', 
 						help='Output raw substitution counts instead of log-odds scores in MAFFT matrix')
 
@@ -386,7 +395,7 @@ def build_char_set(encoded_df):
 	
 	char_position_map = {char: i for i, char in enumerate(char_set)}
 	print(f"Character position map: {char_position_map}")
-	raxml_chars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \ ] ^ _ { | } ~""".split()
+	raxml_chars = """0 1 2 3 4 5 6 7 8 9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z ! " # $ % & ' ( ) * + , / : ; < = > @ [ \\ ] ^ _ { | } ~""".split()
 	raxml_charset = [ raxml_chars[char_position_map[c]] for c in char_set ]
 	raxml_char_position_map = {c: i for i, c in enumerate(raxml_charset)}
 	print(f"RAxML character set: {raxml_charset}")
@@ -400,7 +409,20 @@ def build_char_set(encoded_df):
 	# Return both the character set and the position map
 	return char_set, char_position_map , raxml_charset, raxml_char_position_map
 
-def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, char_position_map, fident_thresh=0.3):
+def compute_pair_counts_and_bg(
+		alnfiles,
+		encoded_df,
+		char_set,
+		char_position_map,
+		fident_thresh=0.3,
+		update_interval=5,
+		aln_limit=None,
+		monitor=None,
+		live_plot=False,
+		show_plots=False,
+		plot_figsize=(18, 12),
+		return_stats=False,
+	):
 	"""
 	Compute pair counts and background frequencies from structural alignments.
 	
@@ -416,18 +438,31 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, char_position_map
 		fident_thresh (float): Minimum fractional identity threshold for alignments
 		
 	Returns:
-		tuple: (submat, background_freq, seqcount) containing count matrix,
-			   background frequencies, and total sequence count
+		tuple: (submat, background_freq) by default. If return_stats=True,
+			   returns (submat, background_freq, stats_dict).
 	"""
 	cols = 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln'.split(',')
-	submat = np.zeros((len(char_set),len(char_set)))
+	submat = np.zeros((len(char_set), len(char_set)))
 	background_freq = np.zeros(len(char_set))
 	seqcount = 0
-	for rep in tqdm.tqdm(alnfiles, desc="Processing alignments"):
-		submat_chunk = np.zeros((len(char_set),len(char_set)))
-		aln_df = pd.read_table(rep)
-		aln_df.columns = cols
-		seqset = set()
+	all_processed_seqs = set()
+	files_processed = 0
+	total_files_to_process = len(alnfiles) if aln_limit is None else min(len(alnfiles), aln_limit)
+
+	aln_iter = tqdm.tqdm(alnfiles, desc="Processing alignments")
+	for file_idx, rep in enumerate(aln_iter):
+		if aln_limit is not None and file_idx >= aln_limit:
+			print(f"Reached alignment file limit of {aln_limit}. Stopping processing.")
+			break
+
+		submat_chunk = np.zeros((len(char_set), len(char_set)))
+		try:
+			aln_df = pd.read_table(rep)
+			aln_df.columns = cols
+		except Exception as exc:
+			print(f"Warning: Could not read {rep}: {exc}")
+			continue
+
 		for q in aln_df['query'].unique():
 			for t in aln_df['target'].unique():
 				if q != t:
@@ -439,17 +474,20 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, char_position_map
 						qaccession = q.split('.')[0]
 						taccession = t.split('.')[0]
 						if qaccession in encoded_df.index and taccession in encoded_df.index:
-							qz = str(encoded_df.loc[qaccession].seq[aln.qstart-1:aln.qend])
-							tz = str(encoded_df.loc[taccession].seq[aln.tstart-1:aln.tend])
-							if qaccession not in seqset:
+							qz = str(encoded_df.loc[qaccession].seq[aln.qstart - 1:aln.qend])
+							tz = str(encoded_df.loc[taccession].seq[aln.tstart - 1:aln.tend])
+
+							# Notebook behavior: count background frequencies once per accession globally.
+							if qaccession not in all_processed_seqs:
 								background_freq += np.array([qz.count(c) for c in char_set])
-								seqset.add(qaccession)
+								all_processed_seqs.add(qaccession)
 								seqcount += len(qz)
-							if taccession not in seqset:
+							if taccession not in all_processed_seqs:
 								background_freq += np.array([tz.count(c) for c in char_set])
-								seqset.add(taccession)
+								all_processed_seqs.add(taccession)
 								seqcount += len(tz)
-							if len(qz) == len(qaln.replace('-','')) and len(tz) == len(taln.replace('-','')):
+
+							if len(qz) == len(qaln.replace('-', '')) and len(tz) == len(taln.replace('-', '')):
 								qz_iter = iter(qz)
 								tz_iter = iter(tz)
 								qaln_ft2, taln_ft2 = [], []
@@ -463,12 +501,336 @@ def compute_pair_counts_and_bg(alnfiles, encoded_df, char_set, char_position_map
 										taln_ft2.append(None)
 									else:
 										taln_ft2.append(char_position_map[next(tz_iter)])
-								alnzip = [ [a, b] for a, b in zip(qaln_ft2, taln_ft2) if a is not None and b is not None ]
+								alnzip = [[a, b] for a, b in zip(qaln_ft2, taln_ft2) if a is not None and b is not None]
 								alnzip = np.array(alnzip)
 								if alnzip.size > 0:
-									submat_chunk[alnzip[:,0], alnzip[:,1]] += 1
+									submat_chunk[alnzip[:, 0], alnzip[:, 1]] += 1
+
 		submat += submat_chunk
+		files_processed += 1
+
+		if monitor is not None and update_interval > 0:
+			is_update_step = (files_processed % update_interval == 0)
+			is_last_step = (files_processed == total_files_to_process)
+			if is_update_step or is_last_step:
+				if np.sum(background_freq) > 0 and np.sum(submat) > 0:
+					bg_norm = background_freq / np.sum(background_freq)
+					current_log_odds = compute_log_odds_from_counts(submat, bg_norm)
+				else:
+					current_log_odds = np.zeros_like(submat)
+				monitor.update(files_processed, current_log_odds)
+				if live_plot:
+					fig = monitor.plot_convergence(figsize=plot_figsize)
+					if show_plots:
+						plt.show()
+					plt.close(fig)
+
+	stats = {
+		'files_processed': files_processed,
+		'processed_sequences': len(all_processed_seqs),
+		'total_sequence_positions': int(seqcount),
+	}
+	if return_stats:
+		return submat, background_freq, stats
 	return submat, background_freq
+
+
+class MatrixConvergenceMonitor:
+	"""Track and visualize matrix convergence during iterative compilation."""
+
+	def __init__(self, matrix_size, convergence_threshold=0.01):
+		self.matrix_size = matrix_size
+		self.convergence_threshold = convergence_threshold
+		self.history = {
+			'iteration': [],
+			'frobenius_norm': [],
+			'gradient_norm': [],
+			'max_change': [],
+			'mean_change': [],
+			'nonzero_elements': [],
+			'snapshots': [],
+		}
+		self.prev_matrix = None
+
+	def update(self, iteration, current_matrix):
+		"""Update convergence metrics with a new matrix snapshot."""
+		frob_norm = float(np.linalg.norm(current_matrix, 'fro'))
+		if self.prev_matrix is not None:
+			gradient = current_matrix - self.prev_matrix
+			grad_norm = float(np.linalg.norm(gradient, 'fro'))
+			max_change = float(np.max(np.abs(gradient)))
+			mean_change = float(np.mean(np.abs(gradient)))
+		else:
+			grad_norm = 0.0
+			max_change = 0.0
+			mean_change = 0.0
+
+		nonzero = int(np.count_nonzero(current_matrix))
+
+		self.history['iteration'].append(int(iteration))
+		self.history['frobenius_norm'].append(frob_norm)
+		self.history['gradient_norm'].append(grad_norm)
+		self.history['max_change'].append(max_change)
+		self.history['mean_change'].append(mean_change)
+		self.history['nonzero_elements'].append(nonzero)
+		self.history['snapshots'].append(current_matrix.copy())
+
+		self.prev_matrix = current_matrix.copy()
+
+	def plot_convergence(self, figsize=(18, 12)):
+		"""Generate notebook-style convergence visualization."""
+		fig, axes = plt.subplots(3, 3, figsize=figsize)
+		iterations = self.history['iteration']
+
+		if len(iterations) == 0:
+			axes[1, 1].text(0.5, 0.5, 'No convergence snapshots yet', ha='center', va='center')
+			for ax in axes.ravel():
+				ax.axis('off')
+			return fig
+
+		axes[0, 0].plot(iterations, self.history['frobenius_norm'], 'b-', linewidth=2)
+		axes[0, 0].set_xlabel('Iteration (Alignment Files)')
+		axes[0, 0].set_ylabel('Frobenius Norm')
+		axes[0, 0].set_title('Matrix Magnitude Over Time')
+		axes[0, 0].grid(True, alpha=0.3)
+
+		axes[0, 1].plot(iterations, self.history['gradient_norm'], 'r-', linewidth=2)
+		axes[0, 1].set_xlabel('Iteration (Alignment Files)')
+		axes[0, 1].set_ylabel('Gradient Norm')
+		axes[0, 1].set_title('Rate of Change (Matrix Gradient)')
+		axes[0, 1].grid(True, alpha=0.3)
+		axes[0, 1].set_yscale('log')
+
+		axes[0, 2].plot(iterations, self.history['max_change'], 'g-', label='Max', linewidth=2)
+		axes[0, 2].plot(iterations, self.history['mean_change'], 'orange', label='Mean', linewidth=2)
+		axes[0, 2].set_xlabel('Iteration (Alignment Files)')
+		axes[0, 2].set_ylabel('Change Magnitude')
+		axes[0, 2].set_title('Element-wise Changes')
+		axes[0, 2].legend()
+		axes[0, 2].grid(True, alpha=0.3)
+		axes[0, 2].set_yscale('log')
+
+		im0 = axes[1, 0].imshow(self.history['snapshots'][0], cmap='RdBu_r', aspect='auto', interpolation='nearest')
+		axes[1, 0].set_title(f'Iteration {iterations[0]} (First)')
+		plt.colorbar(im0, ax=axes[1, 0], fraction=0.046)
+
+		mid_idx = len(self.history['snapshots']) // 2
+		im1 = axes[1, 1].imshow(self.history['snapshots'][mid_idx], cmap='RdBu_r', aspect='auto', interpolation='nearest')
+		axes[1, 1].set_title(f'Iteration {iterations[mid_idx]} (Middle)')
+		plt.colorbar(im1, ax=axes[1, 1], fraction=0.046)
+
+		im2 = axes[1, 2].imshow(self.history['snapshots'][-1], cmap='RdBu_r', aspect='auto', interpolation='nearest')
+		axes[1, 2].set_title(f'Iteration {iterations[-1]} (Current)')
+		plt.colorbar(im2, ax=axes[1, 2], fraction=0.046)
+
+		axes[2, 0].plot(iterations, self.history['nonzero_elements'], color='purple', linewidth=2)
+		axes[2, 0].set_xlabel('Iteration (Alignment Files)')
+		axes[2, 0].set_ylabel('Count')
+		axes[2, 0].set_title('Non-zero Matrix Elements')
+		axes[2, 0].grid(True, alpha=0.3)
+
+		if len(iterations) > 2:
+			grad_norms = np.array(self.history['gradient_norm'])
+			convergence_rate = np.diff(grad_norms)
+			axes[2, 1].plot(iterations[1:], convergence_rate, 'c-', linewidth=2)
+			axes[2, 1].set_xlabel('Iteration (Alignment Files)')
+			axes[2, 1].set_ylabel('Delta Gradient Norm')
+			axes[2, 1].set_title('Convergence Acceleration')
+			axes[2, 1].grid(True, alpha=0.3)
+			axes[2, 1].axhline(y=0, color='k', linestyle='--', alpha=0.5)
+		else:
+			axes[2, 1].axis('off')
+
+		summary = self.get_convergence_summary()
+		stats_text = (
+			"Matrix Convergence Summary\n\n"
+			f"Final Iteration: {iterations[-1]}\n"
+			f"Final Frobenius Norm: {summary['final_frobenius_norm']:.4f}\n"
+			f"Final Gradient Norm: {summary['final_gradient_norm']:.6f}\n"
+			f"Mean Gradient Norm: {summary['mean_gradient_norm']:.6f}\n"
+			f"Non-zero Elements: {self.history['nonzero_elements'][-1]} / {self.matrix_size**2}\n"
+			f"Sparsity: {100.0 * summary['sparsity']:.2f}%\n\n"
+			"Convergence Status:\n"
+			f"{'CONVERGED' if summary['is_converged'] else 'STILL CHANGING'}"
+		)
+		axes[2, 2].text(0.02, 0.5, stats_text, fontsize=10, verticalalignment='center', family='monospace')
+		axes[2, 2].axis('off')
+
+		plt.tight_layout()
+		return fig
+
+	def get_convergence_summary(self):
+		"""Return summary statistics about convergence."""
+		if len(self.history['iteration']) == 0:
+			return {
+				'total_iterations': 0,
+				'final_frobenius_norm': 0.0,
+				'final_gradient_norm': 0.0,
+				'mean_gradient_norm': 0.0,
+				'max_gradient_norm': 0.0,
+				'is_converged': False,
+				'sparsity': 1.0,
+			}
+
+		grad_series = self.history['gradient_norm']
+		mean_grad = float(np.mean(grad_series[1:])) if len(grad_series) > 1 else 0.0
+		sparsity = 1.0 - self.history['nonzero_elements'][-1] / float(self.matrix_size ** 2)
+		return {
+			'total_iterations': len(self.history['iteration']),
+			'final_frobenius_norm': float(self.history['frobenius_norm'][-1]),
+			'final_gradient_norm': float(self.history['gradient_norm'][-1]),
+			'mean_gradient_norm': mean_grad,
+			'max_gradient_norm': float(np.max(self.history['gradient_norm'])),
+			'is_converged': bool(self.history['gradient_norm'][-1] < self.convergence_threshold),
+			'sparsity': float(sparsity),
+		}
+
+
+def save_figure(fig, outpath, show_plots=False):
+	"""Save matplotlib figure and optionally display it."""
+	if outpath is not None:
+		outdir = os.path.dirname(outpath)
+		if outdir:
+			os.makedirs(outdir, exist_ok=True)
+		fig.savefig(outpath, dpi=150, bbox_inches='tight')
+		print(f"Saved plot to: {outpath}")
+	if show_plots:
+		plt.show()
+	plt.close(fig)
+
+
+def plot_final_matrices(pair_counts, log_odds_matrix, background_freq, outpath=None, show_plots=False):
+	"""Generate notebook-style final matrix summary figure."""
+	matrix_size = pair_counts.shape[0]
+	fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+
+	im0 = axes[0, 0].imshow(pair_counts, cmap='viridis', aspect='auto', interpolation='nearest')
+	axes[0, 0].set_title('Raw Pair Counts', fontsize=14, fontweight='bold')
+	axes[0, 0].set_xlabel('Character Index')
+	axes[0, 0].set_ylabel('Character Index')
+	plt.colorbar(im0, ax=axes[0, 0], fraction=0.046)
+
+	im1 = axes[0, 1].imshow(log_odds_matrix, cmap='RdBu_r', aspect='auto', interpolation='nearest', vmin=-2, vmax=2)
+	axes[0, 1].set_title('Log-Odds Substitution Matrix', fontsize=14, fontweight='bold')
+	axes[0, 1].set_xlabel('Character Index')
+	axes[0, 1].set_ylabel('Character Index')
+	plt.colorbar(im1, ax=axes[0, 1], fraction=0.046)
+
+	axes[1, 0].bar(range(len(background_freq)), background_freq, color='steelblue', alpha=0.7)
+	axes[1, 0].set_xlabel('Character Index')
+	axes[1, 0].set_ylabel('Frequency')
+	axes[1, 0].set_title('Background Character Frequencies', fontsize=14, fontweight='bold')
+	axes[1, 0].grid(True, alpha=0.3, axis='y')
+
+	diagonal = np.diag(log_odds_matrix)
+	off_diagonal = log_odds_matrix[~np.eye(matrix_size, dtype=bool)]
+	axes[1, 1].hist(diagonal, bins=30, alpha=0.7, label='Diagonal (same char)', color='green')
+	axes[1, 1].hist(off_diagonal, bins=30, alpha=0.7, label='Off-diagonal (different char)', color='red')
+	axes[1, 1].set_xlabel('Log-Odds Score')
+	axes[1, 1].set_ylabel('Frequency')
+	axes[1, 1].set_title('Distribution of Substitution Scores', fontsize=14, fontweight='bold')
+	axes[1, 1].legend()
+	axes[1, 1].grid(True, alpha=0.3, axis='y')
+
+	plt.tight_layout()
+	save_figure(fig, outpath, show_plots=show_plots)
+
+
+def plot_evolution_analysis(monitor, matrix_size, outpath=None, show_plots=False):
+	"""Generate notebook-style matrix evolution analysis plot."""
+	if monitor is None or len(monitor.history['snapshots']) == 0:
+		print("Skipping evolution analysis plot: no convergence snapshots available.")
+		return
+
+	fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+	iterations = monitor.history['iteration']
+
+	default_positions = [
+		(0, 0),
+		(0, 1 if matrix_size > 1 else 0),
+		(matrix_size // 2, matrix_size // 2),
+		(min(5, matrix_size - 1), min(8, matrix_size - 1)),
+	]
+
+	for pos in default_positions:
+		values = [snapshot[pos] for snapshot in monitor.history['snapshots']]
+		label = f"[{pos[0]},{pos[1]}]{'(diag)' if pos[0] == pos[1] else ''}"
+		axes[0, 0].plot(iterations, values, marker='o', linewidth=2, label=label)
+	axes[0, 0].set_xlabel('Iteration (Alignment Files)')
+	axes[0, 0].set_ylabel('Log-Odds Score')
+	axes[0, 0].set_title('Evolution of Sample Matrix Elements', fontweight='bold')
+	axes[0, 0].legend()
+	axes[0, 0].grid(True, alpha=0.3)
+
+	snapshot_array = np.array(monitor.history['snapshots'])
+	element_variance = np.var(snapshot_array, axis=0)
+	im = axes[0, 1].imshow(element_variance, cmap='hot', aspect='auto', interpolation='nearest')
+	axes[0, 1].set_title('Element-wise Variance Across Iterations', fontweight='bold')
+	axes[0, 1].set_xlabel('Character Index')
+	axes[0, 1].set_ylabel('Character Index')
+	plt.colorbar(im, ax=axes[0, 1], fraction=0.046)
+
+	mean_abs_changes = []
+	for i in range(1, len(monitor.history['snapshots'])):
+		change = np.abs(monitor.history['snapshots'][i] - monitor.history['snapshots'][i - 1])
+		mean_abs_changes.append(np.mean(change))
+
+	if len(mean_abs_changes) > 0:
+		axes[1, 0].plot(iterations[1:], mean_abs_changes, color='purple', linewidth=2, marker='o')
+		axes[1, 0].set_xlabel('Iteration (Alignment Files)')
+		axes[1, 0].set_ylabel('Mean Absolute Change')
+		axes[1, 0].set_title('Average Element Change Per Iteration', fontweight='bold')
+		axes[1, 0].set_yscale('log')
+		axes[1, 0].grid(True, alpha=0.3)
+	else:
+		axes[1, 0].axis('off')
+
+	if len(monitor.history['snapshots']) > 1:
+		cumulative_change = np.abs(monitor.history['snapshots'][-1] - monitor.history['snapshots'][0])
+		im = axes[1, 1].imshow(cumulative_change, cmap='plasma', aspect='auto', interpolation='nearest')
+		axes[1, 1].set_title('Total Change from First to Last Iteration', fontweight='bold')
+		axes[1, 1].set_xlabel('Character Index')
+		axes[1, 1].set_ylabel('Character Index')
+		plt.colorbar(im, ax=axes[1, 1], fraction=0.046)
+	else:
+		axes[1, 1].axis('off')
+
+	plt.tight_layout()
+	save_figure(fig, outpath, show_plots=show_plots)
+
+
+def build_metrics_payload(
+		pair_counts,
+		background_freq,
+		log_odds,
+		monitor,
+		matrix_size,
+		processing_stats,
+		fident_thresh,
+	):
+	"""Create a JSON-serializable metrics payload mirroring notebook summaries."""
+	diagonal = np.diag(log_odds)
+	off_diagonal = log_odds[~np.eye(matrix_size, dtype=bool)]
+	payload = {
+		'fident_threshold': float(fident_thresh),
+		'matrix_size': int(matrix_size),
+		'total_pair_counts': float(np.sum(pair_counts)),
+		'nonzero_pairs': int(np.count_nonzero(pair_counts)),
+		'sparsity': float(1.0 - (np.count_nonzero(pair_counts) / float(matrix_size ** 2))),
+		'log_odds_min': float(np.min(log_odds)),
+		'log_odds_max': float(np.max(log_odds)),
+		'mean_diagonal_score': float(np.mean(diagonal)),
+		'mean_off_diagonal_score': float(np.mean(off_diagonal)),
+		'std_diagonal_score': float(np.std(diagonal)),
+		'std_off_diagonal_score': float(np.std(off_diagonal)),
+		'background_sum': float(np.sum(background_freq)),
+		'processing': processing_stats,
+	}
+	if monitor is not None:
+		payload['convergence'] = monitor.get_convergence_summary()
+	else:
+		payload['convergence'] = None
+	return payload
 
 def compute_log_odds_from_counts(pair_counts, char_freqs, pseudocount=1e-20, log_base=np.e):
 	"""
@@ -626,12 +988,33 @@ def main():
 		sys.exit(0)
 		
 	args = parse_args()
+
+	if args.plot and not args.monitor_convergence:
+		args.monitor_convergence = True
+	if args.live_plot and not args.monitor_convergence:
+		args.monitor_convergence = True
+	if args.update_interval < 1:
+		print("Warning: --update-interval must be >= 1. Falling back to 1.")
+		args.update_interval = 1
+	if args.aln_limit is not None and args.aln_limit <= 0:
+		print("Warning: --aln-limit must be > 0. Ignoring limit.")
+		args.aln_limit = None
+
+	safe_model_label = args.modelname.replace('/', '_')
 	
 	# Set default output paths if not provided
 	if args.mafftmat is None:
-		args.mafftmat = args.modelname + '_mafftmat.mtx'
+		args.mafftmat = safe_model_label + '_mafftmat.mtx'
 	if args.submat is None:
-		args.submat = args.modelname + '_submat.txt'
+		args.submat = safe_model_label + '_submat.txt'
+	if args.convergence_plot_path is None:
+		args.convergence_plot_path = os.path.join(args.modeldir, safe_model_label + '_convergence.png')
+	if args.final_matrices_plot_path is None:
+		args.final_matrices_plot_path = os.path.join(args.modeldir, safe_model_label + '_final_matrices.png')
+	if args.evolution_plot_path is None:
+		args.evolution_plot_path = os.path.join(args.modeldir, safe_model_label + '_evolution_analysis.png')
+	if args.metrics_json is None and (args.plot or args.monitor_convergence):
+		args.metrics_json = os.path.join(args.modeldir, safe_model_label + '_metrics.json')
 	if args.modelname is None:
 		print("Error: --modelname must be specified.")
 		sys.exit(1)
@@ -694,18 +1077,57 @@ def main():
 	if len(alnfiles) == 0:
 		print("No alignment files found. Please run --align_structs first.")
 		sys.exit(1)
-	print(f"Processing {len(alnfiles)} alignment files...")
-	pair_counts, background_freq = compute_pair_counts_and_bg(alnfiles, encoded_df, char_set , char_position_map, fident_thresh=args.fident_thresh)
+
+	max_files = len(alnfiles) if args.aln_limit is None else min(len(alnfiles), args.aln_limit)
+	print(f"Processing up to {max_files} alignment files...")
+	monitor = None
+	if args.monitor_convergence:
+		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold)
+
+	pair_counts, background_freq, processing_stats = compute_pair_counts_and_bg(
+		alnfiles,
+		encoded_df,
+		char_set,
+		char_position_map,
+		fident_thresh=args.fident_thresh,
+		update_interval=args.update_interval,
+		aln_limit=args.aln_limit,
+		monitor=monitor,
+		live_plot=args.live_plot,
+		show_plots=args.show_plots,
+		return_stats=True,
+	)
 	print(f"Pair counts shape: {pair_counts.shape}, Background frequencies shape: {background_freq.shape}")
+	print(f"Files processed: {processing_stats['files_processed']}")
+	print(f"Processed sequences: {processing_stats['processed_sequences']}")
+	print(f"Total sequence positions: {processing_stats['total_sequence_positions']}")
 	
 	#save pair counts
-	pair_counts_path = os.path.join(outdir_base, args.modelname + '_pair_counts.pkl')
+	pair_counts_path = os.path.join(outdir_base, safe_model_label + '_pair_counts.pkl')
 	with open(pair_counts_path, 'wb') as f:
 		pickle.dump((pair_counts, char_set, char_position_map , raxml_charset, raxml_char_position_map), f)
 	print(f"Pair counts and char positions saved to {pair_counts_path}")
 
+	if args.save_history and monitor is not None:
+		history_path = os.path.join(outdir_base, safe_model_label + '_pair_counts_history.pkl')
+		with open(history_path, 'wb') as f:
+			pickle.dump({
+				'pair_counts': pair_counts,
+				'char_set': char_set,
+				'char_position_map': char_position_map,
+				'raxml_charset': raxml_charset,
+				'raxml_char_position_map': raxml_char_position_map,
+				'background_freq': background_freq,
+				'convergence_history': monitor.history,
+				'processing_stats': processing_stats,
+			}, f)
+		print(f"Pair counts + convergence history saved to {history_path}")
+
 	# Compute log odds matrix
 	print("Computing log odds matrix...")
+	if np.sum(background_freq) <= 0:
+		print("Background frequencies are all zero. Cannot compute log-odds matrix.")
+		sys.exit(1)
 	background_freq = background_freq / np.sum(background_freq)
 	log_odds = compute_log_odds_from_counts(pair_counts, background_freq)
 	# Save MAFFT matrix
@@ -735,6 +1157,53 @@ def main():
 	output_raxml_matrix(raxml_matrix, char_freqs, raxmlmat_path)
 	
 	print(f"RAxML matrix written to {raxmlmat_path}")
+
+	# Optional notebook-style plots and metrics outputs
+	if monitor is not None and len(monitor.history['iteration']) > 0:
+		fig = monitor.plot_convergence(figsize=(18, 12))
+		save_figure(fig, args.convergence_plot_path, show_plots=args.show_plots)
+
+	if args.plot:
+		plot_final_matrices(
+			pair_counts=pair_counts,
+			log_odds_matrix=log_odds,
+			background_freq=background_freq,
+			outpath=args.final_matrices_plot_path,
+			show_plots=args.show_plots,
+		)
+		plot_evolution_analysis(
+			monitor=monitor,
+			matrix_size=len(char_set),
+			outpath=args.evolution_plot_path,
+			show_plots=args.show_plots,
+		)
+
+	metrics_payload = build_metrics_payload(
+		pair_counts=pair_counts,
+		background_freq=background_freq,
+		log_odds=log_odds,
+		monitor=monitor,
+		matrix_size=len(char_set),
+		processing_stats=processing_stats,
+		fident_thresh=args.fident_thresh,
+	)
+
+	if args.metrics_json is not None:
+		metrics_dir = os.path.dirname(args.metrics_json)
+		if metrics_dir:
+			os.makedirs(metrics_dir, exist_ok=True)
+		with open(args.metrics_json, 'w') as f:
+			json.dump(metrics_payload, f, indent=2)
+		print(f"Metrics JSON written to {args.metrics_json}")
+
+	print("\nSummary metrics:")
+	print(f"  Total pair counts: {metrics_payload['total_pair_counts']:.0f}")
+	print(f"  Non-zero pairs: {metrics_payload['nonzero_pairs']}")
+	print(f"  Sparsity: {metrics_payload['sparsity'] * 100:.2f}%")
+	print(f"  Log-odds range: [{metrics_payload['log_odds_min']:.3f}, {metrics_payload['log_odds_max']:.3f}]")
+	if metrics_payload['convergence'] is not None:
+		print(f"  Final gradient norm: {metrics_payload['convergence']['final_gradient_norm']:.6f}")
+		print(f"  Converged: {metrics_payload['convergence']['is_converged']}")
 
 if __name__ == "__main__":
 	main()

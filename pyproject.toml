@@ -70,7 +70,15 @@ where = ["." , "src", "scripts"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"*" = ["mafft_tools/*", "madroot/*", "raxml-ng/*"]
+"foldtree2" = [
+  "config/*.csv",
+  "config/*.yaml",
+  "config/*.yml",
+  "mafft_tools/*",
+  "madroot/*",
+  "raxml-ng/*"
+]
 
 [tool.setuptools]
+include-package-data = true
 py-modules = ["ft2treebuilder", "makesubmat"]

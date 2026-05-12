@@ -8,7 +8,7 @@ run_name: "20_embeddings_all_decoders_final"
 # Dataset
 dataset: "structs_train_final.h5"
 data_dir: "../../datasets/foldtree2/"
-aapropcsv: "config/aaindex1.csv"
+aapropcsv: null
 
 # Training Parameters
 epochs: 100

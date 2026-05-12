@@ -24,7 +24,7 @@ clean_folder: false
 fam_limit: 10000
 
 # ft2 workflow options
-aaprop_csv: /work/FAC/FBM/DBC/cdessim2/default/dmoi/projects/foldtree2/foldtree2/config/aaindex1.csv
+aaprop_csv: null
 
 root_dir: .
 ancestral: false

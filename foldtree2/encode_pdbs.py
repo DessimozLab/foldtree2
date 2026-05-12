@@ -46,11 +46,6 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    # Initialize converter with config
-    converter = pdbgraph.PDB2PyG(
-        aapropcsv='./config/aaindex1.csv'
-    )
-    
     # Set device to gpu if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -64,6 +59,8 @@ if __name__ == '__main__':
     parser.add_argument('--multiprocessing', action='store_true', default=False, help='Use multiprocessing for parallel processing')
     parser.add_argument('--ncpu', type=int, default=25, help='Number of CPUs for multiprocessing (default: 25)')
     parser.add_argument('--nstructs', type=int, default=None, help='Number of structures to use (random subsample if specified)')
+    parser.add_argument('--aapropcsv', type=str, default=None,
+                        help='Amino acid property CSV file (default: packaged foldtree2/config/aaindex1.csv)')
     
     # Add help for the arguments
     parser.description = "Encode PDB files into PyTorch geometric graphs with optional FoldX data integration."
@@ -72,6 +69,9 @@ if __name__ == '__main__':
                      "  python encode_pdbs.py '/path/**/*.pdb' output.h5 /path/to/foldx")
 
     args = parser.parse_args()
+
+    # Initialize converter after parsing arguments so user overrides are honored.
+    converter = pdbgraph.PDB2PyG(aapropcsv=args.aapropcsv)
     
     # Handle input path - can be directory or glob pattern
     if os.path.isdir(args.input_path):

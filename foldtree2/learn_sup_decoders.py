@@ -90,7 +90,7 @@ torch.backends.cudnn.benchmark = False
 # Data setup
 datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
-converter = pdbgraph.PDB2PyG(aapropcsv='config/aaindex1.csv')
+converter = pdbgraph.PDB2PyG()
 struct_dat = pdbgraph.StructureDataset(dataset_path)
 train_loader = DataLoader(struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=4)
 data_sample = next(iter(train_loader))

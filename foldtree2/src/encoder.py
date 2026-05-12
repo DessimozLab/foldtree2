@@ -417,11 +417,11 @@ class mk1_Encoder(torch.nn.Module):
 		
 		return filename
 	
-	def encode_structures_batched(self, device, dataset_path, batch_size=8):
+	def encode_structures_batched(self, outpath, dataset_path, batch_size=8):
 		"""Encode protein structures using trained model.
 		
 		Args:
-			device: Device to use for encoding
+			outpath: Output path for the encoded FASTA file
 			dataset_path: Path to the HDF5 dataset file
 			batch_size: Number of structures to process in parallel (default: 8)
 		"""
@@ -437,10 +437,9 @@ class mk1_Encoder(torch.nn.Module):
 		encoder_loader = DataLoader(struct_dat, batch_size=batch_size, shuffle=False)
 		
 		# Encode structures
-		output_path = os.path.join(output_dir, modelname + '_aln_encoded.fasta')
-		self.encode_structures_fasta_batched(encoder_loader, output_path, replace=True)
-		print(f"Encoded structures saved to {output_path}")
-		return output_path
+		self.encode_structures_fasta_batched(encoder_loader, outpath, replace=True)
+		print(f"Encoded structures saved to {outpath}")
+		return outpath
 	
 	def encode_structures_fasta_batched(self, dataloader, filename=None, 
 								verbose=False, alphabet=None, replace=True, **kwargs):

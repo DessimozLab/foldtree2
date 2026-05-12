@@ -9,6 +9,7 @@ from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
 from foldtree2.src import encoder as ecdr
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 import os
@@ -308,8 +309,8 @@ parser.add_argument('--data-dir', type=str, default='../../datasets/foldtree2/',
                     help='Directory containing the dataset (default: ../../datasets/foldtree2/)')
 
 #prop csv
-parser.add_argument('--aapropcsv', type=str, default='config/aaindex1.csv',
-                    help='Amino acid property CSV file (default: config/aaindex1.csv)')
+parser.add_argument('--aapropcsv', type=str, default=None,
+                    help='Amino acid property CSV file (default: packaged foldtree2/config/aaindex1.csv)')
 
 # Loss weight arguments
 parser.add_argument('--edge-weight', type=float, default=0.25,
@@ -374,6 +375,12 @@ if args.config:
                 print(f"  {key}: {cli_value} (from CLI, overriding config)")
 else:
     print("No config file provided, using command-line arguments and defaults")
+
+try:
+    args.aapropcsv = resolve_aapropcsv_path(args.aapropcsv)
+except FileNotFoundError as exc:
+    print(str(exc))
+    sys.exit(1)
 
 # Set seeds for reproducibility
 torch.manual_seed(args.seed)
@@ -721,7 +728,7 @@ if os.path.exists(args.output_dir) and args.overwrite:
 
 # Data setup
 dataset_path = args.dataset
-converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
+converter = pdbgraph.PDB2PyG(aapropcsv=args.aapropcsv)
 struct_dat = pdbgraph.StructureDataset(dataset_path)
 train_loader = DataLoader(struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=4)
 data_sample = next(iter(train_loader))

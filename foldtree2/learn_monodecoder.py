@@ -691,7 +691,7 @@ if os.path.exists(args.output_dir) and args.overwrite:
 # Data setup
 datadir = '../../datasets/foldtree2/'
 dataset_path = args.dataset
-converter = pdbgraph.PDB2PyG(aapropcsv='./foldtree2/config/aaindex1.csv')
+converter = pdbgraph.PDB2PyG()
 struct_dat = pdbgraph.StructureDataset(dataset_path)
 
 # Filter by maximum protein size (residue count) if requested

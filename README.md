@@ -82,7 +82,7 @@ For advanced users who want to train their own models or work with specialized d
 ### 1. Prepare Training Data
 Convert your PDB files to a graph HDF5 dataset suitable for training:
 ```bash
-pdbs-to-graphs <input_pdb_dir> <training_graphs.h5> --aapropcsv config/aaindex1.csv
+pdbs-to-graphs <input_pdb_dir> <training_graphs.h5>
 ```
 
 ### 2. Train Custom Models

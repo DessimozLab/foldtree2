@@ -40,13 +40,15 @@ from Bio import PDB
 from Bio.PDB import PDBParser
 import pydssp
 from scipy.spatial.distance import cdist
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 EPS = 1e-15
 datadir = '../../datasets/foldtree2/'
 
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
-	def __init__(self, aapropcsv='./foldtree2/config/aaindex1.csv'):
-		aaproperties = pl.read_csv(aapropcsv)
+	def __init__(self, aapropcsv=None):
+		self.aapropcsv = resolve_aapropcsv_path(aapropcsv)
+		aaproperties = pl.read_csv(self.aapropcsv)
 		colmap = {col: i for i, col in enumerate(aaproperties.columns)}
 		aaproperties = aaproperties.drop(['description', 'reference'])
 		# Create one-hot encoding for unique columns

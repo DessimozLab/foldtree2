@@ -7,7 +7,7 @@
 # ============================================================================
 datadir: '../../datasets/foldtree2/'
 dataset_path: 'structs_train_final.h5'
-aapropcsv: './foldtree2/config/aaindex1.csv'
+aapropcsv: null
 
 # ============================================================================
 # MODEL ARCHITECTURE PARAMETERS

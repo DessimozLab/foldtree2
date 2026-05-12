@@ -12,6 +12,7 @@ import numpy as np
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
 from foldtree2.src.pdbgraph import PDB2PyG
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 from torch_geometric.data import HeteroData
 
 import traceback
@@ -89,10 +90,8 @@ class treebuilder():
 			self.raxmlchars = data['raxml_charset']
 		
 		self.ordset = set([ ord(c) for c in self.alphabet ])
-		if 'aapropcsv' in kwargs and kwargs['aapropcsv'] is not None:
-			self.converter = PDB2PyG(aapropcsv=kwargs['aapropcsv'])
-		else:
-			self.converter = PDB2PyG()
+		self.aapropcsv = resolve_aapropcsv_path(kwargs.get('aapropcsv'))
+		self.converter = PDB2PyG(aapropcsv=self.aapropcsv)
 
 		#detect if we are using a GPU
 		if 'device' in kwargs and kwargs['device'] is not None:
@@ -372,7 +371,7 @@ class treebuilder():
 		raxmlng_path = self.raxml_path
 		if raxmlng_path == None:
 			raxmlng_path = 'raxml-ng'
-		raxml_cmd = raxmlng_path  + ' --all --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}'+''.join(evoflags)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
+		raxml_cmd = raxmlng_path  + '  --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}'+''.join(evoflags)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
 		if self.bs == True:
 			raxml_cmd += ' --force perf_threads --bs-trees '+str(iterations)+' --bs-metric fbp'	
 		if self.redo == True:
@@ -619,7 +618,11 @@ def main():
 
 	parser = argparse.ArgumentParser(description="CLI for running foldtree2 tree builder.")
 	parser.add_argument("--about", action="store_true", help="Show information about FoldTree2 and exit.")
-	parser.add_argument("--model", required=True, help="Path to the model and name (without encoder/decoder or .pth extension)")
+
+	parser.add_argument("--model", required=False, help="Path to the model and name (without encoder/decoder or .pth extension)")
+	parser.add_argument("--encoder", required=False, default=None, help="Path to the encoder model (.pth file)")
+	parser.add_argument("--decoder", required=False, default=None, help="Path to the decoder model (.pth file)")
+
 	parser.add_argument("--mafftmat", required=False, default = None , help="Path to the MAFFT substitution matrix")
 	parser.add_argument("--submat", required=False, default = None, help="Path to the substitution matrix for RAxML")
 	parser.add_argument("--charmaps", required=False, default=None, help="Path to the character maps for encoding (if not specified, uses default)"	)
@@ -628,7 +631,7 @@ def main():
 	parser.add_argument("--output_prefix", default=None, help="Output file prefix for encoded sequences")
 
 	#paths to properties and executables
-	parser.add_argument("--aapropcsv", default='./foldtree2/config/aaindex1.csv', help="Path to amino acid properties CSV file for PDB2PyG conversion")
+	parser.add_argument("--aapropcsv", default=None, help="Path to amino acid properties CSV file for PDB2PyG conversion (default: packaged foldtree2/config/aaindex1.csv)")
 	parser.add_argument("--maffttext2hex", default='maffttext2hex', help="Path to maffttext2hex executable")
 	parser.add_argument("--maffthex2text", default='hex2maffttext', help="Path to hex2maffttext executable")
 
@@ -637,8 +640,8 @@ def main():
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 	parser.add_argument("--device", default=None, help="Device to run the model on (default: None, uses CPU or GPU if available)")
-	parser.add_argument( "--bs", action="store_true", help="Enable bootstrapping in RAxML-NG" )
-	parser.add_argument( "--redo", action="store_true", help="Enable --redo flag in RAxML-NG to overwrite existing results" )
+	parser.add_argument( "--bs", default=False, action="store_true", help="Enable bootstrapping in RAxML-NG" )
+	parser.add_argument( "--redo", default=False, action="store_true", help="Enable --redo flag in RAxML-NG to overwrite existing results" )
 
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
@@ -646,7 +649,7 @@ def main():
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
 		print('No arguments provided. Use -h or --help for help.')
 		print('Example command:')
-		print('  python ft2treebuilder.py --model ./models/my_model --structures "/path/to/structures/*.pdb" --outdir ./results --aapropcsv ./foldtree2/config/aaindex1.csv --ncores 8 --raxml_iterations 20 --ancestral')
+		print('  python ft2treebuilder.py --model ./models/my_model --structures "/path/to/structures/*.pdb" --outdir ./results --ncores 8 --raxml_iterations 20 --ancestral')
 		parser.print_help()
 		sys.exit(0)
 
@@ -655,22 +658,39 @@ def main():
 		sys.exit(0)
 	args = parser.parse_args()
 
-	if args.model is None:
+	if args.model is None and args.encoder is None:
 		print('Model path is required. Use --model to specify the model path.')
+		print( 'or use --encoder and --decoder to specify paths to encoder and decoder separately.' )
+		sys.exit(1)
+
+	try:
+		args.aapropcsv = resolve_aapropcsv_path(args.aapropcsv)
+	except FileNotFoundError as exc:
+		print(str(exc))
 		sys.exit(1)
 	
-	args.model = args.model.replace('.pt', '')
-	args.model = args.model.replace('.pth', '')
-	modeldir = '/'.join( args.model.split('/')[:-1] )
+	if args.model is not None:
+		args.model = args.model.replace('.pt', '')
+		args.model = args.model.replace('.pth', '')
+		modeldir = '/'.join( args.model.split('/')[:-1] )
+		encoder_path = os.path.join( args.model + '_encoder.pt' )
+		decoder_path = os.path.join( args.model + '_decoder.pt' )
+	
+	if args.encoder is not None and args.decoder is not None:
+		encoder_path = args.encoder
+		decoder_path = args.decoder
+	
 
-	encoder_path = os.path.join( args.model + '_encoder.pt' )
-	decoder_path = os.path.join( args.model + '_decoder.pt' )
+	
 	print('Using encoder path:', encoder_path)
 	print('Using decoder path:', decoder_path)
 	#check pth files exist
 
 	if not os.path.exists(encoder_path) or not os.path.exists(decoder_path):
-		print(f"Model files not found in {args.model}. Please ensure the encoder and decoder files are present.")
+		if args.model is not None:
+			print(f"Model files not found in {args.model}. Please ensure the encoder and decoder files are present.")
+		else:
+			print(f"Model files not found. Please ensure the encoder and decoder files are present.")
 		sys.exit(1)
 
 	if args.structures is None:
@@ -687,8 +707,10 @@ def main():
 			os.makedirs(args.outdir , exist_ok=True)
 	
 	if args.output_prefix is None:
-		args.output_prefix = os.path.join(args.outdir, args.model.split('/')[-1])
-	else:
+		if args.outdir is not None:
+			args.output_prefix = os.path.join(args.outdir, encoder_path.split('/')[-1].replace('.pt', ''))
+		else:
+			args.output_prefix = encoder_path.split('/')[-1].replace('.pt', '')
 		if not args.output_prefix.endswith('_'):
 			args.output_prefix += '_'
 	

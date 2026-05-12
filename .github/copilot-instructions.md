@@ -16,7 +16,7 @@ FoldTree2 performs phylogenetic tree inference from protein 3D structures using 
   - `Transformer_AA_Decoder`: Sequence reconstruction with attention
 - **Graph Conversion** ([foldtree2/src/pdbgraph.py](../foldtree2/src/pdbgraph.py)): `PDB2PyG` converts PDB files to PyTorch Geometric graphs
   - Uses ProDy for interaction matrices and DSSP for secondary structure
-  - Node features from `config/aaindex1.csv` (amino acid properties)
+  - Node features from the packaged amino-acid properties CSV resolved at runtime
   - Edge features: distances, angles, contact maps (default 15Å threshold)
 
 ### Training Systems
@@ -42,7 +42,7 @@ Two parallel training scripts (same model architecture, different frameworks):
 ### Training a New Model
 ```bash
 # Prepare data
-pdbs-to-graphs <pdb_dir> training.h5 --aapropcsv config/aaindex1.csv
+pdbs-to-graphs <pdb_dir> training.h5
 
 # Train (Lightning version with multi-GPU)
 python foldtree2/learn_lightning.py --config config_multi_gpu_training.yaml

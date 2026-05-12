@@ -21,6 +21,7 @@ from Bio import PDB
 from Bio.PDB import PDBParser
 import pydssp
 from scipy.spatial.distance import cdist
+from foldtree2.src.config_paths import resolve_aapropcsv_path
 EPS = 1e-15
 datadir = '../../datasets/foldtree2/'
 
@@ -48,9 +49,9 @@ def interaction_matrix_energy(ag):
 
 #create a class for transforming pdb files to pyg 
 class PDB2PyG:
-	def __init__(self , aapropcsv = './foldtree2/config/aaindex1.csv'):
-		self.aapropcsv = aapropcsv
-		aaproperties = pd.read_csv(aapropcsv, header=0)
+	def __init__(self , aapropcsv = None):
+		self.aapropcsv = resolve_aapropcsv_path(aapropcsv)
+		aaproperties = pd.read_csv(self.aapropcsv, header=0)
 		colmap = {aaproperties.columns[i]:i for i in range(len(aaproperties.columns))}
 		aaproperties.drop( [ 'description' , 'reference'  ], axis=1, inplace=True)
 		onehot = pd.get_dummies(aaproperties.columns.unique())

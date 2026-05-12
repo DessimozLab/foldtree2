@@ -10,7 +10,7 @@ gradient_accumulation_steps: 3  # No gradient accumulation
 # Dataset
 dataset: "structs_train_final.h5"
 data_dir: "../../datasets/foldtree2/"
-aapropcsv: "config/aaindex1.csv"
+aapropcsv: null
 
 
 # Model architecture
