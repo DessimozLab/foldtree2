@@ -6,6 +6,25 @@
 
 FoldTree2 is a Python package and toolkit for inferring phylogenetic trees from protein structures using maximum likelihood methods. It provides tools for converting protein structure files (PDBs) into graph representations, deriving structural alignments, and building phylogenetic trees based on structural data.
 
+## TLDR
+Quick setup and run (from the repository root):
+
+```bash
+conda env create --name foldtree2 --file=foldtree2.yml
+conda activate foldtree2
+pip install .
+```
+
+Then run a set of PDB structures with the production model using explicit encoder/decoder checkpoints:
+
+```bash
+foldtree2 \
+  --encoder models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt \
+  --decoder models/production/30char_minimal_decoder/final_30char_contacts_aa_decoder_full_epoch_52.pt \
+  --structures "/path/to/structures/*.pdb" \
+  --outdir results/
+```
+
 ## Features
 - **PDB to Graph Conversion:** Convert protein structures into graph-based representations suitable for machine learning and phylogenetic analysis.
 - **Custom Substitution Matrices:** Generate and use structure-based substitution matrices for alignments.
@@ -59,9 +78,8 @@ foldtree2 --model mergeddecoder_foldtree2_test \
 This single command will:
 1. Convert PDB files to graph representations
 2. Use pretrained models to encode structural features
-3. Generate structure-based substitution matrices
-4. Create structural alignments
-5. Infer a maximum likelihood phylogenetic tree
+3. Create structural alignments
+4. Infer a maximum likelihood phylogenetic tree
 
 ### Available Pretrained Models
 - `mergeddecoder_foldtree2_test`: General-purpose model for diverse protein structures
@@ -72,12 +90,17 @@ This single command will:
 The pipeline generates several output files in your results directory:
 - **Phylogenetic tree**: `.tre` files in Newick format
 - **Alignments**: `.aln` files showing structural alignments
-- **Substitution matrices**: Custom matrices based on structural similarity
 - **Log files**: Detailed information about the inference process
 
 ## Advanced Usage: Training Custom Models
 
 For advanced users who want to train their own models or work with specialized datasets, FoldTree2 provides a complete training pipeline.
+
+Why do this instead of using a pretrained model?
+- **Emphasize domain-specific structure signals**: If your proteins are enriched for particular folds, repeats, interfaces, or conformational regimes, a custom encoder can better capture those patterns than a general model.
+- **Control how structures are compressed into discrete characters**: FoldTree2 encodes structure graphs into a discrete alphabet, and this bottleneck determines what information is preserved in downstream alignments/tree inference.
+- **Tune phylogenetic granularity with alphabet size**: Smaller alphabets (fewer embeddings) tend to merge subtle differences and can be more robust/noise-tolerant; larger alphabets preserve finer structural distinctions and can improve resolution for closely related clades.
+- **Adapt to your data quality and objectives**: You can tune model capacity and training settings to prioritize broad family-level separation or fine-grained subfamily/strain-level structure variation.
 
 ### 1. Prepare Training Data
 Convert your PDB files to a graph HDF5 dataset suitable for training:
@@ -123,6 +146,7 @@ See the complete list of options with `--help`.
 - `--batch-size`: Training batch size (default: 20)
 - `--hidden-size`: Hidden layer dimensions (default: 256)
 - `--embedding-dim`: Embedding dimensions (default: 128)
+- `--num-embeddings`: Size of the discrete structural alphabet used by the encoder
 - `--learning-rate`: Learning rate (default: 1e-4)
 - `--clip-grad`: Enable gradient clipping for stability
 
@@ -143,9 +167,10 @@ This script has utilities to download structures from the AFDB cluster database,
 See the complete list of options with `--help`.
 
 ### 4. Use Your Custom Model
-Once trained, use your custom model in the main pipeline:
+Once trained, use explicit encoder and decoder checkpoints in the main pipeline:
 ```bash
-foldtree2 --model <my_custom_model> \
+foldtree2 --encoder <PATH_TO_ENCODER.pt> \
+  --decoder <PATH_TO_DECODER.pt> \
   --structures <YOURSTRUCTUREFOLDER> \
   --outdir <RESULTSFOLDER>
 ```
