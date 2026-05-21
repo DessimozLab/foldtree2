@@ -2,7 +2,9 @@
 # coding: utf-8
 
 import importlib
+import multiprocessing as mp
 import os
+import pickle
 import queue
 import threading
 from foldtree2.src.pdbgraph import StructureDataset
@@ -25,6 +27,42 @@ from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
 import copy
 from torch_geometric.loader import DataLoader
+
+from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, _load_foldcomp_ids
+
+
+def _foldcomp_chunk_producer_process(
+	worker_idx,
+	foldcomp_db,
+	worker_ids,
+	global_start,
+	chunk_size,
+	cache_size,
+	out_queue,
+	done_tag,
+	error_tag,
+):
+	"""Load Foldcomp graphs in a worker process and stream chunks to the parent."""
+	try:
+		local_dataset = FoldcompStructureDataset(
+			foldcomp_db,
+			ids=worker_ids,
+			converter=None,
+			cache_size=int(cache_size),
+			persistent_db=False,
+		)
+
+		for i in range(0, len(worker_ids), int(chunk_size)):
+			chunk_ids = worker_ids[i:i + int(chunk_size)]
+			graphs = local_dataset.get_many(chunk_ids)
+			# Send raw bytes to avoid torch multiprocessing FD handoff issues.
+			payload = pickle.dumps(graphs, protocol=pickle.HIGHEST_PROTOCOL)
+			out_queue.put((global_start + i, payload))
+	except Exception as e:
+		out_queue.put((error_tag, worker_idx, f'{type(e).__name__}: {e}'))
+	finally:
+		out_queue.put((done_tag, worker_idx, None))
+
 
 # Note: datadir is defined but may not be used throughout the module
 datadir = '../../datasets/foldtree2/'
@@ -560,7 +598,6 @@ class mk1_Encoder(torch.nn.Module):
 		This is intended for very large databases (e.g., AlphaFold DB). It avoids
 		materializing an HDF5 graph dataset and streams chunks into encoder batches.
 		"""
-		from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, _load_foldcomp_ids
 
 		if filename is None:
 			raise ValueError('Filename must be provided for fasta encoding')
@@ -592,6 +629,9 @@ class mk1_Encoder(torch.nn.Module):
 			persistent_db=False,
 		)
 
+		if verbose:
+			print( f"Encoding {len(ids)} structures from Foldcomp DB to FASTA at {filename} with batch size {batch_size} and chunk size {chunk_size}" )
+
 		q = queue.Queue(maxsize=max(1, int(queue_size)))
 		sentinel = object()
 
@@ -609,6 +649,7 @@ class mk1_Encoder(torch.nn.Module):
 		producer = threading.Thread(target=_producer, daemon=True)
 		producer.start()
 
+
 		encoded_count = 0
 		with open(filename, 'w') as f:
 			pbar = tqdm.tqdm(total=len(ids), desc='Encoding Foldcomp DB to FASTA', disable=not verbose)
@@ -618,11 +659,13 @@ class mk1_Encoder(torch.nn.Module):
 					break
 				if isinstance(item, Exception):
 					raise item
-
+				if verbose:
+					print(f"Got chunk of {len(item)} graphs from producer thread")
 				chunk_graphs = item
 				batch_loader = DataLoader(chunk_graphs, batch_size=max(1, int(batch_size)), shuffle=False)
 
 				for batch in batch_loader:
+
 					batch = batch.to(self.device)
 					z, _ = self.forward(batch)
 					strdata_indices, _ = self.vector_quantizer.discretize_z(z)
@@ -663,6 +706,180 @@ class mk1_Encoder(torch.nn.Module):
 			pbar.close()
 
 		producer.join()
+		return filename
+
+	def encode_foldcomp_fasta_mp(
+		self,
+		foldcomp_db,
+		filename,
+		ids=None,
+		max_structures=None,
+		chunk_size=1024,
+		queue_size=4,
+		batch_size=16,
+		cache_size=0,
+		num_workers=4,
+		start_method='spawn',
+		replace=True,
+		alphabet=None,
+		verbose=False,
+	):
+		"""Encode a Foldcomp DB to token FASTA with multiprocessing prefetch.
+
+		Each worker builds its own FoldcompStructureDataset over a deterministic slice
+		of IDs, fetches graph chunks independently, and pushes results to a shared
+		queue. The consumer writes output in original ID order.
+		"""
+
+		if filename is None:
+			raise ValueError('Filename must be provided for fasta encoding')
+		if self.vector_quantizer.num_embeddings > 248:
+			raise ValueError('Encoding size too large for fasta encoding')
+
+		replace_dict = {
+			chr(0): chr(246), '"': chr(248), '#': chr(247), '>': chr(249),
+			'=': chr(250), '<': chr(251), '-': chr(252), ' ': chr(253),
+			'\r': chr(254), '\n': chr(255)
+		}
+
+		if ids is None:
+			ids = _load_foldcomp_ids(foldcomp_db)
+		else:
+			ids = list(ids)
+
+		if max_structures is not None:
+			ids = ids[:int(max_structures)]
+
+		if len(ids) == 0:
+			raise ValueError('No Foldcomp IDs provided/found to encode')
+
+		chunk_size = max(1, int(chunk_size))
+		batch_size = max(1, int(batch_size))
+		num_workers = max(1, int(num_workers))
+		num_workers = min(num_workers, len(ids))
+
+		if verbose:
+			print(
+				f"Encoding {len(ids)} structures from Foldcomp DB to FASTA at {filename} "
+				f"with batch size {batch_size}, chunk size {chunk_size}, and {num_workers} worker processes"
+			)
+
+		ctx = mp.get_context(start_method)
+		q = ctx.Queue(maxsize=max(1, int(queue_size)))
+		done_tag = '__worker_done__'
+		error_tag = '__worker_error__'
+
+		worker_specs = []
+		for worker_idx in range(num_workers):
+			start = (len(ids) * worker_idx) // num_workers
+			end = (len(ids) * (worker_idx + 1)) // num_workers
+			if start < end:
+				worker_specs.append((worker_idx, start, ids[start:end]))
+
+		producers = []
+		for worker_idx, global_start, worker_ids in worker_specs:
+			producer = ctx.Process(
+				target=_foldcomp_chunk_producer_process,
+				args=(
+					worker_idx,
+					foldcomp_db,
+					worker_ids,
+					global_start,
+					chunk_size,
+					cache_size,
+					q,
+					done_tag,
+					error_tag,
+				),
+				daemon=False,
+			)
+			producer.start()
+			producers.append(producer)
+
+		
+		encoded_count = 0
+		done_workers = 0
+		with open(filename, 'w') as f:
+			pbar = tqdm.tqdm(total=len(ids), desc='Encoding Foldcomp DB to FASTA', disable=not verbose)
+			failed = False
+			try:
+				while done_workers < len(producers):
+					try:
+						item = q.get(timeout=1.0)
+					except queue.Empty:
+						continue
+
+					if isinstance(item, tuple) and len(item) == 3 and item[0] == done_tag:
+						done_workers += 1
+						continue
+
+					if isinstance(item, tuple) and len(item) == 3 and item[0] == error_tag:
+						failed = True
+						_, worker_idx, err_msg = item
+						raise RuntimeError(f'Foldcomp producer worker {worker_idx} failed: {err_msg}')
+
+					if not isinstance(item, tuple) or len(item) != 2:
+						raise RuntimeError(f'Unexpected queue payload from producer: {type(item)}')
+
+					chunk_start, payload = item
+					chunk_graphs = pickle.loads(payload)
+					if verbose:
+						print(f'Encoding async chunk start={chunk_start} size={len(chunk_graphs)}')
+
+					batch_loader = DataLoader(chunk_graphs, batch_size=batch_size, shuffle=False)
+
+					for batch in batch_loader:
+
+						batch = batch.to(self.device)
+						z, _ = self.forward(batch)
+						strdata_indices, _ = self.vector_quantizer.discretize_z(z)
+
+						if hasattr(batch['res'], 'batch') and batch['res'].batch is not None:
+							batch_indices = batch['res'].batch
+							num_graphs = int(batch_indices.max().item()) + 1
+						else:
+							num_graphs = 1
+							batch_indices = torch.zeros(z.shape[0], dtype=torch.long, device=z.device)
+
+						for graph_idx in range(num_graphs):
+							mask = (batch_indices == graph_idx)
+							graph_tokens = strdata_indices[mask]
+
+							if hasattr(batch, 'identifier'):
+								if isinstance(batch.identifier, list):
+									identifier = batch.identifier[graph_idx]
+								else:
+									identifier = batch.identifier
+							else:
+								identifier = f'structure_{encoded_count}'
+
+							f.write(f'>{identifier}\n')
+							outstr = ''
+							for char_idx in graph_tokens:
+								if alphabet is not None:
+									char = alphabet[char_idx.item()]
+								else:
+									char = chr(char_idx.item() + 1)
+								if replace and char in replace_dict:
+									char = replace_dict[char]
+								outstr += char
+							f.write(outstr + '\n')
+							encoded_count += 1
+							pbar.update(1)
+			finally:
+				if failed:
+					for producer in producers:
+						if producer.is_alive():
+							producer.terminate()
+				pbar.close()
+
+		for producer in producers:
+			producer.join()
+		q.close()
+		if encoded_count != len(ids):
+			raise RuntimeError(
+				f'Encoded sequence count mismatch: wrote {encoded_count}, expected {len(ids)}'
+			)
 		return filename
 
 

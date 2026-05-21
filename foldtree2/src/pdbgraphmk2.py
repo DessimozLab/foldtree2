@@ -8,6 +8,11 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Union
 
+try:
+    from fastdist import fastdist as fastdist_api
+except Exception:
+    fastdist_api = None
+
 import gemmi
 try:
     import foldcomp
@@ -27,6 +32,20 @@ from torch_geometric.data import Dataset, HeteroData
 from foldtree2.src.rigid_utils import rot_to_quat
 from foldtree2.src.config_paths import resolve_aapropcsv_path
 
+
+def ret_distmat(inmat: np.ndarray) -> np.ndarray:
+    """Compute Euclidean distance matrix for one or two point sets."""
+    if inmat.shape[0] == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    if fastdist_api is not None:
+        return fastdist_api.matrix_pairwise_distance(
+            inmat,
+            fastdist_api.euclidean,
+            "euclidean",
+            return_matrix=True,
+        )
+    else:
+        return distance.cdist(inmat, inmat, metric="euclidean").astype(np.float32)
 
 AA3_TO_1 = {
     "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
@@ -312,7 +331,8 @@ def _make_burial_bins(total: np.ndarray) -> np.ndarray:
 def _compute_wcn(cb_xyz: np.ndarray, cutoff: float = 15.0) -> np.ndarray:
     if cb_xyz.shape[0] == 0:
         return np.zeros(0, dtype=np.float32)
-    dmat = distance.cdist(cb_xyz, cb_xyz)
+    # dmat = distance.cdist(cb_xyz, cb_xyz)
+    dmat = ret_distmat(cb_xyz)
     mask = (dmat > 1e-8) & (dmat <= cutoff)
     out = np.zeros(dmat.shape[0], dtype=np.float32)
     if np.any(mask):
@@ -375,7 +395,7 @@ class PDB2PyG:
         self.revmap_aa = {v: k for k, v in aaindex.items()}
 
     @staticmethod
-    def read_structure(path: str) -> gemmi.Structure:
+    def read_structure(path: Union[str, bytes, bytearray]) -> gemmi.Structure:
         """Read a structure from PDB or Foldcomp (FCZ) root input.
 
         Args:
@@ -412,6 +432,19 @@ class PDB2PyG:
 
         # Standard PDB/cif paths
         return gemmi.read_structure(path)
+
+    @staticmethod
+    def _identifier_from_input(pdb_input: Union[str, bytes, bytearray], fallback: str = 'inmemory_structure') -> str:
+        """Build a stable identifier for path-based or in-memory structure payloads."""
+        if isinstance(pdb_input, str):
+            stripped = pdb_input.lstrip()
+            # Path-like string.
+            if '\n' not in pdb_input and not stripped.startswith(('ATOM', 'HETATM', 'HEADER', 'MODEL', 'data_')):
+                return Path(pdb_input).stem
+            return fallback
+
+        # bytes/bytearray payloads are in-memory content (PDB text or FCZ bytes).
+        return fallback
 
     @staticmethod
     def _pick_polymer_chain(model: gemmi.Model):
@@ -743,7 +776,8 @@ class PDB2PyG:
         return self._angles_to_ss_onehot(phi_psi_omega)
 
     def _compute_contact_matrix(self, xyz: np.ndarray, distance_cutoff: float = 8.0):
-        dmat = distance.cdist(xyz, xyz)
+        # dmat = distance.cdist(xyz, xyz)
+        dmat = ret_distmat(xyz)
         mask = (dmat > 1e-8) & (dmat < distance_cutoff)
         out = np.zeros_like(dmat, dtype=np.float32)
         out[mask] = dmat[mask]
@@ -783,15 +817,19 @@ class PDB2PyG:
         if length == 0:
             return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map
 
-        ca_dmat = distance.cdist(ca_xyz, ca_xyz)
-        cb_dmat = distance.cdist(cb_xyz, cb_xyz)
+        # ca_dmat = distance.cdist(ca_xyz, ca_xyz)
+        ca_dmat = ret_distmat(ca_xyz)
+        # cb_dmat = distance.cdist(cb_xyz, cb_xyz)
+        cb_dmat = ret_distmat(cb_xyz)
         valid_sg = np.all(np.isfinite(sg_xyz), axis=1)
-        sg_dmat = distance.cdist(sg_xyz, sg_xyz)
+        # sg_dmat = distance.cdist(sg_xyz, sg_xyz)
+        sg_dmat = ret_distmat(sg_xyz)
         
         # N-O distance matrix for hydrogen bond detection
         # Backbone H-bond: N-H...O=C where N is donor and O is acceptor
         # N of residue i donates to O of residue j
-        n_o_dmat = distance.cdist(n_xyz, o_xyz)
+        # n_o_dmat = distance.cdist(n_xyz, o_xyz)
+        n_o_dmat = ret_distmat(n_xyz)
 
         aromatic = {'PHE', 'TYR', 'TRP', 'HIS'}
         cationic = {'ARG', 'LYS', 'HIS'}
@@ -883,7 +921,8 @@ class PDB2PyG:
         return peptide_map, contact_map, pi_stacking_map, ionic_map, disulfide_map, hbond_map
 
     def _fft_tracks(self, xyz: np.ndarray, cutoff_1d: int = 80, cutoff_2d: int = 25):
-        dist_matrix = distance.cdist(xyz, xyz)
+        # dist_matrix = distance.cdist(xyz, xyz)
+        dist_matrix = ret_distmat(xyz)
 
         fft_1d = np.fft.fft(dist_matrix, axis=1)
         if fft_1d.shape[1] < cutoff_1d:
@@ -1029,8 +1068,10 @@ class PDB2PyG:
             contact_cutoff=distance_cutoff,
         )
 
+        base_identifier = self._identifier_from_input(pdb_file)
+
         return {
-            'identifier': f"{Path(pdb_file).stem}_{chain.name}",
+            'identifier': f"{base_identifier}_{chain.name}",
             'angles': angles_with_pe,
             'aa': aa,
             'bondangles': bondangles,
@@ -1110,15 +1151,12 @@ class PDB2PyG:
         data['sc_centroid'].x = torch.tensor(feat['sc_centroid'], dtype=torch.float32)  # Shape: (N, 4) - dir_xyz + distance
 
         track_names = ['contact_number', 'local_contacts', 'global_contacts', 'range_bin', 'burial_bin', 'bend_bin', 'torsion_bin', 'wcn']
-        track_stack = []
         for key in track_names:
             vals = feat['track_features'][key].reshape(-1, 1)
             data[key].x = torch.tensor(vals, dtype=torch.float32)
-            track_stack.append(vals)
 
         base_angles = torch.tensor(angles.values, dtype=torch.float32)
-        track_mat = torch.tensor(np.concatenate(track_stack, axis=1), dtype=torch.float32)
-        data['res'].x = torch.cat([base_angles, r_true.view(-1, 9), t_true, track_mat], dim=1)
+        data['res'].x = torch.cat([base_angles, r_true.view(-1, 9), t_true], dim=1)
 
         data['fourier1dr'].x = torch.tensor(feat['fft1r'], dtype=torch.float32)
         data['fourier1di'].x = torch.tensor(feat['fft1i'], dtype=torch.float32)
@@ -1428,6 +1466,18 @@ class FoldcompStructureDataset(Dataset):
             return idx
         return self.ids[int(idx)]
 
+    def _normalize_foldcomp_name(self, name: Union[str, bytes, bytearray, None]) -> str:
+        if name is None:
+            return ''
+        if isinstance(name, (bytes, bytearray)):
+            key = bytes(name).decode('utf-8', errors='replace')
+        else:
+            key = str(name)
+        lower = key.lower()
+        if lower.endswith('.pdb'):
+            return key[:-4]
+        return key
+
     def _cache_get(self, entry_id: str):
         if self.cache_size <= 0:
             return None
@@ -1456,14 +1506,15 @@ class FoldcompStructureDataset(Dataset):
         while len(self._getitem_buffer) > self.persistent_window:
             self._getitem_buffer.popitem(last=False)
 
-    def _build_graph_from_pdb(self, entry_id: str, name: str, pdb):
+    def _build_graph_from_pdb(self, entry_id: str, name: Union[str, bytes, bytearray, None], pdb):
         # Build graph directly from Foldcomp descriptors/PDB content; no temporary files needed.
         assert foldcomp is not None
         try:
             fc_data = foldcomp.get_data(pdb)
         except Exception:
             fc_data = None
-        hetero_data = self.converter.struct2pyg(pdb, identifier=name, foldcomp_data=fc_data)
+        normalized_name = self._normalize_foldcomp_name(name) or entry_id
+        hetero_data = self.converter.struct2pyg(pdb, identifier=normalized_name, foldcomp_data=fc_data)
         if hetero_data is None:
             raise ValueError(f'Graph conversion failed for foldcomp entry: {entry_id}')
         return hetero_data
@@ -1488,7 +1539,7 @@ class FoldcompStructureDataset(Dataset):
 
         with foldcomp.open(self.foldcomp_db, ids=missing) as db:
             for name, pdb in db:
-                key = name[:-4] if name.endswith('.pdb') else name
+                key = self._normalize_foldcomp_name(name)
                 graph = self._build_graph_from_pdb(key, name, pdb)
                 self._buffer_put(key, graph)
                 self._cache_put(key, graph)
@@ -1513,7 +1564,7 @@ class FoldcompStructureDataset(Dataset):
             assert foldcomp is not None
             with foldcomp.open(self.foldcomp_db, ids=missing) as db:
                 for name, pdb in db:
-                    key = name[:-4] if name.endswith('.pdb') else name
+                    key = self._normalize_foldcomp_name(name)
                     graph = self._build_graph_from_pdb(key, name, pdb)
                     results[key] = graph
                     self._cache_put(key, graph)

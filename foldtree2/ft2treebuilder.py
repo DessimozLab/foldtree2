@@ -11,7 +11,7 @@ import numpy as np
 
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
-from foldtree2.src.pdbgraph import PDB2PyG
+from foldtree2.src.pdbgraphmk2 import PDB2PyG
 from foldtree2.src.config_paths import resolve_aapropcsv_path
 from torch_geometric.data import HeteroData
 
