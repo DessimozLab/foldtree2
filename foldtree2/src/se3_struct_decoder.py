@@ -92,7 +92,7 @@ class se3_denoiser(torch.nn.Module):
 		atom_ids = torch.argmax(atom_logits, dim=-1)  # (num_nodes,)
 		
 		# Get coordinates
-		coords = data['coords'].x if hasattr(data, 'coords') else data.x_dict['coords']
+		coords = data['coord_pred'].x if hasattr(data, 'coords') else data.x_dict['coords']
 		coords = coords.view(-1, 3)  # (num_nodes, 3)
 		
 		# Create adjacency matrix from edge_index
@@ -113,28 +113,26 @@ class se3_denoiser(torch.nn.Module):
 				# Extract atom_ids and coords for this graph
 				atom_ids_list.append(atom_ids[mask])
 				coords_list.append(coords[mask])
-				
 				# Build adjacency matrix for this graph
 				adj = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=self.device)
-				# Use backbone edges or contact edges if available
-				if ('res', 'backbone', 'res') in edge_index_dict:
-					edge_index = edge_index_dict[('res', 'backbone', 'res')]
-				elif ('res', 'contactPoints', 'res') in edge_index_dict:
-					edge_index = edge_index_dict[('res', 'contactPoints', 'res')]
-				else:
-					# Use first available edge type
-					edge_index = list(edge_index_dict.values())[0] if edge_index_dict else None
 				
-				if edge_index is not None:
-					# Filter edges for this graph
-					node_indices = torch.where(mask)[0]
-					node_mapping = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(node_indices)}
-					
-					for edge_idx in range(edge_index.shape[1]):
-						src, dst = edge_index[0, edge_idx].item(), edge_index[1, edge_idx].item()
-						if src in node_mapping and dst in node_mapping:
-							adj[node_mapping[src], node_mapping[dst]] = True
+				#add the contacts by looking at the distance 
+				# Compute pairwise distances
+				dists = torch.cdist(coords[mask], coords[mask])  # (num nodes, num_nodes)
+				contact_threshold = 8.0  # Angstroms, adjust as needed
+				contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
+				adj |= contact_edges
 				
+				#reformat this into edge_index format and add to the adj matrix
+				#edge_index = contact_edges.nonzero(as_tuple=False).t()
+				#if edge_index is not None:
+				#	# Filter edges for this graph
+				#	node_indices = torch.where(mask)[0]
+				#	node_mapping = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(node_indices)}
+				#	for edge_idx in range(edge_index.shape[1]):
+				#		src, dst = edge_index[0, edge_idx].item(), edge_index[1, edge_idx].item()
+				#		if src in node_mapping and dst in node_mapping:
+				#			adj[node_mapping[src], node_mapping[dst]] = True
 				adj_mat_list.append(adj)
 			
 			# Pad to same length
@@ -166,16 +164,11 @@ class se3_denoiser(torch.nn.Module):
 			num_nodes = atom_ids.shape[0]
 			adj_mat = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=self.device)
 			
-			# Build adjacency matrix from edge_index
-			if ('res', 'backbone', 'res') in edge_index_dict:
-				edge_index = edge_index_dict[('res', 'backbone', 'res')]
-			elif ('res', 'contactPoints', 'res') in edge_index_dict:
-				edge_index = edge_index_dict[('res', 'contactPoints', 'res')]
-			else:
-				edge_index = list(edge_index_dict.values())[0] if edge_index_dict else None
-			
-			if edge_index is not None:
-				adj_mat[edge_index[0], edge_index[1]] = True
+			# Build adjacency matrix from point cloud distances
+			dists = torch.cdist(coords, coords)  # (num_nodes, num_nodes)
+			contact_threshold = 8.0  # Angstroms, adjust as needed
+			contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
+			adj_mat |= contact_edges
 			
 			atom_ids_batch = atom_ids.unsqueeze(0)  # (1, num_nodes)
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)

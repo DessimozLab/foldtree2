@@ -32,20 +32,16 @@ from torch_geometric.data import Dataset, HeteroData
 from foldtree2.src.rigid_utils import rot_to_quat
 from foldtree2.src.config_paths import resolve_aapropcsv_path
 
-
-def ret_distmat(inmat: np.ndarray) -> np.ndarray:
+def ret_distmat(inmat: np.ndarray , inmat2: Optional[np.ndarray] = None) -> np.ndarray:
     """Compute Euclidean distance matrix for one or two point sets."""
     if inmat.shape[0] == 0:
         return np.zeros((0, 0), dtype=np.float32)
+    if inmat2 is None:
+        inmat2 = inmat
     if fastdist_api is not None:
-        return fastdist_api.matrix_pairwise_distance(
-            inmat,
-            fastdist_api.euclidean,
-            "euclidean",
-            return_matrix=True,
-        )
+        return fastdist_api.matrix_to_matrix_distance(inmat, inmat2, fastdist_api.euclidean, "euclidean")
     else:
-        return distance.cdist(inmat, inmat, metric="euclidean").astype(np.float32)
+        return distance.cdist(inmat, inmat2, metric="euclidean").astype(np.float32)
 
 AA3_TO_1 = {
     "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
@@ -829,7 +825,7 @@ class PDB2PyG:
         # Backbone H-bond: N-H...O=C where N is donor and O is acceptor
         # N of residue i donates to O of residue j
         # n_o_dmat = distance.cdist(n_xyz, o_xyz)
-        n_o_dmat = ret_distmat(n_xyz)
+        n_o_dmat = ret_distmat(n_xyz, o_xyz)
 
         aromatic = {'PHE', 'TYR', 'TRP', 'HIS'}
         cationic = {'ARG', 'LYS', 'HIS'}
