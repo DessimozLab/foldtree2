@@ -5,13 +5,120 @@ from gotennet_pytorch import GotenNet
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 from foldtree2.src.folding_refiner import QuaternionFoldingRefiner
+from foldtree2.src.losses.fape import rotation_matrix_to_quaternion
 import pytorch_lightning as L
 
 
-def derive_rt_from_coords(coords):
-	#comput the R and T from one residue to the next using pytorch
-	# coords: (N, 3)
-	assert coords.dim() == 2 and coords.size(1) == 3, "coords must be of shape (N, 3)"
+def _normalize_vec(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+	return x / x.norm(dim=-1, keepdim=True).clamp_min(eps)
+
+
+def _safe_orthogonal(v: torch.Tensor) -> torch.Tensor:
+	"""Build a deterministic unit vector orthogonal to v."""
+	x_axis = torch.zeros_like(v)
+	x_axis[..., 0] = 1.0
+	y_axis = torch.zeros_like(v)
+	y_axis[..., 1] = 1.0
+	use_x = v[..., 0].abs() < 0.9
+	base = torch.where(use_x.unsqueeze(-1), x_axis, y_axis)
+	ortho = torch.cross(v, base, dim=-1)
+	return _normalize_vec(ortho)
+
+
+def _compute_local_frame_from_ca(ca_coords: torch.Tensor):
+	"""Build local frames from CA coordinates only.
+
+	Returns:
+		rotmat: (N, 3, 3)
+		trans: (N, 3) global translations (CA positions)
+		quat: (N, 4) unit quaternions (w, x, y, z)
+	"""
+	if ca_coords is None:
+		return None, None, None
+
+	if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
+		raise RuntimeError(f'Expected CA coords with shape [N,3], got {tuple(ca_coords.shape)}')
+
+	coords = torch.nan_to_num(ca_coords, nan=0.0, posinf=0.0, neginf=0.0)
+	n = coords.shape[0]
+	if n == 0:
+		return None, None, None
+
+	if n == 1:
+		rot = torch.eye(3, dtype=coords.dtype, device=coords.device).unsqueeze(0)
+		trans = coords
+		quat = rotation_matrix_to_quaternion(rot)
+		return rot, trans, quat
+
+	prev_ca = torch.roll(coords, shifts=1, dims=0)
+	next_ca = torch.roll(coords, shifts=-1, dims=0)
+	prev_ca[0] = coords[0] + (coords[0] - coords[1])
+	next_ca[-1] = coords[-1] + (coords[-1] - coords[-2])
+
+	v_prev = coords - prev_ca
+	v_next = next_ca - coords
+
+	e1 = _normalize_vec(v_prev + v_next)
+	degenerate_e1 = (v_prev + v_next).norm(dim=-1) < 1e-8
+	if degenerate_e1.any():
+		e1[degenerate_e1] = _normalize_vec(v_next[degenerate_e1])
+
+	normal = torch.cross(v_prev, v_next, dim=-1)
+	e2 = _normalize_vec(normal)
+	degenerate_e2 = normal.norm(dim=-1) < 1e-8
+	if degenerate_e2.any():
+		e2[degenerate_e2] = _safe_orthogonal(e1[degenerate_e2])
+
+	e3 = _normalize_vec(torch.cross(e1, e2, dim=-1))
+	e2 = _normalize_vec(torch.cross(e3, e1, dim=-1))
+
+	rot = torch.stack([e1, e2, e3], dim=-1)
+	rot = torch.nan_to_num(rot, nan=0.0, posinf=0.0, neginf=0.0)
+	trans = coords
+	quat = rotation_matrix_to_quaternion(rot)
+	quat = torch.nan_to_num(quat, nan=0.0, posinf=0.0, neginf=0.0)
+	quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+
+	return rot, trans, quat
+
+
+def _frame_outputs_from_coords(coords_flat):
+	if coords_flat is None:
+		return {
+			'quat_pred': None,
+			'quat_unit_pred': None,
+			'trans_pred': None,
+			'trans_local_pred': None,
+			'rotmat_pred': None,
+			'local_frames_pred': None,
+			'rt_pred': None,
+		}
+
+	rot, trans, quat = _compute_local_frame_from_ca(coords_flat)
+	if rot is None or trans is None or quat is None:
+		return {
+			'quat_pred': None,
+			'quat_unit_pred': None,
+			'trans_pred': None,
+			'trans_local_pred': None,
+			'rotmat_pred': None,
+			'local_frames_pred': None,
+			'rt_pred': None,
+		}
+
+	trans_local = torch.einsum('...ij,...j->...i', rot.transpose(-1, -2), trans)
+	local_frames = torch.cat([rot, trans_local.unsqueeze(-1)], dim=-1)
+	rt_pred = torch.cat([quat, trans], dim=-1)
+
+	return {
+		'quat_pred': quat,
+		'quat_unit_pred': quat,
+		'trans_pred': trans,
+		'trans_local_pred': trans_local,
+		'rotmat_pred': rot,
+		'local_frames_pred': local_frames,
+		'rt_pred': rt_pred,
+	}
 	
 	
 class se3_denoiser(torch.nn.Module):
@@ -19,7 +126,7 @@ class se3_denoiser(torch.nn.Module):
 	num_embeddings, commitment_cost, metadata={}, edge_dim=1,
 	encoder_hidden=100, dropout_p=0.05, max_degree=2, depth=1, heads=2, dim_head=32,
 	dim_edge_refinement=256, return_coors=True, num_atom_types=20):
-		super(se3_denoiser, self).__init__()
+		super().__init__()
 
 		#save all arguments to constructor
 		self.args = locals()
@@ -45,6 +152,7 @@ class se3_denoiser(torch.nn.Module):
 		# GotenNet for 3D structure processing
 		self.gotennet = GotenNet(
 			dim = hidden_channels[0] if isinstance(hidden_channels, list) else hidden_channels,
+			num_atoms = num_atom_types,
 			max_degree = max_degree,
 			depth = depth,
 			heads = heads,
@@ -90,6 +198,17 @@ class se3_denoiser(torch.nn.Module):
 		# Project input features to atom IDs
 		atom_logits = self.input2atomids(x_dict['res'])
 		atom_ids = torch.argmax(atom_logits, dim=-1)  # (num_nodes,)
+
+		# Fail fast with a readable message instead of a CUDA device-side assert.
+		atom_embed = getattr(getattr(self.gotennet, 'node_init', None), 'atom_embed', None)
+		if atom_embed is not None and hasattr(atom_embed, 'num_embeddings'):
+			max_atom_id = int(atom_ids.max().detach().cpu()) if atom_ids.numel() > 0 else -1
+			if max_atom_id >= atom_embed.num_embeddings:
+				raise RuntimeError(
+					f'atom_ids out of range for GotenNet atom embedding: max_id={max_atom_id} '
+					f'num_embeddings={atom_embed.num_embeddings}. '
+					'Ensure GotenNet is initialized with num_atoms >= num_atom_types.'
+				)
 		
 		# Get coordinates
 		coords = data['coord_pred'].x if hasattr(data, 'coords') else data.x_dict['coords']
@@ -99,6 +218,7 @@ class se3_denoiser(torch.nn.Module):
 		# For GotenNet, we need a dense adjacency matrix
 		batch = data['res'].batch if hasattr(data['res'], 'batch') else None
 		
+		num_graphs = 1
 		if batch is not None:
 			# Handle batched data
 			num_graphs = batch.max().item() + 1
@@ -184,21 +304,35 @@ class se3_denoiser(torch.nn.Module):
 		if batch is not None:
 			# Unpad and concatenate
 			z_list = []
+			coords_list = []
 			for i in range(num_graphs):
 				mask = batch == i
 				num_nodes = mask.sum().item()
 				z_list.append(invariant[i, :num_nodes])
+				if coors_out is not None:
+					coords_list.append(coors_out[i, :num_nodes])
 			z = torch.cat(z_list, dim=0)  # (total_nodes, dim)
+			coors_out_flat = torch.cat(coords_list, dim=0) if len(coords_list) > 0 else None
 		else:
 			z = invariant.squeeze(0)  # (num_nodes, dim)
+			coors_out_flat = coors_out.squeeze(0) if coors_out is not None else None
 		
 		# Predict angles from invariant features
 		angles = self.out_angles(z)
+		frame_outputs = _frame_outputs_from_coords(coors_out_flat)
 		
 		return {
 			'angles': angles,
 			'z': z,
-			'coors_out': coors_out if self.return_coors else None
+			'coors_out': coors_out if self.return_coors else None,
+			'coors_out_flat': coors_out_flat if self.return_coors else None,
+			'quat_pred': frame_outputs['quat_pred'],
+			'quat_unit_pred': frame_outputs['quat_unit_pred'],
+			'trans_pred': frame_outputs['trans_pred'],
+			'trans_local_pred': frame_outputs['trans_local_pred'],
+			'rotmat_pred': frame_outputs['rotmat_pred'],
+			'local_frames_pred': frame_outputs['local_frames_pred'],
+			'rt_pred': frame_outputs['rt_pred'],
 		}
 
 

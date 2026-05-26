@@ -10,6 +10,7 @@ The script intentionally focuses on the geometry loop only.
 from __future__ import annotations
 
 import argparse
+import gc
 import math
 import random
 import warnings
@@ -229,6 +230,9 @@ class GeometryFocusedModule(pl.LightningModule):
         learning_rate: float,
         weight_decay: float,
         clip_grad_norm: float,
+        cache_flush_interval: int,
+        gc_collect_interval: int,
+        use_cuda_ipc_collect: bool,
         use_uncertainty_weighting: bool,
         use_se3: bool,
         se3_decoder: Optional[nn.Module] = None,
@@ -241,6 +245,9 @@ class GeometryFocusedModule(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.clip_grad_norm = clip_grad_norm
+        self.cache_flush_interval = int(cache_flush_interval)
+        self.gc_collect_interval = int(gc_collect_interval)
+        self.use_cuda_ipc_collect = bool(use_cuda_ipc_collect)
         self.use_uncertainty_weighting = use_uncertainty_weighting
         self.use_se3 = use_se3 and (se3_decoder is not None)
         self.nan_guard = nan_guard
@@ -415,8 +422,12 @@ class GeometryFocusedModule(pl.LightningModule):
                 if out_s.get("angles") is not None and true_angles is not None:
                     raw_terms["se3_angles"] = periodic_angle_smooth_l1(out_s["angles"][..., :3], true_angles)
             except Exception as exc:
-                se3_skip = True
-                self.print(f"SE3 branch skipped at {debug_label}: {exc}")
+                # Fail fast instead of skipping SE3 on one rank only. Silent rank divergence
+                # can deadlock distributed runs at optimizer sync boundaries.
+                raise RuntimeError(
+                    f"SE3 branch failed at {debug_label}: {exc}. "
+                    "Reduce SE3 size, lower batch size, or run with --no-use-se3."
+                ) from exc
 
         if len(raw_terms) == 0:
             raise RuntimeError("No valid losses were constructed for this batch.")
@@ -456,6 +467,17 @@ class GeometryFocusedModule(pl.LightningModule):
 
         return total_loss
 
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        # Periodic cache flushing can reduce allocator fragmentation in long runs.
+        if self.cache_flush_interval > 0 and ((batch_idx + 1) % self.cache_flush_interval == 0):
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                if self.use_cuda_ipc_collect:
+                    torch.cuda.ipc_collect()
+
+        if self.gc_collect_interval > 0 and ((batch_idx + 1) % self.gc_collect_interval == 0):
+            gc.collect()
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Geometry-focused Lightning trainer from notebook final loop")
@@ -469,9 +491,33 @@ def parse_args():
         help="Target effective batch size via gradient accumulation",
     )
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
+    parser.add_argument(
+        "--allow-hdf5-multiprocessing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Allow num_workers>0 on HDF5 datasets (can deadlock with h5py-backed datasets)",
+    )
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Optimizer learning rate")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Optimizer weight decay")
     parser.add_argument("--clip-grad", type=float, default=1.0, help="Gradient clip norm")
+    parser.add_argument(
+        "--cache-flush-interval",
+        type=int,
+        default=0,
+        help="Flush CUDA allocator cache every N train batches (0 disables)",
+    )
+    parser.add_argument(
+        "--gc-collect-interval",
+        type=int,
+        default=0,
+        help="Run Python gc.collect() every N train batches (0 disables)",
+    )
+    parser.add_argument(
+        "--use-cuda-ipc-collect",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Also run torch.cuda.ipc_collect() when cache flushing",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
         "--pretrained-encoder-path",
@@ -498,6 +544,78 @@ def parse_args():
         help="Enable optional SE3 decoder branch",
     )
     parser.add_argument(
+        "--transformer-width",
+        type=int,
+        default=96,
+        help="Width used for transformer geometry hidden channels",
+    )
+    parser.add_argument(
+        "--transformer-layers",
+        type=int,
+        default=2,
+        help="Number of transformer geometry layers",
+    )
+    parser.add_argument(
+        "--transformer-nheads",
+        type=int,
+        default=4,
+        help="Number of transformer attention heads",
+    )
+    parser.add_argument(
+        "--transformer-dropout",
+        type=float,
+        default=0.05,
+        help="Dropout for transformer geometry decoder",
+    )
+    parser.add_argument(
+        "--rt-hidden",
+        type=str,
+        default="128,64,32",
+        help="Comma-separated RT head hidden sizes",
+    )
+    parser.add_argument(
+        "--ss-hidden",
+        type=str,
+        default="64,32,16",
+        help="Comma-separated SS head hidden sizes",
+    )
+    parser.add_argument(
+        "--angles-hidden",
+        type=str,
+        default="64,32,16",
+        help="Comma-separated angle head hidden sizes",
+    )
+    parser.add_argument(
+        "--se3-hidden",
+        type=int,
+        default=4,
+        help="SE3 hidden channel size",
+    )
+    parser.add_argument(
+        "--se3-out-channels",
+        type=int,
+        default=96,
+        help="SE3 angle head output channels",
+    )
+    parser.add_argument(
+        "--se3-depth",
+        type=int,
+        default=4,
+        help="SE3 GotenNet depth",
+    )
+    parser.add_argument(
+        "--se3-heads",
+        type=int,
+        default=5,
+        help="SE3 attention heads",
+    )
+    parser.add_argument(
+        "--se3-dim-head",
+        type=int,
+        default=20,
+        help="SE3 attention head dimension",
+    )
+    parser.add_argument(
         "--use-uncertainty-weighting",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -511,6 +629,12 @@ def parse_args():
     )
     parser.add_argument("--accelerator", type=str, default="auto", help="Lightning accelerator")
     parser.add_argument("--devices", type=str, default="auto", help="Lightning devices value")
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="auto",
+        help="Lightning strategy (e.g. auto, ddp, ddp_find_unused_parameters_true)",
+    )
     parser.add_argument("--precision", type=str, default="32-true", help="Lightning precision setting")
     parser.add_argument("--log-every-n-steps", type=int, default=10, help="Logging interval")
     parser.add_argument(
@@ -537,6 +661,30 @@ def parse_devices(devices_arg: str):
         return int(devices_arg)
     except ValueError:
         return devices_arg
+
+
+def parse_int_list(value: str) -> list:
+    return [int(x.strip()) for x in value.split(",") if x.strip()]
+
+
+def infer_strategy(accelerator: str, devices, strategy_arg: str) -> str:
+    if strategy_arg != "auto":
+        return strategy_arg
+
+    is_multi_gpu = False
+    if accelerator in ("gpu", "cuda", "auto"):
+        if isinstance(devices, int):
+            is_multi_gpu = devices > 1
+        elif isinstance(devices, list):
+            is_multi_gpu = len(devices) > 1
+        elif isinstance(devices, str):
+            is_multi_gpu = devices not in ("auto", "1")
+
+    if is_multi_gpu:
+        # This model may skip some loss terms/branches at runtime; allow DDP unused params.
+        return "ddp_find_unused_parameters_true"
+
+    return "auto"
 
 
 def build_encoder(args, data_sample, device):
@@ -591,17 +739,21 @@ def build_encoder(args, data_sample, device):
     return encoder, latent_dim
 
 
-def build_decoders(latent_dim: int, data_sample, device, use_se3: bool):
+def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args):
+    rt_hidden = parse_int_list(args.rt_hidden)
+    ss_hidden = parse_int_list(args.ss_hidden)
+    angles_hidden = parse_int_list(args.angles_hidden)
+
     transformer_geom_decoder = Transformer_Geometry_Decoder(
         in_channels={"res": latent_dim},
-        hidden_channels={("res", "backbone", "res"): [96, 96, 96]},
+        hidden_channels={("res", "backbone", "res"): [args.transformer_width] * 3},
         concat_positions=True,
-        nheads=4,
-        layers=2,
-        RTdecoder_hidden=[128, 64, 32],
-        ssdecoder_hidden=[64, 32, 16],
-        anglesdecoder_hidden=[64, 32, 16],
-        dropout=0.05,
+        nheads=args.transformer_nheads,
+        layers=args.transformer_layers,
+        RTdecoder_hidden=rt_hidden,
+        ssdecoder_hidden=ss_hidden,
+        anglesdecoder_hidden=angles_hidden,
+        dropout=args.transformer_dropout,
         normalize=True,
         residual=False,
         learn_positions=False,
@@ -619,15 +771,15 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool):
             try:
                 se3_decoder = se3_denoiser(
                     in_channels=latent_dim,
-                    hidden_channels=[4],
-                    out_channels=96,
+                    hidden_channels=[args.se3_hidden],
+                    out_channels=args.se3_out_channels,
                     num_embeddings=30,
                     commitment_cost=0.25,
                     metadata={"edge_types": data_sample.edge_types},
                     edge_dim=1,
-                    depth=4,
-                    heads=5,
-                    dim_head=20,
+                    depth=args.se3_depth,
+                    heads=args.se3_heads,
+                    dim_head=args.se3_dim_head,
                     return_coors=True,
                     num_atom_types=4,
                 ).to(se3_device)
@@ -654,6 +806,18 @@ def main():
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
+    # h5py file handles inside Dataset objects are commonly not safe with multi-process workers.
+    if (
+        dataset_path.suffix.lower() in {".h5", ".hdf5"}
+        and args.num_workers > 0
+        and not args.allow_hdf5_multiprocessing
+    ):
+        print(
+            "Warning: forcing --num-workers=0 for HDF5 dataset to avoid h5py worker deadlocks. "
+            "Use --allow-hdf5-multiprocessing to override."
+        )
+        args.num_workers = 0
+
     data_module = GeometryOnlyDataModule(
         dataset_path=str(dataset_path),
         batch_size=args.batch_size,
@@ -670,7 +834,7 @@ def main():
         device = torch.device("cpu")
 
     encoder, latent_dim = build_encoder(args, data_sample.to(device), device)
-    transformer_geom_decoder, se3_decoder = build_decoders(latent_dim, data_sample, device, args.use_se3)
+    transformer_geom_decoder, se3_decoder = build_decoders(latent_dim, data_sample, device, args.use_se3, args)
 
     module = GeometryFocusedModule(
         encoder=encoder,
@@ -678,6 +842,9 @@ def main():
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         clip_grad_norm=args.clip_grad,
+        cache_flush_interval=args.cache_flush_interval,
+        gc_collect_interval=args.gc_collect_interval,
+        use_cuda_ipc_collect=args.use_cuda_ipc_collect,
         use_uncertainty_weighting=args.use_uncertainty_weighting,
         use_se3=args.use_se3,
         se3_decoder=se3_decoder,
@@ -702,10 +869,14 @@ def main():
         save_last=True,
     )
 
+    parsed_devices = parse_devices(args.devices)
+    strategy = infer_strategy(args.accelerator, parsed_devices, args.strategy)
+
     trainer = pl.Trainer(
         max_epochs=args.epochs,
         accelerator=args.accelerator,
-        devices=parse_devices(args.devices),
+        devices=parsed_devices,
+        strategy=strategy,
         precision=args.precision,
         accumulate_grad_batches=accum_steps,
         gradient_clip_val=args.clip_grad,

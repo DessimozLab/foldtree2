@@ -34,6 +34,67 @@ def _sincos_logits_to_angles(logits: torch.Tensor, eps: float = EPS) -> torch.Te
 	pairs = pairs / pairs.norm(dim=-1, keepdim=True).clamp_min(eps)
 	return torch.atan2(pairs[..., 0], pairs[..., 1])
 
+
+def _normalize_quaternion(quat: torch.Tensor, eps: float = EPS) -> torch.Tensor:
+	"""Normalize quaternion tensor along the last axis."""
+	return quat / quat.norm(dim=-1, keepdim=True).clamp_min(eps)
+
+
+def _quaternion_to_rotation_matrix(quat: torch.Tensor) -> torch.Tensor:
+	"""Convert quaternions (w, x, y, z) to rotation matrices."""
+	quat = _normalize_quaternion(quat)
+	w, x, y, z = quat.unbind(dim=-1)
+
+	one = torch.ones_like(w)
+	two = 2.0 * one
+
+	r00 = one - two * (y * y + z * z)
+	r01 = two * (x * y - z * w)
+	r02 = two * (x * z + y * w)
+
+	r10 = two * (x * y + z * w)
+	r11 = one - two * (x * x + z * z)
+	r12 = two * (y * z - x * w)
+
+	r20 = two * (x * z - y * w)
+	r21 = two * (y * z + x * w)
+	r22 = one - two * (x * x + y * y)
+
+	return torch.stack([
+		torch.stack([r00, r01, r02], dim=-1),
+		torch.stack([r10, r11, r12], dim=-1),
+		torch.stack([r20, r21, r22], dim=-1),
+	], dim=-2)
+
+
+def _frame_outputs_from_rt_pred(rt_pred: torch.Tensor):
+	"""Derive unified frame outputs from a [quat(4), trans(3)] tensor."""
+	if rt_pred is None:
+		return {
+			'quat_pred': None,
+			'quat_unit_pred': None,
+			'trans_pred': None,
+			'trans_local_pred': None,
+			'rotmat_pred': None,
+			'local_frames_pred': None,
+		}
+
+	quat_pred = rt_pred[..., :4]
+	trans_pred = rt_pred[..., 4:]
+	quat_unit_pred = _normalize_quaternion(quat_pred)
+	rotmat_pred = _quaternion_to_rotation_matrix(quat_unit_pred)
+	trans_local_pred = torch.einsum('...ij,...j->...i', rotmat_pred.transpose(-1, -2), trans_pred)
+	local_frames_pred = torch.cat([rotmat_pred, trans_local_pred.unsqueeze(-1)], dim=-1)
+
+	return {
+		'quat_pred': quat_pred,
+		'quat_unit_pred': quat_unit_pred,
+		'trans_pred': trans_pred,
+		'trans_local_pred': trans_local_pred,
+		'rotmat_pred': rotmat_pred,
+		'local_frames_pred': local_frames_pred,
+	}
+
 #encoder super class
 
 
@@ -276,6 +337,7 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			# Bound quaternion part (first 4 dims) with tanh for numerical stability
 			quat = torch.tanh(rt_pred[..., :4])
 			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
+		frame_outputs = _frame_outputs_from_rt_pred(rt_pred)
 		
 		ss_pred = None
 		if self.ss_mlp is not None:
@@ -288,7 +350,22 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 			angles = _sincos_logits_to_angles(self.angles_mlp(z))
 
 		if contact_pred_index is None:
-			return { 'edge_probs': None , 'zgodnode' :None , 'fft2pred':fft2_pred , 'rt_pred': None , 'angles': angles  , 'edge_logits': edge_logits  , 'ss_pred': ss_pred , 'z': z  }
+			return {
+				'edge_probs': None,
+				'zgodnode': zgodnode,
+				'fft2pred': fft2_pred,
+				'rt_pred': rt_pred,
+				'quat_pred': frame_outputs['quat_pred'],
+				'quat_unit_pred': frame_outputs['quat_unit_pred'],
+				'trans_pred': frame_outputs['trans_pred'],
+				'trans_local_pred': frame_outputs['trans_local_pred'],
+				'rotmat_pred': frame_outputs['rotmat_pred'],
+				'local_frames_pred': frame_outputs['local_frames_pred'],
+				'angles': angles,
+				'edge_logits': edge_logits,
+				'ss_pred': ss_pred,
+				'z': z,
+			}
 
 		else:
 			if self.contact_mlp is None:
@@ -308,7 +385,22 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 						if param.dim() > 1:
 							nn.init.xavier_uniform_(param)
 
-		return  { 'edge_probs': edge_probs , 'edge_logits': edge_logits , 'zgodnode' :zgodnode , 'fft2pred':fft2_pred  , 'rt_pred': rt_pred , 'angles': angles , 'ss_pred': ss_pred , 'z': z , }
+		return {
+			'edge_probs': edge_probs,
+			'edge_logits': edge_logits,
+			'zgodnode': zgodnode,
+			'fft2pred': fft2_pred,
+			'rt_pred': rt_pred,
+			'quat_pred': frame_outputs['quat_pred'],
+			'quat_unit_pred': frame_outputs['quat_unit_pred'],
+			'trans_pred': frame_outputs['trans_pred'],
+			'trans_local_pred': frame_outputs['trans_local_pred'],
+			'rotmat_pred': frame_outputs['rotmat_pred'],
+			'local_frames_pred': frame_outputs['local_frames_pred'],
+			'angles': angles,
+			'ss_pred': ss_pred,
+			'z': z,
+		}
 
 
 class CNN_geo_Decoder(torch.nn.Module):
@@ -580,6 +672,7 @@ class CNN_geo_Decoder(torch.nn.Module):
 			# Bound quaternion part (first 4 dims) with tanh for numerical stability
 			quat = torch.tanh(rt_pred[..., :4])
 			rt_pred = torch.cat([quat, rt_pred[..., 4:]], dim=-1)
+		frame_outputs = _frame_outputs_from_rt_pred(rt_pred)
 		
 		# Secondary structure prediction
 		ss_pred = None
@@ -594,9 +687,22 @@ class CNN_geo_Decoder(torch.nn.Module):
 		# Contact prediction
 		edge_logits = None
 		if contact_pred_index is None:
-			return {'edge_probs': None, 'zgodnode': None, 'fft2pred': fft2_pred, 
-					'rt_pred': None, 'angles': angles, 'edge_logits': edge_logits, 
-					'ss_pred': ss_pred, 'z': z}
+			return {
+				'edge_probs': None,
+				'zgodnode': zgodnode,
+				'fft2pred': fft2_pred,
+				'rt_pred': rt_pred,
+				'quat_pred': frame_outputs['quat_pred'],
+				'quat_unit_pred': frame_outputs['quat_unit_pred'],
+				'trans_pred': frame_outputs['trans_pred'],
+				'trans_local_pred': frame_outputs['trans_local_pred'],
+				'rotmat_pred': frame_outputs['rotmat_pred'],
+				'local_frames_pred': frame_outputs['local_frames_pred'],
+				'angles': angles,
+				'edge_logits': edge_logits,
+				'ss_pred': ss_pred,
+				'z': z,
+			}
 		else:
 			#https://arxiv.org/pdf/1709.05454
 			#Statistical inference on random dot product graphs: a survey
@@ -624,9 +730,22 @@ class CNN_geo_Decoder(torch.nn.Module):
 					if param.dim() > 1:
 						nn.init.xavier_uniform_(param)
 		
-		return {'edge_probs': edge_probs, 'edge_logits': edge_logits, 'zgodnode': zgodnode, 
-				'fft2pred': fft2_pred, 'rt_pred': rt_pred, 'angles': angles, 
-				'ss_pred': ss_pred, 'z': z}
+		return {
+			'edge_probs': edge_probs,
+			'edge_logits': edge_logits,
+			'zgodnode': zgodnode,
+			'fft2pred': fft2_pred,
+			'rt_pred': rt_pred,
+			'quat_pred': frame_outputs['quat_pred'],
+			'quat_unit_pred': frame_outputs['quat_unit_pred'],
+			'trans_pred': frame_outputs['trans_pred'],
+			'trans_local_pred': frame_outputs['trans_local_pred'],
+			'rotmat_pred': frame_outputs['rotmat_pred'],
+			'local_frames_pred': frame_outputs['local_frames_pred'],
+			'angles': angles,
+			'ss_pred': ss_pred,
+			'z': z,
+		}
 
 
 
@@ -1131,7 +1250,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		output_angles=True,
 		**kwargs
 	):
-		super(Transformer_Geometry_Decoder, self).__init__()
+		super().__init__()
 		L.seed_everything(42)
 
 		self.concat_positions = concat_positions
@@ -1143,11 +1262,12 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		self.output_angles = output_angles
 		
 		input_dim = in_channels['res']
-		if concat_positions:
-			input_dim = input_dim + 256
 		if learn_positions:
+			# Learn a compact positional embedding instead of concatenating raw positions.
 			self.concat_positions = False
 			input_dim = input_dim + 32
+		elif concat_positions:
+			input_dim = input_dim + 256
 		d_model = hidden_channels[('res', 'backbone', 'res')][0]
 
 		print(f"Transformer_Geometry_Decoder: d_model={d_model}, nheads={nheads}, layers={layers}, dropout={dropout}")
@@ -1429,15 +1549,15 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			trans = rt_pred[..., 4:]  # tanh bounds to ±20 Å, allowing negative displacements
 			trans = torch.tanh(trans) * 20.0
 			rt_pred = torch.cat([quat, trans], dim=-1)
-			quat_pred = quat
-			trans_pred = trans
-		else:
-			quat_pred = None
-			trans_pred = None
+		frame_outputs = _frame_outputs_from_rt_pred(rt_pred)
 		
 		return {
-			'quat_pred': quat_pred,
-			'trans_pred': trans_pred,
+			'quat_pred': frame_outputs['quat_pred'],
+			'quat_unit_pred': frame_outputs['quat_unit_pred'],
+			'trans_pred': frame_outputs['trans_pred'],
+			'trans_local_pred': frame_outputs['trans_local_pred'],
+			'rotmat_pred': frame_outputs['rotmat_pred'],
+			'local_frames_pred': frame_outputs['local_frames_pred'],
 			'rt_pred': rt_pred,
 			'ss_pred': ss_pred,
 			'angles': angles,
