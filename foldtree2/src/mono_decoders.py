@@ -14,6 +14,7 @@ import numpy as np
 
 from foldtree2.src.xsatransformer import XSATransformerEncoderLayer
 from foldtree2.src.chebconv import StableChebConv
+from foldtree2.src.losses.fape import quaternion_to_rotation_matrix as _shared_quaternion_to_rotation_matrix
 
 EPS = 1e-6
 datadir = '../../datasets/foldtree2/'
@@ -42,29 +43,7 @@ def _normalize_quaternion(quat: torch.Tensor, eps: float = EPS) -> torch.Tensor:
 
 def _quaternion_to_rotation_matrix(quat: torch.Tensor) -> torch.Tensor:
 	"""Convert quaternions (w, x, y, z) to rotation matrices."""
-	quat = _normalize_quaternion(quat)
-	w, x, y, z = quat.unbind(dim=-1)
-
-	one = torch.ones_like(w)
-	two = 2.0 * one
-
-	r00 = one - two * (y * y + z * z)
-	r01 = two * (x * y - z * w)
-	r02 = two * (x * z + y * w)
-
-	r10 = two * (x * y + z * w)
-	r11 = one - two * (x * x + z * z)
-	r12 = two * (y * z - x * w)
-
-	r20 = two * (x * z - y * w)
-	r21 = two * (y * z + x * w)
-	r22 = one - two * (x * x + y * y)
-
-	return torch.stack([
-		torch.stack([r00, r01, r02], dim=-1),
-		torch.stack([r10, r11, r12], dim=-1),
-		torch.stack([r20, r21, r22], dim=-1),
-	], dim=-2)
+	return _shared_quaternion_to_rotation_matrix(_normalize_quaternion(quat))
 
 
 def _frame_outputs_from_rt_pred(rt_pred: torch.Tensor):
@@ -1305,9 +1284,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		
 		if self.residual:
 			self.body['dmodel2input'] = nn.Sequential(
-				nn.Linear(d_model, input_dim),
+				nn.Linear(d_model, d_model),
 				nn.GELU(),
-				nn.Linear(input_dim, input_dim),
+				nn.Linear(d_model, d_model),
 			)
 
 		# ===================== HEAD MODULE =====================
@@ -1428,17 +1407,24 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			# Pad sequences to the same length
 			max_len = max([xi.shape[0] for xi in x_split])
 			padded = []
+			key_padding_mask = []
 			for xi in x_split:
+				orig_len = xi.shape[0]
 				pad_len = max_len - xi.shape[0]
 				if pad_len > 0:
 					xi = torch.cat([xi, torch.zeros(pad_len, xi.shape[1], device=xi.device, dtype=xi.dtype)], dim=0)
 				padded.append(xi)
+				mask = torch.ones(max_len, dtype=torch.bool, device=xi.device)
+				mask[:orig_len] = False
+				key_padding_mask.append(mask)
 			x = torch.stack(padded, dim=1)  # (seq_len, batch, d_model)
+			key_padding_mask = torch.stack(key_padding_mask, dim=0)  # (batch, seq_len)
 		else:
 			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
+			key_padding_mask = None
 		
 		# Apply transformer
-		x = self.body['transformer_encoder'](x)  # (seq_len, batch, d_model)
+		x = self.body['transformer_encoder'](x, src_key_padding_mask=key_padding_mask)  # (seq_len, batch, d_model)
 		
 		# Apply residual connection
 		if self.residual and 'dmodel2input' in self.body:
@@ -1965,6 +1951,3 @@ class MultiMonoDecoder(torch.nn.Module):
 			results.append(result)
 		
 		return results
-
-
-

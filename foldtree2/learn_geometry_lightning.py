@@ -306,6 +306,30 @@ class GeometryFocusedModule(pl.LightningModule):
         return torch.cat(parts, dim=0)
 
     @staticmethod
+    def _step_translations_to_origins(t_steps: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
+        """Convert per-residue CA->next-CA steps into per-residue frame origins."""
+        if t_steps.ndim != 2 or t_steps.shape[-1] != 3:
+            raise ValueError(f"Expected [N,3] step translations, got {tuple(t_steps.shape)}")
+
+        if batch_idx is None:
+            origins = torch.zeros_like(t_steps)
+            if t_steps.shape[0] > 1:
+                origins[1:] = torch.cumsum(t_steps[:-1], dim=0)
+            return origins
+
+        origins = torch.zeros_like(t_steps)
+        for b in torch.unique(batch_idx, sorted=True):
+            idx = (batch_idx == b).nonzero(as_tuple=True)[0]
+            if idx.numel() == 0:
+                continue
+            t_b = t_steps[idx]
+            out_b = torch.zeros_like(t_b)
+            if t_b.shape[0] > 1:
+                out_b[1:] = torch.cumsum(t_b[:-1], dim=0)
+            origins[idx] = out_b
+        return origins
+
+    @staticmethod
     def _frames_from_ca_only(ca_coords: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
             raise ValueError(f"Expected [N,3] CA coords, got {tuple(ca_coords.shape)}")
@@ -338,8 +362,11 @@ class GeometryFocusedModule(pl.LightningModule):
 
         R = torch.stack([forward, normal, right], dim=-1)
 
+        # For FAPE, translations must be frame origins, not CA->next step vectors.
         t = torch.zeros_like(ca_coords)
-        t[:-1] = ca_coords[1:] - ca_coords[:-1]
+        if n > 1:
+            steps = ca_coords[1:] - ca_coords[:-1]
+            t[1:] = torch.cumsum(steps, dim=0)
         q = rotation_matrix_to_quaternion(R)
         return R, t, q
 
@@ -374,15 +401,35 @@ class GeometryFocusedModule(pl.LightningModule):
             weighted[name] = torch.exp(-s) * loss + s
         return weighted
 
+    def _get_ft2_token_ids(self, z_local: torch.Tensor) -> Optional[torch.Tensor]:
+        vq = getattr(self.encoder, "vector_quantizer", None)
+        if vq is None or not hasattr(vq, "discretize_z"):
+            return None
+        token_ids, _ = vq.discretize_z(z_local)
+        return token_ids.to(device=z_local.device, dtype=torch.long)
+
+    @staticmethod
+    def _get_aa_identity_ids(decoder_out: Dict[str, torch.Tensor]) -> Optional[torch.Tensor]:
+        aa_logits = decoder_out.get("aa", None)
+        if aa_logits is None:
+            aa_logits = decoder_out.get("aa_pred", None)
+        if aa_logits is None:
+            return None
+        if aa_logits.ndim != 2:
+            raise RuntimeError(f"Expected AA logits with shape [N,20], got {tuple(aa_logits.shape)}")
+        return torch.argmax(aa_logits, dim=-1).to(dtype=torch.long)
+
     def _compute_total_loss(self, data_batch, debug_label: str = ""):
         data_batch = ensure_float32_inplace(data_batch)
         data_batch = ensure_edge_attrs_inplace(data_batch, edge_dim=getattr(self.encoder, "edge_dim", 1))
 
         with torch.no_grad():
             z_local, _ = self.encoder(data_batch)
+            ft2_token_ids = self._get_ft2_token_ids(z_local)
         data_batch["res"].x = z_local
 
         out_local = self.transformer_geom_decoder(data_batch, contact_pred_index=None)
+        aa_identity_ids = self._get_aa_identity_ids(out_local)
         true_R, true_t, true_q, true_angles, true_coords, batch_idx = get_true_geometry(data_batch)
 
         pred_rt = out_local["rt_pred"]
@@ -393,7 +440,9 @@ class GeometryFocusedModule(pl.LightningModule):
         raw_terms: Dict[str, torch.Tensor] = {}
 
         if true_q is not None and true_t is not None:
-            raw_terms["fape_quat"] = quaternion_fape_loss(true_q, true_t, pred_q, pred_t, batch=batch_idx)
+            true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
+            pred_t_origin = self._step_translations_to_origins(pred_t, batch_idx=batch_idx)
+            raw_terms["fape_quat"] = quaternion_fape_loss(true_q, true_t_origin, pred_q, pred_t_origin, batch=batch_idx)
             raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q)
 
         pred_coords_local = reconstruct_positions(
@@ -404,6 +453,7 @@ class GeometryFocusedModule(pl.LightningModule):
             include_origin=False,
         )
         data_batch["coord_pred"].x = pred_coords_local
+        data_batch["coords_pred"].x = pred_coords_local
 
         if out_local.get("angles") is not None and true_angles is not None:
             raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
@@ -411,12 +461,23 @@ class GeometryFocusedModule(pl.LightningModule):
         se3_skip = False
         if self.use_se3 and self.se3_decoder is not None:
             try:
-                out_s = self.se3_decoder(data_batch)
+                if ft2_token_ids is None:
+                    raise RuntimeError(
+                        "SE3 branch requires FoldTree2 token ids from encoder.vector_quantizer, "
+                        "but the active encoder does not expose discretize_z()."
+                    )
+                out_s = self.se3_decoder(
+                    data_batch,
+                    ft2_token_ids=ft2_token_ids,
+                    aa_identity_ids=aa_identity_ids,
+                    coords_pred=pred_coords_local,
+                )
                 if out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(pred_coords_local.device, dtype=pred_coords_local.dtype)
                     q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
-                    raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t, q_se3, t_se3, batch=batch_idx)
+                    true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
+                    raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
                     raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
 
                 if out_s.get("angles") is not None and true_angles is not None:
@@ -739,7 +800,7 @@ def build_encoder(args, data_sample, device):
     return encoder, latent_dim
 
 
-def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args):
+def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se3_num_atom_types: int):
     rt_hidden = parse_int_list(args.rt_hidden)
     ss_hidden = parse_int_list(args.ss_hidden)
     angles_hidden = parse_int_list(args.angles_hidden)
@@ -781,7 +842,7 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args):
                     heads=args.se3_heads,
                     dim_head=args.se3_dim_head,
                     return_coors=True,
-                    num_atom_types=4,
+                    num_atom_types=se3_num_atom_types,
                 ).to(se3_device)
                 se3_decoder.device = se3_device
                 print(f"SE3 decoder initialized on {se3_device}.")
@@ -834,7 +895,15 @@ def main():
         device = torch.device("cpu")
 
     encoder, latent_dim = build_encoder(args, data_sample.to(device), device)
-    transformer_geom_decoder, se3_decoder = build_decoders(latent_dim, data_sample, device, args.use_se3, args)
+    se3_num_atom_types = int(getattr(encoder, "num_embeddings", 20))
+    transformer_geom_decoder, se3_decoder = build_decoders(
+        latent_dim,
+        data_sample,
+        device,
+        args.use_se3,
+        args,
+        se3_num_atom_types=se3_num_atom_types,
+    )
 
     module = GeometryFocusedModule(
         encoder=encoder,

@@ -29,7 +29,11 @@ import torch.nn.functional as F
 from typing import Optional
 from torch import Tensor
 from torch_geometric.utils import negative_sampling , batched_negative_sampling
-from foldtree2.src.losses.fape import  reconstruct_positions, quaternion_to_rotation_matrix , delta_loss
+from foldtree2.src.losses.fape import (
+	reconstruct_positions,
+	quaternion_to_rotation_matrix as _shared_quaternion_to_rotation_matrix,
+	delta_loss,
+)
 
 # Small epsilon value to prevent numerical instabilities (division by zero, log(0))
 EPS = 1e-8
@@ -943,21 +947,8 @@ def quaternion_to_rotation_matrix(quat: torch.Tensor) -> torch.Tensor:
 	Returns:
 		(..., 3, 3) rotation matrices
 	"""
-	quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
-	w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
-	
-	# Compute rotation matrix elements
-	xx, yy, zz = x * x, y * y, z * z
-	xy, xz, yz = x * y, x * z, y * z
-	wx, wy, wz = w * x, w * y, w * z
-	
-	rot_matrices = torch.stack([
-		torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1),
-		torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1),
-		torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1),
-	], dim=-2)
-	
-	return rot_matrices
+	# Canonical implementation lives in losses/fape.py.
+	return _shared_quaternion_to_rotation_matrix(quat)
 
 
 def quaternion_fape_loss(
@@ -1856,4 +1847,3 @@ def distogram_loss(
 	)  # (B, Npairs)
 
 	return errors
-
