@@ -70,21 +70,25 @@ For most users, FoldTree2 provides pretrained models that can be used directly t
 Build phylogenetic trees from a folder of PDB structures using pretrained models:
 
 ```bash
-foldtree2 --model mergeddecoder_foldtree2_test \
+ft2treebuilder \
+  --encoder <PATH_TO_ENCODER.pt> \
+  --decoder <PATH_TO_DECODER.pt> \
   --structures <YOURSTRUCTUREFOLDER> \
   --outdir <RESULTSFOLDER>
 ```
 
 This single command will:
 1. Convert PDB files to graph representations
-2. Use pretrained models to encode structural features
+2. Use the trained encoder to extract discrete structural characters and the decoder for sequence/geometry reconstruction
 3. Create structural alignments
 4. Infer a maximum likelihood phylogenetic tree
 
 ### Available Pretrained Models
-- `mergeddecoder_foldtree2_test`: General-purpose model for diverse protein structures
-- `small`: Lightweight model for smaller datasets
+Models are stored in the `models/` directory. Examples include:
+- `30char_minimal_decoder/`: Production model with a 30-character structural alphabet
 - Additional models may be available in the `models/` directory
+
+Each model directory contains separate `*.pt` checkpoints for the encoder and decoder, which you pass with `--encoder` and `--decoder` respectively.
 
 ### Output Files
 The pipeline generates several output files in your results directory:
@@ -155,14 +159,15 @@ Create structure-based substitution matrices using your trained model:
 ```bash
 makesubmat \
   --modelname <my_custom_model> \
-  --modeldir ./models/ \
-  --datadir <data_dir> \
   --outdir_base <results_dir> \
   --dataset <input_graphs.h5> \
+  --download_structs \
+  --convert_to_pyg \
+  --align_structs \
   --encode_alns
 ```
 
-This script has utilities to download structures from the AFDB cluster database, align clusters as reference alignments using Foldseek, encode structures and derive substitution matrices.
+This script downloads structures from the AFDB cluster database, aligns clusters using Foldseek, encodes structures with your trained model, and derives substitution matrices.
 
 See the complete list of options with `--help`.
 
