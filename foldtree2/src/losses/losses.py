@@ -27,9 +27,24 @@ Example:
 import torch
 import torch.nn.functional as F
 from typing import Optional
+from typing import Any
 from torch import Tensor
-from torch_geometric.utils import negative_sampling , batched_negative_sampling
-from foldtree2.src.losses.fape import  reconstruct_positions, quaternion_to_rotation_matrix , delta_loss
+from torch_geometric.utils import negative_sampling , batched_negative_sampling  # type: ignore[import-not-found]
+from foldtree2.src.losses.fape import (
+	reconstruct_positions,
+	quaternion_to_rotation_matrix,
+	delta_loss,
+	split_rt_pred,
+	normalize_quaternion,
+	quaternion_geodesic_loss,
+	quaternion_angle_loss,
+	quaternion_fape_loss,
+	batch_structure_losses,
+	batch_fape_loss,
+	batch_delta_loss,
+	rt_fape_loss,
+	lddt_reconstruction_loss,
+)
 
 # Small epsilon value to prevent numerical instabilities (division by zero, log(0))
 EPS = 1e-8
@@ -336,7 +351,19 @@ def jaccard_distance_multiset(A: torch.Tensor,
 # Graph Reconstruction Losses
 # ============================================================================
 
-def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, neglossmod=1, plddt=False, nclamp=30, key=None , nbins=8 , plddt_thresh=0.3 , normalize=False) -> Tensor:
+def recon_loss_diag(
+	data,
+	pos_edge_index: Tensor,
+	decoder: Optional[Any] = None,
+	poslossmod: float = 1,
+	neglossmod: float = 1,
+	plddt: bool = False,
+	nclamp: int = 30,
+	key: Optional[str] = None,
+	nbins: int = 8,
+	plddt_thresh: float = 0.3,
+	normalize: bool = False,
+) -> tuple[Tensor, Tensor]:
 	"""Contact map reconstruction loss with diagonal removal and quality masking.
 	
 	This loss trains a decoder to predict protein contact maps (edges between residues)
@@ -390,6 +417,9 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 		The function performs negative sampling internally using PyTorch Geometric's
 		batched_negative_sampling, which respects batch boundaries in batched graphs.
 	"""
+	if decoder is None:
+		raise ValueError("decoder must be provided")
+
 	# Remove self-loops (diagonal entries) from positive edges
 	# Residues always "contact" themselves, so these are uninformative
 	pos_edge_index = pos_edge_index[:, pos_edge_index[0] != pos_edge_index[1]]
@@ -399,10 +429,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	disto_loss_neg = torch.tensor(0.0, device=data['res'].x.device)
 	disto_loss_pos = torch.tensor(0.0, device=data['res'].x.device)	
 
-	if key == None:
-		pos = res[1]
-	if key != None:
-		pos = res[key]
+	pos = res[1] if key is None else res[key]
 	
 	# Calculate distance from diagonal for positive edges
 	diag_dist = torch.abs(pos_edge_index[0] - pos_edge_index[1]).float()
@@ -412,7 +439,17 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
-		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins , plddt_thresh=plddt_thresh) 
+		disto_loss_pos = recon_loss_disto(data, res, pos_edge_index, plddt=plddt, key='edge_logits', no_bins=nbins , plddt_thresh=plddt_thresh)
+		# Distances are symmetric in (i, j), so supervise both directions.
+		disto_loss_pos = disto_loss_pos + recon_loss_disto(
+			data,
+			res,
+			pos_edge_index.flip(0),
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
 
 	if plddt == True:
 		c1 = data['plddt'].x[pos_edge_index[0]].squeeze(1)
@@ -433,10 +470,7 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
 	res = decoder(data, neg_edge_index)
 
-	if key == None:
-		neg = res[1]
-	if key != None:
-		neg = res[key]
+	neg = res[1] if key is None else res[key]
 
 	neg_loss = -torch.log((1 - neg) + EPS).squeeze()
 	
@@ -456,18 +490,20 @@ def recon_loss_diag(data, pos_edge_index: Tensor, decoder=None, poslossmod=1, ne
 	if 'edge_logits' in res and res['edge_logits'] is not None:
 		#apply recon loss disto
 		disto_loss_neg = recon_loss_disto(data, res, neg_edge_index, plddt=plddt, key='edge_logits' , no_bins=nbins , plddt_thresh=plddt_thresh)
+		# Distances are symmetric in (i, j), so supervise both directions.
+		disto_loss_neg = disto_loss_neg + recon_loss_disto(
+			data,
+			res,
+			neg_edge_index.flip(0),
+			plddt=plddt,
+			key='edge_logits',
+			no_bins=nbins,
+			plddt_thresh=plddt_thresh,
+		)
 
 
 	return poslossmod*pos_loss.mean() + neglossmod*neg_loss.mean(), disto_loss_pos.mean() * poslossmod + disto_loss_neg.mean() * neglossmod
 
-
-
-import torch
-from torch import Tensor
-import torch.nn.functional as F
-from torch_geometric.utils import batched_negative_sampling
-
-EPS = 1e-8
 
 
 def embedding_norm_regularizer(z: Tensor, target_norm: Optional[float] = None) -> Tensor:
@@ -597,7 +633,7 @@ def maybe_get_latent_embeddings(data, res, latent_key: Optional[str] = None) -> 
 def recon_loss_diag_with_regs(
 	data,
 	pos_edge_index: Tensor,
-	decoder=None,
+	decoder: Optional[Any] = None,
 	poslossmod=1.0,
 	neglossmod=1.0,
 	plddt=False,
@@ -622,6 +658,8 @@ def recon_loss_diag_with_regs(
 	"""
 	if reg_config is None:
 		reg_config = {}
+	if decoder is None:
+		raise ValueError("decoder must be provided")
 
 	# weights for optional regularizers
 	w_embed_norm = reg_config.get("w_embed_norm", 0.0)
@@ -804,356 +842,14 @@ def recon_loss_diag_with_regs(
 # =========================
 # Quaternion utilities
 # =========================
-
-def split_rt_pred(
-	rt_pred: torch.Tensor,
-	normalize: bool = True,
-	eps: float = 1e-8,
-) -> tuple:
-	"""
-	Split rt_pred tensor into quaternion and translation components.
-	
-	The rt_pred tensor from geometry decoders contains concatenated
-	quaternion (first 4) and translation (last 3) values.
-	
-	Args:
-		rt_pred: (..., 7) tensor with [quat_w, quat_x, quat_y, quat_z, tx, ty, tz]
-		normalize: If True, normalize quaternions to unit length. Default: True.
-		eps: Small constant for numerical stability in normalization.
-		
-	Returns:
-		Tuple of (quaternion, translation):
-			- quaternion: (..., 4) tensor in (w, x, y, z) format
-			- translation: (..., 3) tensor
-			
-	Example:
-		>>> rt_pred = decoder(data)['rt_pred']  # (N, 7)
-		>>> quat, trans = split_rt_pred(rt_pred)
-		>>> loss = quaternion_fape_loss(true_q, true_t, quat, trans)
-	"""
-	if rt_pred.shape[-1] != 7:
-		raise ValueError(f"Expected rt_pred with last dim 7, got {rt_pred.shape[-1]}")
-	
-	quat = rt_pred[..., :4]
-	trans = rt_pred[..., 4:]
-	
-	if normalize:
-		quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(eps)
-	
-	return quat, trans
-
-
-def normalize_quaternion(q: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-	"""
-	Normalize quaternions to unit norm.
-
-	Args:
-		q: (..., 4) quaternion tensor
-	Returns:
-		(..., 4) normalized quaternion tensor
-	"""
-	return q / q.norm(dim=-1, keepdim=True).clamp_min(eps)
-
-
-def quaternion_geodesic_loss(
-	pred_q: torch.Tensor,
-	true_q: torch.Tensor,
-	reduction: str = "mean",
-	eps: float = 1e-8,
-	squared: bool = False,
-) -> torch.Tensor:
-	"""
-	Rotation loss between quaternions, respecting q ~ -q symmetry.
-
-	Uses:
-		1 - |<q_pred, q_true>|
-
-	This is a stable proxy for angular distance on SO(3).
-
-	Args:
-		pred_q: (..., 4) predicted quaternions
-		true_q: (..., 4) target quaternions
-		reduction: 'mean', 'sum', or 'none'
-		eps: numerical stability
-		squared: if True, uses 1 - |dot|^2 instead
-
-	Returns:
-		scalar loss or per-element loss
-	"""
-	pred_q = normalize_quaternion(pred_q, eps=eps)
-	true_q = normalize_quaternion(true_q, eps=eps)
-
-	dot = (pred_q * true_q).sum(dim=-1).abs().clamp(max=1.0)
-
-	if squared:
-		loss = 1.0 - dot ** 2
-	else:
-		loss = 1.0 - dot
-
-	if reduction == "mean":
-		return loss.mean()
-	elif reduction == "sum":
-		return loss.sum()
-	elif reduction == "none":
-		return loss
-	else:
-		raise ValueError(f"Unknown reduction: {reduction}")
-
-
-def quaternion_angle_loss(
-	pred_q: torch.Tensor,
-	true_q: torch.Tensor,
-	reduction: str = "mean",
-	eps: float = 1e-8,
-) -> torch.Tensor:
-	"""
-	True angular loss in radians:
-		theta = 2 * arccos(|<q1, q2>|)
-
-	This is more interpretable, but a bit less numerically friendly than
-	quaternion_geodesic_loss above.
-
-	Args:
-		pred_q: (..., 4)
-		true_q: (..., 4)
-	"""
-	pred_q = normalize_quaternion(pred_q, eps=eps)
-	true_q = normalize_quaternion(true_q, eps=eps)
-
-	dot = (pred_q * true_q).sum(dim=-1).abs().clamp(max=1.0 - eps)
-	loss = 2.0 * torch.acos(dot)
-
-	if reduction == "mean":
-		return loss.mean()
-	elif reduction == "sum":
-		return loss.sum()
-	elif reduction == "none":
-		return loss
-	else:
-		raise ValueError(f"Unknown reduction: {reduction}")
-
-
-def quaternion_to_rotation_matrix(quat: torch.Tensor) -> torch.Tensor:
-	"""
-	Convert quaternions (w, x, y, z) to 3x3 rotation matrices.
-	
-	Args:
-		quat: (..., 4) quaternions in (w, x, y, z) format (scalar first)
-		
-	Returns:
-		(..., 3, 3) rotation matrices
-	"""
-	quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
-	w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
-	
-	# Compute rotation matrix elements
-	xx, yy, zz = x * x, y * y, z * z
-	xy, xz, yz = x * y, x * z, y * z
-	wx, wy, wz = w * x, w * y, w * z
-	
-	rot_matrices = torch.stack([
-		torch.stack([1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)], dim=-1),
-		torch.stack([2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)], dim=-1),
-		torch.stack([2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)], dim=-1),
-	], dim=-2)
-	
-	return rot_matrices
-
-
-def quaternion_fape_loss(
-	true_q: torch.Tensor,
-	true_t: torch.Tensor,
-	pred_q: torch.Tensor,
-	pred_t: torch.Tensor,
-	batch: torch.Tensor = None,
-	d_clamp: float = 10.0,
-	eps: float = 1e-8,
-	reduction: str = "mean",
-) -> torch.Tensor:
-	"""
-	Frame Aligned Point Error (FAPE) loss using quaternion frames.
-	
-	Computes the FAPE loss between predicted and ground truth frames represented
-	as quaternion rotations and translation vectors. For each pair of residues (i, j),
-	the local coordinates of the difference (t[j] - t[i]) are computed in both
-	the predicted and true local frames of residue i. The loss is the clamped
-	L2 distance between these local coordinates averaged over all pairs.
-	
-	This loss encourages the model to learn consistent local coordinate systems
-	that match the ground truth protein geometry.
-	
-	Args:
-		true_q: Ground truth quaternions (w, x, y, z), shape (N, 4) or (batch, N, 4).
-			Should be unit quaternions representing frame orientations.
-		true_t: Ground truth translation vectors, shape (N, 3) or (batch, N, 3).
-			Typically C-alpha coordinates in Angstroms.
-		pred_q: Predicted quaternions from decoder, shape (N, 4) or (batch, N, 4).
-			Should be normalized to unit length.
-		pred_t: Predicted translation vectors from decoder, shape (N, 3) or (batch, N, 3).
-		batch: Batch indices for each residue, shape (N,). 
-			If None, assumes all residues belong to a single structure.
-			Used to handle PyG-style batched graphs.
-		d_clamp: Maximum distance error to consider (Angstroms). Default: 10.0.
-			Errors above this are clamped, reducing sensitivity to outliers.
-		eps: Small constant for numerical stability. Default: 1e-8.
-		reduction: How to reduce the loss - 'mean', 'sum', or 'none'. Default: 'mean'.
-	
-	Returns:
-		FAPE loss scalar (if reduction='mean' or 'sum') or per-structure losses.
-		
-	Example:
-		>>> # Single structure
-		>>> true_q = data.true_quaternions  # (N, 4)
-		>>> true_t = data.coords  # (N, 3)
-		>>> pred_q, pred_t = decoder(z)  # Decoder predictions
-		>>> loss = quaternion_fape_loss(true_q, true_t, pred_q, pred_t)
-		
-		>>> # Batched graphs (PyG style)
-		>>> loss = quaternion_fape_loss(
-		...     true_q, true_t, pred_q, pred_t, batch=data.batch
-		... )
-	
-	Reference:
-		Jumper et al. (2021). Highly accurate protein structure prediction with AlphaFold.
-		Nature. (FAPE loss description in supplementary materials)
-	"""
-	# Normalize quaternions
-	true_q = normalize_quaternion(true_q, eps=eps)
-	pred_q = normalize_quaternion(pred_q, eps=eps)
-	
-	# Convert quaternions to rotation matrices
-	true_R = quaternion_to_rotation_matrix(true_q)  # (..., N, 3, 3)
-	pred_R = quaternion_to_rotation_matrix(pred_q)  # (..., N, 3, 3)
-	
-	# Handle batched vs unbatched input
-	if batch is None:
-		# Single structure - process directly
-		return _fape_single_structure(
-			true_R, true_t, pred_R, pred_t, d_clamp, eps, reduction
-		)
-	else:
-		# Multiple structures in batch - process each separately
-		losses = []
-		unique_batches = torch.unique(batch)
-		for b in unique_batches:
-			idx = (batch == b).nonzero(as_tuple=True)[0]
-			if idx.numel() < 2:
-				continue
-			loss_b = _fape_single_structure(
-				true_R[idx], true_t[idx], 
-				pred_R[idx], pred_t[idx],
-				d_clamp, eps, reduction="mean"
-			)
-			losses.append(loss_b)
-		
-		if losses:
-			stacked = torch.stack(losses)
-			if reduction == "mean":
-				return stacked.mean()
-			elif reduction == "sum":
-				return stacked.sum()
-			else:
-				return stacked
-		else:
-			return torch.tensor(0.0, device=true_q.device)
-
-
-def batch_structure_losses(
-	true_q: torch.Tensor,
-	true_t: torch.Tensor,
-	pred_q: torch.Tensor,
-	pred_t: torch.Tensor,
-	true_ca: torch.Tensor,
-	batch: torch.Tensor = None,
-	plddt: torch.Tensor = None,
-	plddt_thresh: float = 0.3,
-	d_clamp: float = 10.0,
-	eps: float = 1e-8,
-	lddt_cutoff: float = 15.0,
-	lddt_thresholds: list = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-	"""Compute FAPE, lDDT, and delta losses with batch indexing and mean aggregation."""
-	if lddt_thresholds is None:
-		lddt_thresholds = [0.5, 1.0, 2.0, 4.0]
-
-	fape_val = quaternion_fape_loss(
-		true_q=true_q,
-		true_t=true_t,
-		pred_q=pred_q,
-		pred_t=pred_t,
-		batch=batch,
-		d_clamp=d_clamp,
-		eps=eps,
-		reduction="mean",
-	)
-
-	lddt_val = lddt_reconstruction_loss(
-		pred_q=pred_q,
-		pred_t=pred_t,
-		true_coords=true_ca,
-		batch=batch,
-		cutoff=lddt_cutoff,
-		thresholds=lddt_thresholds,
-		plddt=plddt,
-		plddt_thresh=plddt_thresh,
-	)
-
-	# Determine predicted CA positions for delta. Use quaternion chain path via reconstruct positions
-	if batch is None:
-		pred_ca = reconstruct_positions(quaternion_to_rotation_matrix(pred_q.unsqueeze(0))[0], pred_t)[1:]
-		delta_val = delta_loss(true_ca.unsqueeze(0), pred_ca.unsqueeze(0), plddt=(plddt.unsqueeze(0) if plddt is not None else None), plddt_thresh=plddt_thresh)
-	else:
-		batch_deltas = []
-		for b in torch.unique(batch):
-			idx = (batch == b).nonzero(as_tuple=True)[0]
-			if idx.numel() < 2:
-				continue
-			true_ca_b = true_ca[idx]
-			pred_q_b = pred_q[idx]
-			pred_t_b = pred_t[idx]
-			pred_ca_b = reconstruct_positions(quaternion_to_rotation_matrix(pred_q_b), pred_t_b)[1:]
-			plddt_b = plddt[idx] if plddt is not None else None
-			batch_deltas.append(delta_loss(true_ca_b.unsqueeze(0), pred_ca_b.unsqueeze(0), plddt=(plddt_b.unsqueeze(0) if plddt_b is not None else None), plddt_thresh=plddt_thresh))
-
-		if len(batch_deltas) > 0:
-			delta_val = torch.stack(batch_deltas).mean()
-		else:
-			delta_val = torch.tensor(0.0, device=true_q.device, dtype=true_q.dtype)
-
-	return fape_val, lddt_val, delta_val
-
-
-def batch_fape_loss(
-	true_q: torch.Tensor,
-	true_t: torch.Tensor,
-	pred_q: torch.Tensor,
-	pred_t: torch.Tensor,
-	batch: torch.Tensor = None,
-	d_clamp: float = 10.0,
-	eps: float = 1e-8,
-	reduction: str = "mean",
-) -> torch.Tensor:
-	"""Batch-aware FAPE for PyG batch indices."""
-	return quaternion_fape_loss(
-		true_q=true_q,
-		true_t=true_t,
-		pred_q=pred_q,
-		pred_t=pred_t,
-		batch=batch,
-		d_clamp=d_clamp,
-		eps=eps,
-		reduction=reduction,
-	)
-
-
 def batch_lddt_loss(
 	pred_q: torch.Tensor,
 	pred_t: torch.Tensor,
 	true_coords: torch.Tensor,
-	batch: torch.Tensor = None,
+	batch: Optional[torch.Tensor] = None,
 	cutoff: float = 15.0,
-	thresholds: list = None,
-	plddt: torch.Tensor = None,
+	thresholds: Optional[list] = None,
+	plddt: Optional[torch.Tensor] = None,
 	plddt_thresh: float = 0.3,
 ) -> torch.Tensor:
 	"""Batch-aware differentiable lDDT loss."""
@@ -1167,131 +863,6 @@ def batch_lddt_loss(
 		plddt=plddt,
 		plddt_thresh=plddt_thresh,
 	)
-
-
-def batch_delta_loss(
-	true_ca: torch.Tensor,
-	pred_q: torch.Tensor,
-	pred_t: torch.Tensor,
-	batch: torch.Tensor = None,
-	plddt: torch.Tensor = None,
-	plddt_thresh: float = 0.3,
-) -> torch.Tensor:
-	"""Batch-aware delta local displacement loss using chain building."""
-	if batch is None:
-		pred_ca = reconstruct_positions(quaternion_to_rotation_matrix(pred_q.unsqueeze(0))[0], pred_t)[1:]
-		return delta_loss(true_ca.unsqueeze(0), pred_ca.unsqueeze(0), plddt=(plddt.unsqueeze(0) if plddt is not None else None), plddt_thresh=plddt_thresh)
-	batch_loss = []
-	for b in torch.unique(batch):
-		mask_b = (batch == b).nonzero(as_tuple=True)[0]
-		if mask_b.numel() < 2:
-			continue
-		true_ca_b = true_ca[mask_b]
-		pred_q_b = pred_q[mask_b]
-		pred_t_b = pred_t[mask_b]
-		pred_ca_b = reconstruct_positions(quaternion_to_rotation_matrix(pred_q_b), pred_t_b)[1:]
-		plddt_b = plddt[mask_b] if plddt is not None else None
-		batch_loss.append(
-			delta_loss(
-				true_ca_b,
-				pred_ca_b,
-				plddt=(plddt_b if plddt_b is not None else None),
-				plddt_thresh=plddt_thresh,
-			)
-		)
-	if len(batch_loss) == 0:
-		return torch.tensor(0.0, device=true_ca.device, dtype=true_ca.dtype)
-	return torch.stack(batch_loss).mean()
-
-
-def rt_fape_loss(
-	true_rt: torch.Tensor,
-	pred_rt: torch.Tensor,
-	batch: torch.Tensor = None,
-	d_clamp: float = 10.0,
-	eps: float = 1e-8,
-	reduction: str = "mean",
-) -> torch.Tensor:
-	"""
-	Convenience function for FAPE loss directly from rt_pred tensors.
-	
-	Splits the 7D rt_pred tensors into quaternion and translation
-	components and computes the FAPE loss.
-	
-	Args:
-		true_rt: Ground truth rt tensor (N, 7) with [quat (4), trans (3)].
-		pred_rt: Predicted rt tensor from decoder (N, 7).
-		batch: Optional batch indices for multi-structure batches.
-		d_clamp: Maximum distance error (Angstroms). Default: 10.0.
-		eps: Numerical stability constant. Default: 1e-8.
-		reduction: 'mean', 'sum', or 'none'. Default: 'mean'.
-		
-	Returns:
-		FAPE loss scalar or per-structure losses.
-		
-	Example:
-		>>> result = decoder(data)
-		>>> loss = rt_fape_loss(data.true_rt, result['rt_pred'], batch=data.batch)
-	"""
-	true_q, true_t = split_rt_pred(true_rt, normalize=True, eps=eps)
-	pred_q, pred_t = split_rt_pred(pred_rt, normalize=True, eps=eps)
-	
-	return quaternion_fape_loss(
-		true_q, true_t, pred_q, pred_t,
-		batch=batch, d_clamp=d_clamp, eps=eps, reduction=reduction
-	)
-
-
-def _fape_single_structure(
-	true_R: torch.Tensor,
-	true_t: torch.Tensor,
-	pred_R: torch.Tensor,
-	pred_t: torch.Tensor,
-	d_clamp: float = 10.0,
-	eps: float = 1e-6,
-	reduction: str = "mean",
-) -> torch.Tensor:
-	"""
-	Compute FAPE loss for a single structure.
-	
-	Args:
-		true_R: Ground truth rotation matrices, shape (N, 3, 3)
-		true_t: Ground truth translations, shape (N, 3)
-		pred_R: Predicted rotation matrices, shape (N, 3, 3)
-		pred_t: Predicted translations, shape (N, 3)
-		d_clamp: Clamping distance
-		eps: Numerical stability constant
-		reduction: Reduction method
-		
-	Returns:
-		FAPE loss for this structure
-	"""
-	N = true_t.shape[0]
-	
-	# Compute pairwise translation differences
-	# diff[i, j] = t[j] - t[i], shape (N, N, 3)
-	diff_pred = pred_t.unsqueeze(1) - pred_t.unsqueeze(0)
-	diff_true = true_t.unsqueeze(1) - true_t.unsqueeze(0)
-	
-	# Transform differences into local frames using R^T (inverse rotation)
-	# local_pred[i, j] = R_pred[i]^T @ (t_pred[j] - t_pred[i])
-	# Shape: (N, N, 3)
-	local_pred = torch.einsum("nij,nmj->nmi", pred_R.transpose(-1, -2), diff_pred)
-	local_true = torch.einsum("nij,nmj->nmi", true_R.transpose(-1, -2), diff_true)
-	
-	# Compute L2 error between local coordinates and clamp
-	error = torch.sqrt(torch.sum((local_pred - local_true) ** 2, dim=-1) + eps)
-	error = torch.clamp(error, max=d_clamp)
-	
-	# Reduce loss
-	if reduction == "mean":
-		return error.mean()
-	elif reduction == "sum":
-		return error.sum()
-	elif reduction == "none":
-		return error
-	else:
-		raise ValueError(f"Unknown reduction: {reduction}")
 
 
 # =========================
@@ -1334,7 +905,7 @@ def bond_length_loss(
 	N: torch.Tensor,
 	CA: torch.Tensor,
 	C: torch.Tensor,
-	mask: torch.Tensor = None,
+	mask: Optional[torch.Tensor] = None,
 	reduction: str = "mean",
 ):
 	"""
@@ -1411,44 +982,26 @@ def bond_length_loss(
 		raise ValueError(f"Unknown reduction: {reduction}")
 
 
-def prody_reconstruction_loss(data, decoder=None, poslossmod=1, neglossmod=1, plddt=False,  nclamp=30, key=None , plddt_thresh=0.3) -> Tensor:
-	for interaction_type in []:
-		# Remove the diagonal
-		pos_edge_index = data[f'{interaction_type}_edge_index']
-		res = decoder(data, pos_edge_index)
-		# Calculate distance from diagonal for positive edges
-		# Normalize the distance weights to [1, 2] range - far edges get 2x weight
-		# Ensure consistent shapes for multiplication
-		#pos_loss = -torch.log(pos + EPS).squeeze()
-		pos_loss = F.binary_cross_entropy_with_logits( pos , torch.ones_like(pos) )
+def prody_reconstruction_loss(
+	data,
+	decoder: Optional[Any] = None,
+	poslossmod: float = 1,
+	neglossmod: float = 1,
+	plddt: bool = False,
+	nclamp: int = 30,
+	key: Optional[str] = None,
+	plddt_thresh: float = 0.3,
+) -> tuple[Tensor, Tensor]:
+	"""Legacy placeholder for ProDy interaction losses.
 
-		if offdiag == True:
-			nres = torch.abs(pos_edge_index[0] - pos_edge_index[1])
-			nres = torch.clamp(nres, max=nclamp)
-			nres = nres / nclamp
-			pos_loss = (pos_loss.squeeze() * nres.float()).unsqueeze(1)
-		if plddt == True:
-			c1 = data['plddt'].x[pos_edge_index[0]].unsqueeze(1)
-			c2 = data['plddt'].x[pos_edge_index[1]].unsqueeze(1)
-			c1 = c1 > .3
-			c2 = c2 > .3
-			mask = c1 & c2
-			mask = mask.squeeze(1)  # Ensure mask is 1D
-			pos_loss = pos_loss[mask]
-		pos_loss = pos_loss.mean()
-		neg_edge_index = negative_sampling(pos_edge_index, data['res'].x.size(0))
-		
-		neg_edge_index = neg_edge_index[:, neg_edge_index[0] != neg_edge_index[1]]
-		res = decoder(data, neg_edge_index)
-
-		if key == None:
-			neg = res[1]
-		if key != None:
-			neg = res[key]
-
-		#bce with logits
-		neg_loss = F.binary_cross_entropy_with_logits( neg , torch.zeros_like(neg) )
-		#neg_loss = -torch.log((1 - neg) + EPS).squeeze()
+	The old implementation contained undefined symbols and no reliable return.
+	Keep a typed no-op return for backward compatibility.
+	"""
+	del decoder, poslossmod, neglossmod, plddt, nclamp, key, plddt_thresh
+	device = data['res'].x.device
+	dtype = data['res'].x.dtype
+	zero = torch.tensor(0.0, device=device, dtype=dtype)
+	return zero, zero
 
 # ============================================================================
 # Sequence and Structure Reconstruction Losses
@@ -1528,6 +1081,8 @@ def ss_reconstruction_loss(ss, recon_ss, mask_plddt=False, plddt_threshold=0.3 ,
 	
 	target = ss.argmax(dim=-1)
 	if mask_plddt:
+		if plddt_mask is None:
+			raise ValueError("plddt_mask must be provided when mask_plddt=True")
 		# Create boolean mask for high-confidence residues
 		mask = (plddt_mask > plddt_threshold).squeeze()
 		if mask.sum() > 0:
@@ -1616,45 +1171,6 @@ def angles_reconstruction_loss(true, pred, beta=0.5 , plddt_mask = None , plddt_
 		)
 		loss += kl_loss
 	return loss
-
-
-def lddt_reconstruction_loss(
-	pred_q: torch.Tensor,
-	pred_t: torch.Tensor,
-	true_coords: torch.Tensor,
-	batch: torch.Tensor = None,
-	cutoff: float = 15.0,
-	thresholds: list = None,
-	plddt: torch.Tensor = None,
-	plddt_thresh: float = 0.3,
-) -> torch.Tensor:
-	"""
-	Differentiable lDDT loss.
-
-	Derives predicted CA positions from the cumulative sum of `pred_t`
-	(CA-to-CA displacement vectors in the global frame) and evaluates
-	a soft lDDT score against `true_coords`.
-
-	Args:
-		pred_q: Predicted unit quaternions (N, 4). Not used for coordinate
-				derivation but retained for API consistency.
-		pred_t: Predicted CA-to-CA displacements (N, 3).
-		true_coords: Ground-truth CA coordinates (N, 3).
-		batch: Per-residue batch indices (N,). None = single structure.
-		cutoff: Neighbour inclusion distance in Å. Default: 15.0.
-		thresholds: lDDT distance thresholds. Default: [0.5, 1.0, 2.0, 4.0].
-		plddt: Per-residue pLDDT scores (N,) or (N, 1). Optional.
-		plddt_thresh: Minimum pLDDT. Default: 0.3.
-
-	Returns:
-		Scalar loss = 1 - mean_soft_lDDT.
-	"""
-	from foldtree2.src.losses.fape import differentiable_lddt_loss
-	return differentiable_lddt_loss(
-		pred_q, pred_t, true_coords,
-		batch=batch, cutoff=cutoff, thresholds=thresholds,
-		plddt=plddt, plddt_thresh=plddt_thresh,
-	)
 
 
 def gaussian_loss(mu , logvar , beta= 1.5):

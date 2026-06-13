@@ -1,6 +1,21 @@
 import torch
 import torch.nn as nn
 
+
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, dimension):
+        super().__init__()
+        self.linear_1 = nn.Linear(dimension,dimension)
+        self.linear_2 = nn.Linear(dimension,dimension)
+
+    def forward(self, x):
+        output = self.linear_1(x)
+        swish = output * torch.sigmoid(output)
+        swiglu = swish * self.linear_2(x)
+        return swiglu
+	
 class SIRENLayer(nn.Module):
     def __init__(self, in_features, out_features, omega_0=30):
         super().__init__()
@@ -31,10 +46,10 @@ class Position_MLP(torch.nn.Module):
 		layers.append( nn.LayerNorm(in_channels) )
 		layers.append( nn.Dropout(dropout) )
 		layers.append( nn.Linear(in_channels, hidden_channels[0]) )
-		layers.append( nn.ReLU() )
+		layers.append( nn.GELU() )
 		for i in range(1, len(hidden_channels)):
 			layers.append( nn.Linear(hidden_channels[i-1], hidden_channels[i]) )
-			layers.append( nn.ReLU() )
+			layers.append( nn.GELU() )
 		layers.append( nn.Linear(hidden_channels[-1], out_channels) )
 		layers.append( nn.Tanh() )  # constrain outputs to [-1, 1]
 		self.mlp = nn.Sequential( *layers )

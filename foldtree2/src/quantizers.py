@@ -351,8 +351,13 @@ class VectorQuantizerEMA(nn.Module):
 					- 2 * torch.matmul(flat_x, self.embeddings.weight.t()))  # [N, K]
 
 		encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)  # [N,1]
-		encodings = torch.zeros(encoding_indices.shape[0], self.num_embeddings, device=x.device)
-		encodings.scatter_(1, encoding_indices, 1)  # [N,K] one-hot
+		encodings = torch.zeros(
+			encoding_indices.shape[0],
+			self.num_embeddings,
+			device=x.device,
+			dtype=self.embeddings.weight.dtype,
+		)
+		encodings.scatter_(1, encoding_indices, 1.0)  # [N,K] one-hot
 
 		# Quantization (hard)
 		quantized = torch.matmul(encodings, self.embeddings.weight).view_as(x)
@@ -696,8 +701,13 @@ class VectorQuantizer(nn.Module):
 
 		# Get the encoding that has the min distance
 		encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
-		encodings = torch.zeros(encoding_indices.shape[0], self.num_embeddings, device=x.device)
-		encodings.scatter_(1, encoding_indices, 1)
+		encodings = torch.zeros(
+			encoding_indices.shape[0],
+			self.num_embeddings,
+			device=x.device,
+			dtype=self.embeddings.weight.dtype,
+		)
+		encodings.scatter_(1, encoding_indices, 1.0)
 
 		# Quantize the latents
 		quantized = torch.matmul(encodings, self.embeddings.weight).view_as(x)

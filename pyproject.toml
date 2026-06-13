@@ -51,7 +51,8 @@ dependencies = [
   "ete3",
   "pyyaml",
   "ProDy",
-  "foldcomp"
+  "foldcomp",
+  "optuna"
 ]
 
 [project.scripts]
@@ -64,6 +65,7 @@ maffttext2hex = "foldtree2.mafft_wrappers:maffttext2hex_main"
 mad = "foldtree2.mafft_wrappers:mad_main"
 raxml-ng = "foldtree2.mafft_wrappers:raxml_ng_main"
 foldcomp2fasta = "foldtree2.foldcomp2fasta:main"
+tune-monodecoder-bayes = "foldtree2.scripts.tune_monodecoder_bayes:main"
 
 [tool.setuptools.packages.find]
 where = ["." , "src", "scripts"]

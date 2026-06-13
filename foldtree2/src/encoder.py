@@ -25,6 +25,7 @@ from torch_geometric.nn import (
 from foldtree2.src.layers import *
 from foldtree2.src.losses import *
 from foldtree2.src.quantizers import *
+from foldtree2.src.xsatransformer import XSATransformerConv
 import copy
 from torch_geometric.loader import DataLoader
 
@@ -185,7 +186,7 @@ class mk1_Encoder(torch.nn.Module):
 			nn.Linear(self.in_with_positions, hidden_channels[0] * 2),
 			nn.GELU(),
 			nn.Linear(hidden_channels[0] * 2, hidden_channels[0]),
-			nn.GELU(),
+			nn.GELU()
 		)
 		
 		if self.fftin:
@@ -229,6 +230,18 @@ class mk1_Encoder(torch.nn.Module):
 					)
 					for edge_type in metadata['edge_types']
 				})
+			elif flavor == 'xsa_transformer':
+				conv_dict = nn.ModuleDict({
+					'_'.join(edge_type): XSATransformerConv(
+						hidden_channels[i-1],
+						hidden_channels[i],
+						edge_dim=self.edge_dim,
+						heads=nheads,
+						dropout=dropout_p,
+						concat=False,
+					)
+					for edge_type in metadata['edge_types']
+				})
 			elif flavor == 'sage':
 				conv_dict = nn.ModuleDict({
 					'_'.join(edge_type): SAGEConv(
@@ -253,7 +266,7 @@ class mk1_Encoder(torch.nn.Module):
 			nn.Linear(hidden_channels[-1] * (len(hidden_channels) - 1), self.encoder_hidden),
 			nn.GELU(),
 			nn.Linear(self.encoder_hidden, self.encoder_hidden),
-			nn.GELU(),
+			nn.GELU()
 		)
 		
 		self.head['out_dense'] = nn.Sequential(
@@ -355,7 +368,11 @@ class mk1_Encoder(torch.nn.Module):
 		batch = data['res'].batch if hasattr(data['res'], 'batch') and data['res'].batch is not None else torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
 		
 		# Quantization
-		z_quantized, vq_loss = self.vector_quantizer(x , batch=batch)
+		try:
+			z_quantized, vq_loss = self.vector_quantizer(x, batch=batch)
+		except TypeError:
+			# Some quantizer implementations do not accept a batch kwarg.
+			z_quantized, vq_loss = self.vector_quantizer(x)
 		
 		if 'debug' in kwargs and kwargs['debug']:
 			print('z_quantized shape:', z_quantized.shape)

@@ -6,6 +6,7 @@ import copy
 import importlib
 import warnings
 from foldtree2.src.mono_decoders import HeteroGAE_geo_Decoder
+from foldtree2.src.xsatransformer import XSATransformerConv
 import torch_geometric
 import glob
 import h5py
@@ -544,6 +545,8 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'max' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
+				if flavor == 'xsa_transformer':
+					layer[edge_type] = XSATransformerConv((-1, -1), hidden_channels[edge_type][i], heads=nheads, concat=False)
 				if flavor == 'sage' :
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if k == 0 and i == 0:
@@ -646,6 +649,7 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 
 		if output_edge_logits == True:
 			self.output_edge_logits = True
+			# Distogram supervision uses cross-entropy, so this head must emit raw logits.
 			self.edge_logits_mlp = torch.nn.Sequential(
 				torch.nn.Linear(2*lastlin, 512),
 				torch.nn.GELU(),
@@ -655,8 +659,7 @@ class HeteroGAE_geo_Decoder_pairwise(torch.nn.Module):
 				torch.nn.GELU(),
 				torch.nn.Linear(256,256),
 				torch.nn.GELU(),
-				torch.nn.Linear(256,ncat),
-				torch.nn.Sigmoid()
+				torch.nn.Linear(256,ncat)
 			)
 		else:
 			self.output_edge_logits = False

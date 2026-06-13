@@ -12,8 +12,9 @@ import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 
-from foldtree2.src.xsatransformer import XSATransformerEncoderLayer
+from foldtree2.src.xsatransformer import XSATransformerConv, XSATransformerEncoderLayer
 from foldtree2.src.chebconv import StableChebConv
+from foldtree2.src.manifold_hyper_connections import ManifoldHyperConnections
 
 EPS = 1e-6
 datadir = '../../datasets/foldtree2/'
@@ -22,6 +23,7 @@ from foldtree2.src.losses import *
 from foldtree2.src.layers import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
+
 
 
 def _sincos_logits_to_angles(logits: torch.Tensor, eps: float = EPS) -> torch.Tensor:
@@ -158,6 +160,8 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 					layer[edge_type] = MFConv( (-1, -1)  , hidden_channels[edge_type][i] , max_degree=5  , aggr = 'max' )
 				if flavor == 'transformer' or edge_type == ('res','informs','godnode4decoder') or edge_type == ('godnode4decoder','informs','res'):
 					layer[edge_type] =  TransformerConv( (-1, -1) , hidden_channels[edge_type][i], heads = nheads , concat= False  ) 
+				if flavor == 'xsa_transformer':
+					layer[edge_type] = XSATransformerConv((-1, -1), hidden_channels[edge_type][i], heads=nheads, concat=False)
 				if flavor == 'sage' :
 					layer[edge_type] =  SAGEConv( (-1, -1) , hidden_channels[edge_type][i] ) 
 				if flavor == 'cheb':
@@ -269,18 +273,13 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 
 		if output_edge_logits == True:
 			self.output_edge_logits = True
+			# Distogram supervision uses cross-entropy, so this head must emit raw logits.
 			self.edge_logits_mlp = torch.nn.Sequential(
 				#layernorm
 				torch.nn.LayerNorm(2*lastlin, eps=1e-6),
 				torch.nn.Linear(2*lastlin, anglesdecoder_hidden[0]),
 				torch.nn.GELU(),
-				torch.nn.Linear(anglesdecoder_hidden[0],anglesdecoder_hidden[1]),
-				torch.nn.GELU(),
-				torch.nn.Linear(anglesdecoder_hidden[1],anglesdecoder_hidden[2]),
-				torch.nn.GELU(),
-				torch.nn.Linear(anglesdecoder_hidden[2],ncat),
-				torch.nn.GELU(),
-				torch.nn.Sigmoid()
+				torch.nn.Linear(anglesdecoder_hidden[0],ncat)
 			)
 		else:
 			self.output_edge_logits = False
@@ -376,7 +375,9 @@ class HeteroGAE_geo_Decoder(torch.nn.Module):
 				edge_probs = self.sigmoid(edge_scores)
 			if self.edge_logits_mlp is not None:
 				edge_logits = self.edge_logits_mlp( torch.concat( [z[contact_pred_index[0]], z[contact_pred_index[1]] ] , axis = 1 ) ).squeeze()
-		
+				edge_logits += self.edge_logits_mlp( torch.concat( [z[contact_pred_index[1]], z[contact_pred_index[0]] ] , axis = 1 ) ).squeeze()
+				edge_logits = edge_logits / 2  # Symmetrize logits for undirected edges
+				
 		if 'init' in kwargs and kwargs['init'] == True:
 			# Initialize weights explicitly (Xavier initialization)
 			for conv in self.convs:
@@ -450,6 +451,12 @@ class CNN_geo_Decoder(torch.nn.Module):
 		self.output_fft = output_fft
 		self.residual = residual
 		self.pool_type = pool_type
+		self.use_mhc = bool(kwargs.get('use_mhc', False))
+		self.mhc_streams = max(1, int(kwargs.get('mhc_streams', 4)))
+		self.mhc_sinkhorn_iters = max(1, int(kwargs.get('mhc_sinkhorn_iters', 5)))
+		self.mhc_temperature = float(kwargs.get('mhc_temperature', 1.0))
+		self.mhc_eps = float(kwargs.get('mhc_eps', 1e-6))
+		self.aa_decoder_dropout = float(kwargs.get('aa_decoder_dropout', dropout))
 		
 		# Determine final output dimension
 		if self.residual == True:
@@ -478,9 +485,9 @@ class CNN_geo_Decoder(torch.nn.Module):
 		
 		self.input['input_lin'] = nn.Sequential(
 			nn.Linear(input_dim, conv_channels[0]),
-			nn.GELU(),
+			SwiGLU(conv_channels[0]),
 			nn.Linear(conv_channels[0], conv_channels[0]),
-			nn.GELU()
+			SwiGLU(conv_channels[0])
 		)
 		
 		# ===================== BODY MODULE =====================
@@ -488,20 +495,33 @@ class CNN_geo_Decoder(torch.nn.Module):
 		self.body = nn.ModuleDict()
 		self.body['convs'] = nn.ModuleList()
 		self.body['norms'] = nn.ModuleList()
-		
+		self.body['activations'] = nn.ModuleList()
+		if self.use_mhc:
+			self.body['mhc_layers'] = nn.ModuleList()
 		for i, (channels, kernel_size) in enumerate(zip(conv_channels, kernel_sizes)):
 			self.body['convs'].append(
-				nn.Conv1d(
-					channels if i == 0 else conv_channels[i-1], 
-					channels, 
-					kernel_size=kernel_size, 
-					padding=kernel_size//2
-				)
 				
+					nn.Conv1d(
+						channels if i == 0 else conv_channels[i-1], 
+						channels, 
+						kernel_size=kernel_size, 
+						padding=kernel_size//2
+					)
 			)
-
+			self.body['activations'].append(SwiGLU(channels))
 			self.body['norms'].append(nn.LayerNorm(channels, eps=1e-6))
-		
+			if self.use_mhc:
+				self.body['mhc_layers'].append(
+					ManifoldHyperConnections(
+						d_model=channels,
+						num_streams=self.mhc_streams,
+						sinkhorn_iters=self.mhc_sinkhorn_iters,
+						temperature=self.mhc_temperature,
+						eps=self.mhc_eps,
+						dropout=dropout,
+					)
+				)
+			
 		self.body['lin'] = nn.Sequential(
 			nn.Linear(conv_channels[len(kernel_sizes)-1], Xdecoder_hidden[0]),
 			nn.GELU(),
@@ -564,24 +584,18 @@ class CNN_geo_Decoder(torch.nn.Module):
 		
 		# Edge logits prediction
 		if output_edge_logits:
+			# Distogram supervision uses cross-entropy, so this head must emit raw logits.
 			self.head['edge_logits_mlp'] = nn.Sequential(
 				nn.LayerNorm(2*lastlin + 64 if self.learn_positions else 2*lastlin, eps=1e-6),
 				#if learn positions, then lastlin is larger by 32 * 2
 				nn.Linear(2*lastlin + 64 if self.learn_positions else 2*lastlin , anglesdecoder_hidden[0]),
-				nn.GELU(),
+				SwiGLU(anglesdecoder_hidden[1] if len(anglesdecoder_hidden) > 1 else anglesdecoder_hidden[0]),
 				nn.Linear(anglesdecoder_hidden[0], anglesdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[1], anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
-				nn.GELU(),
-				nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], ncat),
-				nn.Sigmoid()
+				SwiGLU(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1]),
+				nn.Linear(anglesdecoder_hidden[2] if len(anglesdecoder_hidden) > 2 else anglesdecoder_hidden[1], ncat)
 			)
-		
 		if learn_positions:
 			self.head['position_mlp'] = Position_MLP(in_channels=256, hidden_channels=[128,128,128], out_channels=32, dropout=dropout)
-
-
-		
 		self.sigmoid = nn.Sigmoid()
 	
 	def forward(self, data, contact_pred_index, **kwargs):
@@ -611,46 +625,61 @@ class CNN_geo_Decoder(torch.nn.Module):
 			for i in range(num_graphs):
 				mask = batch == i
 				x_batch = x[mask]  # Shape: (seq_len, features)
-				
 				# Transpose for Conv1d: (features, seq_len)
 				x_batch = x_batch.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
-				
 				# Apply CNN layers
-				for conv, norm in zip(self.body['convs'], self.body['norms']):
+				for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], self.body['activations'])):
 					x_batch = conv(x_batch)
-					x_batch = F.silu(x_batch)
+					
+					if self.residual:
+						xin = x_batch.clone()
+					
 					# Transpose for LayerNorm: (1, seq_len, features)
 					x_batch = x_batch.transpose(1, 2)
+					x_batch = activation(x_batch)
 					x_batch = norm(x_batch)
+					if self.use_mhc:
+						mhc_layer = self.body['mhc_layers'][layer_idx]
+						stream_state = mhc_layer.init_streams(x_batch)
+						stream_state = mhc_layer.step(stream_state, x_batch, residual=False)
+						x_batch = mhc_layer.readout(stream_state)
 					# Transpose back for next conv: (1, features, seq_len)
 					x_batch = x_batch.transpose(1, 2)
-				
+					if self.residual:
+						x_batch = x_batch + xin
 				# Transpose back and remove batch dimension
 				x_batch = x_batch.squeeze(0).transpose(0, 1)  # (seq_len, features)
 				x_list.append(x_batch)
+
 			
-			# Concatenate back
 			x = torch.cat(x_list, dim=0)
 		else:
 			# Single graph case
 			x = x.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
 			
-			for conv, norm in zip(self.body['convs'], self.body['norms']):
+			for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], self.body['activations'])):
+				if self.residual:
+					xin = x.clone()			
 				x = conv(x)
-				x = F.silu(x)
 				# Transpose for LayerNorm: (1, seq_len, features)
 				x = x.transpose(1, 2)
+				x = activation(x)
 				x = norm(x)
+				if self.use_mhc:
+					mhc_layer = self.body['mhc_layers'][layer_idx]
+					stream_state = mhc_layer.init_streams(x)
+					stream_state = mhc_layer.step(stream_state, x, residual=False)
+					x = mhc_layer.readout(stream_state)
 				# Transpose back for next conv: (1, features, seq_len)
 				x = x.transpose(1, 2)
+				if self.residual:
+					x = x + xin
 			
 			x = x.squeeze(0).transpose(0, 1)  # (seq_len, features)
 		
 		# Final linear transformation
 		z = self.body['lin'](x)
 		
-		if self.residual:
-			z = z + inz
 		if self.normalize:
 			#znorm = z / (torch.norm(z, dim=1, keepdim=True) + 1e-6)
 			znorm = F.normalize(z, p=2, dim=1)
@@ -718,10 +747,20 @@ class CNN_geo_Decoder(torch.nn.Module):
 						torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]], 
 									  pos_enc[contact_pred_index[0]], pos_enc[contact_pred_index[1]]], axis=1)
 					).squeeze()
+					edge_logits += self.head['edge_logits_mlp'](
+						torch.concat([z[contact_pred_index[1]], z[contact_pred_index[0]], 
+									  pos_enc[contact_pred_index[1]], pos_enc[contact_pred_index[0]]], axis=1)
+					).squeeze()
+					edge_logits = edge_logits / 2  # Symmetrize logits for undirected edges
+					# If learn_positions is True, the input to edge_logits_mlp includes positional encodings, so we concatenate those as well. The MLP will learn to use them if helpful
 				else:
 					edge_logits = self.head['edge_logits_mlp'](
 						torch.concat([z[contact_pred_index[0]], z[contact_pred_index[1]] ], axis=1)
 					).squeeze()
+					edge_logits += self.head['edge_logits_mlp'](
+						torch.concat([z[contact_pred_index[1]], z[contact_pred_index[0]] ], axis=1)
+					).squeeze()
+					edge_logits = edge_logits / 2  # Symmetrize logits for undirected edges
 		
 		# Weight initialization
 		if 'init' in kwargs and kwargs['init']:
@@ -1017,6 +1056,12 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		self.normalize = normalize
 		self.residual = residual
 		self.amino_acid_indices = amino_mapper
+		self.aa_decoder_dropout = float(kwargs.get('aa_decoder_dropout', dropout))
+		self.use_mhc = bool(kwargs.get('use_mhc', False))
+		self.mhc_streams = max(1, int(kwargs.get('mhc_streams', 4)))
+		self.mhc_sinkhorn_iters = max(1, int(kwargs.get('mhc_sinkhorn_iters', 5)))
+		self.mhc_temperature = float(kwargs.get('mhc_temperature', 1.0))
+		self.mhc_eps = float(kwargs.get('mhc_eps', 1e-6))
 		
 		input_dim = in_channels['res']
 		if concat_positions:
@@ -1026,7 +1071,11 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			input_dim = input_dim + 32
 		d_model = hidden_channels[('res', 'backbone', 'res')][0]
 
-		print(d_model, nheads, layers, dropout)
+		print(
+			f"Transformer_AA_Decoder: d_model={d_model}, nheads={nheads}, layers={layers}, "
+			f"dropout={dropout}, aa_decoder_dropout={self.aa_decoder_dropout}, "
+			f"use_mhc={self.use_mhc}, mhc_streams={self.mhc_streams if self.use_mhc else 1}"
+		)
 
 		# ===================== INPUT MODULE =====================
 		# Preprocessing and initial projection
@@ -1067,12 +1116,22 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			encoder_layer, 
 			num_layers=layers
 		)
+
+		if self.use_mhc:
+			self.body['mhc'] = ManifoldHyperConnections(
+				d_model=d_model,
+				num_streams=self.mhc_streams,
+				sinkhorn_iters=self.mhc_sinkhorn_iters,
+				temperature=self.mhc_temperature,
+				eps=self.mhc_eps,
+				dropout=dropout,
+			)
 		
 		if self.residual:
 			self.body['dmodel2input'] = nn.Sequential(
 				nn.Linear(d_model, input_dim),
 				nn.GELU(),
-				nn.Linear(input_dim, input_dim),
+				nn.Linear(input_dim, d_model),
 			)
 
 		# ===================== HEAD MODULE =====================
@@ -1086,10 +1145,13 @@ class Transformer_AA_Decoder(torch.nn.Module):
 				# Conv1d expects (batch, channels, seq_len)
 				nn.Conv1d(d_model, AAdecoder_hidden[0], kernel_size=3, padding=1),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Conv1d(AAdecoder_hidden[0], AAdecoder_hidden[1], kernel_size=3, padding=1),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Conv1d(AAdecoder_hidden[1], AAdecoder_hidden[2], kernel_size=3, padding=1),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Conv1d(AAdecoder_hidden[2], 20, kernel_size=1),
 				#nn.Softmax(dim=-1)
 			)
@@ -1098,10 +1160,13 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			self.head['dnn_decoder'] = nn.Sequential(
 				nn.Linear(d_model, AAdecoder_hidden[0]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[2], 20),
 				#nn.Softmax(dim=-1)
 			)
@@ -1111,10 +1176,13 @@ class Transformer_AA_Decoder(torch.nn.Module):
 			self.head['ss_head'] = nn.Sequential(
 				nn.Linear(d_model, AAdecoder_hidden[0]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[0], AAdecoder_hidden[1]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[1], AAdecoder_hidden[2]),
 				nn.GELU(),
+				nn.Dropout(self.aa_decoder_dropout),
 				nn.Linear(AAdecoder_hidden[2], 3),
 				#nn.Softmax(dim=-1)
 			)
@@ -1157,14 +1225,21 @@ class Transformer_AA_Decoder(torch.nn.Module):
 		else:
 			x = x.unsqueeze(1)  # (seq_len, 1, d_model)
 		
-		# Apply transformer
-		x = self.body['transformer_encoder'](x)  # (seq_len, batch, d_model)
-		
-		# Apply residual connection
-		if self.residual and 'dmodel2input' in self.body:
-			if batch is not None:
-				x = x + self.body['dmodel2input'](x)
-			else:
+		# Apply transformer / mHC transformer path
+		if self.use_mhc and 'mhc' in self.body:
+			stream_state = self.body['mhc'].init_streams(x)
+			for layer in self.body['transformer_encoder'].layers:
+				x_layer = self.body['mhc'].readout(stream_state, for_block=True)
+				h = layer(x_layer)
+				stream_state = self.body['mhc'].step(stream_state, h, residual=self.residual)
+			x = self.body['mhc'].readout(stream_state)
+			if getattr(self.body['transformer_encoder'], 'norm', None) is not None:
+				x = self.body['transformer_encoder'].norm(x)
+		else:
+			x = self.body['transformer_encoder'](x)  # (seq_len, batch, d_model)
+			
+			# Keep legacy residual projection behavior on the non-mHC path.
+			if self.residual and 'dmodel2input' in self.body:
 				x = x + self.body['dmodel2input'](x)
 		
 		# Apply normalization
@@ -1307,7 +1382,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			self.body['dmodel2input'] = nn.Sequential(
 				nn.Linear(d_model, input_dim),
 				nn.GELU(),
-				nn.Linear(input_dim, input_dim),
+				nn.Linear(input_dim, d_model),
 			)
 
 		# ===================== HEAD MODULE =====================
@@ -1640,98 +1715,6 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 		foldx_out = self.lin(pooled)
 		return { 'foldx_out' : foldx_out }
 
-
-class Quaternion_Coarse_Geometry_Decoder(torch.nn.Module):
-	"""
-	Predicts coarse geometry directly in quaternion representation.
-
-	Outputs per-residue:
-	- `quat_pred`: normalized quaternion (w, x, y, z), shape (N, 4)
-	- `trans_pred`: translation vector, shape (N, 3)
-	- `rt_pred`: concatenated quaternion + translation, shape (N, 7)
-
-	This decoder is intentionally lightweight so it can be used as an auxiliary
-	coarse-geometry head on top of residue embeddings.
-	"""
-	def __init__(
-		self,
-		in_channels={'res': 10},
-		hidden_dims=[128, 64],
-		dropout=0.01,
-		normalize_latent=True,
-		concat_positions=False,
-		learn_positions=False,
-		position_dim=32,
-	):
-		super(Quaternion_Coarse_Geometry_Decoder, self).__init__()
-		L.seed_everything(42)
-
-		self.normalize_latent = normalize_latent
-		self.concat_positions = concat_positions
-		self.learn_positions = learn_positions
-
-		input_dim = in_channels['res']
-		if concat_positions:
-			input_dim = input_dim + 256
-		if learn_positions:
-			self.concat_positions = False
-			input_dim = input_dim + position_dim
-
-		self.input_dropout = nn.Dropout(dropout)
-
-		if learn_positions:
-			self.position_mlp = Position_MLP(
-				in_channels=256,
-				hidden_channels=[128, 128, 128],
-				out_channels=position_dim,
-				dropout=dropout,
-			)
-		else:
-			self.position_mlp = None
-
-		self.backbone = nn.Sequential(
-			nn.Linear(input_dim, hidden_dims[0]),
-			nn.GELU(),
-			nn.Dropout(dropout),
-			nn.Linear(hidden_dims[0], hidden_dims[1]),
-			nn.GELU(),
-		)
-
-		self.quat_head = nn.Linear(hidden_dims[1], 4)
-		self.trans_head = nn.Linear(hidden_dims[1], 3)
-
-	def forward(self, data, contact_pred_index=None, **kwargs):
-		x = data.x_dict['res']
-
-		if self.concat_positions:
-			x = torch.cat([x, data['positions'].x], dim=1)
-		if self.position_mlp is not None:
-			pos_enc = self.position_mlp(data['positions'].x)
-			x = torch.cat([x, pos_enc], dim=1)
-
-		x = self.input_dropout(x)
-		z = self.backbone(x)
-
-		if self.normalize_latent:
-			z = F.normalize(z, p=2, dim=-1)
-
-		quat_pred = self.quat_head(z)
-		quat_pred = torch.tanh(quat_pred)
-		trans_pred = self.trans_head(z)
-		rt_pred = torch.cat([quat_pred, trans_pred], dim=-1)
-
-		return {
-			'quat_pred': quat_pred,
-			'trans_pred': trans_pred,
-			'rt_pred': rt_pred,
-			'z': z,
-			'edge_probs': None,
-			'edge_logits': None,
-			'zgodnode': None,
-			'fft2pred': None,
-			'angles': None,
-			'ss_pred': None,
-		}
 
 
 def save_model(model, optimizer, epoch, file_path):
