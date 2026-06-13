@@ -1372,4 +1372,3 @@ def distogram_loss(
 	)  # (B, Npairs)
 
 	return errors
-

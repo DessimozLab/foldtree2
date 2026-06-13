@@ -669,6 +669,38 @@ class se3_denoiser(torch.nn.Module):
 		)
 
 
+	def _extract_atom_ids(self, data, x_dict, ft2_token_ids=None, aa_identity_ids=None):
+		# Primary label source for SE3 nodes: FoldTree2 discrete token ids from the
+		# encoder + quantizer combination.
+		if ft2_token_ids is not None:
+			return ft2_token_ids.to(dtype=torch.long, device=self.device).view(-1)
+
+		# Secondary label source: amino-acid identities reconstructed by an AA decoder.
+		if aa_identity_ids is not None:
+			aa_ids = aa_identity_ids.to(dtype=torch.long, device=self.device).view(-1)
+			if self.num_atom_types < 20:
+				aa_ids = aa_ids % self.num_atom_types
+			else:
+				aa_ids = aa_ids.clamp_max(self.num_atom_types - 1)
+			return aa_ids
+
+		# Optional in-graph fallback if upstream code stores tokens as a node feature.
+		if isinstance(data, dict):
+			token_store = data.get('ft2_tokens', None)
+			token_x = getattr(token_store, 'x', None) if token_store is not None else None
+		else:
+			token_store = data['ft2_tokens'] if hasattr(data, 'node_types') and ('ft2_tokens' in data.node_types) else None
+			token_x = token_store.x if (token_store is not None and hasattr(token_store, 'x')) else None
+		if token_x is not None:
+			if token_x.ndim == 2 and token_x.shape[-1] == 1:
+				token_x = token_x.squeeze(-1)
+			return token_x.to(dtype=torch.long, device=self.device).view(-1)
+
+		# Last-resort fallback for compatibility when token ids are unavailable.
+		atom_logits = self.input2atomids(x_dict['res'])
+		return torch.argmax(atom_logits, dim=-1).to(dtype=torch.long, device=self.device)
+
+
 	def forward(self, data, edge_attr_dict=None, **kwargs):
 		if isinstance(data, dict):
 			x_dict, edge_index_dict = data, kwargs.get('edge_index_dict', {})
@@ -679,8 +711,12 @@ class se3_denoiser(torch.nn.Module):
 		x_dict['res'] = self.bn(x_dict['res'])
 		x_dict['res'] = self.dropout(x_dict['res'])
 		
-		# Project input features to atom IDs
-		atom_ids = x_dict['ords']
+		atom_ids = self._extract_atom_ids(
+			data,
+			x_dict,
+			ft2_token_ids=kwargs.get('ft2_token_ids'),
+			aa_identity_ids=kwargs.get('aa_identity_ids'),
+		)
 
 		# Fail fast with a readable message instead of a CUDA device-side assert.
 		atom_embed = getattr(getattr(self.gotennet, 'node_init', None), 'atom_embed', None)
@@ -693,11 +729,31 @@ class se3_denoiser(torch.nn.Module):
 					'Ensure GotenNet is initialized with num_atoms >= num_atom_types.'
 				)
 		
-		# Get coordinates
-		coords = x_dict['coords']
-		if not isinstance(data, dict):
-			if 'coord_pred' in getattr(data, 'node_types', []) and hasattr(data['coord_pred'], 'x') and data['coord_pred'].x is not None:
-				coords = data['coord_pred'].x
+		# Get predicted coordinates only. We intentionally refuse to consume
+		# ground-truth coords here so SE3 always refines first-stage predictions.
+		coords = kwargs.get('coords_pred', None)
+		if coords is None:
+			coords = kwargs.get('coord_pred', None)
+		if coords is None and isinstance(data, dict):
+			for k in ('coords_pred', 'coord_pred'):
+				store = data.get(k, None)
+				val = getattr(store, 'x', None) if store is not None else None
+				if val is not None:
+					coords = val
+					break
+		if coords is None and not isinstance(data, dict):
+			if hasattr(data, 'node_types'):
+				for k in ('coords_pred', 'coord_pred'):
+					if k in data.node_types:
+						store = data[k]
+						if hasattr(store, 'x') and store.x is not None:
+							coords = store.x
+							break
+		if coords is None:
+			raise RuntimeError(
+				"SE3 decoder requires predicted coordinates via 'coords_pred' or 'coord_pred'; "
+				"it will not use known ground-truth 'coords'."
+			)
 		coords = coords.view(-1, 3)  # (num_nodes, 3)
 		
 		#use dot product results to add adges
