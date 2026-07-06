@@ -297,6 +297,7 @@ def integrate_local_ca_steps(
 
 COARSE_BACKBONE_OFFSETS = {
     "ca": (0.0, 0.0, 0.0),
+    "c": (1.52, 0.0, 0.0),
     "cb": (-0.60, -0.77, -1.18),
     "n": (-0.53, 1.36, 0.0),
 }
@@ -391,6 +392,82 @@ def coarse_backbone_fape_loss(
     if not losses:
         return torch.tensor(0.0, device=true_atoms.device, dtype=true_atoms.dtype)
     return torch.stack(losses).mean()
+
+
+def _dihedral_angle(p0: Tensor, p1: Tensor, p2: Tensor, p3: Tensor, eps: float = 1e-8) -> Tensor:
+    b0 = p0 - p1
+    b1 = p2 - p1
+    b2 = p3 - p2
+    b1 = F.normalize(b1, dim=-1, eps=eps)
+
+    v = b0 - torch.sum(b0 * b1, dim=-1, keepdim=True) * b1
+    w = b2 - torch.sum(b2 * b1, dim=-1, keepdim=True) * b1
+    v = F.normalize(v, dim=-1, eps=eps)
+    w = F.normalize(w, dim=-1, eps=eps)
+
+    x = torch.sum(v * w, dim=-1)
+    y = torch.sum(torch.cross(b1, v, dim=-1) * w, dim=-1)
+    return torch.atan2(y, x)
+
+
+def backbone_dihedrals_from_n_ca_c(
+    n_coords: Tensor,
+    ca_coords: Tensor,
+    c_coords: Tensor,
+    batch: Optional[Tensor] = None,
+) -> tuple[Tensor, Tensor]:
+    """Compute per-residue phi/psi/omega from backbone N/CA/C atom placements.
+
+    Invalid chain endpoints are returned as zero angles and marked false in the
+    returned mask.
+    """
+    if n_coords.shape != ca_coords.shape or n_coords.shape != c_coords.shape:
+        raise ValueError(
+            f"Expected N/CA/C tensors with matching shape, got "
+            f"N={tuple(n_coords.shape)} CA={tuple(ca_coords.shape)} C={tuple(c_coords.shape)}"
+        )
+    if n_coords.ndim != 2 or n_coords.shape[-1] != 3:
+        raise ValueError(f"Expected atom coordinates with shape (N, 3), got {tuple(n_coords.shape)}")
+
+    angles = n_coords.new_zeros((n_coords.shape[0], 3))
+    mask = torch.zeros((n_coords.shape[0], 3), dtype=torch.bool, device=n_coords.device)
+
+    def _single(idx: Tensor) -> None:
+        if idx.numel() < 2:
+            return
+        cur = idx[1:]
+        prev = idx[:-1]
+        angles[cur, 0] = _dihedral_angle(c_coords[prev], n_coords[cur], ca_coords[cur], c_coords[cur])
+        mask[cur, 0] = True
+
+        nxt = idx[1:]
+        cur = idx[:-1]
+        angles[cur, 1] = _dihedral_angle(n_coords[cur], ca_coords[cur], c_coords[cur], n_coords[nxt])
+        angles[cur, 2] = _dihedral_angle(ca_coords[cur], c_coords[cur], n_coords[nxt], ca_coords[nxt])
+        mask[cur, 1:] = True
+
+    if batch is None:
+        _single(torch.arange(n_coords.shape[0], device=n_coords.device))
+        return angles, mask
+
+    for b in torch.unique(batch, sorted=True):
+        _single((batch == b).nonzero(as_tuple=True)[0])
+    return angles, mask
+
+
+def coarse_backbone_dihedrals_from_ca_frames(
+    ca_coords: Tensor,
+    frames: Tensor,
+    batch: Optional[Tensor] = None,
+    n_coords: Optional[Tensor] = None,
+    c_coords: Optional[Tensor] = None,
+) -> tuple[Tensor, Tensor]:
+    """Place coarse N/C atoms from frames and compute phi/psi/omega."""
+    atoms = coarse_backbone_atoms_from_ca_frames(ca_coords, frames, atom_names=("n", "ca", "c"))
+    n_atom = atoms[:, 0] if n_coords is None else n_coords
+    ca_atom = atoms[:, 1]
+    c_atom = atoms[:, 2] if c_coords is None else c_coords
+    return backbone_dihedrals_from_n_ca_c(n_atom, ca_atom, c_atom, batch=batch)
 
 
 def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tuple[Tensor, Tensor]:
@@ -1399,6 +1476,8 @@ __all__ = [
     "integrate_ca_steps",
     "integrate_local_ca_steps",
     "coarse_backbone_atoms_from_ca_frames",
+    "backbone_dihedrals_from_n_ca_c",
+    "coarse_backbone_dihedrals_from_ca_frames",
     "coarse_backbone_fape_loss",
     "ca_step_loss",
     "ca_bond_length_loss",

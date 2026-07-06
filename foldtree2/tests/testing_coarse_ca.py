@@ -4,7 +4,9 @@ import torch
 from torch_geometric.data import HeteroData
 
 from foldtree2.src.losses.fape import (
+    backbone_dihedrals_from_n_ca_c,
     ca_local_step_targets,
+    coarse_backbone_dihedrals_from_ca_frames,
     coarse_backbone_atoms_from_ca_frames,
     coarse_backbone_fape_loss,
     coarse_ca_loss,
@@ -180,6 +182,55 @@ class TestCoarseCALoss(unittest.TestCase):
         loss = coarse_backbone_fape_loss(atoms, atoms, frames, frames, ca, ca)
 
         self.assertTrue(torch.isclose(loss, torch.tensor(0.0), atol=1e-6))
+
+    def test_backbone_dihedrals_from_n_ca_c_masks_chain_ends(self):
+        n = torch.tensor(
+            [
+                [-0.5, 1.0, 0.0],
+                [3.3, 1.1, 0.2],
+                [7.1, 1.0, -0.2],
+            ]
+        )
+        ca = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.0, 0.0],
+                [7.6, 0.2, 0.0],
+            ]
+        )
+        c = torch.tensor(
+            [
+                [1.5, 0.0, 0.1],
+                [5.3, 0.2, -0.1],
+                [9.1, 0.3, 0.2],
+            ]
+        )
+
+        angles, mask = backbone_dihedrals_from_n_ca_c(n, ca, c)
+
+        self.assertEqual(tuple(angles.shape), (3, 3))
+        self.assertEqual(tuple(mask.shape), (3, 3))
+        self.assertTrue(torch.isfinite(angles).all())
+        self.assertTrue(torch.equal(mask[:, 0], torch.tensor([False, True, True])))
+        self.assertTrue(torch.equal(mask[:, 1], torch.tensor([True, True, False])))
+        self.assertTrue(torch.equal(mask[:, 2], torch.tensor([True, True, False])))
+
+    def test_coarse_backbone_dihedrals_from_frames_are_finite(self):
+        ca = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.0, 0.0],
+                [7.6, 0.5, 0.0],
+                [11.2, 0.8, 0.2],
+            ]
+        )
+        frames = torch.stack([torch.eye(3), self._rot_z(0.2), self._rot_z(-0.1), self._rot_z(0.4)])
+
+        angles, mask = coarse_backbone_dihedrals_from_ca_frames(ca, frames)
+
+        self.assertEqual(tuple(angles.shape), (4, 3))
+        self.assertTrue(torch.isfinite(angles).all())
+        self.assertEqual(int(mask.sum()), 9)
 
     def test_multi_decoder_coarse_ca_outputs_are_finite(self):
         data = HeteroData()

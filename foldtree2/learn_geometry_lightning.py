@@ -27,6 +27,7 @@ from torch_geometric.loader import DataLoader
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import pdbgraphmk2
 from foldtree2.src.losses.fape import (
+    coarse_backbone_dihedrals_from_ca_frames,
     coarse_backbone_atoms_from_ca_frames,
     coarse_backbone_fape_loss,
     coarse_ca_loss,
@@ -376,6 +377,7 @@ class GeometryFocusedModule(pl.LightningModule):
         use_coarse_backbone_loss: bool = False,
         coarse_backbone_atom_weight: float = 0.05,
         coarse_backbone_fape_weight: float = 0.25,
+        coarse_backbone_angle_weight: float = 0.0,
     ):
         super().__init__()
         self.encoder = encoder
@@ -404,6 +406,7 @@ class GeometryFocusedModule(pl.LightningModule):
         self.use_coarse_backbone_loss = bool(use_coarse_backbone_loss)
         self.coarse_backbone_atom_weight = float(coarse_backbone_atom_weight)
         self.coarse_backbone_fape_weight = float(coarse_backbone_fape_weight)
+        self.coarse_backbone_angle_weight = float(coarse_backbone_angle_weight)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -676,6 +679,11 @@ class GeometryFocusedModule(pl.LightningModule):
                     true_n = gauge_normalize_points_to_chain_start(true_n, true_R, true_coords, batch_idx=batch_idx)
                 true_coarse_atoms = true_coarse_atoms.clone()
                 true_coarse_atoms[:, 2] = true_n
+            true_c = node_x(data_batch, "ccoords")
+            if true_c is not None:
+                true_c = true_c.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
+                if self.rotation_target_frame == "local":
+                    true_c = gauge_normalize_points_to_chain_start(true_c, true_R, true_coords, batch_idx=batch_idx)
 
             data_batch["coarse_ca_pred"].x = pred_coarse_atoms[:, 0]
             data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, 1]
@@ -697,6 +705,28 @@ class GeometryFocusedModule(pl.LightningModule):
                     pred_ca_trace,
                     batch=batch_idx,
                 )
+            if self.coarse_backbone_angle_weight > 0 and true_angles is not None:
+                pred_bb_angles, pred_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
+                    pred_ca_trace,
+                    pred_R_for_fape,
+                    batch=batch_idx,
+                )
+                true_bb_angles, true_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
+                    true_ca_atoms,
+                    true_R_atoms,
+                    batch=batch_idx,
+                    n_coords=true_coarse_atoms[:, 2],
+                    c_coords=true_c,
+                )
+                angle_mask = pred_angle_mask & true_angle_mask
+                if angle_mask.any():
+                    angle_target = true_angles.to(device=pred_bb_angles.device, dtype=pred_bb_angles.dtype)
+                    derived_delta = wrap_to_pi_torch(pred_bb_angles - angle_target)
+                    frame_delta = wrap_to_pi_torch(pred_bb_angles - true_bb_angles)
+                    raw_terms["coarse_backbone_angles"] = self.coarse_backbone_angle_weight * (
+                        F.smooth_l1_loss(derived_delta[angle_mask], torch.zeros_like(derived_delta[angle_mask]))
+                        + 0.25 * F.smooth_l1_loss(frame_delta[angle_mask], torch.zeros_like(frame_delta[angle_mask]))
+                    )
 
         if self.use_coarse_ca_loss:
             if true_coords is None:
@@ -906,6 +936,12 @@ def parse_args():
         type=float,
         default=0.25,
         help="FAPE weight for placed coarse CA/CB/N atoms",
+    )
+    parser.add_argument(
+        "--coarse-backbone-angle-weight",
+        type=float,
+        default=0.0,
+        help="Optional loss weight for phi/psi/omega derived from coarse N/CA/C atom placements",
     )
     parser.add_argument(
         "--coarse-ca-step-frame",
@@ -1274,6 +1310,7 @@ def main():
         use_coarse_backbone_loss=args.use_coarse_backbone_loss,
         coarse_backbone_atom_weight=args.coarse_backbone_atom_weight,
         coarse_backbone_fape_weight=args.coarse_backbone_fape_weight,
+        coarse_backbone_angle_weight=args.coarse_backbone_angle_weight,
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
