@@ -131,6 +131,95 @@ def get_true_geometry(data):
     return true_R, true_t, true_q, true_angles, true_coords, batch_idx
 
 
+def previous_local_rotation_targets(
+    rotations: torch.Tensor,
+    batch_idx: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Return per-residue previous-frame local rotations and a valid mask.
+
+    For residue i>0 in a chain the target is R[i-1]^T R[i]. Chain starts are
+    assigned identity rotations and marked invalid for the auxiliary loss.
+    """
+    if rotations.ndim != 3 or rotations.shape[-2:] != (3, 3):
+        raise ValueError(f"Expected rotations with shape [N,3,3], got {tuple(rotations.shape)}")
+
+    rel = torch.eye(3, dtype=rotations.dtype, device=rotations.device).expand(rotations.shape[0], 3, 3).clone()
+    mask = torch.zeros(rotations.shape[0], dtype=torch.bool, device=rotations.device)
+
+    if batch_idx is None:
+        if rotations.shape[0] > 1:
+            rel[1:] = torch.matmul(rotations[:-1].transpose(-1, -2), rotations[1:])
+            mask[1:] = True
+        return rel, mask
+
+    for b in torch.unique(batch_idx, sorted=True):
+        idx = (batch_idx == b).nonzero(as_tuple=True)[0]
+        if idx.numel() <= 1:
+            continue
+        rel[idx[1:]] = torch.matmul(rotations[idx[:-1]].transpose(-1, -2), rotations[idx[1:]])
+        mask[idx[1:]] = True
+    return rel, mask
+
+
+def compose_previous_local_rotations(
+    local_rotations: torch.Tensor,
+    batch_idx: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Compose previous-frame local rotations into global frame rotations."""
+    if local_rotations.ndim != 3 or local_rotations.shape[-2:] != (3, 3):
+        raise ValueError(f"Expected rotations with shape [N,3,3], got {tuple(local_rotations.shape)}")
+
+    global_rotations = torch.empty_like(local_rotations)
+
+    def _single(idx: torch.Tensor) -> None:
+        if idx.numel() == 0:
+            return
+        curr = torch.eye(3, dtype=local_rotations.dtype, device=local_rotations.device)
+        global_rotations[idx[0]] = curr
+        for pos in idx[1:]:
+            curr = torch.matmul(curr, local_rotations[pos])
+            global_rotations[pos] = curr
+
+    if batch_idx is None:
+        _single(torch.arange(local_rotations.shape[0], device=local_rotations.device))
+        return global_rotations
+
+    for b in torch.unique(batch_idx, sorted=True):
+        _single((batch_idx == b).nonzero(as_tuple=True)[0])
+    return global_rotations
+
+
+def gauge_normalize_frames_to_chain_start(
+    rotations: torch.Tensor,
+    origins: torch.Tensor,
+    batch_idx: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Express absolute frames in each chain's first-residue frame."""
+    if rotations.ndim != 3 or rotations.shape[-2:] != (3, 3):
+        raise ValueError(f"Expected rotations with shape [N,3,3], got {tuple(rotations.shape)}")
+    if origins.ndim != 2 or origins.shape[-1] != 3 or origins.shape[0] != rotations.shape[0]:
+        raise ValueError(f"Expected origins with shape [{rotations.shape[0]},3], got {tuple(origins.shape)}")
+
+    norm_rot = torch.empty_like(rotations)
+    norm_origins = torch.empty_like(origins)
+
+    def _single(idx: torch.Tensor) -> None:
+        if idx.numel() == 0:
+            return
+        base_R_t = rotations[idx[0]].transpose(-1, -2)
+        base_origin = origins[idx[0]]
+        norm_rot[idx] = torch.matmul(base_R_t, rotations[idx])
+        norm_origins[idx] = torch.einsum("ij,nj->ni", base_R_t, origins[idx] - base_origin)
+
+    if batch_idx is None:
+        _single(torch.arange(rotations.shape[0], device=rotations.device))
+        return norm_rot, norm_origins
+
+    for b in torch.unique(batch_idx, sorted=True):
+        _single((batch_idx == b).nonzero(as_tuple=True)[0])
+    return norm_rot, norm_origins
+
+
 class FrozenProjectionEncoder(nn.Module):
     def __init__(self, in_dim: int, out_dim: int = 64):
         super().__init__()
@@ -246,6 +335,7 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_ca_step_frame: str = "prev",
         coarse_ca_pairwise_max_seq_sep: int = 64,
         coarse_ca_pairwise_max_pairs: int = 4096,
+        rotation_target_frame: str = "local",
     ):
         super().__init__()
         self.encoder = encoder
@@ -268,6 +358,9 @@ class GeometryFocusedModule(pl.LightningModule):
         self.coarse_ca_step_frame = coarse_ca_step_frame
         self.coarse_ca_pairwise_max_seq_sep = int(coarse_ca_pairwise_max_seq_sep)
         self.coarse_ca_pairwise_max_pairs = int(coarse_ca_pairwise_max_pairs)
+        if rotation_target_frame not in {"absolute", "local"}:
+            raise ValueError(f"Unknown rotation_target_frame={rotation_target_frame}")
+        self.rotation_target_frame = rotation_target_frame
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -454,14 +547,42 @@ class GeometryFocusedModule(pl.LightningModule):
         pred_t = pred_rt[..., 4:]
         pred_ca_steps = out_local.get("ca_step_pred", pred_t)
         pred_R = quaternion_to_rotation_matrix(pred_q)
+        pred_q_for_fape = pred_q
+        if self.rotation_target_frame == "local":
+            pred_R_for_fape = compose_previous_local_rotations(pred_R, batch_idx=batch_idx)
+            pred_q_for_fape = rotation_matrix_to_quaternion(pred_R_for_fape)
 
         raw_terms: Dict[str, torch.Tensor] = {}
 
         if true_q is not None and true_t is not None:
             true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
             pred_t_origin = self._step_translations_to_origins(pred_t, batch_idx=batch_idx)
-            raw_terms["fape_quat"] = quaternion_fape_loss(true_q, true_t_origin, pred_q, pred_t_origin, batch=batch_idx)
-            raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q)
+            true_q_for_fape = true_q
+            true_t_for_fape = true_t_origin
+            if self.rotation_target_frame == "local":
+                true_R_for_fape, true_t_for_fape = gauge_normalize_frames_to_chain_start(
+                    true_R,
+                    true_t_origin,
+                    batch_idx=batch_idx,
+                )
+                true_q_for_fape = rotation_matrix_to_quaternion(true_R_for_fape)
+            raw_terms["fape_quat"] = quaternion_fape_loss(
+                true_q_for_fape,
+                true_t_for_fape,
+                pred_q_for_fape,
+                pred_t_origin,
+                batch=batch_idx,
+            )
+            if self.rotation_target_frame == "local":
+                true_R_local, local_rot_mask = previous_local_rotation_targets(true_R, batch_idx=batch_idx)
+                if local_rot_mask.any():
+                    true_q_local = rotation_matrix_to_quaternion(true_R_local)
+                    raw_terms["quat_geodesic"] = quaternion_geodesic_loss(
+                        pred_q[local_rot_mask],
+                        true_q_local[local_rot_mask],
+                    )
+            else:
+                raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q)
 
         pred_coords_local = reconstruct_positions(
             pred_R,
@@ -684,6 +805,12 @@ def parse_args():
         type=int,
         default=4096,
         help="Maximum sampled CA pairs per chain for coarse CA pairwise supervision",
+    )
+    parser.add_argument(
+        "--rotation-target-frame",
+        choices=["local", "absolute"],
+        default="local",
+        help="Quaternion target frame: local previous-residue rotations or absolute backbone frames",
     )
     parser.add_argument(
         "--transformer-width",
@@ -1016,6 +1143,7 @@ def main():
         coarse_ca_step_frame=args.coarse_ca_step_frame,
         coarse_ca_pairwise_max_seq_sep=args.coarse_ca_pairwise_max_seq_sep,
         coarse_ca_pairwise_max_pairs=args.coarse_ca_pairwise_max_pairs,
+        rotation_target_frame=args.rotation_target_frame,
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
