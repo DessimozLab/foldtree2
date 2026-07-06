@@ -1722,7 +1722,6 @@ class CoarseCAStepDecoder(torch.nn.Module):
 	):
 		super().__init__()
 		del kwargs
-		L.seed_everything(42)
 
 		self.concat_positions = concat_positions
 		self.position_dim = position_dim
@@ -1904,8 +1903,6 @@ class MultiMonoDecoder(torch.nn.Module):
 		self.configs = configs
 		#initialize decoders based on configs
 		for task in configs.keys():
-			print(f"Initializing decoder for task: {task}")
-			print( task == 'sequence' , task == 'sequence_transformer' , task == 'contacts' , task == 'geometry' , task == 'foldx')
 			if task == 'sequence':
 				self.decoders['sequence'] = HeteroGAE_AA_Decoder(**configs['sequence'])
 			elif task == 'sequence_transformer':
@@ -1928,6 +1925,8 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['quaternion_geometry'] = Quaternion_Coarse_Geometry_Decoder(**configs['quaternion_geometry'])
 			elif task == 'coarse_ca':
 				self.decoders['coarse_ca'] = CoarseCAStepDecoder(**configs['coarse_ca'])
+			else:
+				raise ValueError(f"Unknown mono decoder task: {task}")
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():

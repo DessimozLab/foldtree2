@@ -284,6 +284,7 @@ def ca_pairwise_distance_loss(
     true_ca: Tensor,
     batch_idx: Optional[Tensor] = None,
     min_seq_sep: int = 2,
+    max_seq_sep: Optional[int] = 64,
     max_pairs: Optional[int] = 4096,
 ) -> Tensor:
     """dRMSD-style loss on CA pairwise distances within each chain."""
@@ -295,6 +296,9 @@ def ca_pairwise_distance_loss(
         if n <= min_seq_sep:
             return None
         pairs = torch.triu_indices(n, n, offset=min_seq_sep, device=pred_s.device)
+        if max_seq_sep is not None:
+            seq_sep = pairs[1] - pairs[0]
+            pairs = pairs[:, seq_sep <= int(max_seq_sep)]
         if pairs.shape[1] == 0:
             return None
         if max_pairs is not None and pairs.shape[1] > max_pairs:
@@ -329,6 +333,9 @@ def coarse_ca_loss(
     step_weight: float = 1.0,
     bond_weight: float = 0.1,
     pairwise_weight: float = 0.25,
+    pairwise_min_seq_sep: int = 2,
+    pairwise_max_seq_sep: Optional[int] = 64,
+    pairwise_max_pairs: Optional[int] = 4096,
     plddt: Optional[Tensor] = None,
     plddt_thresh: float = 0.3,
     return_components: bool = False,
@@ -340,7 +347,14 @@ def coarse_ca_loss(
     components = {
         "step": ca_step_loss(pred_steps, true_ca, batch_idx=batch_idx, plddt=plddt, plddt_thresh=plddt_thresh),
         "bond": ca_bond_length_loss(pred_steps, batch_idx=batch_idx),
-        "pairwise": ca_pairwise_distance_loss(pred_ca, true_ca, batch_idx=batch_idx),
+        "pairwise": ca_pairwise_distance_loss(
+            pred_ca,
+            true_ca,
+            batch_idx=batch_idx,
+            min_seq_sep=pairwise_min_seq_sep,
+            max_seq_sep=pairwise_max_seq_sep,
+            max_pairs=pairwise_max_pairs,
+        ),
     }
     total = (
         float(step_weight) * components["step"]

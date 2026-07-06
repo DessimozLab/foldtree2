@@ -1,8 +1,10 @@
 import unittest
 
 import torch
+from torch_geometric.data import HeteroData
 
 from foldtree2.src.losses.fape import coarse_ca_loss, integrate_ca_steps
+from foldtree2.src.mono_decoders import MultiMonoDecoder
 
 
 class TestCoarseCALoss(unittest.TestCase):
@@ -57,6 +59,44 @@ class TestCoarseCALoss(unittest.TestCase):
         self.assertLess(float(components["step"]), 1e-6)
         self.assertLess(float(components["bond"]), 1e-6)
         self.assertLess(float(components["pairwise"]), 1e-6)
+
+    def test_multi_decoder_coarse_ca_outputs_are_finite(self):
+        data = HeteroData()
+        data["res"].x = torch.randn(7, 12)
+        data["positions"].x = torch.randn(7, 256)
+        data["coords"].x = torch.stack(
+            [
+                torch.arange(7, dtype=torch.float32) * 3.8,
+                torch.zeros(7),
+                torch.zeros(7),
+            ],
+            dim=-1,
+        )
+
+        model = MultiMonoDecoder(
+            {
+                "coarse_ca": {
+                    "in_channels": {"res": 12},
+                    "hidden_dim": 16,
+                    "layers": 1,
+                    "nheads": 4,
+                    "dropout": 0.0,
+                }
+            }
+        )
+
+        out = model(data)
+        self.assertEqual(tuple(out["ca_steps_pred"].shape), (7, 3))
+        self.assertEqual(tuple(out["ca_coords_pred"].shape), (7, 3))
+        self.assertTrue(torch.isfinite(out["ca_steps_pred"]).all())
+        self.assertTrue(torch.isfinite(out["ca_coords_pred"]).all())
+
+        loss = coarse_ca_loss(
+            out["ca_steps_pred"],
+            data["coords"].x,
+            pred_ca=out["ca_coords_pred"],
+        )
+        self.assertTrue(torch.isfinite(loss))
 
 
 if __name__ == "__main__":
