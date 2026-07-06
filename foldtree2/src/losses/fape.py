@@ -172,6 +172,186 @@ def reconstruct_positions(
     return torch.cat(outputs, dim=0)
 
 
+def integrate_ca_steps(
+    steps: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    anchor: Optional[Tensor] = None,
+) -> Tensor:
+    """Integrate local CA step vectors into CA-like coordinates.
+
+    ``steps`` is shaped ``(N, 3)``. The first step in each chain is treated as
+    the anchor displacement and is ignored by default, so residue 0 starts at
+    the origin unless ``anchor`` is provided. Residue ``i`` is reached by
+    summing ``steps[1:i+1]``.
+    """
+    if steps.ndim != 2 or steps.shape[-1] != 3:
+        raise ValueError(f"Expected steps with shape (N, 3), got {tuple(steps.shape)}")
+
+    def _single(steps_s: Tensor, anchor_s: Optional[Tensor]) -> Tensor:
+        if steps_s.shape[0] == 0:
+            return steps_s.new_zeros((0, 3))
+        coords = torch.zeros_like(steps_s)
+        if anchor_s is not None:
+            coords[0] = anchor_s.to(device=steps_s.device, dtype=steps_s.dtype)
+        if steps_s.shape[0] > 1:
+            coords[1:] = coords[0].unsqueeze(0) + torch.cumsum(steps_s[1:], dim=0)
+        return coords
+
+    if batch_idx is None:
+        return _single(steps, anchor)
+
+    coords = torch.zeros_like(steps)
+    for b in torch.unique(batch_idx, sorted=True):
+        idx = torch.where(batch_idx == b)[0]
+        if idx.numel() == 0:
+            continue
+        anchor_b = None
+        if anchor is not None:
+            anchor_b = anchor[int(b.item())] if anchor.ndim == 2 else anchor
+        coords[idx] = _single(steps[idx], anchor_b)
+    return coords
+
+
+def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tuple[Tensor, Tensor]:
+    """Return target step vectors and a mask for valid consecutive CA edges."""
+    if true_ca.ndim != 2 or true_ca.shape[-1] != 3:
+        raise ValueError(f"Expected true_ca with shape (N, 3), got {tuple(true_ca.shape)}")
+
+    target = torch.zeros_like(true_ca)
+    mask = torch.zeros(true_ca.shape[0], dtype=torch.bool, device=true_ca.device)
+
+    if batch_idx is None:
+        if true_ca.shape[0] > 1:
+            target[1:] = true_ca[1:] - true_ca[:-1]
+            mask[1:] = True
+        return target, mask
+
+    for b in torch.unique(batch_idx, sorted=True):
+        idx = torch.where(batch_idx == b)[0]
+        if idx.numel() < 2:
+            continue
+        target[idx[1:]] = true_ca[idx[1:]] - true_ca[idx[:-1]]
+        mask[idx[1:]] = True
+    return target, mask
+
+
+def ca_step_loss(
+    pred_steps: Tensor,
+    true_ca: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    plddt: Optional[Tensor] = None,
+    plddt_thresh: float = 0.3,
+    beta: float = 0.25,
+) -> Tensor:
+    """Smooth-L1 loss on local consecutive CA displacement vectors."""
+    target_steps, step_mask = _ca_step_targets(true_ca, batch_idx=batch_idx)
+    if plddt is not None:
+        good = plddt.squeeze(-1) >= plddt_thresh
+        step_mask = step_mask & good
+    if step_mask.sum() == 0:
+        return torch.tensor(0.0, device=pred_steps.device, dtype=pred_steps.dtype)
+    return F.smooth_l1_loss(pred_steps[step_mask], target_steps[step_mask], beta=beta)
+
+
+def ca_bond_length_loss(
+    pred_steps: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    target_length: float = 3.8,
+) -> Tensor:
+    """Penalize local CA step lengths away from the canonical CA-CA spacing."""
+    if pred_steps.ndim != 2 or pred_steps.shape[-1] != 3:
+        raise ValueError(f"Expected pred_steps with shape (N, 3), got {tuple(pred_steps.shape)}")
+
+    mask = torch.ones(pred_steps.shape[0], dtype=torch.bool, device=pred_steps.device)
+    if batch_idx is None:
+        if mask.numel() > 0:
+            mask[0] = False
+    else:
+        for b in torch.unique(batch_idx, sorted=True):
+            idx = torch.where(batch_idx == b)[0]
+            if idx.numel() > 0:
+                mask[idx[0]] = False
+
+    if mask.sum() == 0:
+        return torch.tensor(0.0, device=pred_steps.device, dtype=pred_steps.dtype)
+    lengths = pred_steps[mask].norm(dim=-1)
+    target = torch.full_like(lengths, float(target_length))
+    return F.smooth_l1_loss(lengths, target, beta=0.1)
+
+
+def ca_pairwise_distance_loss(
+    pred_ca: Tensor,
+    true_ca: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    min_seq_sep: int = 2,
+    max_pairs: Optional[int] = 4096,
+) -> Tensor:
+    """dRMSD-style loss on CA pairwise distances within each chain."""
+    if pred_ca.shape != true_ca.shape:
+        raise ValueError(f"Shape mismatch: pred_ca={tuple(pred_ca.shape)} true_ca={tuple(true_ca.shape)}")
+
+    def _single(pred_s: Tensor, true_s: Tensor) -> Optional[Tensor]:
+        n = pred_s.shape[0]
+        if n <= min_seq_sep:
+            return None
+        pairs = torch.triu_indices(n, n, offset=min_seq_sep, device=pred_s.device)
+        if pairs.shape[1] == 0:
+            return None
+        if max_pairs is not None and pairs.shape[1] > max_pairs:
+            take = torch.linspace(0, pairs.shape[1] - 1, max_pairs, device=pred_s.device).long()
+            pairs = pairs[:, take]
+        pred_d = (pred_s[pairs[0]] - pred_s[pairs[1]]).norm(dim=-1)
+        true_d = (true_s[pairs[0]] - true_s[pairs[1]]).norm(dim=-1)
+        return F.smooth_l1_loss(pred_d, true_d, beta=0.5)
+
+    losses = []
+    if batch_idx is None:
+        val = _single(pred_ca, true_ca)
+        if val is not None:
+            losses.append(val)
+    else:
+        for b in torch.unique(batch_idx, sorted=True):
+            idx = torch.where(batch_idx == b)[0]
+            val = _single(pred_ca[idx], true_ca[idx])
+            if val is not None:
+                losses.append(val)
+
+    if not losses:
+        return torch.tensor(0.0, device=pred_ca.device, dtype=pred_ca.dtype)
+    return torch.stack(losses).mean()
+
+
+def coarse_ca_loss(
+    pred_steps: Tensor,
+    true_ca: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    pred_ca: Optional[Tensor] = None,
+    step_weight: float = 1.0,
+    bond_weight: float = 0.1,
+    pairwise_weight: float = 0.25,
+    plddt: Optional[Tensor] = None,
+    plddt_thresh: float = 0.3,
+    return_components: bool = False,
+):
+    """Minimal coarse-CA loss bundle for local step-vector predictors."""
+    if pred_ca is None:
+        pred_ca = integrate_ca_steps(pred_steps, batch_idx=batch_idx)
+
+    components = {
+        "step": ca_step_loss(pred_steps, true_ca, batch_idx=batch_idx, plddt=plddt, plddt_thresh=plddt_thresh),
+        "bond": ca_bond_length_loss(pred_steps, batch_idx=batch_idx),
+        "pairwise": ca_pairwise_distance_loss(pred_ca, true_ca, batch_idx=batch_idx),
+    }
+    total = (
+        float(step_weight) * components["step"]
+        + float(bond_weight) * components["bond"]
+        + float(pairwise_weight) * components["pairwise"]
+    )
+    if return_components:
+        return total, components
+    return total
+
+
 def split_rt_pred(
     rt_pred: Tensor,
     normalize: bool = True,
@@ -992,6 +1172,11 @@ __all__ = [
     "quaternion_to_rotation_matrix",
     "rotation_matrix_to_quaternion",
     "reconstruct_positions",
+    "integrate_ca_steps",
+    "ca_step_loss",
+    "ca_bond_length_loss",
+    "ca_pairwise_distance_loss",
+    "coarse_ca_loss",
     "quaternion_fape_loss",
     "rt_fape_loss",
     "fape_loss",

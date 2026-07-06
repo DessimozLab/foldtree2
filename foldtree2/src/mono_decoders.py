@@ -23,6 +23,7 @@ from foldtree2.src.losses import *
 from foldtree2.src.layers import *
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
+from foldtree2.src.losses.fape import integrate_ca_steps, quaternion_to_rotation_matrix as _shared_quaternion_to_rotation_matrix
 
 
 
@@ -1701,6 +1702,144 @@ class Transformer_Foldx_Decoder(torch.nn.Module):
 		return { 'foldx_out' : foldx_out }
 
 
+class CoarseCAStepDecoder(torch.nn.Module):
+	"""Predict coarse CA coordinates by integrating local step vectors."""
+	def __init__(
+		self,
+		in_channels={'res': 10},
+		hidden_dim=128,
+		layers=4,
+		nheads=4,
+		dropout=0.01,
+		concat_positions=True,
+		position_dim=256,
+		step_hidden=None,
+		ca_step_length=3.8,
+		constrain_step_length=True,
+		output_angles=False,
+		angles_hidden=None,
+		**kwargs
+	):
+		super().__init__()
+		del kwargs
+		L.seed_everything(42)
+
+		self.concat_positions = concat_positions
+		self.position_dim = position_dim
+		self.ca_step_length = float(ca_step_length)
+		self.constrain_step_length = bool(constrain_step_length)
+		self.output_angles = bool(output_angles)
+
+		input_dim = in_channels['res'] + (position_dim if concat_positions else 0)
+		self.input = nn.Sequential(
+			nn.Dropout(dropout),
+			nn.Linear(input_dim, hidden_dim),
+			nn.GELU(),
+			nn.LayerNorm(hidden_dim, eps=1e-6),
+		)
+
+		enc_layer = nn.TransformerEncoderLayer(
+			d_model=hidden_dim,
+			nhead=nheads,
+			dim_feedforward=hidden_dim * 4,
+			dropout=dropout,
+			activation='gelu',
+			batch_first=True,
+			norm_first=True,
+		)
+		self.body = nn.TransformerEncoder(enc_layer, num_layers=layers)
+
+		if step_hidden is None:
+			step_hidden = hidden_dim
+		self.step_head = nn.Sequential(
+			nn.Linear(hidden_dim, step_hidden),
+			nn.GELU(),
+			nn.Linear(step_hidden, 3),
+		)
+
+		if self.output_angles:
+			if angles_hidden is None:
+				angles_hidden = step_hidden
+			self.angle_head = nn.Sequential(
+				nn.Linear(hidden_dim, angles_hidden),
+				nn.GELU(),
+				nn.Linear(angles_hidden, 6),
+			)
+		else:
+			self.angle_head = None
+
+	def _pack_by_batch(self, x, batch):
+		if batch is None:
+			idx = torch.arange(x.shape[0], device=x.device)
+			mask = torch.ones((1, x.shape[0]), dtype=torch.bool, device=x.device)
+			return x.unsqueeze(0), mask, [idx]
+
+		num_graphs = int(batch.max().item()) + 1 if batch.numel() > 0 else 0
+		idx_by_graph = [torch.where(batch == i)[0] for i in range(num_graphs)]
+		max_len = max((idx.numel() for idx in idx_by_graph), default=0)
+		padded = torch.zeros((num_graphs, max_len, x.shape[-1]), dtype=x.dtype, device=x.device)
+		mask = torch.zeros((num_graphs, max_len), dtype=torch.bool, device=x.device)
+		for i, idx in enumerate(idx_by_graph):
+			if idx.numel() == 0:
+				continue
+			padded[i, :idx.numel()] = x[idx]
+			mask[i, :idx.numel()] = True
+		return padded, mask, idx_by_graph
+
+	def _unpack_by_batch(self, x_padded, idx_by_graph, n_nodes):
+		if len(idx_by_graph) == 1 and idx_by_graph[0].numel() == n_nodes:
+			return x_padded[0, :n_nodes]
+		out = torch.zeros((n_nodes, x_padded.shape[-1]), dtype=x_padded.dtype, device=x_padded.device)
+		for i, idx in enumerate(idx_by_graph):
+			if idx.numel() == 0:
+				continue
+			out[idx] = x_padded[i, :idx.numel()]
+		return out
+
+	def forward(self, data, contact_pred_index=None, **kwargs):
+		del contact_pred_index, kwargs
+		x = data.x_dict['res']
+		if self.concat_positions:
+			if 'positions' not in data.node_types or not hasattr(data['positions'], 'x'):
+				raise RuntimeError('CoarseCAStepDecoder with concat_positions=True requires data["positions"].x')
+			x = torch.cat([x, data['positions'].x], dim=-1)
+
+		batch = data['res'].batch if hasattr(data['res'], 'batch') and data['res'].batch is not None else None
+		x = self.input(x)
+		x_padded, mask, idx_by_graph = self._pack_by_batch(x, batch)
+		z_padded = self.body(x_padded, src_key_padding_mask=~mask)
+		z = self._unpack_by_batch(z_padded, idx_by_graph, x.shape[0])
+
+		raw_steps = self.step_head(z)
+		if self.constrain_step_length:
+			directions = F.normalize(raw_steps, p=2, dim=-1, eps=EPS)
+			ca_steps = directions * self.ca_step_length
+		else:
+			ca_steps = raw_steps
+
+		ca_steps = ca_steps.clone()
+		if batch is None:
+			if ca_steps.shape[0] > 0:
+				ca_steps[0] = 0.0
+		else:
+			for b in torch.unique(batch, sorted=True):
+				idx = torch.where(batch == b)[0]
+				if idx.numel() > 0:
+					ca_steps[idx[0]] = 0.0
+
+		ca_coords = integrate_ca_steps(ca_steps, batch_idx=batch)
+		angles = _sincos_logits_to_angles(self.angle_head(z)) if self.angle_head is not None else None
+
+		return {
+			'ca_steps_pred': ca_steps,
+			'ca_coords_pred': ca_coords,
+			'coords_pred': ca_coords,
+			'trans_coords_pred': ca_coords,
+			'angles': angles,
+			'z': z,
+		}
+
+
 
 def save_model(model, optimizer, epoch, file_path):
 	"""
@@ -1769,7 +1908,7 @@ class MultiMonoDecoder(torch.nn.Module):
 			print( task == 'sequence' , task == 'sequence_transformer' , task == 'contacts' , task == 'geometry' , task == 'foldx')
 			if task == 'sequence':
 				self.decoders['sequence'] = HeteroGAE_AA_Decoder(**configs['sequence'])
-			if task == 'sequence_transformer':
+			elif task == 'sequence_transformer':
 				self.decoders['sequence_transformer'] = Transformer_AA_Decoder(**configs['sequence_transformer'])
 			elif task == 'sequence_cnn':
 				self.decoders['sequence_cnn'] = CNN_AA_Decoder(**configs['sequence_cnn'])
@@ -1787,6 +1926,8 @@ class MultiMonoDecoder(torch.nn.Module):
 				self.decoders['geometry_cnn'] = CNN_geo_Decoder(**configs['geometry_cnn'])
 			elif task == 'quaternion_geometry':
 				self.decoders['quaternion_geometry'] = Quaternion_Coarse_Geometry_Decoder(**configs['quaternion_geometry'])
+			elif task == 'coarse_ca':
+				self.decoders['coarse_ca'] = CoarseCAStepDecoder(**configs['coarse_ca'])
 	def forward(self, data, contact_pred_index=None, **kwargs):
 		results = {}
 		for task, decoder in self.decoders.items():
