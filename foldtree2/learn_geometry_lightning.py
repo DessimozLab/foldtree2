@@ -544,6 +544,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Geometry-focused Lightning trainer from notebook final loop")
     parser.add_argument("--dataset", type=str, default="structs_training_mk2.h5", help="Path to HDF5 StructureDataset")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
+    parser.add_argument(
+        "--limit-train-batches",
+        type=int,
+        default=None,
+        help="Optional cap on train batches per epoch for smoke tests/debug runs",
+    )
     parser.add_argument("--batch-size", type=int, default=5, help="Micro-batch size")
     parser.add_argument(
         "--target-effective-batch-size",
@@ -951,6 +957,7 @@ def main():
         gradient_clip_val=args.clip_grad,
         gradient_clip_algorithm="norm",
         log_every_n_steps=args.log_every_n_steps,
+        limit_train_batches=args.limit_train_batches if args.limit_train_batches is not None else 1.0,
         callbacks=[checkpoint_callback],
     )
 
