@@ -5,6 +5,8 @@ from torch_geometric.data import HeteroData
 
 from foldtree2.src.losses.fape import (
     ca_local_step_targets,
+    coarse_backbone_atoms_from_ca_frames,
+    coarse_backbone_fape_loss,
     coarse_ca_loss,
     integrate_ca_steps,
     integrate_local_ca_steps,
@@ -151,6 +153,33 @@ class TestCoarseCALoss(unittest.TestCase):
         self.assertLess(float(loss), 1e-5)
         self.assertLess(float(components["step"]), 1e-6)
         self.assertLess(float(components["pairwise"]), 1e-6)
+
+    def test_coarse_backbone_atoms_follow_ca_and_frames(self):
+        ca = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        frames = torch.stack([torch.eye(3), self._rot_z(0.5)])
+
+        atoms = coarse_backbone_atoms_from_ca_frames(ca, frames)
+
+        self.assertEqual(tuple(atoms.shape), (2, 3, 3))
+        self.assertTrue(torch.allclose(atoms[:, 0], ca))
+        self.assertTrue(torch.isfinite(atoms).all())
+        self.assertGreater(float((atoms[:, 1] - ca).norm(dim=-1).mean()), 1.0)
+        self.assertGreater(float((atoms[:, 2] - ca).norm(dim=-1).mean()), 1.0)
+
+    def test_coarse_backbone_fape_is_zero_for_identical_atoms(self):
+        ca = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.0, 0.0],
+                [7.6, 0.5, 0.0],
+            ]
+        )
+        frames = torch.stack([torch.eye(3), self._rot_z(0.2), self._rot_z(-0.1)])
+        atoms = coarse_backbone_atoms_from_ca_frames(ca, frames)
+
+        loss = coarse_backbone_fape_loss(atoms, atoms, frames, frames, ca, ca)
+
+        self.assertTrue(torch.isclose(loss, torch.tensor(0.0), atol=1e-6))
 
     def test_multi_decoder_coarse_ca_outputs_are_finite(self):
         data = HeteroData()

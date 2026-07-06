@@ -295,6 +295,104 @@ def integrate_local_ca_steps(
     return coords
 
 
+COARSE_BACKBONE_OFFSETS = {
+    "ca": (0.0, 0.0, 0.0),
+    "cb": (-0.60, -0.77, -1.18),
+    "n": (-0.53, 1.36, 0.0),
+}
+
+
+def coarse_backbone_atoms_from_ca_frames(
+    ca_coords: Tensor,
+    frames: Tensor,
+    atom_names: Sequence[str] = ("ca", "cb", "n"),
+    atom_offsets: Optional[dict[str, Sequence[float]]] = None,
+) -> Tensor:
+    """Place coarse CA/CB/N atoms from CA origins and residue frames."""
+    if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
+        raise ValueError(f"Expected ca_coords with shape (N, 3), got {tuple(ca_coords.shape)}")
+    _validate_ca_frames(frames, ca_coords.shape[0])
+
+    offsets_src = COARSE_BACKBONE_OFFSETS if atom_offsets is None else atom_offsets
+    try:
+        offsets = [offsets_src[name.lower()] for name in atom_names]
+    except KeyError as exc:
+        raise ValueError(f"Unknown coarse backbone atom name: {exc.args[0]}") from exc
+
+    local_offsets = torch.tensor(offsets, dtype=ca_coords.dtype, device=ca_coords.device)
+    global_offsets = torch.einsum("ak,njk->naj", local_offsets, frames)
+    return ca_coords.unsqueeze(1) + global_offsets
+
+
+def coarse_backbone_fape_loss(
+    true_atoms: Tensor,
+    pred_atoms: Tensor,
+    true_frames: Tensor,
+    pred_frames: Tensor,
+    true_origins: Tensor,
+    pred_origins: Tensor,
+    batch: Optional[Tensor] = None,
+    d_clamp: float = 10.0,
+    reduction: str = "mean",
+) -> Tensor:
+    """Frame-aligned point error over a coarse per-residue atom set."""
+    if true_atoms.shape != pred_atoms.shape or true_atoms.ndim != 3 or true_atoms.shape[-1] != 3:
+        raise ValueError(
+            f"Expected matching atom tensors with shape (N, A, 3), got "
+            f"true={tuple(true_atoms.shape)} pred={tuple(pred_atoms.shape)}"
+        )
+    _validate_ca_frames(true_frames, true_atoms.shape[0])
+    _validate_ca_frames(pred_frames, pred_atoms.shape[0])
+    if true_origins.shape != pred_origins.shape or true_origins.shape != (true_atoms.shape[0], 3):
+        raise ValueError(
+            f"Expected origins with shape ({true_atoms.shape[0]}, 3), got "
+            f"true={tuple(true_origins.shape)} pred={tuple(pred_origins.shape)}"
+        )
+
+    def _single(
+        true_atoms_s: Tensor,
+        pred_atoms_s: Tensor,
+        true_frames_s: Tensor,
+        pred_frames_s: Tensor,
+        true_origins_s: Tensor,
+        pred_origins_s: Tensor,
+    ) -> Tensor:
+        true_diff = true_atoms_s.unsqueeze(0) - true_origins_s[:, None, None, :]
+        pred_diff = pred_atoms_s.unsqueeze(0) - pred_origins_s[:, None, None, :]
+        true_local = torch.einsum("imaj,ijk->imak", true_diff, true_frames_s)
+        pred_local = torch.einsum("imaj,ijk->imak", pred_diff, pred_frames_s)
+        error = torch.linalg.vector_norm(pred_local - true_local, dim=-1).clamp(max=d_clamp)
+        if reduction == "mean":
+            return error.mean()
+        if reduction == "sum":
+            return error.sum()
+        if reduction == "none":
+            return error
+        raise ValueError(f"Unknown reduction: {reduction}")
+
+    if batch is None:
+        return _single(true_atoms, pred_atoms, true_frames, pred_frames, true_origins, pred_origins)
+
+    losses = []
+    for b in torch.unique(batch, sorted=True):
+        idx = (batch == b).nonzero(as_tuple=True)[0]
+        if idx.numel() == 0:
+            continue
+        losses.append(
+            _single(
+                true_atoms[idx],
+                pred_atoms[idx],
+                true_frames[idx],
+                pred_frames[idx],
+                true_origins[idx],
+                pred_origins[idx],
+            )
+        )
+    if not losses:
+        return torch.tensor(0.0, device=true_atoms.device, dtype=true_atoms.dtype)
+    return torch.stack(losses).mean()
+
+
 def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tuple[Tensor, Tensor]:
     """Return target step vectors and a mask for valid consecutive CA edges."""
     if true_ca.ndim != 2 or true_ca.shape[-1] != 3:
@@ -1299,6 +1397,9 @@ __all__ = [
     "rotation_matrix_to_quaternion",
     "reconstruct_positions",
     "integrate_ca_steps",
+    "integrate_local_ca_steps",
+    "coarse_backbone_atoms_from_ca_frames",
+    "coarse_backbone_fape_loss",
     "ca_step_loss",
     "ca_bond_length_loss",
     "ca_pairwise_distance_loss",

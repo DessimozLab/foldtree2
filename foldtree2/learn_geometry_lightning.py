@@ -27,7 +27,10 @@ from torch_geometric.loader import DataLoader
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import pdbgraphmk2
 from foldtree2.src.losses.fape import (
+    coarse_backbone_atoms_from_ca_frames,
+    coarse_backbone_fape_loss,
     coarse_ca_loss,
+    integrate_local_ca_steps,
     quaternion_to_rotation_matrix,
     reconstruct_positions,
     rotation_matrix_to_quaternion,
@@ -220,6 +223,40 @@ def gauge_normalize_frames_to_chain_start(
     return norm_rot, norm_origins
 
 
+def gauge_normalize_points_to_chain_start(
+    points: torch.Tensor,
+    chain_start_rotations: torch.Tensor,
+    chain_start_origins: torch.Tensor,
+    batch_idx: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Express points in each chain's first-residue frame."""
+    if points.ndim != 2 or points.shape[-1] != 3:
+        raise ValueError(f"Expected points with shape [N,3], got {tuple(points.shape)}")
+    if chain_start_rotations.shape != (points.shape[0], 3, 3):
+        raise ValueError(
+            f"Expected rotations with shape [{points.shape[0]},3,3], got {tuple(chain_start_rotations.shape)}"
+        )
+    if chain_start_origins.shape != points.shape:
+        raise ValueError(f"Expected origins with shape {tuple(points.shape)}, got {tuple(chain_start_origins.shape)}")
+
+    norm_points = torch.empty_like(points)
+
+    def _single(idx: torch.Tensor) -> None:
+        if idx.numel() == 0:
+            return
+        base_R_t = chain_start_rotations[idx[0]].transpose(-1, -2)
+        base_origin = chain_start_origins[idx[0]]
+        norm_points[idx] = torch.einsum("ij,nj->ni", base_R_t, points[idx] - base_origin)
+
+    if batch_idx is None:
+        _single(torch.arange(points.shape[0], device=points.device))
+        return norm_points
+
+    for b in torch.unique(batch_idx, sorted=True):
+        _single((batch_idx == b).nonzero(as_tuple=True)[0])
+    return norm_points
+
+
 class FrozenProjectionEncoder(nn.Module):
     def __init__(self, in_dim: int, out_dim: int = 64):
         super().__init__()
@@ -336,6 +373,9 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_ca_pairwise_max_seq_sep: int = 64,
         coarse_ca_pairwise_max_pairs: int = 4096,
         rotation_target_frame: str = "local",
+        use_coarse_backbone_loss: bool = False,
+        coarse_backbone_atom_weight: float = 0.05,
+        coarse_backbone_fape_weight: float = 0.25,
     ):
         super().__init__()
         self.encoder = encoder
@@ -361,6 +401,9 @@ class GeometryFocusedModule(pl.LightningModule):
         if rotation_target_frame not in {"absolute", "local"}:
             raise ValueError(f"Unknown rotation_target_frame={rotation_target_frame}")
         self.rotation_target_frame = rotation_target_frame
+        self.use_coarse_backbone_loss = bool(use_coarse_backbone_loss)
+        self.coarse_backbone_atom_weight = float(coarse_backbone_atom_weight)
+        self.coarse_backbone_fape_weight = float(coarse_backbone_fape_weight)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -548,6 +591,7 @@ class GeometryFocusedModule(pl.LightningModule):
         pred_ca_steps = out_local.get("ca_step_pred", pred_t)
         pred_R = quaternion_to_rotation_matrix(pred_q)
         pred_q_for_fape = pred_q
+        pred_R_for_fape = pred_R
         if self.rotation_target_frame == "local":
             pred_R_for_fape = compose_previous_local_rotations(pred_R, batch_idx=batch_idx)
             pred_q_for_fape = rotation_matrix_to_quaternion(pred_R_for_fape)
@@ -596,6 +640,63 @@ class GeometryFocusedModule(pl.LightningModule):
 
         if out_local.get("angles") is not None and true_angles is not None:
             raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
+
+        if self.use_coarse_backbone_loss:
+            if true_coords is None or true_R is None:
+                raise RuntimeError("Coarse backbone loss requires data['coords'].x and data['R_true'].x")
+            pred_ca_trace = integrate_local_ca_steps(
+                pred_ca_steps,
+                pred_R_for_fape,
+                batch_idx=batch_idx,
+                frame_offset="prev",
+            )
+            pred_coarse_atoms = coarse_backbone_atoms_from_ca_frames(pred_ca_trace, pred_R_for_fape)
+
+            true_R_atoms = true_R
+            true_ca_atoms = true_coords
+            if self.rotation_target_frame == "local":
+                true_R_atoms, true_ca_atoms = gauge_normalize_frames_to_chain_start(
+                    true_R,
+                    true_coords,
+                    batch_idx=batch_idx,
+                )
+
+            true_coarse_atoms = coarse_backbone_atoms_from_ca_frames(true_ca_atoms, true_R_atoms)
+            true_cb = node_x(data_batch, "cbcoords")
+            if true_cb is not None:
+                true_cb = true_cb.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
+                if self.rotation_target_frame == "local":
+                    true_cb = gauge_normalize_points_to_chain_start(true_cb, true_R, true_coords, batch_idx=batch_idx)
+                true_coarse_atoms = true_coarse_atoms.clone()
+                true_coarse_atoms[:, 1] = true_cb
+            true_n = node_x(data_batch, "ncoords")
+            if true_n is not None:
+                true_n = true_n.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
+                if self.rotation_target_frame == "local":
+                    true_n = gauge_normalize_points_to_chain_start(true_n, true_R, true_coords, batch_idx=batch_idx)
+                true_coarse_atoms = true_coarse_atoms.clone()
+                true_coarse_atoms[:, 2] = true_n
+
+            data_batch["coarse_ca_pred"].x = pred_coarse_atoms[:, 0]
+            data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, 1]
+            data_batch["coarse_n_pred"].x = pred_coarse_atoms[:, 2]
+
+            if self.coarse_backbone_atom_weight > 0:
+                raw_terms["coarse_backbone_atoms"] = self.coarse_backbone_atom_weight * F.smooth_l1_loss(
+                    pred_coarse_atoms,
+                    true_coarse_atoms,
+                    beta=0.5,
+                )
+            if self.coarse_backbone_fape_weight > 0:
+                raw_terms["coarse_backbone_fape"] = self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
+                    true_coarse_atoms,
+                    pred_coarse_atoms,
+                    true_R_atoms,
+                    pred_R_for_fape,
+                    true_ca_atoms,
+                    pred_ca_trace,
+                    batch=batch_idx,
+                )
 
         if self.use_coarse_ca_loss:
             if true_coords is None:
@@ -784,10 +885,28 @@ def parse_args():
         default=False,
         help="Add the coarse CA objective to the geometry decoder loss stack",
     )
+    parser.add_argument(
+        "--use-coarse-backbone-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add coarse CA/CB/N atom placement and atom-FAPE objectives",
+    )
     parser.add_argument("--coarse-ca-weight", type=float, default=1.0, help="Outer weight for the coarse CA term")
     parser.add_argument("--coarse-ca-step-weight", type=float, default=1.0, help="Local CA step loss weight")
     parser.add_argument("--coarse-ca-bond-weight", type=float, default=0.1, help="CA bond-length regularizer weight")
     parser.add_argument("--coarse-ca-pairwise-weight", type=float, default=0.25, help="CA pairwise distance loss weight")
+    parser.add_argument(
+        "--coarse-backbone-atom-weight",
+        type=float,
+        default=0.05,
+        help="Smooth-L1 weight for directly placed coarse CA/CB/N atoms",
+    )
+    parser.add_argument(
+        "--coarse-backbone-fape-weight",
+        type=float,
+        default=0.25,
+        help="FAPE weight for placed coarse CA/CB/N atoms",
+    )
     parser.add_argument(
         "--coarse-ca-step-frame",
         choices=["global", "prev"],
@@ -1152,6 +1271,9 @@ def main():
         coarse_ca_pairwise_max_seq_sep=args.coarse_ca_pairwise_max_seq_sep,
         coarse_ca_pairwise_max_pairs=args.coarse_ca_pairwise_max_pairs,
         rotation_target_frame=args.rotation_target_frame,
+        use_coarse_backbone_loss=args.use_coarse_backbone_loss,
+        coarse_backbone_atom_weight=args.coarse_backbone_atom_weight,
+        coarse_backbone_fape_weight=args.coarse_backbone_fape_weight,
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
