@@ -1293,6 +1293,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		nheads=4,
 		layers=2,
 		RTdecoder_hidden=[128, 64, 32],
+		rotationdecoder_hidden=None,
 		castepdecoder_hidden=None,
 		ssdecoder_hidden=[128, 64, 32],
 		anglesdecoder_hidden=[128, 64, 32],
@@ -1378,31 +1379,57 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			# Prenorm for CNN decoders
 			self.head['prenorm'] = nn.LayerNorm(d_model, eps=1e-6)
 		
-		# Rotation-translation prediction head (7D output: quaternion + translation)
+		# Rotation and translation are predicted by separate heads and then
+		# reassembled into the legacy rt_pred=[quat(4), trans(3)] output.
 		if output_rt:
 			if not isinstance(RTdecoder_hidden, list):
 				RTdecoder_hidden = [RTdecoder_hidden, RTdecoder_hidden]
-			rt_h2 = RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1]
+			if rotationdecoder_hidden is None:
+				rotationdecoder_hidden = RTdecoder_hidden
+			if not isinstance(rotationdecoder_hidden, list):
+				rotationdecoder_hidden = [rotationdecoder_hidden, rotationdecoder_hidden]
+			trans_h2 = RTdecoder_hidden[2] if len(RTdecoder_hidden) > 2 else RTdecoder_hidden[1]
+			rot_h2 = rotationdecoder_hidden[2] if len(rotationdecoder_hidden) > 2 else rotationdecoder_hidden[1]
 			
 			if use_cnn_decoder:
-				self.head['rt_cnn'] = nn.Sequential(
+				self.head['quat_cnn'] = nn.Sequential(
+					nn.Conv1d(d_model, rotationdecoder_hidden[0], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(rotationdecoder_hidden[0], rotationdecoder_hidden[1], kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(rotationdecoder_hidden[1], rot_h2, kernel_size=3, padding=1),
+					nn.GELU(),
+					nn.Conv1d(rot_h2, 4, kernel_size=1),
+				)
+				self.head['trans_cnn'] = nn.Sequential(
 					nn.Conv1d(d_model, RTdecoder_hidden[0], kernel_size=3, padding=1),
 					nn.GELU(),
 					nn.Conv1d(RTdecoder_hidden[0], RTdecoder_hidden[1], kernel_size=3, padding=1),
 					nn.GELU(),
-					nn.Conv1d(RTdecoder_hidden[1], rt_h2, kernel_size=3, padding=1),
+					nn.Conv1d(RTdecoder_hidden[1], trans_h2, kernel_size=3, padding=1),
 					nn.GELU(),
-					nn.Conv1d(rt_h2, 7, kernel_size=1),
+					nn.Conv1d(trans_h2, 3, kernel_size=1),
 				)
 			else:
-				self.head['rt_head'] = nn.Sequential(
+				self.head['quat_head'] = nn.Sequential(
+					nn.LayerNorm(d_model, eps=1e-6),
+					nn.Linear(d_model, rotationdecoder_hidden[0]),
+					nn.GELU(),
+					nn.Linear(rotationdecoder_hidden[0], rotationdecoder_hidden[1]),
+					nn.GELU(),
+					nn.Linear(rotationdecoder_hidden[1], rot_h2),
+					nn.GELU(),
+					nn.Linear(rot_h2, 4),
+				)
+				self.head['trans_head'] = nn.Sequential(
+					nn.LayerNorm(d_model, eps=1e-6),
 					nn.Linear(d_model, RTdecoder_hidden[0]),
 					nn.GELU(),
 					nn.Linear(RTdecoder_hidden[0], RTdecoder_hidden[1]),
 					nn.GELU(),
-					nn.Linear(RTdecoder_hidden[1], rt_h2),
+					nn.Linear(RTdecoder_hidden[1], trans_h2),
 					nn.GELU(),
-					nn.Linear(rt_h2, 7),
+					nn.Linear(trans_h2, 3),
 				)
 
 		# CA step prediction head. This is intentionally separate from the RT
@@ -1547,13 +1574,16 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		
 		# ===================== HEAD PROCESSING =====================
 		rt_pred = None
+		quat_pred = None
+		trans_pred = None
 		ca_step_pred = None
 		ss_pred = None
 		angles = None
 		use_cnn = 'prenorm' in self.head
 		
 		if batch is not None:
-			rt_list = []
+			quat_list = []
+			trans_list = []
 			ca_step_list = []
 			ss_list = []
 			angles_list = []
@@ -1565,9 +1595,11 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					xi_norm = self.head['prenorm'](xi.squeeze(1)[:seq_len])  # (seq_len, d_model)
 					xi_cnn = xi_norm.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
 					
-					if self.output_rt and 'rt_cnn' in self.head:
-						rt_out = self.head['rt_cnn'](xi_cnn)
-						rt_list.append(rt_out.permute(2, 0, 1).squeeze(1))
+					if self.output_rt and 'quat_cnn' in self.head and 'trans_cnn' in self.head:
+						quat_out = self.head['quat_cnn'](xi_cnn)
+						trans_out = self.head['trans_cnn'](xi_cnn)
+						quat_list.append(quat_out.permute(2, 0, 1).squeeze(1))
+						trans_list.append(trans_out.permute(2, 0, 1).squeeze(1))
 					
 					if self.output_ca_steps and 'ca_step_cnn' in self.head:
 						ca_step_out = self.head['ca_step_cnn'](xi_cnn)
@@ -1584,8 +1616,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				else:
 					xi = xi[:seq_len, 0]  # (seq_len, d_model)
 					
-					if self.output_rt and 'rt_head' in self.head:
-						rt_list.append(self.head['rt_head'](xi))
+					if self.output_rt and 'quat_head' in self.head and 'trans_head' in self.head:
+						quat_list.append(self.head['quat_head'](xi))
+						trans_list.append(self.head['trans_head'](xi))
 					
 					if self.output_ca_steps and 'ca_step_head' in self.head:
 						ca_step_list.append(self.head['ca_step_head'](xi))
@@ -1596,8 +1629,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 					if self.output_angles and 'angles_head' in self.head:
 						angles_list.append(_sincos_logits_to_angles(self.head['angles_head'](xi)))
 			
-			if rt_list:
-				rt_pred = torch.cat(rt_list, dim=0)
+			if quat_list and trans_list:
+				quat_pred = torch.cat(quat_list, dim=0)
+				trans_pred = torch.cat(trans_list, dim=0)
 			if ca_step_list:
 				ca_step_pred = torch.cat(ca_step_list, dim=0)
 			if ss_list:
@@ -1609,9 +1643,11 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				x_norm = self.head['prenorm'](x.squeeze(1))  # (seq_len, d_model)
 				x_cnn = x_norm.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
 				
-				if self.output_rt and 'rt_cnn' in self.head:
-					rt_pred = self.head['rt_cnn'](x_cnn)
-					rt_pred = rt_pred.permute(2, 0, 1).squeeze(1)
+				if self.output_rt and 'quat_cnn' in self.head and 'trans_cnn' in self.head:
+					quat_pred = self.head['quat_cnn'](x_cnn)
+					quat_pred = quat_pred.permute(2, 0, 1).squeeze(1)
+					trans_pred = self.head['trans_cnn'](x_cnn)
+					trans_pred = trans_pred.permute(2, 0, 1).squeeze(1)
 				
 				if self.output_ca_steps and 'ca_step_cnn' in self.head:
 					ca_step_pred = self.head['ca_step_cnn'](x_cnn)
@@ -1628,8 +1664,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			else:
 				x = x.squeeze(1)  # (seq_len, d_model)
 				
-				if self.output_rt and 'rt_head' in self.head:
-					rt_pred = self.head['rt_head'](x)
+				if self.output_rt and 'quat_head' in self.head and 'trans_head' in self.head:
+					quat_pred = self.head['quat_head'](x)
+					trans_pred = self.head['trans_head'](x)
 				
 				if self.output_ca_steps and 'ca_step_head' in self.head:
 					ca_step_pred = self.head['ca_step_head'](x)
@@ -1640,9 +1677,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				if self.output_angles and 'angles_head' in self.head:
 					angles = _sincos_logits_to_angles(self.head['angles_head'](x))
 		
-		if rt_pred is not None:
-			quat = torch.tanh(rt_pred[..., :4])
-			trans = torch.tanh(rt_pred[..., 4:]) * 20.0
+		if quat_pred is not None and trans_pred is not None:
+			quat = torch.tanh(quat_pred)
+			trans = torch.tanh(trans_pred) * 20.0
 			rt_pred = torch.cat([quat, trans], dim=-1)
 		if ca_step_pred is not None:
 			ca_step_pred = torch.tanh(ca_step_pred) * 20.0

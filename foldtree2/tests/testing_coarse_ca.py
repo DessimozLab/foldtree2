@@ -190,7 +190,7 @@ class TestCoarseCALoss(unittest.TestCase):
         )
         self.assertTrue(torch.isfinite(loss))
 
-    def test_transformer_geometry_decoder_has_separate_ca_step_head(self):
+    def test_transformer_geometry_decoder_has_separate_geometry_heads(self):
         data = HeteroData()
         data["res"].x = torch.randn(6, 8)
         data["positions"].x = torch.randn(6, 256)
@@ -202,6 +202,7 @@ class TestCoarseCALoss(unittest.TestCase):
             nheads=4,
             layers=1,
             RTdecoder_hidden=[16, 12, 8],
+            rotationdecoder_hidden=[16, 12, 8],
             castepdecoder_hidden=[16, 12, 8],
             ssdecoder_hidden=[16, 12, 8],
             anglesdecoder_hidden=[16, 12, 8],
@@ -215,10 +216,18 @@ class TestCoarseCALoss(unittest.TestCase):
 
         out = model(data)
 
+        self.assertIn("quat_head", model.head)
+        self.assertIn("trans_head", model.head)
+        self.assertIn("ca_step_head", model.head)
+        self.assertIsNot(model.head["quat_head"], model.head["trans_head"])
         self.assertEqual(tuple(out["rt_pred"].shape), (6, 7))
         self.assertEqual(tuple(out["ca_step_pred"].shape), (6, 3))
         self.assertTrue(torch.isfinite(out["rt_pred"]).all())
+        self.assertTrue(torch.isfinite(out["quat_pred"]).all())
+        self.assertTrue(torch.isfinite(out["trans_pred"]).all())
         self.assertTrue(torch.isfinite(out["ca_step_pred"]).all())
+        self.assertIsNot(out["quat_pred"], out["rt_pred"][..., :4])
+        self.assertIsNot(out["trans_pred"], out["rt_pred"][..., 4:])
         self.assertIsNot(out["ca_step_pred"], out["rt_pred"][..., 4:])
 
 

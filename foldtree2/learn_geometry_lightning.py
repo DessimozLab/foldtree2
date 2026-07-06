@@ -840,7 +840,13 @@ def parse_args():
         "--rt-hidden",
         type=str,
         default="128,64,32",
-        help="Comma-separated RT head hidden sizes",
+        help="Comma-separated translation head hidden sizes",
+    )
+    parser.add_argument(
+        "--rotation-hidden",
+        type=str,
+        default="128,64,32",
+        help="Comma-separated rotation/quaternion head hidden sizes",
     )
     parser.add_argument(
         "--ca-step-hidden",
@@ -1016,6 +1022,7 @@ def build_encoder(args, data_sample, device):
 
 def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se3_num_atom_types: int):
     rt_hidden = parse_int_list(args.rt_hidden)
+    rotation_hidden = parse_int_list(args.rotation_hidden)
     ca_step_hidden = parse_int_list(args.ca_step_hidden)
     ss_hidden = parse_int_list(args.ss_hidden)
     angles_hidden = parse_int_list(args.angles_hidden)
@@ -1027,6 +1034,7 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
         nheads=args.transformer_nheads,
         layers=args.transformer_layers,
         RTdecoder_hidden=rt_hidden,
+        rotationdecoder_hidden=rotation_hidden,
         castepdecoder_hidden=ca_step_hidden,
         ssdecoder_hidden=ss_hidden,
         anglesdecoder_hidden=angles_hidden,
