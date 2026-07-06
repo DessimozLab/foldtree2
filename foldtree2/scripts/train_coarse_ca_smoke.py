@@ -65,14 +65,24 @@ def run_epoch(model, loader, optimizer, device, args):
         out = model(batch)
         plddt = batch["plddt"].x if args.mask_plddt and "plddt" in batch.node_types else None
         true_ca = batch["coords"].x
-        if args.canonicalize_targets:
+        frames = None
+        pred_ca = out["ca_coords_pred"]
+        if args.step_frame == "canonical" or args.canonicalize_targets:
             frames = batch["R_true"].x if "R_true" in batch.node_types else None
             true_ca = canonicalize_ca_targets(true_ca, batch["res"].batch, frames=frames)
+            frames = None
+        elif args.step_frame == "prev":
+            if "R_true" not in batch.node_types:
+                raise RuntimeError('--step-frame prev requires batch["R_true"].x')
+            frames = batch["R_true"].x
+            pred_ca = None
         loss, components = coarse_ca_loss(
             out["ca_steps_pred"],
             true_ca,
             batch_idx=batch["res"].batch,
-            pred_ca=out["ca_coords_pred"],
+            pred_ca=pred_ca,
+            frames=frames,
+            frame_offset="prev",
             step_weight=args.step_weight,
             bond_weight=args.bond_weight,
             pairwise_weight=args.pairwise_weight,
@@ -118,7 +128,13 @@ def main():
     parser.add_argument("--pairwise-max-seq-sep", type=int, default=64)
     parser.add_argument("--pairwise-max-pairs", type=int, default=4096)
     parser.add_argument("--mask-plddt", action="store_true")
-    parser.add_argument("--canonicalize-targets", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--step-frame",
+        choices=["global", "canonical", "prev"],
+        default="prev",
+        help="Frame used for CA step targets: raw global, first-frame canonicalized, or previous residue frame.",
+    )
+    parser.add_argument("--canonicalize-targets", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--plddt-threshold", type=float, default=0.3)
     parser.add_argument("--clip-grad-norm", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)

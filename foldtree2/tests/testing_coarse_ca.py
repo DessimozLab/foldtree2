@@ -3,11 +3,27 @@ import unittest
 import torch
 from torch_geometric.data import HeteroData
 
-from foldtree2.src.losses.fape import coarse_ca_loss, integrate_ca_steps
+from foldtree2.src.losses.fape import (
+    ca_local_step_targets,
+    coarse_ca_loss,
+    integrate_ca_steps,
+    integrate_local_ca_steps,
+)
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 
 
 class TestCoarseCALoss(unittest.TestCase):
+    def _rot_z(self, angle):
+        c = torch.cos(torch.tensor(angle))
+        s = torch.sin(torch.tensor(angle))
+        return torch.tensor(
+            [
+                [c, -s, 0.0],
+                [s, c, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
     def test_integrate_ca_steps_single_chain(self):
         steps = torch.zeros(5, 3)
         steps[1:, 0] = 3.8
@@ -58,6 +74,82 @@ class TestCoarseCALoss(unittest.TestCase):
         self.assertLess(float(loss), 1e-6)
         self.assertLess(float(components["step"]), 1e-6)
         self.assertLess(float(components["bond"]), 1e-6)
+        self.assertLess(float(components["pairwise"]), 1e-6)
+
+    def test_local_ca_steps_round_trip_with_previous_frames(self):
+        frames = torch.stack(
+            [
+                torch.eye(3),
+                self._rot_z(0.3),
+                self._rot_z(-0.2),
+                self._rot_z(0.7),
+            ]
+        )
+        local_steps = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.2, 0.0],
+                [3.7, -0.4, 0.1],
+                [3.6, 0.3, -0.2],
+            ]
+        )
+
+        coords = integrate_local_ca_steps(local_steps, frames, frame_offset="prev")
+        target_steps, mask = ca_local_step_targets(coords, frames, frame_offset="prev")
+
+        self.assertTrue(torch.equal(mask, torch.tensor([False, True, True, True])))
+        self.assertTrue(torch.allclose(target_steps, local_steps, atol=1e-5))
+
+    def test_local_ca_steps_round_trip_resets_per_batch(self):
+        frames = torch.stack(
+            [
+                torch.eye(3),
+                self._rot_z(0.5),
+                self._rot_z(-0.5),
+                torch.eye(3),
+                self._rot_z(1.0),
+            ]
+        )
+        local_steps = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.0, 0.0],
+                [3.7, 0.5, 0.0],
+                [0.0, 0.0, 0.0],
+                [3.6, -0.2, 0.1],
+            ]
+        )
+        batch = torch.tensor([0, 0, 0, 1, 1])
+
+        coords = integrate_local_ca_steps(local_steps, frames, batch_idx=batch, frame_offset="prev")
+        target_steps, mask = ca_local_step_targets(coords, frames, batch_idx=batch, frame_offset="prev")
+
+        self.assertTrue(torch.equal(mask, torch.tensor([False, True, True, False, True])))
+        self.assertTrue(torch.allclose(target_steps, local_steps, atol=1e-5))
+
+    def test_coarse_ca_loss_is_zero_for_matching_local_trace(self):
+        frames = torch.stack([torch.eye(3), self._rot_z(0.4), self._rot_z(-0.2), self._rot_z(0.9)])
+        local_steps = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [3.8, 0.0, 0.0],
+                [3.8, 0.1, 0.0],
+                [3.7, -0.2, 0.2],
+            ]
+        )
+        coords = integrate_local_ca_steps(local_steps, frames, frame_offset="prev")
+
+        loss, components = coarse_ca_loss(
+            local_steps,
+            coords,
+            frames=frames,
+            frame_offset="prev",
+            bond_weight=0.0,
+            return_components=True,
+        )
+
+        self.assertLess(float(loss), 1e-5)
+        self.assertLess(float(components["step"]), 1e-6)
         self.assertLess(float(components["pairwise"]), 1e-6)
 
     def test_multi_decoder_coarse_ca_outputs_are_finite(self):

@@ -212,6 +212,89 @@ def integrate_ca_steps(
     return coords
 
 
+def _validate_ca_frames(frames: Tensor, n_res: int) -> None:
+    if frames.ndim != 3 or frames.shape[-2:] != (3, 3) or frames.shape[0] != n_res:
+        raise ValueError(f"Expected frames with shape ({n_res}, 3, 3), got {tuple(frames.shape)}")
+
+
+def ca_local_step_targets(
+    true_ca: Tensor,
+    frames: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    frame_offset: str = "prev",
+) -> tuple[Tensor, Tensor]:
+    """Return CA step targets expressed in residue-local backbone frames.
+
+    ``frames`` are rotation matrices whose columns are local axes in global
+    coordinates. With row-vector arithmetic, global -> local is ``step @ R``.
+    For the default ``frame_offset="prev"``, step ``i`` uses frame ``i-1``.
+    """
+    if frame_offset not in {"prev", "current"}:
+        raise ValueError(f"Unknown frame_offset={frame_offset}")
+    if true_ca.ndim != 2 or true_ca.shape[-1] != 3:
+        raise ValueError(f"Expected true_ca with shape (N, 3), got {tuple(true_ca.shape)}")
+    _validate_ca_frames(frames, true_ca.shape[0])
+
+    global_steps, mask = _ca_step_targets(true_ca, batch_idx=batch_idx)
+    frame_idx = torch.arange(true_ca.shape[0], device=true_ca.device)
+    if frame_offset == "prev":
+        if batch_idx is None:
+            frame_idx = torch.clamp(frame_idx - 1, min=0)
+        else:
+            for b in torch.unique(batch_idx, sorted=True):
+                idx = torch.where(batch_idx == b)[0]
+                if idx.numel() > 1:
+                    frame_idx[idx[1:]] = idx[:-1]
+                if idx.numel() > 0:
+                    frame_idx[idx[0]] = idx[0]
+
+    target = torch.zeros_like(true_ca)
+    if mask.any():
+        target[mask] = torch.einsum("ni,nij->nj", global_steps[mask], frames[frame_idx[mask]])
+    return target, mask
+
+
+def integrate_local_ca_steps(
+    local_steps: Tensor,
+    frames: Tensor,
+    batch_idx: Optional[Tensor] = None,
+    anchor: Optional[Tensor] = None,
+    frame_offset: str = "prev",
+) -> Tensor:
+    """Integrate local CA step vectors using provided residue frames."""
+    if frame_offset not in {"prev", "current"}:
+        raise ValueError(f"Unknown frame_offset={frame_offset}")
+    if local_steps.ndim != 2 or local_steps.shape[-1] != 3:
+        raise ValueError(f"Expected local_steps with shape (N, 3), got {tuple(local_steps.shape)}")
+    _validate_ca_frames(frames, local_steps.shape[0])
+
+    def _single(steps_s: Tensor, frames_s: Tensor, anchor_s: Optional[Tensor]) -> Tensor:
+        if steps_s.shape[0] == 0:
+            return steps_s.new_zeros((0, 3))
+        coords = torch.zeros_like(steps_s)
+        if anchor_s is not None:
+            coords[0] = anchor_s.to(device=steps_s.device, dtype=steps_s.dtype)
+        for i in range(1, steps_s.shape[0]):
+            frame_i = frames_s[i - 1] if frame_offset == "prev" else frames_s[i]
+            global_step = torch.matmul(steps_s[i], frame_i.transpose(-1, -2))
+            coords[i] = coords[i - 1] + global_step
+        return coords
+
+    if batch_idx is None:
+        return _single(local_steps, frames, anchor)
+
+    coords = torch.zeros_like(local_steps)
+    for b in torch.unique(batch_idx, sorted=True):
+        idx = torch.where(batch_idx == b)[0]
+        if idx.numel() == 0:
+            continue
+        anchor_b = None
+        if anchor is not None:
+            anchor_b = anchor[int(b.item())] if anchor.ndim == 2 else anchor
+        coords[idx] = _single(local_steps[idx], frames[idx], anchor_b)
+    return coords
+
+
 def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tuple[Tensor, Tensor]:
     """Return target step vectors and a mask for valid consecutive CA edges."""
     if true_ca.ndim != 2 or true_ca.shape[-1] != 3:
@@ -239,12 +322,22 @@ def ca_step_loss(
     pred_steps: Tensor,
     true_ca: Tensor,
     batch_idx: Optional[Tensor] = None,
+    frames: Optional[Tensor] = None,
+    frame_offset: str = "prev",
     plddt: Optional[Tensor] = None,
     plddt_thresh: float = 0.3,
     beta: float = 0.25,
 ) -> Tensor:
     """Smooth-L1 loss on local consecutive CA displacement vectors."""
-    target_steps, step_mask = _ca_step_targets(true_ca, batch_idx=batch_idx)
+    if frames is None:
+        target_steps, step_mask = _ca_step_targets(true_ca, batch_idx=batch_idx)
+    else:
+        target_steps, step_mask = ca_local_step_targets(
+            true_ca,
+            frames,
+            batch_idx=batch_idx,
+            frame_offset=frame_offset,
+        )
     if plddt is not None:
         good = plddt.squeeze(-1) >= plddt_thresh
         step_mask = step_mask & good
@@ -330,6 +423,8 @@ def coarse_ca_loss(
     true_ca: Tensor,
     batch_idx: Optional[Tensor] = None,
     pred_ca: Optional[Tensor] = None,
+    frames: Optional[Tensor] = None,
+    frame_offset: str = "prev",
     step_weight: float = 1.0,
     bond_weight: float = 0.1,
     pairwise_weight: float = 0.25,
@@ -342,10 +437,26 @@ def coarse_ca_loss(
 ):
     """Minimal coarse-CA loss bundle for local step-vector predictors."""
     if pred_ca is None:
-        pred_ca = integrate_ca_steps(pred_steps, batch_idx=batch_idx)
+        if frames is None:
+            pred_ca = integrate_ca_steps(pred_steps, batch_idx=batch_idx)
+        else:
+            pred_ca = integrate_local_ca_steps(
+                pred_steps,
+                frames,
+                batch_idx=batch_idx,
+                frame_offset=frame_offset,
+            )
 
     components = {
-        "step": ca_step_loss(pred_steps, true_ca, batch_idx=batch_idx, plddt=plddt, plddt_thresh=plddt_thresh),
+        "step": ca_step_loss(
+            pred_steps,
+            true_ca,
+            batch_idx=batch_idx,
+            frames=frames,
+            frame_offset=frame_offset,
+            plddt=plddt,
+            plddt_thresh=plddt_thresh,
+        ),
         "bond": ca_bond_length_loss(pred_steps, batch_idx=batch_idx),
         "pairwise": ca_pairwise_distance_loss(
             pred_ca,
