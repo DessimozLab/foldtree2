@@ -27,6 +27,7 @@ from torch_geometric.loader import DataLoader
 from foldtree2.src import encoder as ecdr
 from foldtree2.src import pdbgraphmk2
 from foldtree2.src.losses.fape import (
+    coarse_ca_loss,
     quaternion_to_rotation_matrix,
     reconstruct_positions,
     rotation_matrix_to_quaternion,
@@ -237,6 +238,14 @@ class GeometryFocusedModule(pl.LightningModule):
         use_se3: bool,
         se3_decoder: Optional[nn.Module] = None,
         nan_guard: bool = True,
+        use_coarse_ca_loss: bool = False,
+        coarse_ca_weight: float = 1.0,
+        coarse_ca_step_weight: float = 1.0,
+        coarse_ca_bond_weight: float = 0.1,
+        coarse_ca_pairwise_weight: float = 0.25,
+        coarse_ca_step_frame: str = "prev",
+        coarse_ca_pairwise_max_seq_sep: int = 64,
+        coarse_ca_pairwise_max_pairs: int = 4096,
     ):
         super().__init__()
         self.encoder = encoder
@@ -251,6 +260,14 @@ class GeometryFocusedModule(pl.LightningModule):
         self.use_uncertainty_weighting = use_uncertainty_weighting
         self.use_se3 = use_se3 and (se3_decoder is not None)
         self.nan_guard = nan_guard
+        self.use_coarse_ca_loss = bool(use_coarse_ca_loss)
+        self.coarse_ca_weight = float(coarse_ca_weight)
+        self.coarse_ca_step_weight = float(coarse_ca_step_weight)
+        self.coarse_ca_bond_weight = float(coarse_ca_bond_weight)
+        self.coarse_ca_pairwise_weight = float(coarse_ca_pairwise_weight)
+        self.coarse_ca_step_frame = coarse_ca_step_frame
+        self.coarse_ca_pairwise_max_seq_sep = int(coarse_ca_pairwise_max_seq_sep)
+        self.coarse_ca_pairwise_max_pairs = int(coarse_ca_pairwise_max_pairs)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -458,6 +475,35 @@ class GeometryFocusedModule(pl.LightningModule):
         if out_local.get("angles") is not None and true_angles is not None:
             raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
 
+        if self.use_coarse_ca_loss:
+            if true_coords is None:
+                raise RuntimeError("Coarse CA loss requires data['coords'].x")
+            frames = None
+            pred_ca_for_loss = pred_coords_local
+            if self.coarse_ca_step_frame == "prev":
+                if true_R is None:
+                    raise RuntimeError("--coarse-ca-step-frame prev requires data['R_true'].x")
+                frames = true_R
+                pred_ca_for_loss = None
+            elif self.coarse_ca_step_frame != "global":
+                raise RuntimeError(f"Unknown coarse CA step frame: {self.coarse_ca_step_frame}")
+
+            ca_total, _ca_components = coarse_ca_loss(
+                pred_t,
+                true_coords,
+                batch_idx=batch_idx,
+                pred_ca=pred_ca_for_loss,
+                frames=frames,
+                frame_offset="prev",
+                step_weight=self.coarse_ca_step_weight,
+                bond_weight=self.coarse_ca_bond_weight,
+                pairwise_weight=self.coarse_ca_pairwise_weight,
+                pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
+                pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                return_components=True,
+            )
+            raw_terms["coarse_ca"] = ca_total * self.coarse_ca_weight
+
         se3_skip = False
         if self.use_se3 and self.se3_decoder is not None:
             try:
@@ -609,6 +655,34 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Enable optional SE3 decoder branch",
+    )
+    parser.add_argument(
+        "--use-coarse-ca-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add the coarse CA objective to the geometry decoder loss stack",
+    )
+    parser.add_argument("--coarse-ca-weight", type=float, default=1.0, help="Outer weight for the coarse CA term")
+    parser.add_argument("--coarse-ca-step-weight", type=float, default=1.0, help="Local CA step loss weight")
+    parser.add_argument("--coarse-ca-bond-weight", type=float, default=0.1, help="CA bond-length regularizer weight")
+    parser.add_argument("--coarse-ca-pairwise-weight", type=float, default=0.25, help="CA pairwise distance loss weight")
+    parser.add_argument(
+        "--coarse-ca-step-frame",
+        choices=["global", "prev"],
+        default="prev",
+        help="Frame for CA step targets: raw global deltas or previous residue local frame",
+    )
+    parser.add_argument(
+        "--coarse-ca-pairwise-max-seq-sep",
+        type=int,
+        default=64,
+        help="Maximum sequence separation for coarse CA pairwise supervision",
+    )
+    parser.add_argument(
+        "--coarse-ca-pairwise-max-pairs",
+        type=int,
+        default=4096,
+        help="Maximum sampled CA pairs per chain for coarse CA pairwise supervision",
     )
     parser.add_argument(
         "--transformer-width",
@@ -924,6 +998,14 @@ def main():
         use_se3=args.use_se3,
         se3_decoder=se3_decoder,
         nan_guard=args.nan_guard,
+        use_coarse_ca_loss=args.use_coarse_ca_loss,
+        coarse_ca_weight=args.coarse_ca_weight,
+        coarse_ca_step_weight=args.coarse_ca_step_weight,
+        coarse_ca_bond_weight=args.coarse_ca_bond_weight,
+        coarse_ca_pairwise_weight=args.coarse_ca_pairwise_weight,
+        coarse_ca_step_frame=args.coarse_ca_step_frame,
+        coarse_ca_pairwise_max_seq_sep=args.coarse_ca_pairwise_max_seq_sep,
+        coarse_ca_pairwise_max_pairs=args.coarse_ca_pairwise_max_pairs,
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
