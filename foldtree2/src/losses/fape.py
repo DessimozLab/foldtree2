@@ -508,12 +508,13 @@ def quaternion_geodesic_loss(
     eps: float = 1e-8,
     squared: bool = False,
 ) -> Tensor:
-    """SO(3)-aware quaternion distance with q ~ -q symmetry."""
+    """SO(3) angular distance in radians with q ~ -q symmetry."""
     pred_q = normalize_quaternion(pred_q, eps=eps)
     true_q = normalize_quaternion(true_q, eps=eps)
 
     dot = (pred_q * true_q).sum(dim=-1).abs().clamp(max=1.0)
-    loss = 1.0 - dot**2 if squared else 1.0 - dot
+    angle = 2.0 * torch.atan2(torch.sqrt(torch.clamp(1.0 - dot**2, min=0.0)), dot.clamp_min(eps))
+    loss = angle**2 if squared else angle
 
     if reduction == "mean":
         return loss.mean()
@@ -534,8 +535,8 @@ def quaternion_angle_loss(
     pred_q = normalize_quaternion(pred_q, eps=eps)
     true_q = normalize_quaternion(true_q, eps=eps)
 
-    dot = (pred_q * true_q).sum(dim=-1).abs().clamp(max=1.0 - eps)
-    loss = 2.0 * torch.acos(dot)
+    dot = (pred_q * true_q).sum(dim=-1).abs().clamp(max=1.0)
+    loss = 2.0 * torch.atan2(torch.sqrt(torch.clamp(1.0 - dot**2, min=0.0)), dot.clamp_min(eps))
 
     if reduction == "mean":
         return loss.mean()
@@ -562,7 +563,7 @@ def _fape_single_structure(
     local_pred = torch.einsum("nij,nmj->nmi", pred_R.transpose(-1, -2), diff_pred)
     local_true = torch.einsum("nij,nmj->nmi", true_R.transpose(-1, -2), diff_true)
 
-    error = torch.sqrt(torch.sum((local_pred - local_true) ** 2, dim=-1) + eps)
+    error = torch.linalg.vector_norm(local_pred - local_true, dim=-1)
     error = torch.clamp(error, max=d_clamp)
 
     if reduction == "mean":
