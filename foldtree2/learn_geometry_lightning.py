@@ -653,7 +653,13 @@ class GeometryFocusedModule(pl.LightningModule):
                 batch_idx=batch_idx,
                 frame_offset="prev",
             )
-            pred_coarse_atoms = coarse_backbone_atoms_from_ca_frames(pred_ca_trace, pred_R_for_fape)
+            coarse_atom_names = ("ca", "c", "cb", "n")
+            ca_idx, c_idx, cb_idx, n_idx = range(len(coarse_atom_names))
+            pred_coarse_atoms = coarse_backbone_atoms_from_ca_frames(
+                pred_ca_trace,
+                pred_R_for_fape,
+                atom_names=coarse_atom_names,
+            )
 
             true_R_atoms = true_R
             true_ca_atoms = true_coords
@@ -664,30 +670,37 @@ class GeometryFocusedModule(pl.LightningModule):
                     batch_idx=batch_idx,
                 )
 
-            true_coarse_atoms = coarse_backbone_atoms_from_ca_frames(true_ca_atoms, true_R_atoms)
+            true_coarse_atoms = coarse_backbone_atoms_from_ca_frames(
+                true_ca_atoms,
+                true_R_atoms,
+                atom_names=coarse_atom_names,
+            )
             true_cb = node_x(data_batch, "cbcoords")
             if true_cb is not None:
                 true_cb = true_cb.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
                 if self.rotation_target_frame == "local":
                     true_cb = gauge_normalize_points_to_chain_start(true_cb, true_R, true_coords, batch_idx=batch_idx)
                 true_coarse_atoms = true_coarse_atoms.clone()
-                true_coarse_atoms[:, 1] = true_cb
+                true_coarse_atoms[:, cb_idx] = true_cb
             true_n = node_x(data_batch, "ncoords")
             if true_n is not None:
                 true_n = true_n.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
                 if self.rotation_target_frame == "local":
                     true_n = gauge_normalize_points_to_chain_start(true_n, true_R, true_coords, batch_idx=batch_idx)
                 true_coarse_atoms = true_coarse_atoms.clone()
-                true_coarse_atoms[:, 2] = true_n
+                true_coarse_atoms[:, n_idx] = true_n
             true_c = node_x(data_batch, "ccoords")
             if true_c is not None:
                 true_c = true_c.to(device=true_ca_atoms.device, dtype=true_ca_atoms.dtype)
                 if self.rotation_target_frame == "local":
                     true_c = gauge_normalize_points_to_chain_start(true_c, true_R, true_coords, batch_idx=batch_idx)
+                true_coarse_atoms = true_coarse_atoms.clone()
+                true_coarse_atoms[:, c_idx] = true_c
 
-            data_batch["coarse_ca_pred"].x = pred_coarse_atoms[:, 0]
-            data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, 1]
-            data_batch["coarse_n_pred"].x = pred_coarse_atoms[:, 2]
+            data_batch["coarse_ca_pred"].x = pred_coarse_atoms[:, ca_idx]
+            data_batch["coarse_c_pred"].x = pred_coarse_atoms[:, c_idx]
+            data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, cb_idx]
+            data_batch["coarse_n_pred"].x = pred_coarse_atoms[:, n_idx]
 
             if self.coarse_backbone_atom_weight > 0:
                 raw_terms["coarse_backbone_atoms"] = self.coarse_backbone_atom_weight * F.smooth_l1_loss(
@@ -715,8 +728,8 @@ class GeometryFocusedModule(pl.LightningModule):
                     true_ca_atoms,
                     true_R_atoms,
                     batch=batch_idx,
-                    n_coords=true_coarse_atoms[:, 2],
-                    c_coords=true_c,
+                    n_coords=true_coarse_atoms[:, n_idx],
+                    c_coords=true_coarse_atoms[:, c_idx],
                 )
                 angle_mask = pred_angle_mask & true_angle_mask
                 if angle_mask.any():
