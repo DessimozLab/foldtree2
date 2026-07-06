@@ -452,6 +452,7 @@ class GeometryFocusedModule(pl.LightningModule):
         pred_rt = out_local["rt_pred"]
         pred_q = pred_rt[..., :4]
         pred_t = pred_rt[..., 4:]
+        pred_ca_steps = out_local.get("ca_step_pred", pred_t)
         pred_R = quaternion_to_rotation_matrix(pred_q)
 
         raw_terms: Dict[str, torch.Tensor] = {}
@@ -489,7 +490,7 @@ class GeometryFocusedModule(pl.LightningModule):
                 raise RuntimeError(f"Unknown coarse CA step frame: {self.coarse_ca_step_frame}")
 
             ca_total, _ca_components = coarse_ca_loss(
-                pred_t,
+                pred_ca_steps,
                 true_coords,
                 batch_idx=batch_idx,
                 pred_ca=pred_ca_for_loss,
@@ -715,6 +716,12 @@ def parse_args():
         help="Comma-separated RT head hidden sizes",
     )
     parser.add_argument(
+        "--ca-step-hidden",
+        type=str,
+        default="128,64,32",
+        help="Comma-separated CA step head hidden sizes",
+    )
+    parser.add_argument(
         "--ss-hidden",
         type=str,
         default="64,32,16",
@@ -882,6 +889,7 @@ def build_encoder(args, data_sample, device):
 
 def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se3_num_atom_types: int):
     rt_hidden = parse_int_list(args.rt_hidden)
+    ca_step_hidden = parse_int_list(args.ca_step_hidden)
     ss_hidden = parse_int_list(args.ss_hidden)
     angles_hidden = parse_int_list(args.angles_hidden)
 
@@ -892,6 +900,7 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
         nheads=args.transformer_nheads,
         layers=args.transformer_layers,
         RTdecoder_hidden=rt_hidden,
+        castepdecoder_hidden=ca_step_hidden,
         ssdecoder_hidden=ss_hidden,
         anglesdecoder_hidden=angles_hidden,
         dropout=args.transformer_dropout,
@@ -899,6 +908,7 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
         residual=False,
         learn_positions=False,
         output_rt=True,
+        output_ca_steps=True,
         output_ss=True,
         output_angles=True,
     ).to(device)

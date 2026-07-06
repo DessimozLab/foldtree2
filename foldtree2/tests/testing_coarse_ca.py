@@ -9,7 +9,7 @@ from foldtree2.src.losses.fape import (
     integrate_ca_steps,
     integrate_local_ca_steps,
 )
-from foldtree2.src.mono_decoders import MultiMonoDecoder
+from foldtree2.src.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
 
 
 class TestCoarseCALoss(unittest.TestCase):
@@ -189,6 +189,37 @@ class TestCoarseCALoss(unittest.TestCase):
             pred_ca=out["ca_coords_pred"],
         )
         self.assertTrue(torch.isfinite(loss))
+
+    def test_transformer_geometry_decoder_has_separate_ca_step_head(self):
+        data = HeteroData()
+        data["res"].x = torch.randn(6, 8)
+        data["positions"].x = torch.randn(6, 256)
+
+        model = Transformer_Geometry_Decoder(
+            in_channels={"res": 8},
+            hidden_channels={("res", "backbone", "res"): [16, 16, 16]},
+            concat_positions=True,
+            nheads=4,
+            layers=1,
+            RTdecoder_hidden=[16, 12, 8],
+            castepdecoder_hidden=[16, 12, 8],
+            ssdecoder_hidden=[16, 12, 8],
+            anglesdecoder_hidden=[16, 12, 8],
+            dropout=0.0,
+            residual=False,
+            output_rt=True,
+            output_ca_steps=True,
+            output_ss=True,
+            output_angles=True,
+        )
+
+        out = model(data)
+
+        self.assertEqual(tuple(out["rt_pred"].shape), (6, 7))
+        self.assertEqual(tuple(out["ca_step_pred"].shape), (6, 3))
+        self.assertTrue(torch.isfinite(out["rt_pred"]).all())
+        self.assertTrue(torch.isfinite(out["ca_step_pred"]).all())
+        self.assertIsNot(out["ca_step_pred"], out["rt_pred"][..., 4:])
 
 
 if __name__ == "__main__":
