@@ -731,7 +731,10 @@ class se3_denoiser(torch.nn.Module):
 		
 		# Get predicted coordinates only. We intentionally refuse to consume
 		# ground-truth coords here so SE3 always refines first-stage predictions.
-		coords = kwargs.get('coords_pred', None)
+		coords = kwargs.get('coords_pred_atoms', None)
+		atom_level = coords is not None
+		if coords is None:
+			coords = kwargs.get('coords_pred', None)
 		if coords is None:
 			coords = kwargs.get('coord_pred', None)
 		if coords is None and isinstance(data, dict):
@@ -754,14 +757,34 @@ class se3_denoiser(torch.nn.Module):
 				"SE3 decoder requires predicted coordinates via 'coords_pred' or 'coord_pred'; "
 				"it will not use known ground-truth 'coords'."
 			)
-		coords = coords.view(-1, 3)  # (num_nodes, 3)
+		if coords.ndim == 3:
+			atom_level = True
+			num_residues, atoms_per_residue, _ = coords.shape
+			coords = coords.reshape(-1, 3)
+			atom_type_ids = kwargs.get('atom_type_ids', None)
+			if atom_type_ids is not None:
+				if atom_type_ids.shape != (num_residues, atoms_per_residue):
+					raise RuntimeError(
+						f"Expected atom_type_ids with shape {(num_residues, atoms_per_residue)}, "
+						f"got {tuple(atom_type_ids.shape)}"
+					)
+				atom_ids = atom_type_ids.to(dtype=torch.long, device=self.device).reshape(-1)
+			else:
+				atom_ids = atom_ids.view(num_residues, 1).expand(num_residues, atoms_per_residue).reshape(-1)
+		else:
+			coords = coords.view(-1, 3)  # (num_nodes, 3)
+			num_residues = coords.shape[0]
+			atoms_per_residue = 1
 		
 		#use dot product results to add adges
 		x_dict['dot_prod'] = edge_attr_dict.get('dot_prod', None) if edge_attr_dict is not None else None
 
 		# Create adjacency matrix from edge_index
 		# For GotenNet, we need a dense adjacency matrix
-		batch = data['res'].batch if hasattr(data['res'], 'batch') else None
+		residue_batch = data['res'].batch if hasattr(data['res'], 'batch') else None
+		batch = residue_batch
+		if atom_level and residue_batch is not None:
+			batch = residue_batch.repeat_interleave(atoms_per_residue)
 		
 		num_graphs = 1
 		if batch is not None:
@@ -865,12 +888,16 @@ class se3_denoiser(torch.nn.Module):
 		# Predict angles from invariant features
 		angles = self.out_angles(z)
 		frame_outputs = _frame_outputs_from_coords(coors_out_flat)
+		coors_out_atoms = None
+		if atom_level and coors_out_flat is not None:
+			coors_out_atoms = coors_out_flat.reshape(num_residues, atoms_per_residue, 3)
 		
 		return {
 			'angles': angles,
 			'z': z,
 			'coors_out': coors_out if self.return_coors else None,
 			'coors_out_flat': coors_out_flat if self.return_coors else None,
+			'coors_out_atoms': coors_out_atoms if self.return_coors else None,
 			'quat_pred': frame_outputs['quat_pred'],
 			'quat_unit_pred': frame_outputs['quat_unit_pred'],
 			'trans_pred': frame_outputs['trans_pred'],

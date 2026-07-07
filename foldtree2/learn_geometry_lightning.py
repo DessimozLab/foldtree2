@@ -378,6 +378,10 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_backbone_atom_weight: float = 0.05,
         coarse_backbone_fape_weight: float = 0.25,
         coarse_backbone_angle_weight: float = 0.0,
+        se3_input_source: str = "coarse_ca",
+        use_se3_atom_refine: bool = False,
+        se3_atom_weight: float = 0.05,
+        se3_atom_fape_weight: float = 0.25,
     ):
         super().__init__()
         self.encoder = encoder
@@ -407,6 +411,12 @@ class GeometryFocusedModule(pl.LightningModule):
         self.coarse_backbone_atom_weight = float(coarse_backbone_atom_weight)
         self.coarse_backbone_fape_weight = float(coarse_backbone_fape_weight)
         self.coarse_backbone_angle_weight = float(coarse_backbone_angle_weight)
+        if se3_input_source not in {"reconstructed_ca", "coarse_ca"}:
+            raise ValueError(f"Unknown se3_input_source={se3_input_source}")
+        self.se3_input_source = se3_input_source
+        self.use_se3_atom_refine = bool(use_se3_atom_refine)
+        self.se3_atom_weight = float(se3_atom_weight)
+        self.se3_atom_fape_weight = float(se3_atom_fape_weight)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -419,6 +429,8 @@ class GeometryFocusedModule(pl.LightningModule):
             "fape_quat_se3",
             "quat_geodesic_se3",
             "se3_angles",
+            "se3_atom_refine",
+            "se3_atom_fape",
         ]
         if self.use_uncertainty_weighting:
             self.kendall_log_vars = torch.nn.ParameterDict(
@@ -598,6 +610,12 @@ class GeometryFocusedModule(pl.LightningModule):
         if self.rotation_target_frame == "local":
             pred_R_for_fape = compose_previous_local_rotations(pred_R, batch_idx=batch_idx)
             pred_q_for_fape = rotation_matrix_to_quaternion(pred_R_for_fape)
+        pred_ca_trace = integrate_local_ca_steps(
+            pred_ca_steps,
+            pred_R_for_fape,
+            batch_idx=batch_idx,
+            frame_offset="prev",
+        )
 
         raw_terms: Dict[str, torch.Tensor] = {}
 
@@ -644,17 +662,16 @@ class GeometryFocusedModule(pl.LightningModule):
         if out_local.get("angles") is not None and true_angles is not None:
             raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
 
+        coarse_atom_names = ("ca", "c", "cb", "n")
+        ca_idx, c_idx, cb_idx, n_idx = range(len(coarse_atom_names))
+        pred_coarse_atoms = None
+        true_coarse_atoms = None
+        true_R_atoms = None
+        true_ca_atoms = None
+
         if self.use_coarse_backbone_loss:
             if true_coords is None or true_R is None:
                 raise RuntimeError("Coarse backbone loss requires data['coords'].x and data['R_true'].x")
-            pred_ca_trace = integrate_local_ca_steps(
-                pred_ca_steps,
-                pred_R_for_fape,
-                batch_idx=batch_idx,
-                frame_offset="prev",
-            )
-            coarse_atom_names = ("ca", "c", "cb", "n")
-            ca_idx, c_idx, cb_idx, n_idx = range(len(coarse_atom_names))
             pred_coarse_atoms = coarse_backbone_atoms_from_ca_frames(
                 pred_ca_trace,
                 pred_R_for_fape,
@@ -778,15 +795,16 @@ class GeometryFocusedModule(pl.LightningModule):
                         "SE3 branch requires FoldTree2 token ids from encoder.vector_quantizer, "
                         "but the active encoder does not expose discretize_z()."
                     )
+                se3_seed_coords = pred_ca_trace if self.se3_input_source == "coarse_ca" else pred_coords_local
                 out_s = self.se3_decoder(
                     data_batch,
                     ft2_token_ids=ft2_token_ids,
                     aa_identity_ids=aa_identity_ids,
-                    coords_pred=pred_coords_local,
+                    coords_pred=se3_seed_coords,
                 )
                 if out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
-                    se3_coords_step = se3_coords_step.to(pred_coords_local.device, dtype=pred_coords_local.dtype)
+                    se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
                     q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
                     true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
                     raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
@@ -794,6 +812,44 @@ class GeometryFocusedModule(pl.LightningModule):
 
                 if out_s.get("angles") is not None and true_angles is not None:
                     raw_terms["se3_angles"] = periodic_angle_smooth_l1(out_s["angles"][..., :3], true_angles)
+
+                if self.use_se3_atom_refine:
+                    if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
+                        raise RuntimeError("--use-se3-atom-refine requires --use-coarse-backbone-loss")
+                    atom_type_ids = torch.arange(
+                        pred_coarse_atoms.shape[1],
+                        device=pred_coarse_atoms.device,
+                        dtype=torch.long,
+                    ).unsqueeze(0).expand(pred_coarse_atoms.shape[0], -1)
+                    out_atom = self.se3_decoder(
+                        data_batch,
+                        coords_pred_atoms=pred_coarse_atoms,
+                        atom_type_ids=atom_type_ids,
+                    )
+                    se3_atoms = out_atom.get("coors_out_atoms", None)
+                    if se3_atoms is None:
+                        raise RuntimeError("SE3 atom refinement did not return coors_out_atoms")
+                    se3_atoms = se3_atoms.to(device=true_coarse_atoms.device, dtype=true_coarse_atoms.dtype)
+                    data_batch["se3_ca_pred"].x = se3_atoms[:, ca_idx]
+                    data_batch["se3_c_pred"].x = se3_atoms[:, c_idx]
+                    data_batch["se3_cb_pred"].x = se3_atoms[:, cb_idx]
+                    data_batch["se3_n_pred"].x = se3_atoms[:, n_idx]
+                    if self.se3_atom_weight > 0:
+                        raw_terms["se3_atom_refine"] = self.se3_atom_weight * F.smooth_l1_loss(
+                            se3_atoms,
+                            true_coarse_atoms,
+                            beta=0.5,
+                        )
+                    if self.se3_atom_fape_weight > 0:
+                        raw_terms["se3_atom_fape"] = self.se3_atom_fape_weight * coarse_backbone_fape_loss(
+                            true_coarse_atoms,
+                            se3_atoms,
+                            true_R_atoms,
+                            pred_R_for_fape,
+                            true_ca_atoms,
+                            se3_atoms[:, ca_idx],
+                            batch=batch_idx,
+                        )
             except Exception as exc:
                 # Fail fast instead of skipping SE3 on one rank only. Silent rank divergence
                 # can deadlock distributed runs at optimizer sync boundaries.
@@ -923,6 +979,18 @@ def parse_args():
         help="Enable optional SE3 decoder branch",
     )
     parser.add_argument(
+        "--se3-input-source",
+        choices=["reconstructed_ca", "coarse_ca"],
+        default="coarse_ca",
+        help="Coordinate seed for the residue-level SE3 branch",
+    )
+    parser.add_argument(
+        "--use-se3-atom-refine",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run an experimental SE3 refinement pass over coarse CA/C/CB/N atom coordinates",
+    )
+    parser.add_argument(
         "--use-coarse-ca-loss",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -932,7 +1000,7 @@ def parse_args():
         "--use-coarse-backbone-loss",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Add coarse CA/CB/N atom placement and atom-FAPE objectives",
+        help="Add coarse CA/C/CB/N atom placement and atom-FAPE objectives",
     )
     parser.add_argument("--coarse-ca-weight", type=float, default=1.0, help="Outer weight for the coarse CA term")
     parser.add_argument("--coarse-ca-step-weight", type=float, default=1.0, help="Local CA step loss weight")
@@ -955,6 +1023,18 @@ def parse_args():
         type=float,
         default=0.0,
         help="Optional loss weight for phi/psi/omega derived from coarse N/CA/C atom placements",
+    )
+    parser.add_argument(
+        "--se3-atom-weight",
+        type=float,
+        default=0.05,
+        help="Smooth-L1 loss weight for SE3-refined CA/C/CB/N atom coordinates",
+    )
+    parser.add_argument(
+        "--se3-atom-fape-weight",
+        type=float,
+        default=0.25,
+        help="Atom-FAPE loss weight for SE3-refined CA/C/CB/N atom coordinates",
     )
     parser.add_argument(
         "--coarse-ca-step-frame",
@@ -1288,7 +1368,7 @@ def main():
         device = torch.device("cpu")
 
     encoder, latent_dim = build_encoder(args, data_sample.to(device), device)
-    se3_num_atom_types = int(getattr(encoder, "num_embeddings", 20))
+    se3_num_atom_types = max(4, int(getattr(encoder, "num_embeddings", 20)))
     transformer_geom_decoder, se3_decoder = build_decoders(
         latent_dim,
         data_sample,
@@ -1324,6 +1404,10 @@ def main():
         coarse_backbone_atom_weight=args.coarse_backbone_atom_weight,
         coarse_backbone_fape_weight=args.coarse_backbone_fape_weight,
         coarse_backbone_angle_weight=args.coarse_backbone_angle_weight,
+        se3_input_source=args.se3_input_source,
+        use_se3_atom_refine=args.use_se3_atom_refine,
+        se3_atom_weight=args.se3_atom_weight,
+        se3_atom_fape_weight=args.se3_atom_fape_weight,
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
