@@ -12,16 +12,21 @@ from __future__ import annotations
 import argparse
 import gc
 import math
+import os
 import random
 import warnings
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader
 
 from foldtree2.src import encoder as ecdr
@@ -329,22 +334,69 @@ def load_encoder_any(path: Path, full_model_template: Optional[Path] = None):
 
 
 class GeometryOnlyDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_path: str, batch_size: int, num_workers: int):
+    def __init__(
+        self,
+        dataset_path: str,
+        batch_size: int,
+        num_workers: int,
+        val_fraction: float = 0.1,
+        val_count: Optional[int] = None,
+        split_seed: int = 42,
+        val_batch_size: Optional[int] = None,
+    ):
         super().__init__()
         self.dataset_path = dataset_path
         self.batch_size = batch_size
+        self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
+        self.val_fraction = float(val_fraction)
+        self.val_count = val_count
+        self.split_seed = int(split_seed)
         self.struct_dat = None
+        self.train_dataset = None
+        self.val_dataset = None
 
     def setup(self, stage: Optional[str] = None):
         if self.struct_dat is None:
             self.struct_dat = pdbgraphmk2.StructureDataset(self.dataset_path)
+        if self.train_dataset is not None:
+            return
+
+        n_items = len(self.struct_dat)
+        if n_items < 2 or (self.val_count is not None and self.val_count <= 0) or self.val_fraction <= 0:
+            self.train_dataset = self.struct_dat
+            self.val_dataset = None
+            return
+
+        if self.val_count is None:
+            n_val = int(round(n_items * self.val_fraction))
+        else:
+            n_val = int(self.val_count)
+        n_val = max(1, min(n_val, n_items - 1))
+
+        generator = torch.Generator().manual_seed(self.split_seed)
+        indices = torch.randperm(n_items, generator=generator).tolist()
+        val_indices = indices[:n_val]
+        train_indices = indices[n_val:]
+        self.train_dataset = Subset(self.struct_dat, train_indices)
+        self.val_dataset = Subset(self.struct_dat, val_indices)
 
     def train_dataloader(self):
         return DataLoader(
-            self.struct_dat,
+            self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
+            num_workers=self.num_workers,
+            persistent_workers=self.num_workers > 0,
+        )
+
+    def val_dataloader(self):
+        if self.val_dataset is None:
+            return None
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.val_batch_size,
+            shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
         )
@@ -357,6 +409,15 @@ class GeometryFocusedModule(pl.LightningModule):
         transformer_geom_decoder: nn.Module,
         learning_rate: float,
         weight_decay: float,
+        lr_scheduler_name: str,
+        lr_scheduler_interval: str,
+        lr_scheduler_frequency: int,
+        lr_scheduler_monitor: str,
+        lr_warmup_epochs: int,
+        lr_min: float,
+        lr_step_size: int,
+        lr_gamma: float,
+        max_epochs: int,
         clip_grad_norm: float,
         cache_flush_interval: int,
         gc_collect_interval: int,
@@ -365,7 +426,13 @@ class GeometryFocusedModule(pl.LightningModule):
         use_se3: bool,
         se3_decoder: Optional[nn.Module] = None,
         nan_guard: bool = True,
+        use_frame_fape_loss: bool = True,
+        use_quat_geodesic_loss: bool = True,
+        use_decoder_angle_loss: bool = True,
         use_coarse_ca_loss: bool = False,
+        use_coarse_ca_step_loss: bool = True,
+        use_coarse_ca_bond_loss: bool = True,
+        use_coarse_ca_pairwise_loss: bool = True,
         coarse_ca_weight: float = 1.0,
         coarse_ca_step_weight: float = 1.0,
         coarse_ca_bond_weight: float = 0.1,
@@ -375,11 +442,24 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_ca_pairwise_max_pairs: int = 4096,
         rotation_target_frame: str = "local",
         use_coarse_backbone_loss: bool = False,
+        use_coarse_backbone_atom_loss: bool = True,
+        use_coarse_c_loss: bool = False,
+        use_coarse_cb_loss: bool = False,
+        use_coarse_n_loss: bool = False,
+        use_coarse_backbone_fape_loss: bool = True,
+        use_coarse_backbone_angle_loss: bool = True,
         coarse_backbone_atom_weight: float = 0.05,
+        coarse_c_weight: float = 0.05,
+        coarse_cb_weight: float = 0.05,
+        coarse_n_weight: float = 0.05,
         coarse_backbone_fape_weight: float = 0.25,
         coarse_backbone_angle_weight: float = 0.0,
         se3_input_source: str = "coarse_ca",
         use_se3_atom_refine: bool = False,
+        use_se3_residue_loss: bool = True,
+        use_se3_angle_loss: bool = True,
+        use_se3_atom_loss: bool = True,
+        use_se3_atom_fape_loss: bool = True,
         se3_atom_weight: float = 0.05,
         se3_atom_fape_weight: float = 0.25,
     ):
@@ -389,6 +469,15 @@ class GeometryFocusedModule(pl.LightningModule):
         self.se3_decoder = se3_decoder
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.lr_scheduler_name = str(lr_scheduler_name)
+        self.lr_scheduler_interval = str(lr_scheduler_interval)
+        self.lr_scheduler_frequency = int(lr_scheduler_frequency)
+        self.lr_scheduler_monitor = str(lr_scheduler_monitor)
+        self.lr_warmup_epochs = int(lr_warmup_epochs)
+        self.lr_min = float(lr_min)
+        self.lr_step_size = int(lr_step_size)
+        self.lr_gamma = float(lr_gamma)
+        self.max_epochs = int(max_epochs)
         self.clip_grad_norm = clip_grad_norm
         self.cache_flush_interval = int(cache_flush_interval)
         self.gc_collect_interval = int(gc_collect_interval)
@@ -396,7 +485,13 @@ class GeometryFocusedModule(pl.LightningModule):
         self.use_uncertainty_weighting = use_uncertainty_weighting
         self.use_se3 = use_se3 and (se3_decoder is not None)
         self.nan_guard = nan_guard
+        self.use_frame_fape_loss = bool(use_frame_fape_loss)
+        self.use_quat_geodesic_loss = bool(use_quat_geodesic_loss)
+        self.use_decoder_angle_loss = bool(use_decoder_angle_loss)
         self.use_coarse_ca_loss = bool(use_coarse_ca_loss)
+        self.use_coarse_ca_step_loss = bool(use_coarse_ca_step_loss)
+        self.use_coarse_ca_bond_loss = bool(use_coarse_ca_bond_loss)
+        self.use_coarse_ca_pairwise_loss = bool(use_coarse_ca_pairwise_loss)
         self.coarse_ca_weight = float(coarse_ca_weight)
         self.coarse_ca_step_weight = float(coarse_ca_step_weight)
         self.coarse_ca_bond_weight = float(coarse_ca_bond_weight)
@@ -408,13 +503,26 @@ class GeometryFocusedModule(pl.LightningModule):
             raise ValueError(f"Unknown rotation_target_frame={rotation_target_frame}")
         self.rotation_target_frame = rotation_target_frame
         self.use_coarse_backbone_loss = bool(use_coarse_backbone_loss)
+        self.use_coarse_backbone_atom_loss = bool(use_coarse_backbone_atom_loss)
+        self.use_coarse_c_loss = bool(use_coarse_c_loss)
+        self.use_coarse_cb_loss = bool(use_coarse_cb_loss)
+        self.use_coarse_n_loss = bool(use_coarse_n_loss)
+        self.use_coarse_backbone_fape_loss = bool(use_coarse_backbone_fape_loss)
+        self.use_coarse_backbone_angle_loss = bool(use_coarse_backbone_angle_loss)
         self.coarse_backbone_atom_weight = float(coarse_backbone_atom_weight)
+        self.coarse_c_weight = float(coarse_c_weight)
+        self.coarse_cb_weight = float(coarse_cb_weight)
+        self.coarse_n_weight = float(coarse_n_weight)
         self.coarse_backbone_fape_weight = float(coarse_backbone_fape_weight)
         self.coarse_backbone_angle_weight = float(coarse_backbone_angle_weight)
         if se3_input_source not in {"reconstructed_ca", "coarse_ca"}:
             raise ValueError(f"Unknown se3_input_source={se3_input_source}")
         self.se3_input_source = se3_input_source
         self.use_se3_atom_refine = bool(use_se3_atom_refine)
+        self.use_se3_residue_loss = bool(use_se3_residue_loss)
+        self.use_se3_angle_loss = bool(use_se3_angle_loss)
+        self.use_se3_atom_loss = bool(use_se3_atom_loss)
+        self.use_se3_atom_fape_loss = bool(use_se3_atom_fape_loss)
         self.se3_atom_weight = float(se3_atom_weight)
         self.se3_atom_fape_weight = float(se3_atom_fape_weight)
 
@@ -426,6 +534,13 @@ class GeometryFocusedModule(pl.LightningModule):
             "fape_quat",
             "quat_geodesic",
             "angles",
+            "coarse_ca",
+            "coarse_backbone_atoms",
+            "coarse_c",
+            "coarse_cb",
+            "coarse_n",
+            "coarse_backbone_fape",
+            "coarse_backbone_angles",
             "fape_quat_se3",
             "quat_geodesic_se3",
             "se3_angles",
@@ -446,7 +561,52 @@ class GeometryFocusedModule(pl.LightningModule):
         if self.use_uncertainty_weighting:
             train_params += list(self.kendall_log_vars.parameters())
 
-        return torch.optim.AdamW(train_params, lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = torch.optim.AdamW(train_params, lr=self.learning_rate, weight_decay=self.weight_decay)
+
+        if self.lr_scheduler_name == "none":
+            return optimizer
+
+        scheduler = None
+        if self.lr_scheduler_name == "cosine":
+            t_max = max(1, self.max_epochs - self.lr_warmup_epochs)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=t_max,
+                eta_min=self.lr_min,
+            )
+        elif self.lr_scheduler_name == "step":
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=max(1, self.lr_step_size),
+                gamma=self.lr_gamma,
+            )
+        else:
+            raise ValueError(f"Unknown lr_scheduler_name={self.lr_scheduler_name}")
+
+        scheduler_config = {
+            "scheduler": scheduler,
+            "interval": self.lr_scheduler_interval,
+            "frequency": max(1, self.lr_scheduler_frequency),
+            "monitor": self.lr_scheduler_monitor,
+        }
+
+        if self.lr_scheduler_name == "cosine" and self.lr_warmup_epochs > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1e-3,
+                end_factor=1.0,
+                total_iters=max(1, self.lr_warmup_epochs),
+            )
+            scheduler_config["scheduler"] = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup, scheduler],
+                milestones=[max(1, self.lr_warmup_epochs)],
+            )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler_config,
+        }
 
     def on_train_epoch_start(self):
         self.encoder.eval()
@@ -619,7 +779,7 @@ class GeometryFocusedModule(pl.LightningModule):
 
         raw_terms: Dict[str, torch.Tensor] = {}
 
-        if true_q is not None and true_t is not None:
+        if true_q is not None and true_t is not None and (self.use_frame_fape_loss or self.use_quat_geodesic_loss):
             true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
             pred_t_origin = self._step_translations_to_origins(pred_t, batch_idx=batch_idx)
             true_q_for_fape = true_q
@@ -631,14 +791,15 @@ class GeometryFocusedModule(pl.LightningModule):
                     batch_idx=batch_idx,
                 )
                 true_q_for_fape = rotation_matrix_to_quaternion(true_R_for_fape)
-            raw_terms["fape_quat"] = quaternion_fape_loss(
-                true_q_for_fape,
-                true_t_for_fape,
-                pred_q_for_fape,
-                pred_t_origin,
-                batch=batch_idx,
-            )
-            if self.rotation_target_frame == "local":
+            if self.use_frame_fape_loss:
+                raw_terms["fape_quat"] = quaternion_fape_loss(
+                    true_q_for_fape,
+                    true_t_for_fape,
+                    pred_q_for_fape,
+                    pred_t_origin,
+                    batch=batch_idx,
+                )
+            if self.use_quat_geodesic_loss and self.rotation_target_frame == "local":
                 true_R_local, local_rot_mask = previous_local_rotation_targets(true_R, batch_idx=batch_idx)
                 if local_rot_mask.any():
                     true_q_local = rotation_matrix_to_quaternion(true_R_local)
@@ -646,7 +807,7 @@ class GeometryFocusedModule(pl.LightningModule):
                         pred_q[local_rot_mask],
                         true_q_local[local_rot_mask],
                     )
-            else:
+            elif self.use_quat_geodesic_loss:
                 raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q)
 
         pred_coords_local = reconstruct_positions(
@@ -659,7 +820,7 @@ class GeometryFocusedModule(pl.LightningModule):
         data_batch["coord_pred"].x = pred_coords_local
         data_batch["coords_pred"].x = pred_coords_local
 
-        if out_local.get("angles") is not None and true_angles is not None:
+        if self.use_decoder_angle_loss and out_local.get("angles") is not None and true_angles is not None:
             raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
 
         coarse_atom_names = ("ca", "c", "cb", "n")
@@ -719,13 +880,31 @@ class GeometryFocusedModule(pl.LightningModule):
             data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, cb_idx]
             data_batch["coarse_n_pred"].x = pred_coarse_atoms[:, n_idx]
 
-            if self.coarse_backbone_atom_weight > 0:
+            if self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
                 raw_terms["coarse_backbone_atoms"] = self.coarse_backbone_atom_weight * F.smooth_l1_loss(
                     pred_coarse_atoms,
                     true_coarse_atoms,
                     beta=0.5,
                 )
-            if self.coarse_backbone_fape_weight > 0:
+            if self.use_coarse_c_loss and self.coarse_c_weight > 0:
+                raw_terms["coarse_c"] = self.coarse_c_weight * F.smooth_l1_loss(
+                    pred_coarse_atoms[:, c_idx],
+                    true_coarse_atoms[:, c_idx],
+                    beta=0.5,
+                )
+            if self.use_coarse_cb_loss and self.coarse_cb_weight > 0:
+                raw_terms["coarse_cb"] = self.coarse_cb_weight * F.smooth_l1_loss(
+                    pred_coarse_atoms[:, cb_idx],
+                    true_coarse_atoms[:, cb_idx],
+                    beta=0.5,
+                )
+            if self.use_coarse_n_loss and self.coarse_n_weight > 0:
+                raw_terms["coarse_n"] = self.coarse_n_weight * F.smooth_l1_loss(
+                    pred_coarse_atoms[:, n_idx],
+                    true_coarse_atoms[:, n_idx],
+                    beta=0.5,
+                )
+            if self.use_coarse_backbone_fape_loss and self.coarse_backbone_fape_weight > 0:
                 raw_terms["coarse_backbone_fape"] = self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
                     true_coarse_atoms,
                     pred_coarse_atoms,
@@ -735,7 +914,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     pred_ca_trace,
                     batch=batch_idx,
                 )
-            if self.coarse_backbone_angle_weight > 0 and true_angles is not None:
+            if self.use_coarse_backbone_angle_loss and self.coarse_backbone_angle_weight > 0 and true_angles is not None:
                 pred_bb_angles, pred_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
                     pred_ca_trace,
                     pred_R_for_fape,
@@ -771,6 +950,12 @@ class GeometryFocusedModule(pl.LightningModule):
             elif self.coarse_ca_step_frame != "global":
                 raise RuntimeError(f"Unknown coarse CA step frame: {self.coarse_ca_step_frame}")
 
+            ca_step_weight = self.coarse_ca_step_weight if self.use_coarse_ca_step_loss else 0.0
+            ca_bond_weight = self.coarse_ca_bond_weight if self.use_coarse_ca_bond_loss else 0.0
+            ca_pairwise_weight = self.coarse_ca_pairwise_weight if self.use_coarse_ca_pairwise_loss else 0.0
+            if ca_step_weight <= 0 and ca_bond_weight <= 0 and ca_pairwise_weight <= 0:
+                raise RuntimeError("--use-coarse-ca-loss is enabled, but all coarse CA component losses are disabled")
+
             ca_total, _ca_components = coarse_ca_loss(
                 pred_ca_steps,
                 true_coords,
@@ -778,9 +963,9 @@ class GeometryFocusedModule(pl.LightningModule):
                 pred_ca=pred_ca_for_loss,
                 frames=frames,
                 frame_offset="prev",
-                step_weight=self.coarse_ca_step_weight,
-                bond_weight=self.coarse_ca_bond_weight,
-                pairwise_weight=self.coarse_ca_pairwise_weight,
+                step_weight=ca_step_weight,
+                bond_weight=ca_bond_weight,
+                pairwise_weight=ca_pairwise_weight,
                 pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
                 pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
                 return_components=True,
@@ -802,7 +987,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     aa_identity_ids=aa_identity_ids,
                     coords_pred=se3_seed_coords,
                 )
-                if out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
+                if self.use_se3_residue_loss and out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
                     q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
@@ -810,7 +995,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
                     raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
 
-                if out_s.get("angles") is not None and true_angles is not None:
+                if self.use_se3_angle_loss and out_s.get("angles") is not None and true_angles is not None:
                     raw_terms["se3_angles"] = periodic_angle_smooth_l1(out_s["angles"][..., :3], true_angles)
 
                 if self.use_se3_atom_refine:
@@ -834,13 +1019,13 @@ class GeometryFocusedModule(pl.LightningModule):
                     data_batch["se3_c_pred"].x = se3_atoms[:, c_idx]
                     data_batch["se3_cb_pred"].x = se3_atoms[:, cb_idx]
                     data_batch["se3_n_pred"].x = se3_atoms[:, n_idx]
-                    if self.se3_atom_weight > 0:
+                    if self.use_se3_atom_loss and self.se3_atom_weight > 0:
                         raw_terms["se3_atom_refine"] = self.se3_atom_weight * F.smooth_l1_loss(
                             se3_atoms,
                             true_coarse_atoms,
                             beta=0.5,
                         )
-                    if self.se3_atom_fape_weight > 0:
+                    if self.use_se3_atom_fape_loss and self.se3_atom_fape_weight > 0:
                         raw_terms["se3_atom_fape"] = self.se3_atom_fape_weight * coarse_backbone_fape_loss(
                             true_coarse_atoms,
                             se3_atoms,
@@ -878,23 +1063,68 @@ class GeometryFocusedModule(pl.LightningModule):
         total_loss, raw_terms, weighted_terms, se3_skip, data_batch_idx = self._compute_total_loss(
             batch, debug_label=f"epoch={self.current_epoch + 1} step={batch_idx}"
         )
+        self._log_loss_terms("train", total_loss, raw_terms, weighted_terms, se3_skip, batch, data_batch_idx)
+        return total_loss
 
+    def validation_step(self, batch, batch_idx):
+        total_loss, raw_terms, weighted_terms, se3_skip, data_batch_idx = self._compute_total_loss(
+            batch, debug_label=f"val epoch={self.current_epoch + 1} step={batch_idx}"
+        )
+        self._log_loss_terms("val", total_loss, raw_terms, weighted_terms, se3_skip, batch, data_batch_idx)
+        return total_loss
+
+    def _log_loss_terms(self, stage: str, total_loss, raw_terms, weighted_terms, se3_skip, batch, data_batch_idx):
         batch_size = self._batch_size_for_logs(batch, data_batch_idx)
-        self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        on_step = stage == "train"
+        self.log(
+            f"{stage}/loss",
+            total_loss,
+            on_step=on_step,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
 
         for name, value in raw_terms.items():
-            self.log(f"train/raw_{name}", value, on_step=False, on_epoch=True, batch_size=batch_size)
+            self.log(
+                f"{stage}/raw_{name}",
+                value,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch_size,
+                sync_dist=True,
+            )
         for name, value in weighted_terms.items():
-            self.log(f"train/weighted_{name}", value, on_step=False, on_epoch=True, batch_size=batch_size)
+            self.log(
+                f"{stage}/weighted_{name}",
+                value,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch_size,
+                sync_dist=True,
+            )
 
-        self.log("train/se3_skip", float(se3_skip), on_step=True, on_epoch=True, batch_size=batch_size)
+        self.log(
+            f"{stage}/se3_skip",
+            float(se3_skip),
+            on_step=on_step,
+            on_epoch=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
 
         if self.use_uncertainty_weighting:
             for name, param in self.kendall_log_vars.items():
                 sigma = torch.exp(0.5 * param)
-                self.log(f"train/sigma_{name}", sigma, on_step=False, on_epoch=True, batch_size=batch_size)
-
-        return total_loss
+                self.log(
+                    f"{stage}/sigma_{name}",
+                    sigma,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=batch_size,
+                    sync_dist=True,
+                )
 
     def on_train_batch_end(self, outputs, batch, batch_idx):
         # Periodic cache flushing can reduce allocator fragmentation in long runs.
@@ -918,7 +1148,14 @@ def parse_args():
         default=None,
         help="Optional cap on train batches per epoch for smoke tests/debug runs",
     )
+    parser.add_argument(
+        "--limit-val-batches",
+        type=int,
+        default=None,
+        help="Optional cap on validation batches per epoch for smoke tests/debug runs",
+    )
     parser.add_argument("--batch-size", type=int, default=5, help="Micro-batch size")
+    parser.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size (defaults to batch size)")
     parser.add_argument(
         "--target-effective-batch-size",
         type=int,
@@ -932,8 +1169,44 @@ def parse_args():
         default=False,
         help="Allow num_workers>0 on HDF5 datasets (can deadlock with h5py-backed datasets)",
     )
+    parser.add_argument("--val-fraction", type=float, default=0.1, help="Fraction of dataset held out for validation")
+    parser.add_argument("--val-count", type=int, default=None, help="Exact validation item count; overrides val fraction")
+    parser.add_argument("--split-seed", type=int, default=42, help="Seed for deterministic train/validation split")
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Optimizer learning rate")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Optimizer weight decay")
+    parser.add_argument(
+        "--lr-scheduler",
+        choices=["none", "cosine", "step"],
+        default="none",
+        help="Optional learning rate scheduler",
+    )
+    parser.add_argument(
+        "--lr-scheduler-interval",
+        choices=["epoch", "step"],
+        default="epoch",
+        help="How often to step the LR scheduler",
+    )
+    parser.add_argument(
+        "--lr-scheduler-frequency",
+        type=int,
+        default=1,
+        help="Scheduler step frequency for Lightning scheduler config",
+    )
+    parser.add_argument(
+        "--lr-scheduler-monitor",
+        type=str,
+        default="train/loss_epoch",
+        help="Monitor name for schedulers that require one",
+    )
+    parser.add_argument(
+        "--lr-warmup-epochs",
+        type=int,
+        default=0,
+        help="Warmup epochs used before cosine decay",
+    )
+    parser.add_argument("--lr-min", type=float, default=1e-6, help="Minimum LR for cosine decay")
+    parser.add_argument("--lr-step-size", type=int, default=10, help="Epoch/step interval for StepLR")
+    parser.add_argument("--lr-gamma", type=float, default=0.5, help="Decay factor for StepLR")
     parser.add_argument("--clip-grad", type=float, default=1.0, help="Gradient clip norm")
     parser.add_argument(
         "--cache-flush-interval",
@@ -991,16 +1264,88 @@ def parse_args():
         help="Run an experimental SE3 refinement pass over coarse CA/C/CB/N atom coordinates",
     )
     parser.add_argument(
+        "--use-frame-fape-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Train on transformer quaternion/frame FAPE loss",
+    )
+    parser.add_argument(
+        "--use-quat-geodesic-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Train on transformer quaternion geodesic loss",
+    )
+    parser.add_argument(
+        "--use-decoder-angle-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Train on direct angle-head reconstruction loss",
+    )
+    parser.add_argument(
         "--use-coarse-ca-loss",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Add the coarse CA objective to the geometry decoder loss stack",
     )
     parser.add_argument(
+        "--use-coarse-ca-step-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use local/global CA step component inside the coarse CA objective",
+    )
+    parser.add_argument(
+        "--use-coarse-ca-bond-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use CA bond-length component inside the coarse CA objective",
+    )
+    parser.add_argument(
+        "--use-coarse-ca-pairwise-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use pairwise CA distance component inside the coarse CA objective",
+    )
+    parser.add_argument(
         "--use-coarse-backbone-loss",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Add coarse CA/C/CB/N atom placement and atom-FAPE objectives",
+    )
+    parser.add_argument(
+        "--use-coarse-backbone-atom-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use aggregate smooth-L1 loss over the coarse CA/C/CB/N atom bundle",
+    )
+    parser.add_argument(
+        "--use-coarse-c-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use separate smooth-L1 placement loss for coarse C atoms",
+    )
+    parser.add_argument(
+        "--use-coarse-cb-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use separate smooth-L1 placement loss for coarse CB atoms",
+    )
+    parser.add_argument(
+        "--use-coarse-n-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use separate smooth-L1 placement loss for coarse N atoms",
+    )
+    parser.add_argument(
+        "--use-coarse-backbone-fape-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use atom-FAPE over placed coarse CA/C/CB/N atoms",
+    )
+    parser.add_argument(
+        "--use-coarse-backbone-angle-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use phi/psi/omega loss derived from placed coarse N/CA/C atoms",
     )
     parser.add_argument("--coarse-ca-weight", type=float, default=1.0, help="Outer weight for the coarse CA term")
     parser.add_argument("--coarse-ca-step-weight", type=float, default=1.0, help="Local CA step loss weight")
@@ -1012,6 +1357,9 @@ def parse_args():
         default=0.05,
         help="Smooth-L1 weight for directly placed coarse CA/CB/N atoms",
     )
+    parser.add_argument("--coarse-c-weight", type=float, default=0.05, help="Smooth-L1 weight for placed coarse C atoms")
+    parser.add_argument("--coarse-cb-weight", type=float, default=0.05, help="Smooth-L1 weight for placed coarse CB atoms")
+    parser.add_argument("--coarse-n-weight", type=float, default=0.05, help="Smooth-L1 weight for placed coarse N atoms")
     parser.add_argument(
         "--coarse-backbone-fape-weight",
         type=float,
@@ -1145,6 +1493,30 @@ def parse_args():
         help="SE3 attention head dimension",
     )
     parser.add_argument(
+        "--use-se3-residue-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use residue-level SE3 coordinate frame losses",
+    )
+    parser.add_argument(
+        "--use-se3-angle-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use SE3 angle-head reconstruction loss",
+    )
+    parser.add_argument(
+        "--use-se3-atom-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use smooth-L1 loss on SE3-refined CA/C/CB/N atom coordinates",
+    )
+    parser.add_argument(
+        "--use-se3-atom-fape-loss",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use atom-FAPE loss on SE3-refined CA/C/CB/N atom coordinates",
+    )
+    parser.add_argument(
         "--use-uncertainty-weighting",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -1176,7 +1548,7 @@ def parse_args():
         "--save-top-k",
         type=int,
         default=1,
-        help="How many best checkpoints to keep (monitoring train/loss_epoch)",
+        help="How many best checkpoints to keep (monitoring val/loss when validation is enabled, else train/loss_epoch)",
     )
     return parser.parse_args()
 
@@ -1329,6 +1701,11 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
 def main():
     args = parse_args()
 
+    accelerator_norm = str(args.accelerator).strip().lower()
+    if accelerator_norm in {"gpu", "cuda", "auto"} and torch.cuda.is_available():
+        torch.set_float32_matmul_precision("high")
+        print("Set torch float32 matmul precision to 'high' for CUDA Tensor Core performance.")
+
     pl.seed_everything(args.seed, workers=True)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -1355,11 +1732,31 @@ def main():
     data_module = GeometryOnlyDataModule(
         dataset_path=str(dataset_path),
         batch_size=args.batch_size,
+        val_batch_size=args.val_batch_size,
         num_workers=args.num_workers,
+        val_fraction=args.val_fraction,
+        val_count=args.val_count,
+        split_seed=args.split_seed,
     )
     data_module.setup("fit")
+    train_size = len(data_module.train_dataset) if data_module.train_dataset is not None else 0
+    val_size = len(data_module.val_dataset) if data_module.val_dataset is not None else 0
+    print(f"Dataset split: train={train_size} val={val_size} split_seed={args.split_seed}")
+    print(
+        "Active loss switches: "
+        f"frame_fape={args.use_frame_fape_loss} "
+        f"quat_geodesic={args.use_quat_geodesic_loss} "
+        f"angle_head={args.use_decoder_angle_loss} "
+        f"coarse_ca={args.use_coarse_ca_loss} "
+        f"coarse_ca_components=(step={args.use_coarse_ca_step_loss}, bond={args.use_coarse_ca_bond_loss}, pairwise={args.use_coarse_ca_pairwise_loss}) "
+        f"coarse_backbone={args.use_coarse_backbone_loss} "
+        f"coarse_atoms=(bundle={args.use_coarse_backbone_atom_loss}, c={args.use_coarse_c_loss}, cb={args.use_coarse_cb_loss}, n={args.use_coarse_n_loss}) "
+        f"coarse_backbone_fape={args.use_coarse_backbone_fape_loss} "
+        f"coarse_backbone_angles={args.use_coarse_backbone_angle_loss} "
+        f"se3={args.use_se3}"
+    )
 
-    probe_loader = DataLoader(data_module.struct_dat, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    probe_loader = DataLoader(data_module.train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     data_sample = next(iter(probe_loader))
 
     if torch.cuda.is_available():
@@ -1383,6 +1780,15 @@ def main():
         transformer_geom_decoder=transformer_geom_decoder,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
+        lr_scheduler_name=args.lr_scheduler,
+        lr_scheduler_interval=args.lr_scheduler_interval,
+        lr_scheduler_frequency=args.lr_scheduler_frequency,
+        lr_scheduler_monitor=args.lr_scheduler_monitor,
+        lr_warmup_epochs=args.lr_warmup_epochs,
+        lr_min=args.lr_min,
+        lr_step_size=args.lr_step_size,
+        lr_gamma=args.lr_gamma,
+        max_epochs=args.epochs,
         clip_grad_norm=args.clip_grad,
         cache_flush_interval=args.cache_flush_interval,
         gc_collect_interval=args.gc_collect_interval,
@@ -1391,7 +1797,13 @@ def main():
         use_se3=args.use_se3,
         se3_decoder=se3_decoder,
         nan_guard=args.nan_guard,
+        use_frame_fape_loss=args.use_frame_fape_loss,
+        use_quat_geodesic_loss=args.use_quat_geodesic_loss,
+        use_decoder_angle_loss=args.use_decoder_angle_loss,
         use_coarse_ca_loss=args.use_coarse_ca_loss,
+        use_coarse_ca_step_loss=args.use_coarse_ca_step_loss,
+        use_coarse_ca_bond_loss=args.use_coarse_ca_bond_loss,
+        use_coarse_ca_pairwise_loss=args.use_coarse_ca_pairwise_loss,
         coarse_ca_weight=args.coarse_ca_weight,
         coarse_ca_step_weight=args.coarse_ca_step_weight,
         coarse_ca_bond_weight=args.coarse_ca_bond_weight,
@@ -1401,11 +1813,24 @@ def main():
         coarse_ca_pairwise_max_pairs=args.coarse_ca_pairwise_max_pairs,
         rotation_target_frame=args.rotation_target_frame,
         use_coarse_backbone_loss=args.use_coarse_backbone_loss,
+        use_coarse_backbone_atom_loss=args.use_coarse_backbone_atom_loss,
+        use_coarse_c_loss=args.use_coarse_c_loss,
+        use_coarse_cb_loss=args.use_coarse_cb_loss,
+        use_coarse_n_loss=args.use_coarse_n_loss,
+        use_coarse_backbone_fape_loss=args.use_coarse_backbone_fape_loss,
+        use_coarse_backbone_angle_loss=args.use_coarse_backbone_angle_loss,
         coarse_backbone_atom_weight=args.coarse_backbone_atom_weight,
+        coarse_c_weight=args.coarse_c_weight,
+        coarse_cb_weight=args.coarse_cb_weight,
+        coarse_n_weight=args.coarse_n_weight,
         coarse_backbone_fape_weight=args.coarse_backbone_fape_weight,
         coarse_backbone_angle_weight=args.coarse_backbone_angle_weight,
         se3_input_source=args.se3_input_source,
         use_se3_atom_refine=args.use_se3_atom_refine,
+        use_se3_residue_loss=args.use_se3_residue_loss,
+        use_se3_angle_loss=args.use_se3_angle_loss,
+        use_se3_atom_loss=args.use_se3_atom_loss,
+        use_se3_atom_fape_loss=args.use_se3_atom_fape_loss,
         se3_atom_weight=args.se3_atom_weight,
         se3_atom_fape_weight=args.se3_atom_fape_weight,
     )
@@ -1422,7 +1847,7 @@ def main():
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         dirpath=str(checkpoint_dir),
         filename="geometry-{epoch:02d}-{step}",
-        monitor="train/loss_epoch",
+        monitor="val/loss" if data_module.val_dataset is not None else "train/loss_epoch",
         mode="min",
         save_top_k=args.save_top_k,
         save_last=True,
@@ -1442,6 +1867,7 @@ def main():
         gradient_clip_algorithm="norm",
         log_every_n_steps=args.log_every_n_steps,
         limit_train_batches=args.limit_train_batches if args.limit_train_batches is not None else 1.0,
+        limit_val_batches=args.limit_val_batches if args.limit_val_batches is not None else 1.0,
         callbacks=[checkpoint_callback],
     )
 
