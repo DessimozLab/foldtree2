@@ -458,6 +458,12 @@ class GeometryFocusedModule(pl.LightningModule):
         se3_contact_sketch_top_k: int = 16,
         se3_contact_sketch_threshold: float = 0.0,
         se3_contact_sketch_min_seq_sep: int = 3,
+        se3_contact_coord_scale: float = 10.0,
+        se3_contact_local_window: int = 1,
+        se3_max_nodes: int = 0,
+        train_se3_only: bool = False,
+        sanitize_nonfinite_grads: bool = False,
+        skip_empty_loss_batches: bool = False,
         use_se3_atom_refine: bool = False,
         use_se3_residue_loss: bool = True,
         use_se3_angle_loss: bool = True,
@@ -524,6 +530,14 @@ class GeometryFocusedModule(pl.LightningModule):
         self.se3_contact_sketch_top_k = int(se3_contact_sketch_top_k)
         self.se3_contact_sketch_threshold = float(se3_contact_sketch_threshold)
         self.se3_contact_sketch_min_seq_sep = int(se3_contact_sketch_min_seq_sep)
+        self.se3_contact_coord_scale = float(se3_contact_coord_scale)
+        self.se3_contact_local_window = int(se3_contact_local_window)
+        self.se3_max_nodes = int(se3_max_nodes)
+        self.train_se3_only = bool(train_se3_only)
+        self.sanitize_nonfinite_grads = bool(sanitize_nonfinite_grads)
+        self.skip_empty_loss_batches = bool(skip_empty_loss_batches)
+        if self.train_se3_only and not self.use_se3:
+            raise ValueError("--train-se3-only requires --use-se3 and an available SE3 decoder")
         self.use_se3_atom_refine = bool(use_se3_atom_refine)
         self.use_se3_residue_loss = bool(use_se3_residue_loss)
         self.use_se3_angle_loss = bool(use_se3_angle_loss)
@@ -535,6 +549,10 @@ class GeometryFocusedModule(pl.LightningModule):
         for p in self.encoder.parameters():
             p.requires_grad = False
         self.encoder.eval()
+        if self.train_se3_only:
+            for p in self.transformer_geom_decoder.parameters():
+                p.requires_grad = False
+            self.transformer_geom_decoder.eval()
 
         self.uncertainty_term_names = [
             "fape_quat",
@@ -561,11 +579,13 @@ class GeometryFocusedModule(pl.LightningModule):
         self.save_hyperparameters(ignore=["encoder", "transformer_geom_decoder", "se3_decoder"])
 
     def configure_optimizers(self):
-        train_params = list(self.transformer_geom_decoder.parameters())
+        train_params = [] if self.train_se3_only else list(self.transformer_geom_decoder.parameters())
         if self.use_se3 and self.se3_decoder is not None:
             train_params += list(self.se3_decoder.parameters())
         if self.use_uncertainty_weighting:
             train_params += list(self.kendall_log_vars.parameters())
+        if len(train_params) == 0:
+            raise RuntimeError("No trainable parameters selected for optimizer")
 
         optimizer = torch.optim.AdamW(train_params, lr=self.learning_rate, weight_decay=self.weight_decay)
 
@@ -616,6 +636,24 @@ class GeometryFocusedModule(pl.LightningModule):
 
     def on_train_epoch_start(self):
         self.encoder.eval()
+        if self.train_se3_only:
+            self.transformer_geom_decoder.eval()
+
+    def on_before_optimizer_step(self, optimizer):
+        if not self.sanitize_nonfinite_grads:
+            return
+        bad_entries = 0
+        for param in self.parameters():
+            grad = param.grad
+            if grad is None:
+                continue
+            finite = torch.isfinite(grad)
+            if finite.all():
+                continue
+            bad_entries += int((~finite).sum().detach().cpu())
+            grad.data = torch.nan_to_num(grad.data, nan=0.0, posinf=0.0, neginf=0.0)
+        if bad_entries > 0:
+            self.log("train/nonfinite_grad_entries", float(bad_entries), on_step=True, on_epoch=False, prog_bar=False)
 
     @staticmethod
     def _batch_size_for_logs(data_batch, batch_idx):
@@ -769,6 +807,7 @@ class GeometryFocusedModule(pl.LightningModule):
         sketches = []
         top_k = max(0, self.se3_contact_sketch_top_k)
         min_seq_sep = max(0, self.se3_contact_sketch_min_seq_sep)
+        local_window = max(0, self.se3_contact_local_window)
 
         for idx in graph_indices:
             n = int(idx.numel())
@@ -801,6 +840,9 @@ class GeometryFocusedModule(pl.LightningModule):
                 contact |= row_contact
 
             contact = contact | contact.transpose(0, 1)
+            if local_window > 0:
+                local = pos[:, None].sub(pos[None, :]).abs()
+                contact |= (local > 0) & (local <= local_window)
             sketch[:n, :n] = contact
             sketches.append(sketch)
 
@@ -882,7 +924,9 @@ class GeometryFocusedModule(pl.LightningModule):
         data_batch["coords_pred"].x = pred_coords_local
 
         if self.use_decoder_angle_loss and out_local.get("angles") is not None and true_angles is not None:
-            raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"], true_angles)
+            angle_mask = torch.isfinite(out_local["angles"]) & torch.isfinite(true_angles)
+            if angle_mask.any():
+                raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"][angle_mask], true_angles[angle_mask])
 
         coarse_atom_names = ("ca", "c", "cb", "n")
         ca_idx, c_idx, cb_idx, n_idx = range(len(coarse_atom_names))
@@ -1043,12 +1087,32 @@ class GeometryFocusedModule(pl.LightningModule):
                     )
                 se3_edge_attr_dict = None
                 if self.se3_input_source == "geometry_dot_contacts":
-                    se3_seed_coords = pred_ca_trace
-                    se3_edge_attr_dict = {"dot_prod": self._geometry_dot_contact_sketch(out_local["z"], batch_idx)}
+                    contact_z = out_local.get("z", None)
+                    if contact_z is None:
+                        raise RuntimeError("Geometry dot-contact SE3 input requires out_local['z']")
+                    if contact_z.ndim != 2 or contact_z.shape[-1] != 3:
+                        raise RuntimeError(
+                            "Geometry dot-contact SE3 input expects decoder z with shape [N,3]; "
+                            f"got {tuple(contact_z.shape)}. Try --transformer-width 3 --transformer-nheads 1."
+                        )
+                    se3_seed_coords = contact_z * self.se3_contact_coord_scale
+                    se3_seed_coords = se3_seed_coords.detach() if self.train_se3_only else se3_seed_coords
+                    se3_edge_attr_dict = {
+                        "dot_prod": self._geometry_dot_contact_sketch(se3_seed_coords, batch_idx),
+                        "use_distance_contacts": False,
+                    }
                 elif self.se3_input_source == "coarse_ca":
                     se3_seed_coords = pred_ca_trace
                 else:
                     se3_seed_coords = pred_coords_local
+                if self.train_se3_only and self.se3_input_source != "geometry_dot_contacts":
+                    se3_seed_coords = se3_seed_coords.detach()
+                if self.se3_max_nodes > 0 and se3_seed_coords.shape[0] > self.se3_max_nodes:
+                    zero = torch.zeros((), device=se3_seed_coords.device, dtype=torch.float32)
+                    for param in self.parameters():
+                        if param.requires_grad:
+                            zero = zero + param.float().sum() * 0.0
+                    return zero, raw_terms, raw_terms, True, batch_idx
                 out_s = self.se3_decoder(
                     data_batch,
                     edge_attr_dict=se3_edge_attr_dict,
@@ -1065,7 +1129,13 @@ class GeometryFocusedModule(pl.LightningModule):
                     raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
 
                 if self.use_se3_angle_loss and out_s.get("angles") is not None and true_angles is not None:
-                    raw_terms["se3_angles"] = periodic_angle_smooth_l1(out_s["angles"][..., :3], true_angles)
+                    se3_angle_pred = out_s["angles"][..., :3]
+                    se3_angle_mask = torch.isfinite(se3_angle_pred) & torch.isfinite(true_angles)
+                    if se3_angle_mask.any():
+                        raw_terms["se3_angles"] = periodic_angle_smooth_l1(
+                            se3_angle_pred[se3_angle_mask],
+                            true_angles[se3_angle_mask],
+                        )
 
                 if self.use_se3_atom_refine:
                     if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
@@ -1114,6 +1184,12 @@ class GeometryFocusedModule(pl.LightningModule):
                 ) from exc
 
         if len(raw_terms) == 0:
+            if self.skip_empty_loss_batches:
+                zero = torch.zeros((), device=z_local.device, dtype=torch.float32)
+                for param in self.parameters():
+                    if param.requires_grad:
+                        zero = zero + param.float().sum() * 0.0
+                return zero, raw_terms, raw_terms, True, batch_idx
             raise RuntimeError("No valid losses were constructed for this batch.")
 
         if self.nan_guard:
@@ -1344,6 +1420,42 @@ def parse_args():
         type=int,
         default=3,
         help="Minimum sequence separation for geometry dot-product contacts",
+    )
+    parser.add_argument(
+        "--se3-contact-coord-scale",
+        type=float,
+        default=10.0,
+        help="Scale applied to 3D geometry contact embeddings before feeding them as SE3 coordinates",
+    )
+    parser.add_argument(
+        "--se3-contact-local-window",
+        type=int,
+        default=1,
+        help="Always include residue pairs within this sequence window in the SE3 dot-contact graph",
+    )
+    parser.add_argument(
+        "--se3-max-nodes",
+        type=int,
+        default=0,
+        help="Skip SE3 batches with more than this many residue/atom nodes (0 disables)",
+    )
+    parser.add_argument(
+        "--train-se3-only",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Freeze the geometry decoder and optimize only the SE3 branch",
+    )
+    parser.add_argument(
+        "--sanitize-nonfinite-grads",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Replace non-finite gradient entries with zero before optimizer.step()",
+    )
+    parser.add_argument(
+        "--skip-empty-loss-batches",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Skip batches where all active loss terms lack finite supervision",
     )
     parser.add_argument(
         "--use-se3-atom-refine",
@@ -1842,7 +1954,8 @@ def main():
         f"coarse_backbone_fape={args.use_coarse_backbone_fape_loss} "
         f"coarse_backbone_angles={args.use_coarse_backbone_angle_loss} "
         f"se3={args.use_se3} "
-        f"se3_input={args.se3_input_source}"
+        f"se3_input={args.se3_input_source} "
+        f"train_se3_only={args.train_se3_only}"
     )
 
     probe_loader = DataLoader(data_module.train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
@@ -1918,6 +2031,12 @@ def main():
         se3_contact_sketch_top_k=args.se3_contact_sketch_top_k,
         se3_contact_sketch_threshold=args.se3_contact_sketch_threshold,
         se3_contact_sketch_min_seq_sep=args.se3_contact_sketch_min_seq_sep,
+        se3_contact_coord_scale=args.se3_contact_coord_scale,
+        se3_contact_local_window=args.se3_contact_local_window,
+        se3_max_nodes=args.se3_max_nodes,
+        train_se3_only=args.train_se3_only,
+        sanitize_nonfinite_grads=args.sanitize_nonfinite_grads,
+        skip_empty_loss_batches=args.skip_empty_loss_batches,
         use_se3_atom_refine=args.use_se3_atom_refine,
         use_se3_residue_loss=args.use_se3_residue_loss,
         use_se3_angle_loss=args.use_se3_angle_loss,

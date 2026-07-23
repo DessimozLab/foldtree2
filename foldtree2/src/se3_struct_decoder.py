@@ -810,6 +810,7 @@ class se3_denoiser(torch.nn.Module):
 		
 		#use dot product results to add adges
 		x_dict['dot_prod'] = edge_attr_dict.get('dot_prod', None) if edge_attr_dict is not None else None
+		use_distance_contacts = edge_attr_dict.get('use_distance_contacts', True) if edge_attr_dict is not None else True
 
 		# Create adjacency matrix from edge_index
 		# For GotenNet, we need a dense adjacency matrix
@@ -840,10 +841,11 @@ class se3_denoiser(torch.nn.Module):
 				
 				#add the contacts by looking at the distance 
 				# Compute pairwise distances
-				dists = torch.cdist(coords[mask], coords[mask])  # (num nodes, num_nodes)
-				contact_threshold = 8.0  # Angstroms, adjust as needed
-				contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
-				adj |= contact_edges
+				if use_distance_contacts:
+					dists = torch.cdist(coords[mask], coords[mask])  # (num nodes, num_nodes)
+					contact_threshold = 8.0  # Angstroms, adjust as needed
+					contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
+					adj |= contact_edges
 
 				num_residues_i = max(1, num_nodes // atoms_per_residue) if atom_level else num_nodes
 				dot_contacts = self._dot_product_contacts_for_graph(
@@ -898,10 +900,11 @@ class se3_denoiser(torch.nn.Module):
 			adj_mat = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
 			
 			# Build adjacency matrix from point cloud distances
-			dists = torch.cdist(coords, coords)  # (num_nodes, num_nodes)
-			contact_threshold = 8.0  # Angstroms, adjust as needed
-			contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
-			adj_mat |= contact_edges
+			if use_distance_contacts:
+				dists = torch.cdist(coords, coords)  # (num_nodes, num_nodes)
+				contact_threshold = 8.0  # Angstroms, adjust as needed
+				contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
+				adj_mat |= contact_edges
 
 			num_residues_i = max(1, num_nodes // atoms_per_residue) if atom_level else num_nodes
 			dot_contacts = self._dot_product_contacts_for_graph(
