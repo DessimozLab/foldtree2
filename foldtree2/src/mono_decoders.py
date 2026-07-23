@@ -1587,12 +1587,15 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			ca_step_list = []
 			ss_list = []
 			angles_list = []
+			z_list = []
 			
 			for i, xi in enumerate(x.split(1, dim=1)):  # xi: (seq_len, 1, d_model)
 				seq_len = (batch == i).sum().item()
+				xi_nodes = xi[:seq_len, 0]  # (seq_len, d_model)
+				z_list.append(xi_nodes)
 				
 				if use_cnn:
-					xi_norm = self.head['prenorm'](xi.squeeze(1)[:seq_len])  # (seq_len, d_model)
+					xi_norm = self.head['prenorm'](xi_nodes)  # (seq_len, d_model)
 					xi_cnn = xi_norm.permute(1, 0).unsqueeze(0)  # (1, d_model, seq_len)
 					
 					if self.output_rt and 'quat_cnn' in self.head and 'trans_cnn' in self.head:
@@ -1614,7 +1617,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 						angles_out = angles_out.permute(2, 0, 1).squeeze(1)
 						angles_list.append(_sincos_logits_to_angles(angles_out))
 				else:
-					xi = xi[:seq_len, 0]  # (seq_len, d_model)
+					xi = xi_nodes
 					
 					if self.output_rt and 'quat_head' in self.head and 'trans_head' in self.head:
 						quat_list.append(self.head['quat_head'](xi))
@@ -1638,6 +1641,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				ss_pred = torch.cat(ss_list, dim=0)
 			if angles_list:
 				angles = torch.cat(angles_list, dim=0)
+			z_out = torch.cat(z_list, dim=0) if z_list else None
 		else:
 			if use_cnn:
 				x_norm = self.head['prenorm'](x.squeeze(1))  # (seq_len, d_model)
@@ -1676,6 +1680,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 				
 				if self.output_angles and 'angles_head' in self.head:
 					angles = _sincos_logits_to_angles(self.head['angles_head'](x))
+			z_out = x.squeeze(1)
 		
 		if quat_pred is not None and trans_pred is not None:
 			quat = torch.tanh(quat_pred)
@@ -1696,7 +1701,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			'rt_pred': rt_pred,
 			'ss_pred': ss_pred,
 			'angles': angles,
-			'z': x.squeeze(1) if batch is None else None
+			'z': z_out
 		}
 
 class AttentionPooling(nn.Module):

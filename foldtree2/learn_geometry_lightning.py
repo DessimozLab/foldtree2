@@ -455,6 +455,9 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_backbone_fape_weight: float = 0.25,
         coarse_backbone_angle_weight: float = 0.0,
         se3_input_source: str = "coarse_ca",
+        se3_contact_sketch_top_k: int = 16,
+        se3_contact_sketch_threshold: float = 0.0,
+        se3_contact_sketch_min_seq_sep: int = 3,
         use_se3_atom_refine: bool = False,
         use_se3_residue_loss: bool = True,
         use_se3_angle_loss: bool = True,
@@ -515,9 +518,12 @@ class GeometryFocusedModule(pl.LightningModule):
         self.coarse_n_weight = float(coarse_n_weight)
         self.coarse_backbone_fape_weight = float(coarse_backbone_fape_weight)
         self.coarse_backbone_angle_weight = float(coarse_backbone_angle_weight)
-        if se3_input_source not in {"reconstructed_ca", "coarse_ca"}:
+        if se3_input_source not in {"reconstructed_ca", "coarse_ca", "geometry_dot_contacts"}:
             raise ValueError(f"Unknown se3_input_source={se3_input_source}")
         self.se3_input_source = se3_input_source
+        self.se3_contact_sketch_top_k = int(se3_contact_sketch_top_k)
+        self.se3_contact_sketch_threshold = float(se3_contact_sketch_threshold)
+        self.se3_contact_sketch_min_seq_sep = int(se3_contact_sketch_min_seq_sep)
         self.use_se3_atom_refine = bool(use_se3_atom_refine)
         self.use_se3_residue_loss = bool(use_se3_residue_loss)
         self.use_se3_angle_loss = bool(use_se3_angle_loss)
@@ -746,6 +752,61 @@ class GeometryFocusedModule(pl.LightningModule):
         if aa_logits.ndim != 2:
             raise RuntimeError(f"Expected AA logits with shape [N,20], got {tuple(aa_logits.shape)}")
         return torch.argmax(aa_logits, dim=-1).to(dtype=torch.long)
+
+    def _geometry_dot_contact_sketch(
+        self,
+        z: torch.Tensor,
+        batch_idx: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        z = F.normalize(z.float(), p=2, dim=-1)
+
+        if batch_idx is None:
+            graph_indices = [torch.arange(z.shape[0], device=z.device)]
+        else:
+            graph_indices = [torch.where(batch_idx == i)[0] for i in torch.unique(batch_idx, sorted=True)]
+
+        max_len = max((idx.numel() for idx in graph_indices), default=0)
+        sketches = []
+        top_k = max(0, self.se3_contact_sketch_top_k)
+        min_seq_sep = max(0, self.se3_contact_sketch_min_seq_sep)
+
+        for idx in graph_indices:
+            n = int(idx.numel())
+            sketch = torch.zeros((max_len, max_len), dtype=torch.bool, device=z.device)
+            if n <= 1:
+                sketches.append(sketch)
+                continue
+
+            scores = z[idx] @ z[idx].transpose(0, 1)
+            pos = torch.arange(n, device=z.device)
+            valid = pos[:, None].sub(pos[None, :]).abs() >= min_seq_sep
+            valid.fill_diagonal_(False)
+
+            if math.isfinite(self.se3_contact_sketch_threshold):
+                contact = scores >= self.se3_contact_sketch_threshold
+            else:
+                contact = torch.zeros_like(scores, dtype=torch.bool)
+            contact &= valid
+
+            if top_k > 0:
+                k = min(top_k, max(1, n - 1))
+                masked_scores = scores.masked_fill(~valid, -torch.inf)
+                row_contact = torch.zeros_like(contact)
+                finite_rows = torch.isfinite(masked_scores).any(dim=-1)
+                if finite_rows.any():
+                    top_idx = torch.topk(masked_scores[finite_rows], k=k, dim=-1).indices
+                    row_ids = torch.where(finite_rows)[0].unsqueeze(-1).expand_as(top_idx)
+                    row_contact[row_ids, top_idx] = True
+                    row_contact &= valid
+                contact |= row_contact
+
+            contact = contact | contact.transpose(0, 1)
+            sketch[:n, :n] = contact
+            sketches.append(sketch)
+
+        if len(sketches) == 0:
+            return torch.zeros((0, 0, 0), dtype=torch.bool, device=z.device)
+        return torch.stack(sketches, dim=0)
 
     def _compute_total_loss(self, data_batch, debug_label: str = ""):
         data_batch = ensure_float32_inplace(data_batch)
@@ -980,9 +1041,17 @@ class GeometryFocusedModule(pl.LightningModule):
                         "SE3 branch requires FoldTree2 token ids from encoder.vector_quantizer, "
                         "but the active encoder does not expose discretize_z()."
                     )
-                se3_seed_coords = pred_ca_trace if self.se3_input_source == "coarse_ca" else pred_coords_local
+                se3_edge_attr_dict = None
+                if self.se3_input_source == "geometry_dot_contacts":
+                    se3_seed_coords = pred_ca_trace
+                    se3_edge_attr_dict = {"dot_prod": self._geometry_dot_contact_sketch(out_local["z"], batch_idx)}
+                elif self.se3_input_source == "coarse_ca":
+                    se3_seed_coords = pred_ca_trace
+                else:
+                    se3_seed_coords = pred_coords_local
                 out_s = self.se3_decoder(
                     data_batch,
+                    edge_attr_dict=se3_edge_attr_dict,
                     ft2_token_ids=ft2_token_ids,
                     aa_identity_ids=aa_identity_ids,
                     coords_pred=se3_seed_coords,
@@ -1008,6 +1077,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     ).unsqueeze(0).expand(pred_coarse_atoms.shape[0], -1)
                     out_atom = self.se3_decoder(
                         data_batch,
+                        edge_attr_dict=se3_edge_attr_dict,
                         coords_pred_atoms=pred_coarse_atoms,
                         atom_type_ids=atom_type_ids,
                     )
@@ -1253,9 +1323,27 @@ def parse_args():
     )
     parser.add_argument(
         "--se3-input-source",
-        choices=["reconstructed_ca", "coarse_ca"],
+        choices=["reconstructed_ca", "coarse_ca", "geometry_dot_contacts"],
         default="coarse_ca",
-        help="Coordinate seed for the residue-level SE3 branch",
+        help="Coordinate/contact seed for the residue-level SE3 branch",
+    )
+    parser.add_argument(
+        "--se3-contact-sketch-top-k",
+        type=int,
+        default=16,
+        help="Top-k geometry dot-product contacts per residue when --se3-input-source=geometry_dot_contacts",
+    )
+    parser.add_argument(
+        "--se3-contact-sketch-threshold",
+        type=float,
+        default=0.0,
+        help="Minimum normalized dot product included in the SE3 contact sketch",
+    )
+    parser.add_argument(
+        "--se3-contact-sketch-min-seq-sep",
+        type=int,
+        default=3,
+        help="Minimum sequence separation for geometry dot-product contacts",
     )
     parser.add_argument(
         "--use-se3-atom-refine",
@@ -1753,7 +1841,8 @@ def main():
         f"coarse_atoms=(bundle={args.use_coarse_backbone_atom_loss}, c={args.use_coarse_c_loss}, cb={args.use_coarse_cb_loss}, n={args.use_coarse_n_loss}) "
         f"coarse_backbone_fape={args.use_coarse_backbone_fape_loss} "
         f"coarse_backbone_angles={args.use_coarse_backbone_angle_loss} "
-        f"se3={args.use_se3}"
+        f"se3={args.use_se3} "
+        f"se3_input={args.se3_input_source}"
     )
 
     probe_loader = DataLoader(data_module.train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
@@ -1826,6 +1915,9 @@ def main():
         coarse_backbone_fape_weight=args.coarse_backbone_fape_weight,
         coarse_backbone_angle_weight=args.coarse_backbone_angle_weight,
         se3_input_source=args.se3_input_source,
+        se3_contact_sketch_top_k=args.se3_contact_sketch_top_k,
+        se3_contact_sketch_threshold=args.se3_contact_sketch_threshold,
+        se3_contact_sketch_min_seq_sep=args.se3_contact_sketch_min_seq_sep,
         use_se3_atom_refine=args.use_se3_atom_refine,
         use_se3_residue_loss=args.use_se3_residue_loss,
         use_se3_angle_loss=args.use_se3_angle_loss,

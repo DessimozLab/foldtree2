@@ -670,14 +670,15 @@ class se3_denoiser(torch.nn.Module):
 
 
 	def _extract_atom_ids(self, data, x_dict, ft2_token_ids=None, aa_identity_ids=None):
+		runtime_device = x_dict['res'].device
 		# Primary label source for SE3 nodes: FoldTree2 discrete token ids from the
 		# encoder + quantizer combination.
 		if ft2_token_ids is not None:
-			return ft2_token_ids.to(dtype=torch.long, device=self.device).view(-1)
+			return ft2_token_ids.to(dtype=torch.long, device=runtime_device).view(-1)
 
 		# Secondary label source: amino-acid identities reconstructed by an AA decoder.
 		if aa_identity_ids is not None:
-			aa_ids = aa_identity_ids.to(dtype=torch.long, device=self.device).view(-1)
+			aa_ids = aa_identity_ids.to(dtype=torch.long, device=runtime_device).view(-1)
 			if self.num_atom_types < 20:
 				aa_ids = aa_ids % self.num_atom_types
 			else:
@@ -694,11 +695,38 @@ class se3_denoiser(torch.nn.Module):
 		if token_x is not None:
 			if token_x.ndim == 2 and token_x.shape[-1] == 1:
 				token_x = token_x.squeeze(-1)
-			return token_x.to(dtype=torch.long, device=self.device).view(-1)
+			return token_x.to(dtype=torch.long, device=runtime_device).view(-1)
 
 		# Last-resort fallback for compatibility when token ids are unavailable.
 		atom_logits = self.input2atomids(x_dict['res'])
-		return torch.argmax(atom_logits, dim=-1).to(dtype=torch.long, device=self.device)
+		return torch.argmax(atom_logits, dim=-1).to(dtype=torch.long, device=runtime_device)
+
+	def _dot_product_contacts_for_graph(self, dot_prod, graph_idx, num_residues, atoms_per_residue, device):
+		if dot_prod is None:
+			return None
+		if not torch.is_tensor(dot_prod):
+			return None
+
+		dot_prod = dot_prod.to(device=device)
+		if dot_prod.ndim == 3:
+			if dot_prod.shape[0] == 0:
+				return None
+			graph_idx = min(int(graph_idx), dot_prod.shape[0] - 1)
+			dot_prod = dot_prod[graph_idx]
+		elif dot_prod.ndim != 2:
+			return None
+
+		residue_contacts = dot_prod[:num_residues, :num_residues]
+		if residue_contacts.dtype == torch.bool:
+			residue_contacts = residue_contacts.clone()
+		else:
+			residue_contacts = residue_contacts > 0
+		residue_contacts.fill_diagonal_(False)
+
+		if atoms_per_residue <= 1:
+			return residue_contacts
+
+		return residue_contacts.repeat_interleave(atoms_per_residue, dim=0).repeat_interleave(atoms_per_residue, dim=1)
 
 
 	def forward(self, data, edge_attr_dict=None, **kwargs):
@@ -710,6 +738,7 @@ class se3_denoiser(torch.nn.Module):
 		# Normalize and dropout input features
 		x_dict['res'] = self.bn(x_dict['res'])
 		x_dict['res'] = self.dropout(x_dict['res'])
+		runtime_device = x_dict['res'].device
 		
 		atom_ids = self._extract_atom_ids(
 			data,
@@ -760,7 +789,7 @@ class se3_denoiser(torch.nn.Module):
 		if coords.ndim == 3:
 			atom_level = True
 			num_residues, atoms_per_residue, _ = coords.shape
-			coords = coords.reshape(-1, 3)
+			coords = coords.to(device=runtime_device).reshape(-1, 3)
 			atom_type_ids = kwargs.get('atom_type_ids', None)
 			if atom_type_ids is not None:
 				if atom_type_ids.shape != (num_residues, atoms_per_residue):
@@ -768,13 +797,16 @@ class se3_denoiser(torch.nn.Module):
 						f"Expected atom_type_ids with shape {(num_residues, atoms_per_residue)}, "
 						f"got {tuple(atom_type_ids.shape)}"
 					)
-				atom_ids = atom_type_ids.to(dtype=torch.long, device=self.device).reshape(-1)
+				atom_ids = atom_type_ids.to(dtype=torch.long, device=runtime_device).reshape(-1)
 			else:
 				atom_ids = atom_ids.view(num_residues, 1).expand(num_residues, atoms_per_residue).reshape(-1)
 		else:
-			coords = coords.view(-1, 3)  # (num_nodes, 3)
+			coords = coords.to(device=runtime_device).view(-1, 3)  # (num_nodes, 3)
 			num_residues = coords.shape[0]
 			atoms_per_residue = 1
+
+		if atom_ids.device != runtime_device:
+			atom_ids = atom_ids.to(device=runtime_device)
 		
 		#use dot product results to add adges
 		x_dict['dot_prod'] = edge_attr_dict.get('dot_prod', None) if edge_attr_dict is not None else None
@@ -785,6 +817,8 @@ class se3_denoiser(torch.nn.Module):
 		batch = residue_batch
 		if atom_level and residue_batch is not None:
 			batch = residue_batch.repeat_interleave(atoms_per_residue)
+		if batch is not None and batch.device != runtime_device:
+			batch = batch.to(device=runtime_device)
 		
 		num_graphs = 1
 		if batch is not None:
@@ -802,7 +836,7 @@ class se3_denoiser(torch.nn.Module):
 				atom_ids_list.append(atom_ids[mask])
 				coords_list.append(coords[mask])
 				# Build adjacency matrix for this graph
-				adj = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=self.device)
+				adj = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
 				
 				#add the contacts by looking at the distance 
 				# Compute pairwise distances
@@ -810,6 +844,17 @@ class se3_denoiser(torch.nn.Module):
 				contact_threshold = 8.0  # Angstroms, adjust as needed
 				contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
 				adj |= contact_edges
+
+				num_residues_i = max(1, num_nodes // atoms_per_residue) if atom_level else num_nodes
+				dot_contacts = self._dot_product_contacts_for_graph(
+					x_dict.get('dot_prod', None),
+					i,
+					num_residues_i,
+					atoms_per_residue,
+					runtime_device,
+				)
+				if dot_contacts is not None:
+					adj[:dot_contacts.shape[0], :dot_contacts.shape[1]] |= dot_contacts[:num_nodes, :num_nodes]
 				
 				#reformat this into edge_index format and add to the adj matrix
 				#edge_index = contact_edges.nonzero(as_tuple=False).t()
@@ -833,10 +878,10 @@ class se3_denoiser(torch.nn.Module):
 				pad_len = max_len - aid.shape[0]
 				if pad_len > 0:
 					# Pad with -1 for atom_ids (GotenNet treats negative as padding)
-					atom_ids_padded.append(torch.cat([aid, torch.full((pad_len,), -1, device=self.device, dtype=aid.dtype)]))
-					coords_padded.append(torch.cat([c, torch.zeros(pad_len, 3, device=self.device, dtype=c.dtype)]))
+					atom_ids_padded.append(torch.cat([aid, torch.full((pad_len,), -1, device=runtime_device, dtype=aid.dtype)]))
+					coords_padded.append(torch.cat([c, torch.zeros(pad_len, 3, device=runtime_device, dtype=c.dtype)]))
 					# Pad adjacency matrix
-					adj_pad = torch.zeros((max_len, max_len), dtype=torch.bool, device=self.device)
+					adj_pad = torch.zeros((max_len, max_len), dtype=torch.bool, device=runtime_device)
 					adj_pad[:adj.shape[0], :adj.shape[1]] = adj
 					adj_mat_padded.append(adj_pad)
 				else:
@@ -850,13 +895,24 @@ class se3_denoiser(torch.nn.Module):
 		else:
 			# Single graph case
 			num_nodes = atom_ids.shape[0]
-			adj_mat = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=self.device)
+			adj_mat = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
 			
 			# Build adjacency matrix from point cloud distances
 			dists = torch.cdist(coords, coords)  # (num_nodes, num_nodes)
 			contact_threshold = 8.0  # Angstroms, adjust as needed
 			contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
 			adj_mat |= contact_edges
+
+			num_residues_i = max(1, num_nodes // atoms_per_residue) if atom_level else num_nodes
+			dot_contacts = self._dot_product_contacts_for_graph(
+				x_dict.get('dot_prod', None),
+				0,
+				num_residues_i,
+				atoms_per_residue,
+				runtime_device,
+			)
+			if dot_contacts is not None:
+				adj_mat[:dot_contacts.shape[0], :dot_contacts.shape[1]] |= dot_contacts[:num_nodes, :num_nodes]
 			
 			atom_ids_batch = atom_ids.unsqueeze(0)  # (1, num_nodes)
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
