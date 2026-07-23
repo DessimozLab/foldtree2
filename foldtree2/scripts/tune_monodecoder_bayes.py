@@ -52,7 +52,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-val-samples", type=int, default=0, help="0 uses full validation export, >0 uses quick validation subset.")
     parser.add_argument("--max-residues", type=int, default=None, help="Optional max residue filter passed through.")
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Base learning rate for all trials.")
-    parser.add_argument("--num-embeddings", type=int, default=30, help="Number of codebook embeddings.")
+    parser.add_argument("--num-embeddings", type=int, default=None, help="Number of codebook embeddings.")
+
     parser.add_argument("--embedding-dim", type=int, default=128, help="Encoder embedding dimension.")
     parser.add_argument("--sampler-seed", type=int, default=42, help="Seed for the Bayesian sampler.")
     parser.add_argument("--pruner-startup-trials", type=int, default=5, help="Startup trials before pruning kicks in.")
@@ -63,6 +64,11 @@ def parse_args() -> argparse.Namespace:
 def build_trial_command(args: argparse.Namespace, trial: optuna.Trial, metrics_path: Path) -> list[str]:
     repo_root = Path(__file__).resolve().parents[2]
     trainer_path = repo_root / "foldtree2" / "learn_monodecoder.py"
+
+    if args.num_embeddings is not None:
+        encoder_nembeddings = args.num_embeddings
+    else:
+        encoder_nembeddings = trial.suggest_categorical("encoder_nembeddings", [10,15,20,25,30,35,40])
 
     encoder_hidden = trial.suggest_categorical("encoder_hidden_size", [96, 128, 160, 192, 256, 320])
     # Keep d_model divisible by nheads=10 used by the sequence transformer.
@@ -78,6 +84,8 @@ def build_trial_command(args: argparse.Namespace, trial: optuna.Trial, metrics_p
     aa_dropout = trial.suggest_float("aa_decoder_dropout", 0.0, 0.20)
     geometry_dropout = trial.suggest_float("geometry_cnn_dropout", 0.0, 0.20)
     grad_accum = trial.suggest_categorical("gradient_accumulation_steps", [1, 2, 4])
+
+
 
     trial_output_dir = Path(args.output_dir) / f"trial_{trial.number:04d}"
     trial_output_dir.mkdir(parents=True, exist_ok=True)
@@ -106,7 +114,7 @@ def build_trial_command(args: argparse.Namespace, trial: optuna.Trial, metrics_p
         "--vqweight", str(vqweight),
         "--logitweight", "0.0",
         "--gradient-accumulation-steps", str(grad_accum),
-        "--num-embeddings", str(args.num_embeddings),
+        "--num-embeddings", str(encoder_nembeddings),
         "--embedding-dim", str(args.embedding_dim),
         "--metrics-output", str(metrics_path),
         "--final-val-samples", str(args.final_val_samples),
