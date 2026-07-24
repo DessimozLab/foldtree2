@@ -23,6 +23,7 @@ import ete3
 from scipy import sparse
 import sys
 
+
 class treebuilder():
 	def __init__ ( self , model , decoder_model = None, mafftmat = None , submat = None ,  raxml_path= None, charmaps=None, **kwargs ):
 		"""Initialize a FoldTree2 tree builder with encoder, decoder, and tool paths.
@@ -58,6 +59,8 @@ class treebuilder():
 		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
 		self.decoder = torch.load( decoder_model , map_location=torch.device('cpu') , weights_only=False ) if decoder_model is not None else None
 		self.root = kwargs.get('root', False)
+		self.overwrite = kwargs.get('overwrite', False)
+		self.verbosity = self._normalize_verbosity(kwargs.get('verbosity', kwargs.get('verbose', 1)))
 
 		if 'bs' in kwargs:
 			self.bs = kwargs['bs']
@@ -83,7 +86,7 @@ class treebuilder():
 			self.revmap = { i:c for i,c in enumerate(self.alphabet)}
 
 		else:
-			print('loading charmaps from', charmaps)
+			self.log(f'loading charmaps from {charmaps}', level=2)
 			
 			'''
 		save format is {
@@ -150,6 +153,30 @@ class treebuilder():
 			self.ncores = mp.cpu_count()
 
 	@staticmethod
+	def _normalize_verbosity(value):
+		"""Normalize verbosity inputs to supported integer levels 0, 1, or 2."""
+		if isinstance(value, bool):
+			return 2 if value else 1
+		if value is None:
+			return 1
+		try:
+			level = int(value)
+		except (TypeError, ValueError):
+			level = 1
+		return max(0, min(2, level))
+
+	def log(self, message, level=1):
+		"""Print a message when the current verbosity is high enough."""
+		if self.verbosity >= level:
+			print(message)
+
+	def error(self, message, include_traceback=False):
+		"""Always print important errors; traceback is shown only at verbosity 2."""
+		print(message)
+		if include_traceback and self.verbosity >= 2:
+			print(traceback.format_exc())
+
+	@staticmethod
 	def formathex(hexnum):
 			"""Normalize a hex token to MAFFT expected width.
 
@@ -168,45 +195,41 @@ class treebuilder():
 			else:
 				return hexnum
 
-	@staticmethod
-	def run_mafft_textaln( infasta , outaln=None , matrix='mafft_submat.mtx' , mafft_path = 'mafft' ):
+	def run_mafft_textaln( self, infasta , outaln=None , matrix='mafft_submat.mtx' , mafft_path = 'mafft' ):
 		"""Run MAFFT in text mode using a custom matrix and return output alignment path."""
 		if outaln == None:
 			outaln = infasta+'aln.txt'
 		cmd = f'{mafft_path} --text --thread -1 --localpair --maxiterate 1000 --textmatrix {matrix} {infasta}  > {outaln}'
-		print(cmd)
+		self.log(cmd, level=2)
 		subprocess.run(cmd, shell=True)
 		return outaln
 
-	@staticmethod
-	def mafft_hex2ascii( intext , outfile , hex2text_path = './mafft_tools/hex2maffttext' ):
+	def mafft_hex2ascii( self, intext , outfile , hex2text_path = './mafft_tools/hex2maffttext' ):
 		"""Convert MAFFT hex-encoded alignment text back to ASCII symbols."""
 		if outfile == None:
 
 			outfile = intext.replace('.hex' , '.ASCII')
-			print('outfile for ascii :', outfile)
+			self.log(f'outfile for ascii : {outfile}', level=2)
 		#% /usr/local/libexec/mafft/hex2maffttext input.hex > input.ASCII
 		cmd = f'{hex2text_path} {intext} > {outfile}'
-		print(cmd)
+		self.log(cmd, level=2)
 		subprocess.run(cmd, shell=True)
 		return outfile    
 
-	@staticmethod
-	def fasta2hex( intext , outfile  , maffttext2hex = './mafft_tools/maffttext2hex' ):
+	def fasta2hex( self, intext , outfile  , maffttext2hex = './mafft_tools/maffttext2hex' ):
 		"""Convert ASCII alignment text to MAFFT-compatible hex encoding."""
 		#% /usr/local/libexec/mafft/maffttext2hex input.hex > input.ASCII
 		if outfile == None:
 			outfile = intext+'.hex'
 		cmd = f'{maffttext2hex} {intext} > {outfile}'
-		print(cmd)
+		self.log(cmd, level=2)
 		subprocess.run(cmd, shell=True)
 		return outfile    
 
-	@staticmethod
-	def normal_mafft( infasta , outaln ):
+	def normal_mafft( self, infasta , outaln ):
 		"""Run MAFFT with generic symbol support and return output alignment path."""
 		cmd = f'mafft --anysymbol {infasta} > {outaln}'
-		print(cmd)
+		self.log(cmd, level=2)
 		subprocess.run(cmd, shell=True)
 		return outaln
 
@@ -231,15 +254,16 @@ class treebuilder():
 
 		Invalid structures are skipped with traceback logging.
 		"""
-		print( 'converting structures')
-		for struct in tqdm.tqdm(structlist):
+		self.log('converting structures', level=1)
+		for struct in tqdm.tqdm(structlist , desc='Converting structures', disable=self.verbosity == 0):
 			try:
 				data = self.converter.struct2pyg( struct )
+				if self.device is not None:
+					data = data.to(self.device)
 				if data:
 					yield data
 			except:
-				print('error', struct)
-				print( traceback.format_exc() )
+				self.error(f'error {struct}', include_traceback=True)
 				continue
 	@staticmethod
 	def aln2dcict(alnfile):
@@ -254,7 +278,7 @@ class treebuilder():
 					ID = line[1:].strip()
 					seqstr = ''
 				else:
-					seqstr += line + ' '
+					seqstr += line.strip()
 			seqdict[ID] = seqstr
 		return seqdict
 
@@ -376,7 +400,7 @@ class treebuilder():
 		#replace the characters that aren't allowed
 		encoded_df.seq = encoded_df.seq.map(lambda x : ''.join([ c if c not in self.replace_dict else self.replace_dict[c] for c in x]))
 		encoded_df['ord'] = encoded_df.seq.map( lambda x: [ ord(c) for c in x] )
-		if verbose:
+		if self._normalize_verbosity(verbose) >= 2 or self.verbosity >= 2:
 			print(encoded_df.head())
 		#write output to fasta
 		with open( outfile, 'w') as f:
@@ -389,7 +413,7 @@ class treebuilder():
 		with open(encoded_fasta, 'r') as f:
 			if outfile == None:
 				outfile = encoded_fasta.replace('.fasta' , '.hex')
-				print('outfile for hex :', outfile)
+				self.log(f'outfile for hex : {outfile}', level=2)
 			with open(outfile , 'w') as g:
 				for line in f:
 					if line[0] == '>':
@@ -445,9 +469,9 @@ class treebuilder():
 		raxml_cmd = raxmlng_path  + '  --model MULTI'+str(self.nchars)+'_GTR{'+matrix_file+'}'+''.join(evoflags)+' --seed 12345 --threads auto{' + str(self.ncores) + '} --workers auto --msa '+fasta_file+' --prefix '+output_prefix
 		if self.bs == True:
 			raxml_cmd += ' --force perf_threads --bs-trees '+str(iterations)+' --bs-metric fbp'	
-		if self.redo == True:
+		if self.redo == True or self.overwrite == True:
 			raxml_cmd += ' --redo'
-		print(raxml_cmd)
+		self.log(raxml_cmd, level=2)
 		subprocess.run(raxml_cmd, shell=True)
 		return output_prefix + '.raxml.bestTree'
 
@@ -459,8 +483,11 @@ class treebuilder():
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I'
 		if self.raxmlng_path == None:
 			self.raxmlng_path = 'raxml-ng'
-		raxml_cmd = self.raxmlng_path + ' --redo --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
-		print(raxml_cmd)
+
+		raxml_cmd = self.raxmlng_path + ' --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
+		if self.overwrite:
+			raxml_cmd += ' --redo'
+		self.log(raxml_cmd, level=2)
 		subprocess.run(raxml_cmd, shell=True)
 		return fasta_file.replace('raxml_aln.fasta' , 'raxml.ancestralStates')
 
@@ -552,9 +579,9 @@ class treebuilder():
 
 		Returns the generated .raxml.siteLH path when successful.
 		"""
-		print("Running site likelihood analysis...")
+		self.log("Running site likelihood analysis...", level=1)
 		#raxml command is  --force --evaluate --msa your_alignment.phy --model ### --tree fixed_tree.newick --site-lh
-		print(f"Output prefix: {output_prefix}")
+		self.log(f"Output prefix: {output_prefix}", level=2)
 		model = f"MULTI{self.nchars}_GTR{{{self.submat}}}+I"
 		if output_prefix is None:
 				output_prefix = tree + '_siteLH_' + model
@@ -570,16 +597,16 @@ class treebuilder():
 			"--prefix", output_prefix
 		]
 		cmd = ' '.join(cmd)
-		print(f"Running: {cmd}")
+		self.log(f"Running: {cmd}", level=2)
 		subprocess.run(cmd, shell=True)
 		
 		#.raxml.siteLH
 		sitelh_file = f"{output_prefix}.raxml.siteLH"
 		if os.path.exists(sitelh_file):
-			print(f"Site likelihood results saved to {sitelh_file}")
+			self.log(f"Site likelihood results saved to {sitelh_file}", level=1)
 			return sitelh_file
 		else:
-			print("Site likelihood analysis did not produce results.")
+			self.error("Site likelihood analysis did not produce results.")
 			return None
 
 
@@ -598,79 +625,102 @@ class treebuilder():
 		#encode the structures
 		if outdir is None:
 			outdir = output_prefix
-		outfasta = os.path.join(outdir, self.modelname + 'encoded.fasta')
-		encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta )	
-		#replace special characters
-		#encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
-		#convert to hex
-		print('converting to hex for mafft')
-		hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None  )
-		# convert to ascii
-		print('converting to ascii for mafft')
-		asciifile = self.mafft_hex2ascii( hexfasta , outfile = None , hex2text_path = self.maffthex2text )
-		print('asciifile:', asciifile)
-		#run mafft text aln with custom submat
-		print('running mafft')
-		mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft'  )
-		#convert the mafft aln to fasta
-		print('converting mafft aln to hex fasta')
-		mafftaln  = self.fasta2hex( mafftaln , outfile = None , maffttext2hex = self.maffttext2hex )
-		#read the mafft aln
-		alnfasta = self.read_textaln( mafftaln )
-		#run raxml-ng
-		print('running raxml-ng')
-		if output_prefix is None:
-			output_prefix = alnfasta.replace('.raxml_aln.fasta' , '')
 
-		treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat
-			   , nsymbols = self.nchars ,
-			   output_prefix = output_prefix ,
-			   iterations = raxml_iterations ,
-			    )
-		#print the tree
-		print('treefile:', treefile)
-		tree = ete3.Tree(treefile, format=1)	
-		print(tree)
+		step_verbosity = self._normalize_verbosity(kwargs.get('verbosity', verbose if verbose not in (None, False) else self.verbosity))
+		previous_verbosity = self.verbosity
+		self.verbosity = step_verbosity
+		try:
+			outfasta = os.path.join(outdir, self.modelname + 'encoded.fasta')
+			if self.overwrite == True and os.path.exists(outfasta):
+				if step_verbosity >= 1:
+					print(f"Overwriting existing encoded FASTA at {outfasta}")
+				os.remove(outfasta)
 
+			encoded_fasta = self.encode_structblob( blob=structs , outfile = outfasta )
 
-		if ancestral == True:
-			#not tested yet
-			ancestral_file = self.run_raxml_ng_ancestral_struct( alnfasta , treefile , self.submat , self.nchars , alnfasta.replace('.raxml_aln.fasta' , '') )
-			ancestral_fasta = self.ancestral2fasta( ancestral_file )
-			ancestral_df = self.ancestralfasta2df( ancestral_fasta )
-			#decode the ancestral sequence
-			print(ancestral_df.head())
-			ords = ancestral_df.ord.values
-			identifiers = ancestral_df.protid.values
-			results = {}
-			for l in tqdm.tqdm(range(ords.shape[0]), desc='decoding ancestral sequences'):
-				res = self.decoder_reconstruction( torch.tensor(ords[l] , dtype=torch.long).T , verbose = verbose)	
-				results.update({ identifiers[l] : res } )
-			#create a new dataframe with the decoded sequences
-			results = pd.DataFrame.from_dict( results , orient='index' )
-			print('decoded ancestral sequences:')
-			print(results.head())
-			#merge with ancestral df
-			ancestral_df = ancestral_df.merge( results , left_on='protid' , right_index=True , how='left' )
-			#write the ancestral dataframe to a file
-			ancestral_df.to_csv( ancestral_fasta.replace('.aastr.fasta' , '.csv') )
-			#write out aastr to a fasta
-			with open( ancestral_fasta , 'w') as f:
-				for i in ancestral_df.index:
-					f.write('>' + ancestral_df.loc[i].protid + '\n' + ancestral_df.loc[i].aastr + '\n')
-			ancestral_fasta = ancestral_fasta
-		else:
-			ancestral_fasta = None
+			#replace special characters
+			#encoded_fasta = self.replace_sp_chars( encoded_fasta=encoded_fasta , outfile = outfasta , verbose = verbose)
+			#convert to hex
+			if step_verbosity >= 1:
+				print('converting to hex for mafft')
+			hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None  )
+			# convert to ascii
+			if step_verbosity >= 1:
+				print('converting to ascii for mafft')
+			asciifile = self.mafft_hex2ascii( hexfasta , outfile = None , hex2text_path = self.maffthex2text )
+			if step_verbosity >= 2:
+				print('asciifile:', asciifile)
+			#run mafft text aln with custom submat
+			if step_verbosity >= 1:
+				print('running mafft')
+			mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft'  )
+			#convert the mafft aln to fasta
+			if step_verbosity >= 1:
+				print('converting mafft aln to hex fasta')
+			mafftaln  = self.fasta2hex( mafftaln , outfile = None , maffttext2hex = self.maffttext2hex )
+			#read the mafft aln
+			alnfasta = self.read_textaln( mafftaln )
+			#run raxml-ng
+			if step_verbosity >= 1:
+				print('running raxml-ng')
+			if output_prefix is None:
+				output_prefix = alnfasta.replace('.raxml_aln.fasta' , '')
 
+			treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat
+				   , nsymbols = self.nchars ,
+				   output_prefix = output_prefix ,
+				   iterations = raxml_iterations ,
+				    )
+			#print the tree
+			if step_verbosity >= 1:
+				print('treefile:', treefile)
+			tree = ete3.Tree(treefile, format=1)
+			if step_verbosity >= 2:
+				print(tree)
 
-		if self.root == True:
-			print('rooting tree with mad')
-			treefile = self.madroot( treefile )
-			tree = ete3.Tree(treefile, format=1)	
-			print(tree)
-			
-		#return in dictionary form
-		return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
+			if ancestral == True:
+				#not tested yet
+				ancestral_file = self.run_raxml_ng_ancestral_struct( alnfasta , treefile , self.submat , self.nchars , alnfasta.replace('.raxml_aln.fasta' , '') )
+				ancestral_fasta = self.ancestral2fasta( ancestral_file )
+				ancestral_df = self.ancestralfasta2df( ancestral_fasta )
+				#decode the ancestral sequence
+				if step_verbosity >= 2:
+					print(ancestral_df.head())
+				ords = ancestral_df.ord.values
+				identifiers = ancestral_df.protid.values
+				results = {}
+				for l in tqdm.tqdm(range(ords.shape[0]), desc='decoding ancestral sequences', disable=step_verbosity == 0):
+					res = self.decoder_reconstruction( torch.tensor(ords[l] , dtype=torch.long).T , verbose = verbose)
+					results.update({ identifiers[l] : res } )
+				#create a new dataframe with the decoded sequences
+				results = pd.DataFrame.from_dict( results , orient='index' )
+				if step_verbosity >= 2:
+					print('decoded ancestral sequences:')
+					print(results.head())
+				#merge with ancestral df
+				ancestral_df = ancestral_df.merge( results , left_on='protid' , right_index=True , how='left' )
+				#write the ancestral dataframe to a file
+				ancestral_df.to_csv( ancestral_fasta.replace('.aastr.fasta' , '.csv') )
+				#write out aastr to a fasta
+				with open( ancestral_fasta , 'w') as f:
+					for i in ancestral_df.index:
+						f.write('>' + ancestral_df.loc[i].protid + '\n' + ancestral_df.loc[i].aastr + '\n')
+				ancestral_fasta = ancestral_fasta
+			else:
+				ancestral_fasta = None
+
+			if self.root == True:
+				if step_verbosity >= 1:
+					print('rooting tree with mad')
+				treefile = self.madroot( treefile )
+				tree = ete3.Tree(treefile, format=1)
+				if step_verbosity >= 2:
+					print(tree)
+
+			#return in dictionary form
+			return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
+		finally:
+			self.verbosity = previous_verbosity
 def print_about():
 	"""Print a banner and project overview for FoldTree2."""
 	ascii_art = r'''
@@ -776,13 +826,15 @@ def main():
 	parser.add_argument("--ncores", type=int, default=8, help="Number of CPU cores to use for processing")
 	parser.add_argument("--raxml_iterations", type=int, default=20, help="Number of RAxML iterations for tree inference")
 	parser.add_argument("--raxmlpath", default='raxml-ng', help="Path to RAxML-NG executable")
+	parser.add_argument("--verbosity", type=int, choices=[0, 1, 2], default=1, help="Verbosity level: 0=quiet, 1=step-level progress, 2=detailed command/debug output")
 	parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 	parser.add_argument("--device", default=None, help="Device to run the model on (default: None, uses CPU or GPU if available)")
 	parser.add_argument( "--bs", default=False, action="store_true", help="Enable bootstrapping in RAxML-NG" )
 	parser.add_argument( "--redo", default=False, action="store_true", help="Enable --redo flag in RAxML-NG to overwrite existing results" )
+	parser.add_argument( "--overwrite", default=False, action="store_true", help="Overwrite existing output files if they exist" )
+
 
 	parser.add_argument("--root", default=False, action="store_true", help="Use mad root to root the tree after inference")
-
 
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
@@ -798,6 +850,8 @@ def main():
 		print_about()
 		sys.exit(0)
 	args = parser.parse_args()
+	if args.verbose:
+		args.verbosity = 2
 
 	if args.model is None and args.encoder is None:
 		print('Model path is required. Use --model to specify the model path.')
@@ -823,8 +877,9 @@ def main():
 	
 
 	
-	print('Using encoder path:', encoder_path)
-	print('Using decoder path:', decoder_path)
+	if args.verbosity >= 1:
+		print('Using encoder path:', encoder_path)
+		print('Using decoder path:', decoder_path)
 	#check pth files exist
 
 	if not os.path.exists(encoder_path) or not os.path.exists(decoder_path):
@@ -866,11 +921,11 @@ def main():
 	# Create an instance of treebuilder
 	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, decoder_model=decoder_path, submat=args.submat , raxml_path=args.raxmlpath,
 	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device, 
-	 bs=args.bs, redo=args.redo , verbose=args.verbose , root =args.root )
+	 bs=args.bs, redo=args.redo , verbose=args.verbose , verbosity=args.verbosity, root =args.root )
 
 	# Generate tree from structures using the provided options
 	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
-				 , verbose=args.verbose  , aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
+				 , verbose=args.verbose  , verbosity=args.verbosity, aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
 
 if __name__ == "__main__":
 	main()

@@ -37,6 +37,7 @@ from matplotlib import pyplot as plt
 # Optional: import custom modules if available
 from foldtree2.src import AFDB_tools, foldseek2tree
 from foldtree2.src.pdbgraph import PDB2PyG, StructureDataset
+from foldtree2.src.download_utils import download_structures, verify_downloads
 import foldtree2.src.encoder as ft2
 
 def print_about():
@@ -218,40 +219,50 @@ def read_reps(datadir):
 	)
 	return reps
 
-def download_structs_fn(reps, datadir, n=5):
+def download_structs_fn(reps, datadir, structdir=None, ncpu=20, timeout=30):
 	"""
-	Download protein structures for cluster representatives and their members.
+	Download protein structures for cluster representatives using robust multiprocessing.
 	
-	This function downloads a random subset of structures for each cluster
-	representative to create diverse training data for the substitution matrix.
-	Structures are organized by cluster representative in separate directories.
+	This function downloads structures for each cluster representative using the
+	download_structures utility, which handles multiprocessing safely with proper
+	pickling of subprocess calls instead of file objects.
+	
+	Structures are organized by cluster representative in separate directories
+	for compatibility with downstream alignment steps.
 	
 	Args:
-		reps (pd.DataFrame): DataFrame with protein cluster information
+		reps (pd.DataFrame): DataFrame with protein cluster information (must have 'repId' column)
 		datadir (str): Base directory for storing structures
-		n (int): Maximum number of structures to download per cluster
+		structdir (str): Optional override for output directory structure
+		ncpu (int): Number of parallel processes for downloads
+		timeout (int): Timeout per download in seconds
 	"""
-	if AFDB_tools is None:
-		print("AFDB_tools not available. Skipping download.")
-		return
+	if structdir is None:
+		structdir = os.path.join(datadir, 'struct_align')
 	
-	# Process each cluster representative
-	for rep in tqdm.tqdm(reps.repId.unique()):
-		subdf = reps[reps['repId'] == rep]
-		
-		# Adjust sample size if cluster is smaller than requested
-		if len(subdf) < n:
-			n = len(subdf)
-		
-		# Sample random subset of proteins from this cluster
-		subdf = subdf.sample(n=n)
-		
-		# Download structures for sampled proteins
-		for uniID in subdf['entryId']:
-			AFDB_tools.grab_struct(
-				uniID, 
-				structfolder=os.path.join(datadir, 'struct_align', rep, 'structs')
-			)
+	# Ensure base directory exists
+	os.makedirs(structdir, exist_ok=True)
+	
+	# Use the robust download_structures function
+	print(f"Downloading {len(reps)} structures using multiprocessing...")
+	successful, failed = download_structures(
+		reps,
+		nreps=None,  # Download all provided reps
+		structdir=structdir,
+		ncpu=ncpu,
+		method='subprocess',
+		timeout=timeout,
+		verbose=False
+	)
+	
+	print(f"\nDownload complete:")
+	print(f"  Successfully downloaded: {len(successful)} structures")
+	if failed:
+		print(f"  Failed to download: {len(failed)} structures")
+		if len(failed) <= 10:
+			print(f"  Failed IDs: {failed}")
+	
+	return successful, failed
 
 def align_structs_fn(reps, datadir):
 	"""
@@ -1044,7 +1055,8 @@ def main():
 		print("Downloading structure representatives...")
 		reps = read_reps(args.datadir)
 		print('reps', reps.head())
-		download_structs_fn(reps, args.datadir)
+		successful, failed = download_structs_fn(reps, args.datadir)
+		print(f"Download summary: {len(successful)} successful, {len(failed)} failed")
 	if args.convert_to_pyg:
 		print("Converting PDB files to PyG format...")
 		convert_to_pyg(os.path.join(args.datadir, 'struct_align'), args.dataset)
