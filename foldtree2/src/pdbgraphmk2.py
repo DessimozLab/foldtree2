@@ -354,8 +354,10 @@ def pseudo_cb_from_ca_n_c(ca: np.ndarray, n: np.ndarray, c: np.ndarray) -> np.nd
 
 def _write_heterodata_group(structs_group, hetero_data):
     identifier = hetero_data.identifier
-    struct_group = structs_group.create_group(identifier)
+    if identifier in structs_group:
+        return False
 
+    struct_group = structs_group.create_group(identifier)
     node_group = struct_group.create_group('node')
     for node_type in hetero_data.node_types:
         if hetero_data[node_type].x is not None:
@@ -370,6 +372,7 @@ def _write_heterodata_group(structs_group, hetero_data):
             type_group.create_dataset('edge_index', data=hetero_data[edge_type].edge_index.numpy())
         if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
             type_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
+    return True
 
 
 class PDB2PyG:
@@ -1255,10 +1258,25 @@ class PDB2PyG:
         except Exception:
             return None, pdb_file, traceback.format_exc()
 
+    def _update_checkpoint_manifest(self, checkpoint_manifest, completed_paths):
+        if not checkpoint_manifest:
+            return
+        completed_paths = {os.path.abspath(path) for path in completed_paths}
+        payload = {'completed': sorted(str(path) for path in completed_paths)}
+        with open(checkpoint_manifest, 'w', encoding='utf-8') as handle:
+            json.dump(payload, handle, indent=2)
+
     def store_pyg(self, pdbfiles, filename, verbose=True, **kwargs):
         failed = []
-        with h5py.File(filename, mode='w') as f:
-            structs_group = f.create_group('structs')
+        checkpoint_manifest = kwargs.pop('checkpoint_manifest', None)
+        output_mode = kwargs.pop('output_mode', 'w')
+        completed_paths = set()
+        if checkpoint_manifest and os.path.exists(checkpoint_manifest):
+            with open(checkpoint_manifest, 'r', encoding='utf-8') as handle:
+                payload = json.load(handle)
+            completed_paths = {os.path.abspath(path) for path in payload.get('completed', [])}
+        with h5py.File(filename, mode=output_mode) as f:
+            structs_group = f.require_group('structs')
             for pdb_file in tqdm.tqdm(pdbfiles):
                 try:
                     hetero_data = self.struct2pyg(pdb_file, **kwargs)
@@ -1266,6 +1284,9 @@ class PDB2PyG:
                         failed.append((pdb_file, 'No data returned'))
                         continue
                     _write_heterodata_group(structs_group, hetero_data)
+                    completed_paths.add(os.path.abspath(pdb_file))
+                    if checkpoint_manifest:
+                        self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
                 except Exception as e:
                     failed.append((pdb_file, str(e)))
                     if verbose:
@@ -1278,6 +1299,13 @@ class PDB2PyG:
         args_list = [p for p in pdbfiles]
         failed_files = []
         successful_count = 0
+        checkpoint_manifest = kwargs.pop('checkpoint_manifest', None)
+        output_mode = kwargs.pop('output_mode', 'w')
+        completed_paths = set()
+        if checkpoint_manifest and os.path.exists(checkpoint_manifest):
+            with open(checkpoint_manifest, 'r', encoding='utf-8') as handle:
+                payload = json.load(handle)
+            completed_paths = {os.path.abspath(path) for path in payload.get('completed', [])}
         debug_log = open(debug_log_path, 'a') if debug_log_path else None
 
         def log_event(event, pdb_file, **fields):
@@ -1291,8 +1319,8 @@ class PDB2PyG:
 
         ctx = mp.get_context(start_method) if start_method else mp.get_context()
 
-        with h5py.File(filename, mode='w') as f:
-            structs_group = f.create_group('structs')
+        with h5py.File(filename, mode=output_mode) as f:
+            structs_group = f.require_group('structs')
             pool = ctx.Pool(
                 processes=ncpu,
                 initializer=_init_pdb2pyg_worker,
@@ -1315,6 +1343,9 @@ class PDB2PyG:
                     try:
                         _write_heterodata_group(structs_group, hetero_data)
                         successful_count += 1
+                        completed_paths.add(os.path.abspath(pdb_file))
+                        if checkpoint_manifest:
+                            self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
                         log_event('success', pdb_file)
                     except Exception as e:
                         failed_files.append((pdb_file, f'Storage error: {e}'))
@@ -1470,8 +1501,11 @@ class FoldcompStructureDataset(Dataset):
         else:
             key = str(name)
         lower = key.lower()
-        if lower.endswith('.pdb'):
-            return key[:-4]
+        # Foldcomp DBs may expose entry names with structure/file suffixes
+        # (e.g. .pdb, .cif, .cif.gz). Normalize to the bare lookup ID.
+        for suffix in ('.cif.gz', '.pdb.gz', '.ent.gz', '.cif', '.pdb', '.ent'):
+            if lower.endswith(suffix):
+                return key[:-len(suffix)]
         return key
 
     def _cache_get(self, entry_id: str):

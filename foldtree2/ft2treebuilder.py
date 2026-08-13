@@ -643,17 +643,27 @@ class treebuilder():
 			#convert to hex
 			if step_verbosity >= 1:
 				print('converting to hex for mafft')
+			
 			hexfasta = self.encodedfasta2hex( encoded_fasta , outfile = None  )
 			# convert to ascii
 			if step_verbosity >= 1:
 				print('converting to ascii for mafft')
+
 			asciifile = self.mafft_hex2ascii( hexfasta , outfile = None , hex2text_path = self.maffthex2text )
 			if step_verbosity >= 2:
 				print('asciifile:', asciifile)
 			#run mafft text aln with custom submat
 			if step_verbosity >= 1:
 				print('running mafft')
-			mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft'  )
+
+			outaln = asciifile+'aln.txt'
+			if not os.path.exists(outaln) and self.overwrite == False:
+				mafftaln = self.run_mafft_textaln( asciifile , matrix=self.mafftmat , mafft_path = 'mafft'  )
+			else:
+				mafftaln = outaln
+			if step_verbosity >= 2:
+				print('mafftaln:', mafftaln)
+			
 			#convert the mafft aln to fasta
 			if step_verbosity >= 1:
 				print('converting mafft aln to hex fasta')
@@ -666,11 +676,17 @@ class treebuilder():
 			if output_prefix is None:
 				output_prefix = alnfasta.replace('.raxml_aln.fasta' , '')
 
-			treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat
-				   , nsymbols = self.nchars ,
-				   output_prefix = output_prefix ,
-				   iterations = raxml_iterations ,
-				    )
+			treefile = output_prefix + '.raxml.bestTree'
+
+			if os.path.exists(treefile) and self.overwrite == False:
+				pass
+			else:
+				treefile = self.run_raxml_ng( alnfasta , matrix_file= self.submat
+					, nsymbols = self.nchars ,
+					output_prefix = output_prefix ,
+					iterations = raxml_iterations ,
+						)
+
 			#print the tree
 			if step_verbosity >= 1:
 				print('treefile:', treefile)

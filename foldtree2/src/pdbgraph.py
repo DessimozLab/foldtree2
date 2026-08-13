@@ -1028,7 +1028,13 @@ class PDB2PyG:
 		"""Store pytorch geometric data in HDF5 file using multiprocessing."""
 		# Prepare arguments for multiprocessing
 		args_list = [pdb_file for pdb_file in pdbfiles]
-		print(kwargs)
+		checkpoint_manifest = kwargs.pop('checkpoint_manifest', None)
+		output_mode = kwargs.pop('output_mode', 'w')
+		completed_paths = set()
+		if checkpoint_manifest and os.path.exists(checkpoint_manifest):
+			with open(checkpoint_manifest, 'r', encoding='utf-8') as handle:
+				payload = json.load(handle)
+			completed_paths = {os.path.abspath(path) for path in payload.get('completed', [])}
 		debug_log = open(debug_log_path, 'a') if debug_log_path else None
 
 		def log_event(event, pdb_file, **fields):
@@ -1045,8 +1051,8 @@ class PDB2PyG:
 				debug_log.flush()
 		
 		# Process files in parallel and write to HDF5 as they complete
-		with h5py.File(filename, mode='w') as f:
-			structs_group = f.create_group('structs')
+		with h5py.File(filename, mode=output_mode) as f:
+			structs_group = f.require_group('structs')
 			ctx = mp.get_context(start_method) if start_method else None
 			with pebble.ProcessPool(max_workers=ncpu, context=ctx) as pool:
 				failed_files = []
@@ -1190,9 +1196,12 @@ class PDB2PyG:
 								)
 						
 						successful_count += 1
+						completed_paths.add(os.path.abspath(pdb_file))
+						if checkpoint_manifest:
+							self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
 						elapsed = time.time() - future_start.get(future, time.time())
 						log_event("success", pdb_file, elapsed=elapsed)
-						
+					
 					except Exception as e:
 						if verbose:
 							print(f"Error storing data for {identifier}: {str(e)}")
@@ -1221,6 +1230,12 @@ class PDB2PyG:
 								  debug_log_path=None, debug_log_flush=False, **kwargs):
 		"""Store pytorch geometric data in HDF5 using multiprocessing.Pool."""
 		args_list = [pdb_file for pdb_file in pdbfiles]
+		checkpoint_manifest = kwargs.pop('checkpoint_manifest', None)
+		completed_paths = set()
+		if checkpoint_manifest and os.path.exists(checkpoint_manifest):
+			with open(checkpoint_manifest, 'r', encoding='utf-8') as handle:
+				payload = json.load(handle)
+			completed_paths = {os.path.abspath(path) for path in payload.get('completed', [])}
 		debug_log = open(debug_log_path, 'a') if debug_log_path else None
 
 		def log_event(event, pdb_file, **fields):
@@ -1239,8 +1254,8 @@ class PDB2PyG:
 		failed_files = []
 		successful_count = 0
 
-		with h5py.File(filename, mode='w') as f:
-			structs_group = f.create_group('structs')
+		with h5py.File(filename, mode=output_mode) as f:
+			structs_group = f.require_group('structs')
 			ctx = mp.get_context(start_method) if start_method else mp.get_context()
 			pool = ctx.Pool(
 				processes=ncpu,
@@ -1308,6 +1323,9 @@ class PDB2PyG:
 								)
 
 						successful_count += 1
+						completed_paths.add(os.path.abspath(pdb_file))
+						if checkpoint_manifest:
+							self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
 						log_event("success", pdb_file)
 					except Exception as e:
 						if verbose:
@@ -1538,9 +1556,24 @@ class PDB2PyG:
 		return failed_files
 
 	
+	def _update_checkpoint_manifest(self, checkpoint_manifest, completed_paths):
+		if not checkpoint_manifest:
+			return
+		completed_paths = {os.path.abspath(path) for path in completed_paths}
+		payload = {'completed': sorted(str(path) for path in completed_paths)}
+		with open(checkpoint_manifest, 'w', encoding='utf-8') as handle:
+			json.dump(payload, handle, indent=2)
+
 	#create a function to store the pytorch geometric data in a hdf5 file
 	def store_pyg(self, pdbfiles, filename, foldxdir = None, include_chain = False, add_prody = False, verbose = True , **kwargs):
-		with h5py.File(filename , mode = 'w') as f:
+		checkpoint_manifest = kwargs.pop('checkpoint_manifest', None)
+		output_mode = kwargs.pop('output_mode', 'w')
+		completed_paths = set()
+		if checkpoint_manifest and os.path.exists(checkpoint_manifest):
+			with open(checkpoint_manifest, 'r', encoding='utf-8') as handle:
+				payload = json.load(handle)
+			completed_paths = {os.path.abspath(path) for path in payload.get('completed', [])}
+		with h5py.File(filename , mode = output_mode) as f:
 			for pdbfile in  tqdm.tqdm( pdbfiles ):                    
 				if verbose:
 					print(pdbfile)
@@ -1549,6 +1582,11 @@ class PDB2PyG:
 					hetero_data = self.struct2pyg(pdbfile , foldxdir = foldxdir , include_chain = include_chain , verbose = verbose , add_prody = add_prody , **kwargs)
 					if hetero_data:
 						identifier = hetero_data.identifier
+						if identifier in f:
+							completed_paths.add(os.path.abspath(pdbfile))
+							if checkpoint_manifest:
+								self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
+							continue
 						f.create_group(identifier)
 						for node_type in hetero_data.node_types:
 							if hetero_data[node_type].x is not None:
@@ -1564,6 +1602,9 @@ class PDB2PyG:
 							if hasattr(hetero_data[edge_type], 'edge_attr') and hetero_data[edge_type].edge_attr is not None:
 								edge_group.create_dataset('edge_attr', data=hetero_data[edge_type].edge_attr.numpy())
 							#todo. store some other data. sequence. uniprot info etc.
+						completed_paths.add(os.path.abspath(pdbfile))
+						if checkpoint_manifest:
+							self._update_checkpoint_manifest(checkpoint_manifest, completed_paths)
 				except:
 					#pring traceback
 					print(traceback.format_exc())
