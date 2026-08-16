@@ -22,10 +22,11 @@ fi
 
 mkdir -p logs
 
-PROJECT_ROOT=${PROJECT_ROOT:-/capstor/store/cscs/swissai/prep01/foldtree2/foldtree2}
-DATASET=${DATASET:-/capstor/store/cscs/swissai/prep01/structs_training_mk2.h5}
-PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/prep01/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
-CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/prep01/foldtree2/results/geometry/ddp_${SLURM_JOB_ID}}
+PROJECT_ROOT=${PROJECT_ROOT:-/capstor/store/cscs/swissai/a0117/foldtree2/foldtree2}
+DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structs_training_mk2.h5}
+
+PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/a0117/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/foldtree2/results/geometry/ddp_${SLURM_JOB_ID}}
 mkdir -p "${CHECKPOINT_DIR}"
 
 NODES=${NODES:-${SLURM_JOB_NUM_NODES:-2}}
