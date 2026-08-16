@@ -7,11 +7,11 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --gres-flags=enforce-binding
-#SBATCH --account=A-prep01
+#SBATCH --account=A-a0117
 #SBATCH --array=0-5
 #SBATCH --output=ft2_geom_%A_%a.out
 #SBATCH --error=ft2_geom_%A_%a.err
-#SBATCH --environment=torch
+#SBATCH --environment=pygmk3
 
 set -euo pipefail
 
@@ -24,12 +24,12 @@ fi
 transformer_widths=(64 96 128 192 256 384)
 TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
 
-PROJECT_ROOT=${PROJECT_ROOT:-/capstor/store/cscs/swissai/prep01/foldtree2/foldtree2}
-DATASET=${DATASET:-/capstor/store/cscs/swissai/prep01/structs_training_mk2.h5}
-PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/prep01/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
+PROJECT_ROOT=${PROJECT_ROOT:-/capstor/store/cscs/swissai/a0117/foldtree2/foldtree2}
+DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structs_training_mk2.h5}
+PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/a0117/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
 
 RUN_TAG="tw${TRANSFORMER_WIDTH}_bs2_lr5e4"
-CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/prep01/foldtree2/results/geometry/${RUN_TAG}}
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/foldtree2/results/geometry/${RUN_TAG}}
 mkdir -p "${CHECKPOINT_DIR}"
 
 cd "${PROJECT_ROOT}"
