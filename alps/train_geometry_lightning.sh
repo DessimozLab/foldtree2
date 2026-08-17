@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --gres=gpu:1
 #SBATCH --gres-flags=enforce-binding
-#SBATCH --account=A-a0117
+#SBATCH --account=a0117
 #SBATCH --array=0-5
 #SBATCH --output=ft2_geom_%A_%a.out
 #SBATCH --error=ft2_geom_%A_%a.err
