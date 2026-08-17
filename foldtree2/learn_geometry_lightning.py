@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import argparse
 import gc
+import json
 import math
 import os
 import random
+import sys
 import warnings
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+
+import yaml
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
@@ -1284,8 +1288,74 @@ class GeometryFocusedModule(pl.LightningModule):
             gc.collect()
 
 
+def _cli_overridden_destinations(parser: argparse.ArgumentParser) -> set[str]:
+    option_actions = parser._option_string_actions
+    seen = set()
+    for token in sys.argv[1:]:
+        if token == "--":
+            break
+        if token.startswith("--") and "=" in token:
+            option_name = token.split("=", 1)[0]
+            action = option_actions.get(option_name)
+            if action is not None:
+                seen.add(action.dest)
+            continue
+        if token.startswith("--"):
+            action = option_actions.get(token)
+            if action is not None:
+                seen.add(action.dest)
+            continue
+        if token.startswith("-") and len(token) > 1 and not token.startswith("--"):
+            for option_name, action in option_actions.items():
+                if option_name == token:
+                    seen.add(action.dest)
+                    break
+    return seen
+
+
+def load_config_into_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> argparse.Namespace:
+    if not getattr(args, "config", None):
+        return args
+
+    config_path = Path(args.config)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    suffix = config_path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        with config_path.open("r", encoding="utf-8") as fh:
+            config = yaml.safe_load(fh) or {}
+    elif suffix == ".json":
+        with config_path.open("r", encoding="utf-8") as fh:
+            config = json.load(fh) or {}
+    else:
+        raise ValueError("Config file must be YAML (.yaml/.yml) or JSON (.json)")
+
+    if not isinstance(config, dict):
+        raise ValueError(f"Config file {config_path} must contain a top-level dictionary/object")
+
+    cli_overrides = _cli_overridden_destinations(parser)
+    for key, value in config.items():
+        if not hasattr(args, key):
+            print(f"Warning: ignoring config key '{key}' because it is not a recognized argument.")
+            continue
+        if key in cli_overrides:
+            print(f"  {key}: {getattr(args, key)} (from CLI, overriding config)")
+            continue
+        setattr(args, key, value)
+        print(f"  {key}: {value} (from config)")
+    return args
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Geometry-focused Lightning trainer from notebook final loop")
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=str,
+        default=None,
+        help="Path to a YAML or JSON config file. Command-line args override config-file values.",
+    )
     parser.add_argument("--dataset", type=str, default="structs_training_mk2.h5", help="Path to HDF5 StructureDataset")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument(
@@ -1750,7 +1820,9 @@ def parse_args():
         default=1,
         help="How many best checkpoints to keep (monitoring val/loss when validation is enabled, else train/loss_epoch)",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args = load_config_into_args(args, parser)
+    return args
 
 
 def parse_devices(devices_arg: str):

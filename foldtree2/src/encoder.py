@@ -7,7 +7,6 @@ import os
 import pickle
 import queue
 import threading
-from foldtree2.src.pdbgraph import StructureDataset
 import numpy as np
 import pandas as pd
 import pytorch_lightning as L
@@ -29,7 +28,7 @@ from foldtree2.src.xsatransformer import XSATransformerConv
 import copy
 from torch_geometric.loader import DataLoader
 
-from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, _load_foldcomp_ids
+from foldtree2.src.pdbgraphmk2 import StructureDataset, FoldcompStructureDataset, _load_foldcomp_ids
 
 
 def _foldcomp_chunk_producer_process(
