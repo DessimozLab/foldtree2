@@ -33,7 +33,6 @@ CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/result
 mkdir -p "${CHECKPOINT_DIR}"
 
 cd "${PROJECT_ROOT}"
-pip install --no-cache-dir -e .
 
 echo "Starting geometry Lightning run"
 echo "  transformer_width=${TRANSFORMER_WIDTH}"
@@ -41,7 +40,7 @@ echo "  dataset=${DATASET}"
 echo "  checkpoint_dir=${CHECKPOINT_DIR}"
 
 CMD=(
-  python learn_geometry_lightning.py
+  python foldtree2/learn_geometry_lightning.py
   --dataset "${DATASET}"
   --epochs "${EPOCHS:-100}"
   --batch-size "${BATCH_SIZE:-2}"
