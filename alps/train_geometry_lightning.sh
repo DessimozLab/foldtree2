@@ -24,7 +24,7 @@ fi
 transformer_widths=(64 96 128 192 256 384)
 TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
 
-PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/foldtree2}
+PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/users/dmoi/foldtree2/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
 
