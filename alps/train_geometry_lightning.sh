@@ -21,7 +21,8 @@ if [[ -n "${VENV_PATH:-}" ]]; then
 fi
 
 # Sweep transformer width like the original hidden-size sweep.
-transformer_widths=(64 96 128 192 256 384)
+#transformer_widths=(64 96 128 192 256 384)
+transformer_widths=(128)
 TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
 
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
