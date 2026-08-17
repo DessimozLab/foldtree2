@@ -86,6 +86,8 @@ RUN set -eux; \
 ARG FOLDTREE2_REPO_URL=https://github.com/DessimozLab/foldtree2.git
 ARG FOLDTREE2_REPO_REF=dev
 RUN git clone --depth 1 --branch ${FOLDTREE2_REPO_REF} ${FOLDTREE2_REPO_URL} /workspace/foldtree2
+#checkout to dev branch
+RUN cd /workspace/foldtree2 && git checkout ${FOLDTREE2_REPO_REF}
 WORKDIR /workspace/foldtree2
 RUN ${VENV_PATH}/bin/pip install --no-cache-dir --no-deps -e .
 

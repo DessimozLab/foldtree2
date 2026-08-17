@@ -27,7 +27,6 @@ from foldtree2.src.quantizers import *
 from foldtree2.src.xsatransformer import XSATransformerConv
 import copy
 from torch_geometric.loader import DataLoader
-
 from foldtree2.src.pdbgraphmk2 import StructureDataset, FoldcompStructureDataset, _load_foldcomp_ids
 
 

@@ -47,7 +47,7 @@ def interaction_matrix_energy(ag):
 	return pr.Interactions.buildInteractionMatrixEnergy(ag)
 
 
-#create a class for transforming pdb files to pyg 
+#create a class for transforming pdb files to pyg 	
 class PDB2PyG:
 	def __init__(self , aapropcsv = None):
 		self.aapropcsv = resolve_aapropcsv_path(aapropcsv)
