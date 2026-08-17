@@ -24,12 +24,12 @@ fi
 transformer_widths=(64 96 128 192 256 384)
 TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
 
-PROJECT_ROOT=${PROJECT_ROOT:-/capstor/store/cscs/swissai/a0117/foldtree2/foldtree2}
-DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structs_training_mk2.h5}
-PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/a0117/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
+PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/foldtree2}
+DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
+PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/users/dmoi/foldtree2/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
 
 RUN_TAG="tw${TRANSFORMER_WIDTH}_bs2_lr5e4"
-CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/foldtree2/results/geometry/${RUN_TAG}}
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 mkdir -p "${CHECKPOINT_DIR}"
 
 cd "${PROJECT_ROOT}"
