@@ -22,7 +22,8 @@ fi
 # Sweep transformer width like the original hidden-size sweep.
 #transformer_widths=(64 96 128 192 256 384)
 transformer_widths=(128)
-TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
+#TRANSFORMER_WIDTH=${transformer_widths[$SLURM_ARRAY_TASK_ID]}
+TRANSFORMER_WIDTH=128
 
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
