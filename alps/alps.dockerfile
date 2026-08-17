@@ -43,6 +43,8 @@ RUN ${VENV_PATH}/bin/pip install --no-cache-dir \
     "networkx>=3.1,<3.4" \
     biopython==1.79 \
     "pydssp>=0.9,<1.0" \
+    "fastdist>=1.1,<2.0" \
+    "foldcomp>=0.0.7,<1.0" \
     "h5py>=3.9,<3.12" \
     wget==3.2 \
     "tqdm>=4.65,<5.0" \
@@ -51,6 +53,7 @@ RUN ${VENV_PATH}/bin/pip install --no-cache-dir \
     "datasketch>=1.5,<1.7" \
     "urllib3>=2.0,<2.3" \
     "pyyaml>=6.0,<7.0" \
+    "gemmi>=0.6,<0.7" \
     prody==2.4.1 \
     gotennet-pytorch==0.2.2
 
@@ -96,10 +99,21 @@ RUN ${VENV_PATH}/bin/python - <<'PY'
 import torch
 import pytorch_lightning as pl
 import torch_geometric
+import foldcomp
+from foldtree2.learn_geometry_lightning import GeometryFocusedModule
+from foldtree2.src.encoder import mk1_Encoder
+from foldtree2.src.mono_decoders import Transformer_Geometry_Decoder
+from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, StructureDataset
 from foldtree2.src.se3_struct_decoder import se3_denoiser
 print('torch', torch.__version__, 'cuda', torch.version.cuda)
 print('lightning', pl.__version__)
 print('pyg', torch_geometric.__version__)
+print('foldcomp', getattr(foldcomp, '__version__', 'unknown'))
+print('GeometryFocusedModule', GeometryFocusedModule.__name__)
+print('mk1_Encoder', mk1_Encoder.__name__)
+print('Transformer_Geometry_Decoder', Transformer_Geometry_Decoder.__name__)
+print('StructureDataset', StructureDataset.__name__)
+print('FoldcompStructureDataset', FoldcompStructureDataset.__name__)
 print('se3_denoiser', se3_denoiser.__name__)
 PY
 

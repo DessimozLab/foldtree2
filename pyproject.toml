@@ -52,7 +52,8 @@ dependencies = [
   "pyyaml",
   "ProDy",
   "foldcomp",
-  "optuna"
+  "optuna" , 
+  "gemmi"
 ]
 
 [project.scripts]
