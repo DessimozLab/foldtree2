@@ -1186,7 +1186,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     aa_identity_ids=aa_identity_ids,
                     coords_pred=se3_seed_coords,
                 )
-                if self.use_se3_residue_loss and out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
+                if out_s.get("coors_out") is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
                     data_batch["se3_coords_pred"].x = se3_coords_step
@@ -1234,10 +1234,13 @@ class GeometryFocusedModule(pl.LightningModule):
                             return_components=True,
                         )
                         raw_terms["se3_coarse_ca"] = se3_ca_total * self.coarse_ca_weight
-                    q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
-                    true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
-                    raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
-                    raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
+                    if self.use_se3_residue_loss and true_q is not None and true_t is not None:
+                        q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
+                        true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
+                        raw_terms["fape_quat_se3"] = quaternion_fape_loss(
+                            true_q, true_t_origin, q_se3, t_se3, batch=batch_idx
+                        )
+                        raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
 
                 if self.use_se3_angle_loss and out_s.get("angles") is not None and true_angles is not None:
                     se3_angle_pred = out_s["angles"][..., :3]
