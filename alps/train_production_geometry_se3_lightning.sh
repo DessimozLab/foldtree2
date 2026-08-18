@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ft2-prod-se3-gh200
-#SBATCH --time=24:00:00
+#SBATCH --time=08:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=16
