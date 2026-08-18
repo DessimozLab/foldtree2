@@ -476,6 +476,8 @@ class GeometryFocusedModule(pl.LightningModule):
         se3_atom_weight: float = 0.05,
         se3_atom_fape_weight: float = 0.25,
         se3_use_codebook_vectors: bool = False,
+        se3_use_distance_contacts: bool = False,
+        se3_distance_contact_cutoff: float = 8.0,
     ):
         super().__init__()
         self.encoder = encoder
@@ -551,6 +553,8 @@ class GeometryFocusedModule(pl.LightningModule):
         self.se3_atom_weight = float(se3_atom_weight)
         self.se3_atom_fape_weight = float(se3_atom_fape_weight)
         self.se3_use_codebook_vectors = bool(se3_use_codebook_vectors)
+        self.se3_use_distance_contacts = bool(se3_use_distance_contacts)
+        self.se3_distance_contact_cutoff = float(se3_distance_contact_cutoff)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -1134,7 +1138,10 @@ class GeometryFocusedModule(pl.LightningModule):
                     se3_seed_coords = se3_seed_coords.detach() if self.train_se3_only else se3_seed_coords
                     se3_edge_attr_dict = {
                         "dot_prod": self._geometry_dot_contact_sketch(se3_seed_coords, batch_idx),
+                        # The initial residue pass is intentionally seeded
+                        # only by the learned dot-product contact graph.
                         "use_distance_contacts": False,
+                        "distance_contact_cutoff": self.se3_distance_contact_cutoff,
                     }
                 elif self.se3_input_source == "coarse_ca":
                     se3_seed_coords = pred_ca_trace
@@ -1211,7 +1218,13 @@ class GeometryFocusedModule(pl.LightningModule):
                     atom_type_ids[:, :pred_coarse_atoms.shape[1]] = canonical_coarse_ids
                     out_atom = self.se3_decoder(
                         data_batch,
-                        edge_attr_dict=se3_edge_attr_dict,
+                        edge_attr_dict={
+                            **(se3_edge_attr_dict or {}),
+                            # Distance contacts are introduced only after the
+                            # initial dot-product graph has produced coarse
+                            # atom coordinates.
+                            "use_distance_contacts": self.se3_use_distance_contacts,
+                        },
                         coords_pred_atoms=pred_atom_seed,
                         atom_type_ids=atom_type_ids,
                     )
@@ -1576,6 +1589,18 @@ def parse_args():
         type=float,
         default=0.0,
         help="Minimum normalized dot product included in the SE3 contact sketch",
+    )
+    parser.add_argument(
+        "--se3-use-distance-contacts",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add distance-based contacts from the predicted coordinates to the SE3 graph",
+    )
+    parser.add_argument(
+        "--se3-distance-contact-cutoff",
+        type=float,
+        default=8.0,
+        help="Distance-contact cutoff in angstroms",
     )
     parser.add_argument(
         "--se3-contact-sketch-min-seq-sep",

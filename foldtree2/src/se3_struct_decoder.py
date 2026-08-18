@@ -811,6 +811,7 @@ class se3_denoiser(torch.nn.Module):
 		#use dot product results to add adges
 		x_dict['dot_prod'] = edge_attr_dict.get('dot_prod', None) if edge_attr_dict is not None else None
 		use_distance_contacts = edge_attr_dict.get('use_distance_contacts', True) if edge_attr_dict is not None else True
+		distance_contact_cutoff = float(edge_attr_dict.get('distance_contact_cutoff', 8.0)) if edge_attr_dict is not None else 8.0
 
 		# Create adjacency matrix from edge_index
 		# For GotenNet, we need a dense adjacency matrix
@@ -843,7 +844,7 @@ class se3_denoiser(torch.nn.Module):
 				# Compute pairwise distances
 				if use_distance_contacts:
 					dists = torch.cdist(coords[mask], coords[mask])  # (num nodes, num_nodes)
-					contact_threshold = 8.0  # Angstroms, adjust as needed
+					contact_threshold = distance_contact_cutoff
 					contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
 					adj |= contact_edges
 
@@ -902,7 +903,7 @@ class se3_denoiser(torch.nn.Module):
 			# Build adjacency matrix from point cloud distances
 			if use_distance_contacts:
 				dists = torch.cdist(coords, coords)  # (num_nodes, num_nodes)
-				contact_threshold = 8.0  # Angstroms, adjust as needed
+				contact_threshold = distance_contact_cutoff
 				contact_edges = (dists < contact_threshold) & (dists > 0)  # Exclude self-edges
 				adj_mat |= contact_edges
 
