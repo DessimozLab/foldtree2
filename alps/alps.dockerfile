@@ -4,6 +4,9 @@ FROM nvcr.io/nvidia/pytorch:24.01-py3
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV VENV_PATH=/workspace/foldtree2-venv
+# Override NGC base image's private PyPI index — forces all pip commands to use public PyPI only.
+ENV PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_EXTRA_INDEX_URL=
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,11 +31,13 @@ RUN python3.10 -m venv --system-site-packages ${VENV_PATH}
 ENV PATH="${VENV_PATH}/bin:$PATH"
 
 # Upgrade pip
-RUN ${VENV_PATH}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN ${VENV_PATH}/bin/pip install --index-url https://pypi.org/simple --no-cache-dir --upgrade pip setuptools wheel
 
 # Install SE3 + Lightning stack and scientific dependencies.
 # Keep base-image torch to avoid ABI/CUDA mismatch with NGC builds.
-RUN ${VENV_PATH}/bin/pip install --no-cache-dir \
+# Explicitly use public PyPI to avoid NGC private index (pypi.ngc.nvidia.com)
+# which may be unreachable in some build environments.
+RUN ${VENV_PATH}/bin/pip install --no-cache-dir --index-url https://pypi.org/simple \
     "numpy>=1.23.5,<1.24" \
     "scipy>=1.10,<1.11" \
     "pandas>=1.5,<2.0" \
@@ -41,21 +46,20 @@ RUN ${VENV_PATH}/bin/pip install --no-cache-dir \
     "torchmetrics>=1.4,<1.5" \
     "matplotlib>=3.7,<3.8" \
     "networkx>=3.1,<3.4" \
-    biopython==1.79 \
+    "biopython==1.79" \
     "pydssp>=0.9,<1.0" \
     "fastdist>=1.1,<2.0" \
-    "foldcomp>=0.0.7,<1.0" \
     "h5py>=3.9,<3.12" \
-    wget==3.2 \
+    "wget==3.2" \
     "tqdm>=4.65,<5.0" \
     "einops>=0.6,<0.9" \
     "pebble>=5.0,<6.0" \
     "datasketch>=1.5,<1.7" \
     "urllib3>=2.0,<2.3" \
     "pyyaml>=6.0,<7.0" \
-    "gemmi>=0.6,<0.7" \
-    prody==2.4.1 \
-    gotennet-pytorch==0.2.2
+    "gemmi" \
+    "prody==2.4.1" \
+    "gotennet-pytorch==0.2.2"
 
 # Install PyTorch Geometric + CUDA extension wheels that match the torch/cuda
 # versions already bundled in the base image.
@@ -71,7 +75,7 @@ RUN set -eux; \
       torch_cluster \
       torch_spline_conv \
       torch_geometric \
-            --no-build-isolation \
+        --no-build-isolation \
       -f "${PYG_WHL}"
 
 # Install Foldcomp static binary (avoid source build issues from Python packaging).
@@ -99,7 +103,6 @@ RUN ${VENV_PATH}/bin/python - <<'PY'
 import torch
 import pytorch_lightning as pl
 import torch_geometric
-import foldcomp
 from foldtree2.learn_geometry_lightning import GeometryFocusedModule
 from foldtree2.src.encoder import mk1_Encoder
 from foldtree2.src.mono_decoders import Transformer_Geometry_Decoder
@@ -108,7 +111,6 @@ from foldtree2.src.se3_struct_decoder import se3_denoiser
 print('torch', torch.__version__, 'cuda', torch.version.cuda)
 print('lightning', pl.__version__)
 print('pyg', torch_geometric.__version__)
-print('foldcomp', getattr(foldcomp, '__version__', 'unknown'))
 print('GeometryFocusedModule', GeometryFocusedModule.__name__)
 print('mk1_Encoder', mk1_Encoder.__name__)
 print('Transformer_Geometry_Decoder', Transformer_Geometry_Decoder.__name__)
