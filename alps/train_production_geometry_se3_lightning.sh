@@ -2,7 +2,7 @@
 #SBATCH --job-name=ft2-prod-se3-gh200
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=4
 #SBATCH --gpus-per-task=4
@@ -93,11 +93,7 @@ TRANSFORMER_WIDTH=${TRANSFORMER_WIDTH:-3}
 TRANSFORMER_LAYERS=${TRANSFORMER_LAYERS:-2}
 TRANSFORMER_NHEADS=${TRANSFORMER_NHEADS:-1}
 
-if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
-  DEVICES=${DEVICES:-$(awk -F',' '{print NF}' <<< "${CUDA_VISIBLE_DEVICES}")}
-else
-  DEVICES=${DEVICES:-${SLURM_GPUS_PER_NODE:-1}}
-fi
+# Keep CLI launch on a single GPU by default.
 DEVICES=${DEVICES:-1}
 
 if [[ -z "${STRATEGY:-}" ]]; then
