@@ -111,14 +111,16 @@ CMD=(
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
-  --no-use-coarse-ca-loss
+  --use-coarse-ca-loss
   --use-coarse-backbone-loss
   --use-coarse-backbone-atom-loss
   --use-coarse-c-loss
   --use-coarse-cb-loss
   --use-coarse-n-loss
   --use-coarse-backbone-fape-loss
-  --no-use-coarse-backbone-angle-loss
+  --use-coarse-backbone-angle-loss
+  --coarse-backbone-angle-weight "${COARSE_BACKBONE_ANGLE_WEIGHT:-0.05}"
+  --use-se3-coarse-geometry-losses
   --use-se3-residue-loss
   --use-se3-angle-loss
   --use-se3-atom-refine
