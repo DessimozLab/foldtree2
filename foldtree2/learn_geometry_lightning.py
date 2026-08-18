@@ -854,6 +854,10 @@ class GeometryFocusedModule(pl.LightningModule):
             return torch.zeros((0, 0, 0), dtype=torch.bool, device=z.device)
         return torch.stack(sketches, dim=0)
 
+    def _prepare_geometry_outputs(self, data_batch):
+        """Run the frozen geometry source before the shared loss stack."""
+        return self.transformer_geom_decoder(data_batch, contact_pred_index=None)
+
     def _compute_total_loss(self, data_batch, debug_label: str = ""):
         data_batch = ensure_float32_inplace(data_batch)
         data_batch = ensure_edge_attrs_inplace(data_batch, edge_dim=getattr(self.encoder, "edge_dim", 1))
@@ -863,7 +867,7 @@ class GeometryFocusedModule(pl.LightningModule):
             ft2_token_ids = self._get_ft2_token_ids(z_local)
         data_batch["res"].x = z_local
 
-        out_local = self.transformer_geom_decoder(data_batch, contact_pred_index=None)
+        out_local = self._prepare_geometry_outputs(data_batch)
         aa_identity_ids = self._get_aa_identity_ids(out_local)
         true_R, true_t, true_q, true_angles, true_coords, batch_idx = get_true_geometry(data_batch)
 
@@ -1091,15 +1095,23 @@ class GeometryFocusedModule(pl.LightningModule):
                     )
                 se3_edge_attr_dict = None
                 if self.se3_input_source == "geometry_dot_contacts":
-                    contact_z = out_local.get("z", None)
+                    contact_z = out_local.get("se3_contact_z", out_local.get("z", None))
                     if contact_z is None:
-                        raise RuntimeError("Geometry dot-contact SE3 input requires out_local['z']")
-                    if contact_z.ndim != 2 or contact_z.shape[-1] != 3:
+                        raise RuntimeError("Geometry dot-contact SE3 input requires a contact embedding")
+                    if contact_z.ndim != 2:
                         raise RuntimeError(
-                            "Geometry dot-contact SE3 input expects decoder z with shape [N,3]; "
+                            "Geometry dot-contact SE3 input expects decoder embeddings with shape [N,D]; "
                             f"got {tuple(contact_z.shape)}. Try --transformer-width 3 --transformer-nheads 1."
                         )
-                    se3_seed_coords = contact_z * self.se3_contact_coord_scale
+                    se3_seed_coords = out_local.get("se3_seed_coords", None)
+                    if se3_seed_coords is None:
+                        se3_seed_coords = contact_z
+                    if se3_seed_coords.ndim != 2 or se3_seed_coords.shape[-1] != 3:
+                        raise RuntimeError(
+                            "Geometry dot-contact SE3 input requires seed coordinates with shape [N,3]; "
+                            f"got {tuple(se3_seed_coords.shape)}"
+                        )
+                    se3_seed_coords = se3_seed_coords * self.se3_contact_coord_scale
                     se3_seed_coords = se3_seed_coords.detach() if self.train_se3_only else se3_seed_coords
                     se3_edge_attr_dict = {
                         "dot_prod": self._geometry_dot_contact_sketch(se3_seed_coords, batch_idx),
@@ -1144,35 +1156,48 @@ class GeometryFocusedModule(pl.LightningModule):
                 if self.use_se3_atom_refine:
                     if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
                         raise RuntimeError("--use-se3-atom-refine requires --use-coarse-backbone-loss")
-                    atom_type_ids = torch.arange(
+                    atom_type_count = max(
                         pred_coarse_atoms.shape[1],
-                        device=pred_coarse_atoms.device,
+                        int(getattr(self.se3_decoder, "num_atom_types", pred_coarse_atoms.shape[1])),
+                    )
+                    # The dataset has direct coordinates for the four coarse
+                    # backbone atoms. Seed any additional atom types at CA so
+                    # the SE3 decoder can still produce a complete atom axis.
+                    pred_atom_seed = pred_coarse_atoms
+                    if atom_type_count > pred_coarse_atoms.shape[1]:
+                        pred_atom_seed = pred_coarse_atoms[:, :1].expand(-1, atom_type_count, -1).clone()
+                        pred_atom_seed[:, :pred_coarse_atoms.shape[1]] = pred_coarse_atoms
+                    atom_type_ids = torch.arange(
+                        atom_type_count,
+                        device=pred_atom_seed.device,
                         dtype=torch.long,
-                    ).unsqueeze(0).expand(pred_coarse_atoms.shape[0], -1)
+                    ).unsqueeze(0).expand(pred_atom_seed.shape[0], -1)
                     out_atom = self.se3_decoder(
                         data_batch,
                         edge_attr_dict=se3_edge_attr_dict,
-                        coords_pred_atoms=pred_coarse_atoms,
+                        coords_pred_atoms=pred_atom_seed,
                         atom_type_ids=atom_type_ids,
                     )
                     se3_atoms = out_atom.get("coors_out_atoms", None)
                     if se3_atoms is None:
                         raise RuntimeError("SE3 atom refinement did not return coors_out_atoms")
                     se3_atoms = se3_atoms.to(device=true_coarse_atoms.device, dtype=true_coarse_atoms.dtype)
+                    data_batch["se3_atoms_pred"].x = se3_atoms
+                    supervised_se3_atoms = se3_atoms[:, :pred_coarse_atoms.shape[1]]
                     data_batch["se3_ca_pred"].x = se3_atoms[:, ca_idx]
                     data_batch["se3_c_pred"].x = se3_atoms[:, c_idx]
                     data_batch["se3_cb_pred"].x = se3_atoms[:, cb_idx]
                     data_batch["se3_n_pred"].x = se3_atoms[:, n_idx]
                     if self.use_se3_atom_loss and self.se3_atom_weight > 0:
                         raw_terms["se3_atom_refine"] = self.se3_atom_weight * F.smooth_l1_loss(
-                            se3_atoms,
+                            supervised_se3_atoms,
                             true_coarse_atoms,
                             beta=0.5,
                         )
                     if self.use_se3_atom_fape_loss and self.se3_atom_fape_weight > 0:
                         raw_terms["se3_atom_fape"] = self.se3_atom_fape_weight * coarse_backbone_fape_loss(
                             true_coarse_atoms,
-                            se3_atoms,
+                            supervised_se3_atoms,
                             true_R_atoms,
                             pred_R_for_fape,
                             true_ca_atoms,
@@ -1454,6 +1479,30 @@ def parse_args():
         type=str,
         default="/home/dmoi/projects/foldtree2/models/notebook/final_30char_mk2_contacts_aa_encoder_full_epoch_4.pt",
         help="Fallback full-model checkpoint used for state_dict loading",
+    )
+    parser.add_argument(
+        "--pretrained-geometry-decoder-path",
+        type=str,
+        default=None,
+        help="Frozen production geometry encoder-decoder pair checkpoint for the production SE3 entry point",
+    )
+    parser.add_argument(
+        "--production-coordinate-source",
+        choices=["auto", "z", "trans_pred", "trans_local_pred"],
+        default="auto",
+        help="3D seed exported by the production geometry decoder",
+    )
+    parser.add_argument(
+        "--production-coordinate-scale",
+        type=float,
+        default=1.0,
+        help="Scale applied to the production decoder's 3D seed before SE3 refinement",
+    )
+    parser.add_argument(
+        "--se3-num-atom-types",
+        type=int,
+        default=0,
+        help="Number of atom types emitted by SE3; 0 uses the encoder vocabulary size",
     )
     parser.add_argument(
         "--fallback-latent-dim",
@@ -2039,7 +2088,7 @@ def main():
         device = torch.device("cpu")
 
     encoder, latent_dim = build_encoder(args, data_sample.to(device), device)
-    se3_num_atom_types = max(4, int(getattr(encoder, "num_embeddings", 20)))
+    se3_num_atom_types = max(4, int(args.se3_num_atom_types or getattr(encoder, "num_embeddings", 20)))
     transformer_geom_decoder, se3_decoder = build_decoders(
         latent_dim,
         data_sample,
