@@ -601,13 +601,16 @@ class CNN_geo_Decoder(torch.nn.Module):
 			# Group by batch
 			num_graphs = batch.max().item() + 1
 			x_list = []
+			# Older production checkpoints predate the serialized activation
+			# ModuleList. Their convolution stack was conv -> LayerNorm.
+			activations = self.body['activations'] if 'activations' in self.body else [None] * len(self.body['convs'])
 			for i in range(num_graphs):
 				mask = batch == i
 				x_batch = x[mask]  # Shape: (seq_len, features)
 				# Transpose for Conv1d: (features, seq_len)
 				x_batch = x_batch.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
 				# Apply CNN layers
-				for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], self.body['activations'])):
+				for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], activations)):
 					x_batch = conv(x_batch)
 					
 					if self.residual:
@@ -615,9 +618,10 @@ class CNN_geo_Decoder(torch.nn.Module):
 					
 					# Transpose for LayerNorm: (1, seq_len, features)
 					x_batch = x_batch.transpose(1, 2)
-					x_batch = activation(x_batch)
+					if activation is not None:
+						x_batch = activation(x_batch)
 					x_batch = norm(x_batch)
-					if self.use_mhc:
+					if getattr(self, 'use_mhc', False):
 						mhc_layer = self.body['mhc_layers'][layer_idx]
 						stream_state = mhc_layer.init_streams(x_batch)
 						stream_state = mhc_layer.step(stream_state, x_batch, residual=False)
@@ -636,15 +640,17 @@ class CNN_geo_Decoder(torch.nn.Module):
 			# Single graph case
 			x = x.transpose(0, 1).unsqueeze(0)  # (1, features, seq_len)
 			
-			for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], self.body['activations'])):
+			activations = self.body['activations'] if 'activations' in self.body else [None] * len(self.body['convs'])
+			for layer_idx, (conv, norm, activation) in enumerate(zip(self.body['convs'], self.body['norms'], activations)):
 				if self.residual:
 					xin = x.clone()			
 				x = conv(x)
 				# Transpose for LayerNorm: (1, seq_len, features)
 				x = x.transpose(1, 2)
-				x = activation(x)
+				if activation is not None:
+					x = activation(x)
 				x = norm(x)
-				if self.use_mhc:
+				if getattr(self, 'use_mhc', False):
 					mhc_layer = self.body['mhc_layers'][layer_idx]
 					stream_state = mhc_layer.init_streams(x)
 					stream_state = mhc_layer.step(stream_state, x, residual=False)

@@ -24,9 +24,9 @@ fi
 
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
-MODEL_TAG=${MODEL_TAG:-30char}
-PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
-PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/30char_minimal_decoder/final_30char_contacts_aa_decoder_full_epoch_52.pt}
+MODEL_TAG=${MODEL_TAG:-40char}
+PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
+PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt}
 
 BATCH_SIZE=${BATCH_SIZE:-8}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-8}
@@ -66,6 +66,7 @@ CMD=(
   --se3-depth "${SE3_DEPTH:-8}"
   --se3-heads "${SE3_HEADS:-8}"
   --se3-dim-head "${SE3_DIM_HEAD:-32}"
+  --se3-num-atom-types "${SE3_NUM_ATOM_TYPES:-0}"
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-1.0}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-16}"

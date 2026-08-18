@@ -34,6 +34,14 @@ class ProductionGeometrySE3Module(base.GeometryFocusedModule):
         super().__init__(*args, **kwargs)
         self.production_coordinate_source = str(production_coordinate_source)
         self.production_coordinate_scale = float(production_coordinate_scale)
+        self._production_bottleneck = None
+
+        def capture_bottleneck(_module, inputs):
+            self._production_bottleneck = inputs[0].detach()
+
+        self._production_bottleneck_hook = self.transformer_geom_decoder.body["lin"].register_forward_pre_hook(
+            capture_bottleneck
+        )
 
         for parameter in self.transformer_geom_decoder.parameters():
             parameter.requires_grad = False
@@ -48,15 +56,20 @@ class ProductionGeometrySE3Module(base.GeometryFocusedModule):
             raise RuntimeError("Production geometry decoder must return z with shape [N,D]")
 
         candidates = {
+            "bottleneck": self._production_bottleneck,
             "z": contact_embedding,
             "trans_pred": output.get("trans_pred"),
             "trans_local_pred": output.get("trans_local_pred"),
         }
         source = self.production_coordinate_source
         if source == "auto":
-            source = "z" if contact_embedding.shape[-1] == 3 else "trans_pred"
-            if candidates.get(source) is None:
-                source = "trans_local_pred"
+            source = next(
+                (candidate for candidate in ("bottleneck", "z", "trans_pred", "trans_local_pred")
+                 if candidates.get(candidate) is not None
+                 and candidates[candidate].ndim == 2
+                 and candidates[candidate].shape[-1] == 3),
+                "bottleneck",
+            )
 
         seed = candidates.get(source)
         if seed is None or seed.ndim != 2 or seed.shape[-1] != 3:
@@ -64,6 +77,30 @@ class ProductionGeometrySE3Module(base.GeometryFocusedModule):
             raise RuntimeError(
                 f"Production coordinate source '{source}' is not [N,3]; available decoder outputs: {shapes}"
             )
+
+        # Production contact decoders do not necessarily include the optional
+        # RT head. Derive frame-compatible local CA steps from the 3D seed so
+        # the shared coarse-backbone and atom loss stack remains usable.
+        if output.get("rt_pred") is None:
+            batch_idx = getattr(data_batch["res"], "batch", None)
+            q_parts = []
+            step_parts = []
+            groups = [torch.arange(seed.shape[0], device=seed.device)] if batch_idx is None else [
+                torch.where(batch_idx == value)[0] for value in torch.unique(batch_idx, sorted=True)
+            ]
+            for indices in groups:
+                seed_i = seed[indices]
+                R_i, _t_i, q_i = self._frames_from_ca_only(seed_i)
+                steps_i = torch.zeros_like(seed_i)
+                if seed_i.shape[0] > 1:
+                    delta_i = seed_i[1:] - seed_i[:-1]
+                    steps_i[:-1] = torch.einsum("nij,nj->ni", R_i[:-1].transpose(-1, -2), delta_i)
+                q_parts.append(q_i)
+                step_parts.append(steps_i)
+            pseudo_q = torch.cat(q_parts, dim=0)
+            pseudo_steps = torch.cat(step_parts, dim=0)
+            output["rt_pred"] = torch.cat([pseudo_q, pseudo_steps], dim=-1)
+            output["ca_step_pred"] = pseudo_steps
 
         # The shared SE3 path applies se3_contact_coord_scale. Normalize that
         # factor here so production-coordinate-scale remains an independent flag.
@@ -90,6 +127,11 @@ def load_production_decoder(path: str, device: torch.device) -> torch.nn.Module:
 
     if not hasattr(decoder, "decoders") or "geometry_cnn" not in decoder.decoders:
         raise RuntimeError(f"{checkpoint} is not a MultiMonoDecoder with a geometry_cnn decoder")
+
+    # Production checkpoints bundle several mono decoders. Only the geometry
+    # branch is part of this experiment; invoking the bundle would also run
+    # legacy auxiliary decoders that are unrelated to the SE3 input.
+    decoder = decoder.decoders["geometry_cnn"]
 
     decoder = decoder.to(device)
     decoder.eval()
@@ -138,12 +180,18 @@ def main():
     )
 
     constructor = inspect.signature(base.GeometryFocusedModule.__init__)
+    argument_aliases = {
+        "lr_scheduler_name": "lr_scheduler",
+        "max_epochs": "epochs",
+        "clip_grad_norm": "clip_grad",
+    }
     module_kwargs = {}
     for name in constructor.parameters:
         if name in {"self", "encoder", "transformer_geom_decoder", "se3_decoder"}:
             continue
-        if hasattr(args, name):
-            module_kwargs[name] = getattr(args, name)
+        source_name = argument_aliases.get(name, name)
+        if hasattr(args, source_name):
+            module_kwargs[name] = getattr(args, source_name)
     module_kwargs.update(
         encoder=encoder,
         transformer_geom_decoder=production_decoder,

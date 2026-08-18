@@ -1488,7 +1488,7 @@ def parse_args():
     )
     parser.add_argument(
         "--production-coordinate-source",
-        choices=["auto", "z", "trans_pred", "trans_local_pred"],
+        choices=["auto", "bottleneck", "z", "trans_pred", "trans_local_pred"],
         default="auto",
         help="3D seed exported by the production geometry decoder",
     )
@@ -1875,6 +1875,8 @@ def parse_args():
 
 
 def parse_devices(devices_arg: str):
+    if isinstance(devices_arg, int):
+        return devices_arg
     if devices_arg == "auto":
         return "auto"
     if "," in devices_arg:
