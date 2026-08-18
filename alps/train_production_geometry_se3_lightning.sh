@@ -15,12 +15,78 @@
 
 set -euo pipefail
 
+SCRIPT_START_EPOCH=$(date +%s)
+SCRIPT_NAME=$(basename "$0")
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S%z')" "$*"
+}
+
+print_kv() {
+  printf '  %-36s %s\n' "$1" "$2"
+}
+
+dump_vars() {
+  local var
+  for var in "$@"; do
+    print_kv "${var}" "${!var-<unset>}"
+  done
+}
+
+on_exit() {
+  local exit_code=$?
+  local elapsed=$(( $(date +%s) - SCRIPT_START_EPOCH ))
+  if [[ ${exit_code} -eq 0 ]]; then
+    log "Script finished successfully in ${elapsed}s"
+  else
+    log "Script failed with exit code ${exit_code} after ${elapsed}s"
+  fi
+}
+trap on_exit EXIT
+
 export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
 export PYTHONFAULTHANDLER=${PYTHONFAULTHANDLER:-1}
 
+TRACE_SCRIPT=${TRACE_SCRIPT:-0}
+if [[ "${TRACE_SCRIPT}" == "1" ]]; then
+  export PS4='+ [$(date +%Y-%m-%dT%H:%M:%S%z)] ${BASH_SOURCE##*/}:${LINENO}: '
+  set -x
+fi
+
+LOG_DIR=${LOG_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}
+mkdir -p "${LOG_DIR}"
+LOG_FILE=${LOG_FILE:-${LOG_DIR}/${SCRIPT_NAME%.sh}_${SLURM_JOB_ID:-manual}_$(date +%Y%m%d_%H%M%S).log}
+exec > >(tee -a "${LOG_FILE}") 2>&1
+
+log "Logging initialized"
+print_kv "log_file" "${LOG_FILE}"
+print_kv "script" "${0}"
+print_kv "host" "$(hostname)"
+print_kv "start_time_utc" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+log "SLURM metadata"
+dump_vars \
+  SLURM_JOB_ID \
+  SLURM_JOB_NAME \
+  SLURM_JOB_NODELIST \
+  SLURM_NNODES \
+  SLURM_NTASKS \
+  SLURM_NTASKS_PER_NODE \
+  SLURM_CPUS_PER_TASK \
+  SLURM_GPUS \
+  SLURM_GPUS_PER_NODE \
+  SLURM_GPUS_PER_TASK \
+  SLURM_SUBMIT_DIR
+
+log "Runtime environment"
+dump_vars NCCL_DEBUG PYTHONFAULTHANDLER CUDA_VISIBLE_DEVICES OMP_NUM_THREADS MKL_NUM_THREADS
+
 # Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
+  log "Activating virtual environment from VENV_PATH=${VENV_PATH}"
   source "${VENV_PATH}/bin/activate"
+else
+  log "VENV_PATH not set; using current environment"
 fi
 
 TRANSFORMER_WIDTH=${TRANSFORMER_WIDTH:-3}
@@ -29,7 +95,32 @@ TRANSFORMER_NHEADS=${TRANSFORMER_NHEADS:-1}
 
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 
+log "Installing editable package from PROJECT_ROOT=${PROJECT_ROOT}"
 pip install --no-cache-dir --no-deps -e "${PROJECT_ROOT}"
+
+log "Python and GPU runtime probes"
+print_kv "python" "$(command -v python || echo not_found)"
+print_kv "python_version" "$(python --version 2>&1 || echo unavailable)"
+if python - <<'PY'
+try:
+    import torch
+    print(f"  torch_version                         {torch.__version__}")
+    print(f"  torch_cuda_available                  {torch.cuda.is_available()}")
+    print(f"  torch_cuda_device_count               {torch.cuda.device_count()}")
+except Exception as exc:
+    print(f"  torch_probe_failed                    {exc}")
+PY
+then
+  :
+fi
+if command -v nvidia-smi >/dev/null 2>&1; then
+  log "nvidia-smi -L"
+  nvidia-smi -L || true
+  log "nvidia-smi utilization snapshot"
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader || true
+else
+  log "nvidia-smi not available on PATH"
+fi
 
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
 MODEL_TAG=${MODEL_TAG:-40char}
@@ -44,16 +135,21 @@ CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/result
 VISUALIZATION_DIR=${VISUALIZATION_DIR:-${CHECKPOINT_DIR}/visualizations}
 VISUALIZATION_SAMPLE_INDEX=${VISUALIZATION_SAMPLE_INDEX:-0}
 VISUALIZATION_MAX_RESIDUES=${VISUALIZATION_MAX_RESIDUES:-256}
-mkdir -p "${CHECKPOINT_DIR}"
+mkdir -p "${CHECKPOINT_DIR}" "${VISUALIZATION_DIR}"
 
 cd "${PROJECT_ROOT}"
 
-echo "Starting production geometry SE3 Lightning run"
-echo "  transformer_width=${TRANSFORMER_WIDTH}"
-echo "  dataset=${DATASET}"
-echo "  checkpoint_dir=${CHECKPOINT_DIR}"
-echo "  visualization_dir=${VISUALIZATION_DIR}"
-echo "  GH200 launch: tasks_per_node=4, batch_size=${BATCH_SIZE}, effective_batch_size=${TARGET_EFFECTIVE_BATCH_SIZE}"
+log "Starting production geometry SE3 Lightning run"
+print_kv "transformer_width" "${TRANSFORMER_WIDTH}"
+print_kv "transformer_layers" "${TRANSFORMER_LAYERS}"
+print_kv "transformer_nheads" "${TRANSFORMER_NHEADS}"
+print_kv "dataset" "${DATASET}"
+print_kv "checkpoint_dir" "${CHECKPOINT_DIR}"
+print_kv "visualization_dir" "${VISUALIZATION_DIR}"
+print_kv "batch_size" "${BATCH_SIZE}"
+print_kv "val_batch_size" "${VAL_BATCH_SIZE}"
+print_kv "target_effective_batch_size" "${TARGET_EFFECTIVE_BATCH_SIZE}"
+print_kv "run_tag" "${RUN_TAG}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -140,7 +236,23 @@ fi
 if [[ -n "${LIMIT_VAL_BATCHES:-}" ]]; then
   CMD+=(--limit-val-batches "${LIMIT_VAL_BATCHES}")
 fi
-echo "Command: ${CMD[*]}"
-srun --ntasks-per-node=4 "${CMD[@]}"
 
-echo "Completed production geometry SE3 Lightning run: ${RUN_TAG}"
+CMD_STRING=$(printf '%q ' "${CMD[@]}")
+log "Launch command"
+echo "  ${CMD_STRING}"
+
+SRUN_START_EPOCH=$(date +%s)
+log "Launching distributed job with srun"
+if srun --ntasks-per-node=4 "${CMD[@]}"; then
+  SRUN_EXIT_CODE=0
+else
+  SRUN_EXIT_CODE=$?
+fi
+SRUN_DURATION=$(( $(date +%s) - SRUN_START_EPOCH ))
+if [[ ${SRUN_EXIT_CODE} -ne 0 ]]; then
+  log "srun failed with exit code ${SRUN_EXIT_CODE} after ${SRUN_DURATION}s"
+  exit "${SRUN_EXIT_CODE}"
+fi
+log "srun completed successfully in ${SRUN_DURATION}s"
+
+log "Completed production geometry SE3 Lightning run: ${RUN_TAG}"
