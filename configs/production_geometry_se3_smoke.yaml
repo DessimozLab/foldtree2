@@ -37,6 +37,14 @@ se3_out_channels: 3
 se3_depth: 1
 se3_heads: 1
 se3_dim_head: 4
+se3_residue_hidden: 1
+se3_residue_depth: 1
+se3_residue_heads: 1
+se3_residue_dim_head: 4
+se3_atom_hidden: 1
+se3_atom_depth: 1
+se3_atom_heads: 1
+se3_atom_dim_head: 4
 se3_num_atom_types: 40
 se3_contact_sketch_top_k: 2
 se3_contact_sketch_threshold: 0.0

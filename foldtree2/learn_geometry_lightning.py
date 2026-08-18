@@ -429,6 +429,7 @@ class GeometryFocusedModule(pl.LightningModule):
         use_uncertainty_weighting: bool,
         use_se3: bool,
         se3_decoder: Optional[nn.Module] = None,
+        se3_atom_decoder: Optional[nn.Module] = None,
         nan_guard: bool = True,
         use_frame_fape_loss: bool = True,
         use_quat_geodesic_loss: bool = True,
@@ -483,6 +484,7 @@ class GeometryFocusedModule(pl.LightningModule):
         self.encoder = encoder
         self.transformer_geom_decoder = transformer_geom_decoder
         self.se3_decoder = se3_decoder
+        self.se3_atom_decoder = se3_atom_decoder if se3_atom_decoder is not None else se3_decoder
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.lr_scheduler_name = str(lr_scheduler_name)
@@ -586,12 +588,14 @@ class GeometryFocusedModule(pl.LightningModule):
                 {name: torch.nn.Parameter(torch.zeros((), dtype=torch.float32)) for name in self.uncertainty_term_names}
             )
 
-        self.save_hyperparameters(ignore=["encoder", "transformer_geom_decoder", "se3_decoder"])
+        self.save_hyperparameters(ignore=["encoder", "transformer_geom_decoder", "se3_decoder", "se3_atom_decoder"])
 
     def configure_optimizers(self):
         train_params = [] if self.train_se3_only else list(self.transformer_geom_decoder.parameters())
         if self.use_se3 and self.se3_decoder is not None:
             train_params += list(self.se3_decoder.parameters())
+        if self.use_se3 and self.se3_atom_decoder is not None and self.se3_atom_decoder is not self.se3_decoder:
+            train_params += list(self.se3_atom_decoder.parameters())
         if self.use_uncertainty_weighting:
             train_params += list(self.kendall_log_vars.parameters())
         if len(train_params) == 0:
@@ -1186,11 +1190,14 @@ class GeometryFocusedModule(pl.LightningModule):
                         )
 
                 if self.use_se3_atom_refine:
+                    atom_decoder = self.se3_atom_decoder
+                    if atom_decoder is None:
+                        raise RuntimeError("--use-se3-atom-refine requires an atom SE3 decoder")
                     if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
                         raise RuntimeError("--use-se3-atom-refine requires --use-coarse-backbone-loss")
                     atom_type_count = max(
                         pred_coarse_atoms.shape[1],
-                        int(getattr(self.se3_decoder, "num_atom_types", pred_coarse_atoms.shape[1])),
+                        int(getattr(atom_decoder, "num_atom_types", pred_coarse_atoms.shape[1])),
                     )
                     # The dataset has direct coordinates for the four coarse
                     # backbone atoms. Seed any additional atom types at CA so
@@ -1216,7 +1223,7 @@ class GeometryFocusedModule(pl.LightningModule):
                         [0, 3, 1, 2], device=pred_atom_seed.device, dtype=torch.long
                     )
                     atom_type_ids[:, :pred_coarse_atoms.shape[1]] = canonical_coarse_ids
-                    out_atom = self.se3_decoder(
+                    out_atom = atom_decoder(
                         data_batch,
                         edge_attr_dict={
                             **(se3_edge_attr_dict or {}),
@@ -1879,6 +1886,31 @@ def parse_args():
         default=20,
         help="SE3 attention head dimension",
     )
+    for variant in ("residue", "atom"):
+        parser.add_argument(
+            f"--se3-{variant}-hidden",
+            type=int,
+            default=None,
+            help=f"Override hidden width for the specialized {variant} SE3 decoder",
+        )
+        parser.add_argument(
+            f"--se3-{variant}-depth",
+            type=int,
+            default=None,
+            help=f"Override depth for the specialized {variant} SE3 decoder",
+        )
+        parser.add_argument(
+            f"--se3-{variant}-heads",
+            type=int,
+            default=None,
+            help=f"Override attention heads for the specialized {variant} SE3 decoder",
+        )
+        parser.add_argument(
+            f"--se3-{variant}-dim-head",
+            type=int,
+            default=None,
+            help=f"Override attention head dimension for the specialized {variant} SE3 decoder",
+        )
     parser.add_argument(
         "--use-se3-residue-loss",
         action=argparse.BooleanOptionalAction,
@@ -2055,6 +2087,44 @@ def build_encoder(args, data_sample, device):
     return encoder, latent_dim
 
 
+def build_se3_decoder(
+    input_dim: int,
+    data_sample,
+    device,
+    args,
+    se3_num_atom_types: int,
+    hidden: Optional[int] = None,
+    depth: Optional[int] = None,
+    heads: Optional[int] = None,
+    dim_head: Optional[int] = None,
+    out_channels: Optional[int] = None,
+):
+    if not SE3_AVAILABLE:
+        print("SE3 requested but module is unavailable; continuing without SE3 branch.")
+        return None
+    se3_device = device if device.type == "cuda" else torch.device("cpu")
+    try:
+        decoder = se3_denoiser(
+            in_channels=input_dim,
+            hidden_channels=[hidden if hidden is not None else args.se3_hidden],
+            out_channels=out_channels if out_channels is not None else args.se3_out_channels,
+            num_embeddings=30,
+            commitment_cost=0.25,
+            metadata={"edge_types": data_sample.edge_types},
+            edge_dim=1,
+            depth=depth if depth is not None else args.se3_depth,
+            heads=heads if heads is not None else args.se3_heads,
+            dim_head=dim_head if dim_head is not None else args.se3_dim_head,
+            return_coors=True,
+            num_atom_types=se3_num_atom_types,
+        ).to(se3_device)
+        decoder.device = se3_device
+        return decoder
+    except Exception as exc:
+        print(f"SE3 decoder unavailable at runtime: {exc}")
+        return None
+
+
 def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se3_num_atom_types: int):
     rt_hidden = parse_int_list(args.rt_hidden)
     rotation_hidden = parse_int_list(args.rotation_hidden)
@@ -2085,35 +2155,12 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
 
     se3_decoder = None
     if use_se3:
-        if not SE3_AVAILABLE:
-            print("SE3 requested but module is unavailable; continuing without SE3 branch.")
-        else:
-            se3_device = device if device.type == "cuda" else torch.device("cpu")
-            try:
-                se3_input_dim = latent_dim
-                if getattr(args, "se3_use_codebook_vectors", False):
-                    # The encoder codebook vectors have the encoder latent
-                    # width in the production models.
-                    se3_input_dim += latent_dim
-                se3_decoder = se3_denoiser(
-                    in_channels=se3_input_dim,
-                    hidden_channels=[args.se3_hidden],
-                    out_channels=args.se3_out_channels,
-                    num_embeddings=30,
-                    commitment_cost=0.25,
-                    metadata={"edge_types": data_sample.edge_types},
-                    edge_dim=1,
-                    depth=args.se3_depth,
-                    heads=args.se3_heads,
-                    dim_head=args.se3_dim_head,
-                    return_coors=True,
-                    num_atom_types=se3_num_atom_types,
-                ).to(se3_device)
-                se3_decoder.device = se3_device
-                print(f"SE3 decoder initialized on {se3_device}.")
-            except Exception as exc:
-                se3_decoder = None
-                print(f"SE3 decoder unavailable at runtime: {exc}")
+        se3_input_dim = latent_dim * (2 if getattr(args, "se3_use_codebook_vectors", False) else 1)
+        se3_decoder = build_se3_decoder(
+            se3_input_dim, data_sample, device, args, se3_num_atom_types
+        )
+        if se3_decoder is not None:
+            print(f"SE3 decoder initialized on {se3_decoder.device}.")
 
     return transformer_geom_decoder, se3_decoder
 

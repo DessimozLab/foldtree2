@@ -305,16 +305,44 @@ def main():
     encoder, latent_dim = base.build_encoder(args, data_sample.to(device), device)
     production_decoder = load_production_decoder(args.pretrained_geometry_decoder_path, device)
 
-    # Build only the SE3 branch from the common factory. The fresh geometry
-    # decoder returned by the factory is intentionally discarded.
-    _, se3_decoder = base.build_decoders(
-        latent_dim,
+    se3_num_atom_types = max(4, int(args.se3_num_atom_types or getattr(encoder, "num_embeddings", 20)))
+    se3_input_dim = latent_dim * (2 if args.se3_use_codebook_vectors else 1)
+    residue_se3_decoder = base.build_se3_decoder(
+        se3_input_dim,
         data_sample,
         device,
-        args.use_se3,
         args,
-        se3_num_atom_types=max(4, int(args.se3_num_atom_types or getattr(encoder, "num_embeddings", 20))),
-    )
+        se3_num_atom_types,
+        hidden=args.se3_residue_hidden,
+        depth=args.se3_residue_depth,
+        heads=args.se3_residue_heads,
+        dim_head=args.se3_residue_dim_head,
+    ) if args.use_se3 else None
+    atom_se3_decoder = base.build_se3_decoder(
+        se3_input_dim,
+        data_sample,
+        device,
+        args,
+        se3_num_atom_types,
+        hidden=args.se3_atom_hidden,
+        depth=args.se3_atom_depth,
+        heads=args.se3_atom_heads,
+        dim_head=args.se3_atom_dim_head,
+    ) if args.use_se3 and args.use_se3_atom_refine else None
+    if residue_se3_decoder is not None:
+        print(
+            "Residue SE3 decoder: "
+            f"hidden={args.se3_residue_hidden or args.se3_hidden} "
+            f"depth={args.se3_residue_depth or args.se3_depth} "
+            f"heads={args.se3_residue_heads or args.se3_heads}"
+        )
+    if atom_se3_decoder is not None:
+        print(
+            "Atom SE3 decoder: "
+            f"hidden={args.se3_atom_hidden or args.se3_hidden} "
+            f"depth={args.se3_atom_depth or args.se3_depth} "
+            f"heads={args.se3_atom_heads or args.se3_heads}"
+        )
 
     constructor = inspect.signature(base.GeometryFocusedModule.__init__)
     argument_aliases = {
@@ -324,7 +352,7 @@ def main():
     }
     module_kwargs = {}
     for name in constructor.parameters:
-        if name in {"self", "encoder", "transformer_geom_decoder", "se3_decoder"}:
+        if name in {"self", "encoder", "transformer_geom_decoder", "se3_decoder", "se3_atom_decoder"}:
             continue
         source_name = argument_aliases.get(name, name)
         if hasattr(args, source_name):
@@ -332,7 +360,8 @@ def main():
     module_kwargs.update(
         encoder=encoder,
         transformer_geom_decoder=production_decoder,
-        se3_decoder=se3_decoder,
+        se3_decoder=residue_se3_decoder,
+        se3_atom_decoder=atom_se3_decoder,
         production_coordinate_source=args.production_coordinate_source,
         production_coordinate_scale=args.production_coordinate_scale,
     )
