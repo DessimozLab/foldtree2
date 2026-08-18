@@ -48,6 +48,7 @@ se3_max_nodes: 0
 use_se3: true
 train_se3_only: true
 se3_input_source: geometry_dot_contacts
+se3_use_codebook_vectors: true
 
 # Keep the same loss stack, including final atom coordinates. The atom axis
 # must be at least as wide as the 40-token FoldTree2 vocabulary.

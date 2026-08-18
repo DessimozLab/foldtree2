@@ -62,6 +62,7 @@ CMD=(
   --use-se3
   --train-se3-only
   --se3-input-source geometry_dot_contacts
+  --se3-use-codebook-vectors
   --se3-hidden "${SE3_HIDDEN:-128}"
   --se3-depth "${SE3_DEPTH:-8}"
   --se3-heads "${SE3_HEADS:-8}"

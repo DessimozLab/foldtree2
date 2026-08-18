@@ -475,6 +475,7 @@ class GeometryFocusedModule(pl.LightningModule):
         use_se3_atom_fape_loss: bool = True,
         se3_atom_weight: float = 0.05,
         se3_atom_fape_weight: float = 0.25,
+        se3_use_codebook_vectors: bool = False,
     ):
         super().__init__()
         self.encoder = encoder
@@ -549,6 +550,7 @@ class GeometryFocusedModule(pl.LightningModule):
         self.use_se3_atom_fape_loss = bool(use_se3_atom_fape_loss)
         self.se3_atom_weight = float(se3_atom_weight)
         self.se3_atom_fape_weight = float(se3_atom_fape_weight)
+        self.se3_use_codebook_vectors = bool(se3_use_codebook_vectors)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -785,6 +787,17 @@ class GeometryFocusedModule(pl.LightningModule):
         return token_ids.to(device=z_local.device, dtype=torch.long)
 
     @staticmethod
+    def _get_codebook_vectors(encoder: nn.Module, token_ids: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        if token_ids is None:
+            return None
+        vq = getattr(encoder, "vector_quantizer", None)
+        embeddings = getattr(vq, "embeddings", None)
+        weight = getattr(embeddings, "weight", None)
+        if weight is None:
+            raise RuntimeError("SE3 codebook-vector input requires encoder.vector_quantizer.embeddings.weight")
+        return F.embedding(token_ids, weight).detach()
+
+    @staticmethod
     def _get_aa_identity_ids(decoder_out: Dict[str, torch.Tensor]) -> Optional[torch.Tensor]:
         aa_logits = decoder_out.get("aa", None)
         if aa_logits is None:
@@ -865,9 +878,15 @@ class GeometryFocusedModule(pl.LightningModule):
         with torch.no_grad():
             z_local, _ = self.encoder(data_batch)
             ft2_token_ids = self._get_ft2_token_ids(z_local)
+            codebook_vectors = self._get_codebook_vectors(self.encoder, ft2_token_ids)
         data_batch["res"].x = z_local
 
         out_local = self._prepare_geometry_outputs(data_batch)
+        se3_node_features = z_local
+        if self.se3_use_codebook_vectors:
+            if codebook_vectors is None:
+                raise RuntimeError("--se3-use-codebook-vectors requires encoder codebook vectors")
+            se3_node_features = torch.cat([z_local, codebook_vectors], dim=-1)
         aa_identity_ids = self._get_aa_identity_ids(out_local)
         true_R, true_t, true_q, true_angles, true_coords, batch_idx = get_true_geometry(data_batch)
 
@@ -1129,6 +1148,10 @@ class GeometryFocusedModule(pl.LightningModule):
                         if param.requires_grad:
                             zero = zero + param.float().sum() * 0.0
                     return zero, raw_terms, raw_terms, True, batch_idx
+                # Keep the production geometry decoder on the original
+                # latent width; only the SE3 pass receives optional codebook
+                # vectors concatenated to those features.
+                data_batch["res"].x = se3_node_features
                 out_s = self.se3_decoder(
                     data_batch,
                     edge_attr_dict=se3_edge_attr_dict,
@@ -1533,6 +1556,12 @@ def parse_args():
         choices=["reconstructed_ca", "coarse_ca", "geometry_dot_contacts"],
         default="coarse_ca",
         help="Coordinate/contact seed for the residue-level SE3 branch",
+    )
+    parser.add_argument(
+        "--se3-use-codebook-vectors",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Concatenate selected encoder codebook vectors to continuous encoder features for SE3",
     )
     parser.add_argument(
         "--se3-contact-sketch-top-k",
@@ -2010,8 +2039,13 @@ def build_decoders(latent_dim: int, data_sample, device, use_se3: bool, args, se
         else:
             se3_device = device if device.type == "cuda" else torch.device("cpu")
             try:
+                se3_input_dim = latent_dim
+                if getattr(args, "se3_use_codebook_vectors", False):
+                    # The encoder codebook vectors have the encoder latent
+                    # width in the production models.
+                    se3_input_dim += latent_dim
                 se3_decoder = se3_denoiser(
-                    in_channels=latent_dim,
+                    in_channels=se3_input_dim,
                     hidden_channels=[args.se3_hidden],
                     out_channels=args.se3_out_channels,
                     num_embeddings=30,
