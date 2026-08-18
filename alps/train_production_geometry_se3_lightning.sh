@@ -33,6 +33,9 @@ VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-8}
 TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-128}
 RUN_TAG="prod_se3_${MODEL_TAG}_gh200_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
+VISUALIZATION_DIR=${VISUALIZATION_DIR:-${CHECKPOINT_DIR}/visualizations}
+VISUALIZATION_SAMPLE_INDEX=${VISUALIZATION_SAMPLE_INDEX:-0}
+VISUALIZATION_MAX_RESIDUES=${VISUALIZATION_MAX_RESIDUES:-256}
 mkdir -p "${CHECKPOINT_DIR}"
 
 cd "${PROJECT_ROOT}"
@@ -57,6 +60,10 @@ CMD=(
   --production-coordinate-source "${PRODUCTION_COORDINATE_SOURCE:-auto}"
   --production-coordinate-scale "${PRODUCTION_COORDINATE_SCALE:-1.0}"
   --checkpoint-dir "${CHECKPOINT_DIR}"
+  --enable-epoch-visualizations
+  --visualization-dir "${VISUALIZATION_DIR}"
+  --visualization-sample-index "${VISUALIZATION_SAMPLE_INDEX}"
+  --visualization-max-residues "${VISUALIZATION_MAX_RESIDUES}"
   --save-top-k "${SAVE_TOP_K:--1}"
   --log-every-n-steps "${LOG_EVERY_N_STEPS:-10}"
   --use-se3
@@ -104,15 +111,5 @@ fi
 if [[ -n "${LIMIT_VAL_BATCHES:-}" ]]; then
   CMD+=(--limit-val-batches "${LIMIT_VAL_BATCHES}")
 fi
-if [[ "${ENABLE_EPOCH_VISUALIZATIONS:-0}" == "1" ]]; then
-  CMD+=(--enable-epoch-visualizations)
-  if [[ -n "${VISUALIZATION_DIR:-}" ]]; then
-    CMD+=(--visualization-dir "${VISUALIZATION_DIR}")
-  fi
-  if [[ -n "${VISUALIZATION_SAMPLE_INDEX:-}" ]]; then
-    CMD+=(--visualization-sample-index "${VISUALIZATION_SAMPLE_INDEX}")
-  fi
-fi
-
 echo "Command: ${CMD[*]}"
 srun --ntasks-per-node=4 "${CMD[@]}"
