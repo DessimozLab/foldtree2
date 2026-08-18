@@ -474,6 +474,7 @@ class GeometryFocusedModule(pl.LightningModule):
         use_se3_angle_loss: bool = True,
         use_se3_atom_loss: bool = True,
         use_se3_atom_fape_loss: bool = True,
+        use_se3_coarse_geometry_losses: bool = False,
         se3_atom_weight: float = 0.05,
         se3_atom_fape_weight: float = 0.25,
         se3_use_codebook_vectors: bool = False,
@@ -552,6 +553,7 @@ class GeometryFocusedModule(pl.LightningModule):
         self.use_se3_angle_loss = bool(use_se3_angle_loss)
         self.use_se3_atom_loss = bool(use_se3_atom_loss)
         self.use_se3_atom_fape_loss = bool(use_se3_atom_fape_loss)
+        self.use_se3_coarse_geometry_losses = bool(use_se3_coarse_geometry_losses)
         self.se3_atom_weight = float(se3_atom_weight)
         self.se3_atom_fape_weight = float(se3_atom_fape_weight)
         self.se3_use_codebook_vectors = bool(se3_use_codebook_vectors)
@@ -776,6 +778,19 @@ class GeometryFocusedModule(pl.LightningModule):
             raise RuntimeError("Unable to derive SE3 q/t from empty batched coordinates")
 
         return torch.cat(q_parts, dim=0), torch.cat(t_parts, dim=0)
+
+    @staticmethod
+    def _coords_to_steps(coords: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
+        steps = torch.zeros_like(coords)
+        if batch_idx is None:
+            if coords.shape[0] > 1:
+                steps[1:] = coords[1:] - coords[:-1]
+            return steps
+        for b in torch.unique(batch_idx, sorted=True):
+            idx = (batch_idx == b).nonzero(as_tuple=True)[0]
+            if idx.numel() > 1:
+                steps[idx[1:]] = coords[idx[1:]] - coords[idx[:-1]]
+        return steps
 
     def _kendall_weight_terms(self, raw_terms: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         weighted = {}
@@ -1175,6 +1190,50 @@ class GeometryFocusedModule(pl.LightningModule):
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
                     data_batch["se3_coords_pred"].x = se3_coords_step
+                    if self.use_se3_coarse_geometry_losses and self.use_coarse_ca_loss:
+                        if true_coords is None:
+                            raise RuntimeError("SE3 coarse CA loss requires data['coords'].x")
+                        se3_ca_steps = self._coords_to_steps(se3_coords_step, batch_idx)
+                        ca_frames = None
+                        if self.coarse_ca_step_frame == "prev":
+                            if true_R is None:
+                                raise RuntimeError("SE3 coarse CA step loss requires data['R_true'].x")
+                            ca_frames = true_R
+                            frame_idx = torch.arange(se3_ca_steps.shape[0], device=se3_ca_steps.device)
+                            if batch_idx is None:
+                                frame_idx = torch.clamp(frame_idx - 1, min=0)
+                            else:
+                                for b in torch.unique(batch_idx, sorted=True):
+                                    idx = (batch_idx == b).nonzero(as_tuple=True)[0]
+                                    if idx.numel() > 1:
+                                        frame_idx[idx[1:]] = idx[:-1]
+                                    if idx.numel() > 0:
+                                        frame_idx[idx[0]] = idx[0]
+                            se3_ca_steps = torch.einsum(
+                                "ni,nij->nj", se3_ca_steps, ca_frames[frame_idx]
+                            )
+                        elif self.coarse_ca_step_frame != "global":
+                            raise RuntimeError(f"Unknown coarse CA step frame={self.coarse_ca_step_frame}")
+                        ca_step_weight = self.coarse_ca_step_weight if self.use_coarse_ca_step_loss else 0.0
+                        ca_bond_weight = self.coarse_ca_bond_weight if self.use_coarse_ca_bond_loss else 0.0
+                        ca_pairwise_weight = self.coarse_ca_pairwise_weight if self.use_coarse_ca_pairwise_loss else 0.0
+                        if ca_step_weight <= 0 and ca_bond_weight <= 0 and ca_pairwise_weight <= 0:
+                            raise RuntimeError("SE3 coarse CA loss has no enabled components")
+                        se3_ca_total, _ = coarse_ca_loss(
+                            se3_ca_steps,
+                            true_coords,
+                            batch_idx=batch_idx,
+                            pred_ca=se3_coords_step,
+                            frames=ca_frames,
+                            frame_offset="prev",
+                            step_weight=ca_step_weight,
+                            bond_weight=ca_bond_weight,
+                            pairwise_weight=ca_pairwise_weight,
+                            pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
+                            pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                            return_components=True,
+                        )
+                        raw_terms["se3_coarse_ca"] = se3_ca_total * self.coarse_ca_weight
                     q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
                     true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
                     raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
@@ -1261,6 +1320,65 @@ class GeometryFocusedModule(pl.LightningModule):
                             se3_atoms[:, ca_idx],
                             batch=batch_idx,
                         )
+                    if self.use_se3_coarse_geometry_losses:
+                        if self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
+                            raw_terms["se3_coarse_backbone_atoms"] = self.coarse_backbone_atom_weight * F.smooth_l1_loss(
+                                supervised_se3_atoms,
+                                true_coarse_atoms,
+                                beta=0.5,
+                            )
+                        if self.use_coarse_c_loss and self.coarse_c_weight > 0:
+                            raw_terms["se3_coarse_c"] = self.coarse_c_weight * F.smooth_l1_loss(
+                                supervised_se3_atoms[:, c_idx],
+                                true_coarse_atoms[:, c_idx],
+                                beta=0.5,
+                            )
+                        if self.use_coarse_cb_loss and self.coarse_cb_weight > 0:
+                            raw_terms["se3_coarse_cb"] = self.coarse_cb_weight * F.smooth_l1_loss(
+                                supervised_se3_atoms[:, cb_idx],
+                                true_coarse_atoms[:, cb_idx],
+                                beta=0.5,
+                            )
+                        if self.use_coarse_n_loss and self.coarse_n_weight > 0:
+                            raw_terms["se3_coarse_n"] = self.coarse_n_weight * F.smooth_l1_loss(
+                                supervised_se3_atoms[:, n_idx],
+                                true_coarse_atoms[:, n_idx],
+                                beta=0.5,
+                            )
+                        if self.use_coarse_backbone_fape_loss and self.coarse_backbone_fape_weight > 0:
+                            raw_terms["se3_coarse_backbone_fape"] = self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
+                                true_coarse_atoms,
+                                supervised_se3_atoms,
+                                true_R_atoms,
+                                pred_R_for_fape,
+                                true_ca_atoms,
+                                se3_atoms[:, ca_idx],
+                                batch=batch_idx,
+                            )
+                        if self.use_coarse_backbone_angle_loss and self.coarse_backbone_angle_weight > 0 and true_angles is not None:
+                            pred_bb_angles, pred_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
+                                se3_atoms[:, ca_idx],
+                                pred_R_for_fape,
+                                batch=batch_idx,
+                                n_coords=se3_atoms[:, n_idx],
+                                c_coords=se3_atoms[:, c_idx],
+                            )
+                            true_bb_angles, true_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
+                                true_ca_atoms,
+                                true_R_atoms,
+                                batch=batch_idx,
+                                n_coords=true_coarse_atoms[:, n_idx],
+                                c_coords=true_coarse_atoms[:, c_idx],
+                            )
+                            angle_mask = pred_angle_mask & true_angle_mask
+                            if angle_mask.any():
+                                angle_target = true_angles.to(device=pred_bb_angles.device, dtype=pred_bb_angles.dtype)
+                                derived_delta = wrap_to_pi_torch(pred_bb_angles - angle_target)
+                                frame_delta = wrap_to_pi_torch(pred_bb_angles - true_bb_angles)
+                                raw_terms["se3_coarse_backbone_angles"] = self.coarse_backbone_angle_weight * (
+                                    F.smooth_l1_loss(derived_delta[angle_mask], torch.zeros_like(derived_delta[angle_mask]))
+                                    + 0.25 * F.smooth_l1_loss(frame_delta[angle_mask], torch.zeros_like(frame_delta[angle_mask]))
+                                )
             except Exception as exc:
                 # Fail fast instead of skipping SE3 on one rank only. Silent rank divergence
                 # can deadlock distributed runs at optimizer sync boundaries.
@@ -1934,6 +2052,12 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use atom-FAPE loss on SE3-refined CA/C/CB/N atom coordinates",
+    )
+    parser.add_argument(
+        "--use-se3-coarse-geometry-losses",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Apply the shared coarse CA/backbone objectives to SE3 outputs",
     )
     parser.add_argument(
         "--use-uncertainty-weighting",
