@@ -17,6 +17,10 @@ set -euo pipefail
 
 SCRIPT_START_EPOCH=$(date +%s)
 SCRIPT_NAME=$(basename "$0")
+HOST_PATH=${PATH}
+HOST_SRUN_BIN=$(command -v srun || true)
+HOST_LD_LIBRARY_PATH=${LD_LIBRARY_PATH-__UNSET__}
+HOST_LD_PRELOAD=${LD_PRELOAD-__UNSET__}
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S%z')" "$*"
@@ -80,6 +84,7 @@ dump_vars \
 
 log "Runtime environment"
 dump_vars NCCL_DEBUG PYTHONFAULTHANDLER CUDA_VISIBLE_DEVICES OMP_NUM_THREADS MKL_NUM_THREADS
+print_kv "host_srun_bin" "${HOST_SRUN_BIN:-<not found>}"
 
 # Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
@@ -242,8 +247,41 @@ log "Launch command"
 echo "  ${CMD_STRING}"
 
 SRUN_START_EPOCH=$(date +%s)
+TASK_LD_LIBRARY_PATH=${LD_LIBRARY_PATH-}
+TASK_LD_PRELOAD=${LD_PRELOAD-}
+SRUN_BIN=${SRUN_BIN:-${HOST_SRUN_BIN:-$(command -v srun || true)}}
+if [[ -z "${SRUN_BIN}" ]]; then
+  log "srun binary not found on PATH"
+  exit 127
+fi
+
+SRUN_EXPORTS=${SRUN_EXPORTS:-ALL}
+if [[ -n "${TASK_LD_LIBRARY_PATH:-}" ]]; then
+  SRUN_EXPORTS+="${SRUN_EXPORTS:+,}LD_LIBRARY_PATH=${TASK_LD_LIBRARY_PATH}"
+fi
+if [[ -n "${TASK_LD_PRELOAD:-}" ]]; then
+  SRUN_EXPORTS+="${SRUN_EXPORTS:+,}LD_PRELOAD=${TASK_LD_PRELOAD}"
+fi
+
+SRUN_ENV=(env "PATH=${HOST_PATH}")
+if [[ "${HOST_LD_LIBRARY_PATH}" == "__UNSET__" ]]; then
+  SRUN_ENV+=(-u LD_LIBRARY_PATH)
+else
+  SRUN_ENV+=("LD_LIBRARY_PATH=${HOST_LD_LIBRARY_PATH}")
+fi
+if [[ "${HOST_LD_PRELOAD}" == "__UNSET__" ]]; then
+  SRUN_ENV+=(-u LD_PRELOAD)
+else
+  SRUN_ENV+=("LD_PRELOAD=${HOST_LD_PRELOAD}")
+fi
+
+log "srun launch environment"
+print_kv "srun_bin" "${SRUN_BIN}"
+print_kv "srun_exports" "${SRUN_EXPORTS}"
+print_kv "task_LD_LIBRARY_PATH" "${TASK_LD_LIBRARY_PATH:-<unset>}"
+
 log "Launching distributed job with srun"
-if srun --ntasks-per-node=4 "${CMD[@]}"; then
+if "${SRUN_ENV[@]}" "${SRUN_BIN}" --export="${SRUN_EXPORTS}" --ntasks-per-node=4 "${CMD[@]}"; then
   SRUN_EXIT_CODE=0
 else
   SRUN_EXIT_CODE=$?
