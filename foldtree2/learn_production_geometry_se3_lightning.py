@@ -13,11 +13,21 @@ are shared with that trainer.
 
 from __future__ import annotations
 
+import copy
 import inspect
+import json
 import sys
 from pathlib import Path
 
 import torch
+try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:  # Visualization is optional for normal training.
+    matplotlib = None
+    plt = None
 
 # Make direct ``python foldtree2/<script>.py`` invocation behave like the
 # installed-package invocation used by the Alps launcher.
@@ -25,6 +35,133 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from foldtree2 import learn_geometry_lightning as base
+
+
+class EpochReconstructionVisualizer(base.pl.Callback):
+    """Save fixed-sample true/coarse/SE3 reconstruction panels per epoch."""
+
+    def __init__(self, sample_batch, output_dir: str, max_residues: int = 0):
+        super().__init__()
+        if plt is None:
+            raise RuntimeError("Epoch visualizations require matplotlib to be installed")
+        self.sample_batch = sample_batch
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_residues = max(0, int(max_residues))
+        self._saved_epoch = None
+
+    @staticmethod
+    def _node_x(batch, name):
+        if name in batch.node_types and hasattr(batch[name], "x"):
+            return batch[name].x.detach().float().cpu()
+        return None
+
+    def _atom_stack(self, batch, prefix):
+        if prefix == "true":
+            keys = ("coords", "ccoords", "cbcoords", "ncoords")
+        elif prefix == "coarse":
+            keys = ("coarse_ca_pred", "coarse_c_pred", "coarse_cb_pred", "coarse_n_pred")
+        else:
+            keys = ("se3_ca_pred", "se3_c_pred", "se3_cb_pred", "se3_n_pred")
+        values = [self._node_x(batch, key) for key in keys]
+        if any(value is None for value in values):
+            return None
+        atoms = torch.stack(values, dim=1)
+        if self.max_residues > 0:
+            atoms = atoms[:self.max_residues]
+        return atoms
+
+    @staticmethod
+    def _center(atoms):
+        return atoms - atoms.reshape(-1, 3).mean(dim=0)
+
+    def _plot_atoms(self, axis, atoms, title):
+        atoms = self._center(atoms)
+        colors = ("black", "tab:blue", "tab:green", "tab:red")
+        names = ("CA", "C", "CB", "N")
+        ca = atoms[:, 0]
+        axis.plot(ca[:, 0], ca[:, 1], ca[:, 2], color="0.35", linewidth=1.0, alpha=0.8)
+        for index, name in enumerate(names):
+            points = atoms[:, index]
+            axis.scatter(points[:, 0], points[:, 1], points[:, 2], s=18, color=colors[index], label=name)
+        axis.set_title(title)
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_zlabel("z")
+        axis.legend(loc="upper right", fontsize=7)
+
+    def _plot_residues(self, axis, coords, title, color):
+        coords = self._center(coords)
+        axis.plot(coords[:, 0], coords[:, 1], coords[:, 2], color=color, linewidth=1.2, alpha=0.85)
+        axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=18, color=color)
+        axis.set_title(title)
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_zlabel("z")
+
+    def _save(self, trainer, module):
+        epoch = int(module.current_epoch)
+        if self._saved_epoch == epoch:
+            return
+        self._saved_epoch = epoch
+
+        batch = copy.deepcopy(self.sample_batch).to(module.device)
+        batch = base.ensure_edge_attrs_inplace(base.ensure_float32_inplace(batch), edge_dim=1)
+        was_training = module.training
+        module.eval()
+        with torch.no_grad():
+            total, raw_terms, _weighted_terms, _se3_skip, _batch_idx = module._compute_total_loss(
+                batch, debug_label=f"visualization epoch={epoch + 1}"
+            )
+        if was_training:
+            module.train()
+
+        true_atoms = self._atom_stack(batch, "true")
+        coarse_atoms = self._atom_stack(batch, "coarse")
+        se3_atoms = self._atom_stack(batch, "se3")
+        if true_atoms is None or coarse_atoms is None or se3_atoms is None:
+            residue_panels = (
+                (self._node_x(batch, "coords"), "Ground truth CA", "black"),
+                (self._node_x(batch, "se3_seed_coords"), "Initial 3D seed", "tab:orange"),
+                (self._node_x(batch, "se3_coords_pred"), "SE3 refined CA", "tab:blue"),
+            )
+        else:
+            residue_panels = None
+        panels = ((true_atoms, "Ground truth"), (coarse_atoms, "Initial coarse"), (se3_atoms, "SE3 refined"))
+        figure = plt.figure(figsize=(15, 5))
+        for index, (atoms, title) in enumerate(panels, start=1):
+            axis = figure.add_subplot(1, 3, index, projection="3d")
+            if residue_panels is not None:
+                coords, residue_title, color = residue_panels[index - 1]
+                if coords is None:
+                    axis.set_title(f"{residue_title} unavailable")
+                    axis.axis("off")
+                else:
+                    self._plot_residues(axis, coords[: self.max_residues or None], residue_title, color)
+            elif atoms is None:
+                axis.set_title(f"{title} unavailable")
+                axis.axis("off")
+            else:
+                self._plot_atoms(axis, atoms, title)
+        figure.suptitle(f"Epoch {epoch + 1} reconstruction | loss={float(total):.4f}")
+        figure.tight_layout()
+        figure.savefig(self.output_dir / f"epoch_{epoch + 1:04d}.png", dpi=140)
+        plt.close(figure)
+
+        summary = {
+            "epoch": epoch + 1,
+            "total": float(total.detach().cpu()),
+            "raw_terms": {name: float(value.detach().cpu()) for name, value in raw_terms.items()},
+        }
+        (self.output_dir / f"epoch_{epoch + 1:04d}.json").write_text(json.dumps(summary, indent=2) + "\n")
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if not trainer.sanity_checking:
+            self._save(trainer, pl_module)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        if not trainer.val_dataloaders:
+            self._save(trainer, pl_module)
 
 
 class ProductionGeometrySE3Module(base.GeometryFocusedModule):
@@ -201,6 +338,22 @@ def main():
     )
     module = ProductionGeometrySE3Module(**module_kwargs)
 
+    callbacks = []
+    if args.enable_epoch_visualizations:
+        sample_index = max(0, min(int(args.visualization_sample_index), len(data_module.struct_dat) - 1))
+        sample_batch = next(
+            iter(base.DataLoader([data_module.struct_dat[sample_index]], batch_size=1, shuffle=False, num_workers=0))
+        )
+        visualization_dir = args.visualization_dir or str(Path(args.checkpoint_dir) / "visualizations")
+        callbacks.append(
+            EpochReconstructionVisualizer(
+                sample_batch=sample_batch,
+                output_dir=visualization_dir,
+                max_residues=args.visualization_max_residues,
+            )
+        )
+        print(f"Epoch visualizations enabled: sample={sample_index} dir={visualization_dir}")
+
     accum_steps = max(1, (args.target_effective_batch_size + args.batch_size - 1) // args.batch_size)
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -228,7 +381,7 @@ def main():
         log_every_n_steps=args.log_every_n_steps,
         limit_train_batches=args.limit_train_batches if args.limit_train_batches is not None else 1.0,
         limit_val_batches=args.limit_val_batches if args.limit_val_batches is not None else 1.0,
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, *callbacks],
     )
     print(
         f"Production SE3 training: coordinate_source={module.production_coordinate_source} "

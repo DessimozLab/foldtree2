@@ -104,6 +104,15 @@ fi
 if [[ -n "${LIMIT_VAL_BATCHES:-}" ]]; then
   CMD+=(--limit-val-batches "${LIMIT_VAL_BATCHES}")
 fi
+if [[ "${ENABLE_EPOCH_VISUALIZATIONS:-0}" == "1" ]]; then
+  CMD+=(--enable-epoch-visualizations)
+  if [[ -n "${VISUALIZATION_DIR:-}" ]]; then
+    CMD+=(--visualization-dir "${VISUALIZATION_DIR}")
+  fi
+  if [[ -n "${VISUALIZATION_SAMPLE_INDEX:-}" ]]; then
+    CMD+=(--visualization-sample-index "${VISUALIZATION_SAMPLE_INDEX}")
+  fi
+fi
 
 echo "Command: ${CMD[*]}"
 srun --ntasks-per-node=4 "${CMD[@]}"

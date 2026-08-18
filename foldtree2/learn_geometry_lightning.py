@@ -1151,6 +1151,7 @@ class GeometryFocusedModule(pl.LightningModule):
                 # Keep the production geometry decoder on the original
                 # latent width; only the SE3 pass receives optional codebook
                 # vectors concatenated to those features.
+                data_batch["se3_seed_coords"].x = se3_seed_coords
                 data_batch["res"].x = se3_node_features
                 out_s = self.se3_decoder(
                     data_batch,
@@ -1162,6 +1163,7 @@ class GeometryFocusedModule(pl.LightningModule):
                 if self.use_se3_residue_loss and out_s.get("coors_out") is not None and true_q is not None and true_t is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
+                    data_batch["se3_coords_pred"].x = se3_coords_step
                     q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
                     true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
                     raw_terms["fape_quat_se3"] = quaternion_fape_loss(true_q, true_t_origin, q_se3, t_se3, batch=batch_idx)
@@ -1909,6 +1911,30 @@ def parse_args():
         type=int,
         default=1,
         help="How many best checkpoints to keep (monitoring val/loss when validation is enabled, else train/loss_epoch)",
+    )
+    parser.add_argument(
+        "--enable-epoch-visualizations",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Save a fixed-sample reconstruction figure after each validation epoch",
+    )
+    parser.add_argument(
+        "--visualization-dir",
+        type=str,
+        default=None,
+        help="Directory for epoch reconstruction figures (defaults to checkpoint-dir/visualizations)",
+    )
+    parser.add_argument(
+        "--visualization-sample-index",
+        type=int,
+        default=0,
+        help="Dataset index used for epoch reconstruction visualizations",
+    )
+    parser.add_argument(
+        "--visualization-max-residues",
+        type=int,
+        default=0,
+        help="Maximum residues plotted in epoch figures; 0 plots the full sample",
     )
     args = parser.parse_args()
     args = load_config_into_args(args, parser)
