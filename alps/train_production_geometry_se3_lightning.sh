@@ -2,10 +2,10 @@
 #SBATCH --job-name=ft2-prod-se3-gh200
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=4
-#SBATCH --gpus-per-task=1
+#SBATCH --gpus-per-task=4
 #SBATCH --gres=gpu:4
 #SBATCH --gres-flags=enforce-binding
 #SBATCH --account=a0117
@@ -17,10 +17,6 @@ set -euo pipefail
 
 SCRIPT_START_EPOCH=$(date +%s)
 SCRIPT_NAME=$(basename "$0")
-HOST_PATH=${PATH}
-HOST_SRUN_BIN=$(command -v srun || true)
-HOST_LD_LIBRARY_PATH=${LD_LIBRARY_PATH-__UNSET__}
-HOST_LD_PRELOAD=${LD_PRELOAD-__UNSET__}
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S%z')" "$*"
@@ -84,7 +80,6 @@ dump_vars \
 
 log "Runtime environment"
 dump_vars NCCL_DEBUG PYTHONFAULTHANDLER CUDA_VISIBLE_DEVICES OMP_NUM_THREADS MKL_NUM_THREADS
-print_kv "host_srun_bin" "${HOST_SRUN_BIN:-<not found>}"
 
 # Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
@@ -97,6 +92,21 @@ fi
 TRANSFORMER_WIDTH=${TRANSFORMER_WIDTH:-3}
 TRANSFORMER_LAYERS=${TRANSFORMER_LAYERS:-2}
 TRANSFORMER_NHEADS=${TRANSFORMER_NHEADS:-1}
+
+if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  DEVICES=${DEVICES:-$(awk -F',' '{print NF}' <<< "${CUDA_VISIBLE_DEVICES}")}
+else
+  DEVICES=${DEVICES:-${SLURM_GPUS_PER_NODE:-1}}
+fi
+DEVICES=${DEVICES:-1}
+
+if [[ -z "${STRATEGY:-}" ]]; then
+  if [[ "${DEVICES}" == "1" ]]; then
+    STRATEGY=auto
+  else
+    STRATEGY=ddp_find_unused_parameters_true
+  fi
+fi
 
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 
@@ -155,6 +165,8 @@ print_kv "batch_size" "${BATCH_SIZE}"
 print_kv "val_batch_size" "${VAL_BATCH_SIZE}"
 print_kv "target_effective_batch_size" "${TARGET_EFFECTIVE_BATCH_SIZE}"
 print_kv "run_tag" "${RUN_TAG}"
+print_kv "devices" "${DEVICES}"
+print_kv "strategy" "${STRATEGY}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -166,8 +178,8 @@ CMD=(
   --learning-rate "${LEARNING_RATE:-1e-5}"
   --num-workers "${NUM_WORKERS:-0}"
   --accelerator "${ACCELERATOR:-cuda}"
-  --devices 1
-  --strategy "${STRATEGY:-ddp_find_unused_parameters_true}"
+  --devices "${DEVICES}"
+  --strategy "${STRATEGY}"
   --precision "${PRECISION:-32-true}"
   --pretrained-encoder-path "${PRETRAINED_ENCODER}"
   --pretrained-encoder-full-path "${PRETRAINED_ENCODER}"
@@ -246,51 +258,18 @@ CMD_STRING=$(printf '%q ' "${CMD[@]}")
 log "Launch command"
 echo "  ${CMD_STRING}"
 
-SRUN_START_EPOCH=$(date +%s)
-TASK_LD_LIBRARY_PATH=${LD_LIBRARY_PATH-}
-TASK_LD_PRELOAD=${LD_PRELOAD-}
-SRUN_BIN=${SRUN_BIN:-${HOST_SRUN_BIN:-$(command -v srun || true)}}
-if [[ -z "${SRUN_BIN}" ]]; then
-  log "srun binary not found on PATH"
-  exit 127
-fi
-
-SRUN_EXPORTS=${SRUN_EXPORTS:-ALL}
-if [[ -n "${TASK_LD_LIBRARY_PATH:-}" ]]; then
-  SRUN_EXPORTS+="${SRUN_EXPORTS:+,}LD_LIBRARY_PATH=${TASK_LD_LIBRARY_PATH}"
-fi
-if [[ -n "${TASK_LD_PRELOAD:-}" ]]; then
-  SRUN_EXPORTS+="${SRUN_EXPORTS:+,}LD_PRELOAD=${TASK_LD_PRELOAD}"
-fi
-
-SRUN_ENV=(env "PATH=${HOST_PATH}")
-if [[ "${HOST_LD_LIBRARY_PATH}" == "__UNSET__" ]]; then
-  SRUN_ENV+=(-u LD_LIBRARY_PATH)
+RUN_START_EPOCH=$(date +%s)
+log "Launching training process directly (no srun)"
+if "${CMD[@]}"; then
+  RUN_EXIT_CODE=0
 else
-  SRUN_ENV+=("LD_LIBRARY_PATH=${HOST_LD_LIBRARY_PATH}")
+  RUN_EXIT_CODE=$?
 fi
-if [[ "${HOST_LD_PRELOAD}" == "__UNSET__" ]]; then
-  SRUN_ENV+=(-u LD_PRELOAD)
-else
-  SRUN_ENV+=("LD_PRELOAD=${HOST_LD_PRELOAD}")
+RUN_DURATION=$(( $(date +%s) - RUN_START_EPOCH ))
+if [[ ${RUN_EXIT_CODE} -ne 0 ]]; then
+  log "Training process failed with exit code ${RUN_EXIT_CODE} after ${RUN_DURATION}s"
+  exit "${RUN_EXIT_CODE}"
 fi
-
-log "srun launch environment"
-print_kv "srun_bin" "${SRUN_BIN}"
-print_kv "srun_exports" "${SRUN_EXPORTS}"
-print_kv "task_LD_LIBRARY_PATH" "${TASK_LD_LIBRARY_PATH:-<unset>}"
-
-log "Launching distributed job with srun"
-if "${SRUN_ENV[@]}" "${SRUN_BIN}" --export="${SRUN_EXPORTS}" --ntasks-per-node=4 "${CMD[@]}"; then
-  SRUN_EXIT_CODE=0
-else
-  SRUN_EXIT_CODE=$?
-fi
-SRUN_DURATION=$(( $(date +%s) - SRUN_START_EPOCH ))
-if [[ ${SRUN_EXIT_CODE} -ne 0 ]]; then
-  log "srun failed with exit code ${SRUN_EXIT_CODE} after ${SRUN_DURATION}s"
-  exit "${SRUN_EXIT_CODE}"
-fi
-log "srun completed successfully in ${SRUN_DURATION}s"
+log "Training process completed successfully in ${RUN_DURATION}s"
 
 log "Completed production geometry SE3 Lightning run: ${RUN_TAG}"
