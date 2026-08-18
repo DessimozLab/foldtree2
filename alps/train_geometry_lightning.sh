@@ -1,11 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=ft2-geom-lightning
-#SBATCH --time=08:00:00
+#SBATCH --job-name=ft2-se3-gh200
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=32
-#SBATCH --gpus-per-node=1
-#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-node=4
+#SBATCH --gpus-per-task=1
+#SBATCH --gres=gpu:4
 #SBATCH --gres-flags=enforce-binding
 #SBATCH --account=a0117
 #SBATCH --output=ft2_geom_%j.out
@@ -13,6 +14,9 @@
 #SBATCH --environment=pygmk3
 
 set -euo pipefail
+
+export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
+export PYTHONFAULTHANDLER=${PYTHONFAULTHANDLER:-1}
 
 # Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
@@ -32,7 +36,7 @@ pip install --no-cache-dir --no-deps -e "${PROJECT_ROOT}"
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/users/dmoi/foldtree2/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
 
-RUN_TAG="se3_dot_contacts_only_${MODEL_TAG:-30char}_bs${BATCH_SIZE:-1}_lr${LEARNING_RATE:-1e-5}"
+RUN_TAG="se3_dot_gh200_frame_atoms_${MODEL_TAG:-30char}_bs${BATCH_SIZE:-4}_lr${LEARNING_RATE:-1e-5}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 mkdir -p "${CHECKPOINT_DIR}"
 
@@ -42,18 +46,20 @@ echo "Starting geometry Lightning run"
 echo "  transformer_width=${TRANSFORMER_WIDTH}"
 echo "  dataset=${DATASET}"
 echo "  checkpoint_dir=${CHECKPOINT_DIR}"
+echo "  GH200 launch: tasks_per_node=4, batch_size=${BATCH_SIZE:-4}, effective_batch_size=${TARGET_EFFECTIVE_BATCH_SIZE:-64}"
 
 CMD=(
   python foldtree2/learn_geometry_lightning.py
   --dataset "${DATASET}"
   --epochs "${EPOCHS:-100}"
-  --batch-size "${BATCH_SIZE:-1}"
-  --val-batch-size "${VAL_BATCH_SIZE:-1}"
-  --target-effective-batch-size "${TARGET_EFFECTIVE_BATCH_SIZE:-32}"
+  --batch-size "${BATCH_SIZE:-4}"
+  --val-batch-size "${VAL_BATCH_SIZE:-4}"
+  --target-effective-batch-size "${TARGET_EFFECTIVE_BATCH_SIZE:-64}"
   --learning-rate "${LEARNING_RATE:-1e-5}"
   --num-workers "${NUM_WORKERS:-0}"
   --accelerator "${ACCELERATOR:-cuda}"
-  --devices "${DEVICES:-1}"
+  --devices 1
+  --strategy "${STRATEGY:-ddp_find_unused_parameters_true}"
   --precision "${PRECISION:-32-true}"
   --pretrained-encoder-path "${PRETRAINED_ENCODER}"
   --pretrained-encoder-full-path "${PRETRAINED_ENCODER}"
@@ -75,15 +81,23 @@ CMD=(
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-8}"
   --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
-  --se3-max-nodes "${SE3_MAX_NODES:-512}"
+  --se3-max-nodes "${SE3_MAX_NODES:-0}"
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
   --no-use-coarse-ca-loss
-  --no-use-coarse-backbone-loss
-  --no-use-se3-residue-loss
+  --use-coarse-backbone-loss
+  --no-use-coarse-backbone-atom-loss
+  --no-use-coarse-c-loss
+  --no-use-coarse-cb-loss
+  --no-use-coarse-n-loss
+  --no-use-coarse-backbone-fape-loss
+  --no-use-coarse-backbone-angle-loss
+  --use-se3-residue-loss
   --use-se3-angle-loss
-  --no-use-se3-atom-refine
+  --use-se3-atom-refine
+  --use-se3-atom-loss
+  --use-se3-atom-fape-loss
   --no-use-uncertainty-weighting
   --sanitize-nonfinite-grads
   --skip-empty-loss-batches
@@ -97,6 +111,6 @@ if [[ -n "${LIMIT_VAL_BATCHES:-}" ]]; then
 fi
 
 echo "Command: ${CMD[*]}"
-"${CMD[@]}"
+srun --ntasks-per-node=4 "${CMD[@]}"
 
 echo "Completed geometry Lightning run: ${RUN_TAG}"
