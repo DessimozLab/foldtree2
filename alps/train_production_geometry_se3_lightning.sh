@@ -18,11 +18,19 @@ set -euo pipefail
 export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
 export PYTHONFAULTHANDLER=${PYTHONFAULTHANDLER:-1}
 
+# Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
   source "${VENV_PATH}/bin/activate"
 fi
 
+TRANSFORMER_WIDTH=${TRANSFORMER_WIDTH:-3}
+TRANSFORMER_LAYERS=${TRANSFORMER_LAYERS:-2}
+TRANSFORMER_NHEADS=${TRANSFORMER_NHEADS:-1}
+
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
+
+pip install --no-cache-dir --no-deps -e "${PROJECT_ROOT}"
+
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
 MODEL_TAG=${MODEL_TAG:-40char}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
@@ -39,7 +47,13 @@ VISUALIZATION_MAX_RESIDUES=${VISUALIZATION_MAX_RESIDUES:-256}
 mkdir -p "${CHECKPOINT_DIR}"
 
 cd "${PROJECT_ROOT}"
-pip install --no-cache-dir --no-deps -e "${PROJECT_ROOT}"
+
+echo "Starting production geometry SE3 Lightning run"
+echo "  transformer_width=${TRANSFORMER_WIDTH}"
+echo "  dataset=${DATASET}"
+echo "  checkpoint_dir=${CHECKPOINT_DIR}"
+echo "  visualization_dir=${VISUALIZATION_DIR}"
+echo "  GH200 launch: tasks_per_node=4, batch_size=${BATCH_SIZE}, effective_batch_size=${TARGET_EFFECTIVE_BATCH_SIZE}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -66,6 +80,9 @@ CMD=(
   --visualization-max-residues "${VISUALIZATION_MAX_RESIDUES}"
   --save-top-k "${SAVE_TOP_K:--1}"
   --log-every-n-steps "${LOG_EVERY_N_STEPS:-10}"
+  --transformer-width "${TRANSFORMER_WIDTH}"
+  --transformer-layers "${TRANSFORMER_LAYERS}"
+  --transformer-nheads "${TRANSFORMER_NHEADS}"
   --use-se3
   --train-se3-only
   --se3-input-source geometry_dot_contacts
@@ -113,3 +130,5 @@ if [[ -n "${LIMIT_VAL_BATCHES:-}" ]]; then
 fi
 echo "Command: ${CMD[*]}"
 srun --ntasks-per-node=4 "${CMD[@]}"
+
+echo "Completed production geometry SE3 Lightning run: ${RUN_TAG}"
