@@ -1167,11 +1167,23 @@ class GeometryFocusedModule(pl.LightningModule):
                     if atom_type_count > pred_coarse_atoms.shape[1]:
                         pred_atom_seed = pred_coarse_atoms[:, :1].expand(-1, atom_type_count, -1).clone()
                         pred_atom_seed[:, :pred_coarse_atoms.shape[1]] = pred_coarse_atoms
-                    atom_type_ids = torch.arange(
-                        atom_type_count,
+                    # The first SE3 pass uses FoldTree2 discrete character
+                    # IDs. This second pass is atom-level, so its first four
+                    # channels are explicitly the coarse backbone order
+                    # (CA, C, CB, N). Extra output slots are seeded as CA and
+                    # use the CA atom type until dedicated atom labels exist.
+                    atom_type_ids = torch.zeros(
+                        (pred_atom_seed.shape[0], atom_type_count),
                         device=pred_atom_seed.device,
                         dtype=torch.long,
-                    ).unsqueeze(0).expand(pred_atom_seed.shape[0], -1)
+                    )
+                    # Keep the public atom-type convention CA=0, CB=1, N=2,
+                    # C=3 while preserving the existing tensor order
+                    # (CA, C, CB, N) used by the coarse losses.
+                    canonical_coarse_ids = torch.tensor(
+                        [0, 3, 1, 2], device=pred_atom_seed.device, dtype=torch.long
+                    )
+                    atom_type_ids[:, :pred_coarse_atoms.shape[1]] = canonical_coarse_ids
                     out_atom = self.se3_decoder(
                         data_batch,
                         edge_attr_dict=se3_edge_attr_dict,
