@@ -721,6 +721,20 @@ class se3_denoiser(torch.nn.Module):
 				'Check that FoldTree2 VQ token ids and --se3-num-atom-types/codebook size match.'
 			)
 
+	def _tensor_finite_summary(self, name, tensor):
+		if tensor is None:
+			return f'{name}=None'
+		t = tensor.detach()
+		finite = torch.isfinite(t)
+		if not finite.any():
+			return f'{name}: shape={tuple(t.shape)} finite=0/{t.numel()}'
+		tf = t[finite].float()
+		return (
+			f'{name}: shape={tuple(t.shape)} finite={int(finite.sum().detach().cpu())}/{t.numel()} '
+			f'min={float(tf.min().detach().cpu()):.6g} max={float(tf.max().detach().cpu()):.6g} '
+			f'mean={float(tf.mean().detach().cpu()):.6g}'
+		)
+
 	def _dot_product_contacts_for_graph(self, dot_prod, graph_idx, num_residues, atoms_per_residue, device):
 		if dot_prod is None:
 			return None
@@ -951,19 +965,46 @@ class se3_denoiser(torch.nn.Module):
 		# bf16 autocast; run this block in fp32 while leaving the outer trainer
 		# in mixed precision.
 		autocast_device = runtime_device.type if runtime_device.type in ('cuda', 'cpu') else 'cpu'
+		self.gotennet.float()
 		gotennet_param = next(self.gotennet.parameters(), None)
 		gotennet_dtype = gotennet_param.dtype if gotennet_param is not None else coords_batch.dtype
+		coords_for_gotennet = torch.nan_to_num(
+			coords_batch.to(dtype=gotennet_dtype),
+			nan=0.0,
+			posinf=0.0,
+			neginf=0.0,
+		)
+		coord_clip = 64.0
+		coord_abs = coords_for_gotennet.detach().abs().masked_fill(~atom_mask_batch.unsqueeze(-1), 0.0)
+		coord_scale = (coord_abs.amax(dim=(1, 2), keepdim=True) / coord_clip).clamp_min(1.0)
+		coords_for_gotennet = coords_for_gotennet / coord_scale
 		with torch.autocast(device_type=autocast_device, enabled=False):
 			invariant, coors_out = self.gotennet(
 				atom_ids_batch,
 				adj_mat=adj_mat_batch,
-				coors=coords_batch.to(dtype=gotennet_dtype),
+				coors=coords_for_gotennet,
 				mask=atom_mask_batch,
 			)
+		if coors_out is not None:
+			coors_out = coors_out * coord_scale
 		if not torch.isfinite(invariant).all():
-			raise RuntimeError('GotenNet produced non-finite invariant features')
+			raise RuntimeError(
+				'GotenNet produced non-finite invariant features; '
+				+ self._tensor_finite_summary('coords_input', coords_batch)
+				+ '; '
+				+ self._tensor_finite_summary('coords_scaled', coords_for_gotennet)
+				+ '; '
+				+ self._tensor_finite_summary('invariant', invariant)
+			)
 		if coors_out is not None and not torch.isfinite(coors_out).all():
-			raise RuntimeError('GotenNet produced non-finite coordinates')
+			raise RuntimeError(
+				'GotenNet produced non-finite coordinates; '
+				+ self._tensor_finite_summary('coords_input', coords_batch)
+				+ '; '
+				+ self._tensor_finite_summary('coords_scaled', coords_for_gotennet)
+				+ '; '
+				+ self._tensor_finite_summary('coors_out', coors_out)
+			)
 		
 		# invariant shape: (batch, num_nodes, dim)
 		# coors_out shape: (batch, num_nodes, 3) if return_coors=True
@@ -985,8 +1026,11 @@ class se3_denoiser(torch.nn.Module):
 			z = invariant.squeeze(0)  # (num_nodes, dim)
 			coors_out_flat = coors_out.squeeze(0) if coors_out is not None else None
 		
-		# Predict angles from invariant features
-		angles = self.out_angles(z)
+		# Predict angles from invariant features with the head's parameter dtype.
+		angle_param = next(self.out_angles.parameters(), None)
+		angle_dtype = angle_param.dtype if angle_param is not None else z.dtype
+		with torch.autocast(device_type=autocast_device, enabled=False):
+			angles = self.out_angles(z.to(dtype=angle_dtype))
 		frame_outputs = _frame_outputs_from_coords(coors_out_flat)
 		coors_out_atoms = None
 		if atom_level and coors_out_flat is not None:
