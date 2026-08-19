@@ -139,12 +139,16 @@ MODEL_TAG=${MODEL_TAG:-40char}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
 PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt}
 
-BATCH_SIZE=${BATCH_SIZE:-2}
-VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-2}
-TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-32}
+BATCH_SIZE=${BATCH_SIZE:-1}
+VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-1}
+TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-16}
 TRAIN_PRECISION=${PRECISION:-bf16-mixed}
 MIN_SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES:-40}
 SE3_NUM_ATOM_TYPES=${SE3_NUM_ATOM_TYPES:-${MIN_SE3_NUM_ATOM_TYPES}}
+SE3_MAX_NODES=${SE3_MAX_NODES:-512}
+SE3_ATOM_MAX_NODES=${SE3_ATOM_MAX_NODES:-2048}
+ENABLE_SE3_DISTANCE_CONTACTS=${ENABLE_SE3_DISTANCE_CONTACTS:-0}
+ENABLE_SE3_ATOM_REFINE=${ENABLE_SE3_ATOM_REFINE:-1}
 
 if ! [[ "${MIN_SE3_NUM_ATOM_TYPES}" =~ ^[0-9]+$ ]]; then
   log "Invalid MIN_SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES}; expected integer"
@@ -183,6 +187,10 @@ print_kv "devices" "${DEVICES}"
 print_kv "strategy" "${STRATEGY}"
 print_kv "precision" "${TRAIN_PRECISION}"
 print_kv "se3_num_atom_types" "${SE3_NUM_ATOM_TYPES}"
+print_kv "se3_max_nodes" "${SE3_MAX_NODES}"
+print_kv "se3_atom_max_nodes" "${SE3_ATOM_MAX_NODES}"
+print_kv "enable_se3_distance_contacts" "${ENABLE_SE3_DISTANCE_CONTACTS}"
+print_kv "enable_se3_atom_refine" "${ENABLE_SE3_ATOM_REFINE}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -216,7 +224,6 @@ CMD=(
   --train-se3-only
   --se3-input-source geometry_dot_contacts
   --se3-use-codebook-vectors
-  --se3-use-distance-contacts
   --se3-distance-contact-cutoff "${SE3_DISTANCE_CONTACT_CUTOFF:-8.0}"
   --se3-hidden "${SE3_HIDDEN:-32}"
   --se3-depth "${SE3_DEPTH:-3}"
@@ -236,7 +243,8 @@ CMD=(
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-4}"
   --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
-  --se3-max-nodes "${SE3_MAX_NODES:-1024}"
+  --se3-max-nodes "${SE3_MAX_NODES}"
+  --se3-atom-max-nodes "${SE3_ATOM_MAX_NODES}"
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
@@ -252,13 +260,22 @@ CMD=(
   --use-se3-coarse-geometry-losses
   --use-se3-residue-loss
   --use-se3-angle-loss
-  --use-se3-atom-refine
-  --use-se3-atom-loss
-  --use-se3-atom-fape-loss
   --no-use-uncertainty-weighting
   --sanitize-nonfinite-grads
   --skip-empty-loss-batches
 )
+
+if [[ "${ENABLE_SE3_DISTANCE_CONTACTS}" == "1" ]]; then
+  CMD+=(--se3-use-distance-contacts)
+else
+  CMD+=(--no-se3-use-distance-contacts)
+fi
+
+if [[ "${ENABLE_SE3_ATOM_REFINE}" == "1" ]]; then
+  CMD+=(--use-se3-atom-refine --use-se3-atom-loss --use-se3-atom-fape-loss)
+else
+  CMD+=(--no-use-se3-atom-refine --no-use-se3-atom-loss --no-use-se3-atom-fape-loss)
+fi
 
 if [[ -n "${CONFIG:-}" ]]; then
   CMD+=(--config "${CONFIG}")

@@ -469,6 +469,7 @@ class GeometryFocusedModule(pl.LightningModule):
         se3_contact_coord_scale: float = 10.0,
         se3_contact_local_window: int = 1,
         se3_max_nodes: int = 0,
+        se3_atom_max_nodes: int = 0,
         train_se3_only: bool = False,
         sanitize_nonfinite_grads: bool = False,
         skip_empty_loss_batches: bool = False,
@@ -546,6 +547,7 @@ class GeometryFocusedModule(pl.LightningModule):
         self.se3_contact_coord_scale = float(se3_contact_coord_scale)
         self.se3_contact_local_window = int(se3_contact_local_window)
         self.se3_max_nodes = int(se3_max_nodes)
+        self.se3_atom_max_nodes = int(se3_atom_max_nodes)
         self.train_se3_only = bool(train_se3_only)
         self.sanitize_nonfinite_grads = bool(sanitize_nonfinite_grads)
         self.skip_empty_loss_batches = bool(skip_empty_loss_batches)
@@ -1282,22 +1284,22 @@ class GeometryFocusedModule(pl.LightningModule):
                         raise RuntimeError("--use-se3-atom-refine requires an atom SE3 decoder")
                     if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
                         raise RuntimeError("--use-se3-atom-refine requires --use-coarse-backbone-loss")
-                    atom_type_count = max(
-                        pred_coarse_atoms.shape[1],
-                        int(getattr(atom_decoder, "num_atom_types", pred_coarse_atoms.shape[1])),
-                    )
-                    # The dataset has direct coordinates for the four coarse
-                    # backbone atoms. Seed any additional atom types at CA so
-                    # the SE3 decoder can still produce a complete atom axis.
+                    atom_type_count = pred_coarse_atoms.shape[1]
+                    atom_node_count = pred_coarse_atoms.shape[0] * atom_type_count
+                    if self.se3_atom_max_nodes > 0 and atom_node_count > self.se3_atom_max_nodes:
+                        zero = torch.zeros((), device=pred_coarse_atoms.device, dtype=torch.float32)
+                        for param in self.parameters():
+                            if param.requires_grad:
+                                zero = zero + param.float().sum() * 0.0
+                        return zero, raw_terms, raw_terms, True, batch_idx
+                    # Refine the supervised coarse backbone atom slots only.
+                    # num_atom_types is the GotenNet embedding vocabulary, not
+                    # the number of atom coordinates per residue.
                     pred_atom_seed = pred_coarse_atoms
-                    if atom_type_count > pred_coarse_atoms.shape[1]:
-                        pred_atom_seed = pred_coarse_atoms[:, :1].expand(-1, atom_type_count, -1).clone()
-                        pred_atom_seed[:, :pred_coarse_atoms.shape[1]] = pred_coarse_atoms
                     # The first SE3 pass uses FoldTree2 discrete character
                     # IDs. This second pass is atom-level, so its first four
                     # channels are explicitly the coarse backbone order
-                    # (CA, C, CB, N). Extra output slots are seeded as CA and
-                    # use the CA atom type until dedicated atom labels exist.
+                    # (CA, C, CB, N).
                     atom_type_ids = torch.zeros(
                         (pred_atom_seed.shape[0], atom_type_count),
                         device=pred_atom_seed.device,
@@ -1778,6 +1780,12 @@ def parse_args():
         type=int,
         default=0,
         help="Skip SE3 batches with more than this many residue/atom nodes (0 disables)",
+    )
+    parser.add_argument(
+        "--se3-atom-max-nodes",
+        type=int,
+        default=0,
+        help="Skip only the SE3 atom-refinement pass above this many expanded atom nodes (0 disables)",
     )
     parser.add_argument(
         "--train-se3-only",
@@ -2453,6 +2461,7 @@ def main():
         se3_contact_coord_scale=args.se3_contact_coord_scale,
         se3_contact_local_window=args.se3_contact_local_window,
         se3_max_nodes=args.se3_max_nodes,
+        se3_atom_max_nodes=args.se3_atom_max_nodes,
         train_se3_only=args.train_se3_only,
         sanitize_nonfinite_grads=args.sanitize_nonfinite_grads,
         skip_empty_loss_batches=args.skip_empty_loss_batches,
