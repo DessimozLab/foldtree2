@@ -194,7 +194,7 @@ def integrate_ca_steps(
         if anchor_s is not None:
             coords[0] = anchor_s.to(device=steps_s.device, dtype=steps_s.dtype)
         if steps_s.shape[0] > 1:
-            coords[1:] = coords[0].unsqueeze(0) + torch.cumsum(steps_s[1:], dim=0)
+            coords[1:] = (coords[0].unsqueeze(0) + torch.cumsum(steps_s[1:], dim=0)).to(dtype=coords.dtype)
         return coords
 
     if batch_idx is None:
@@ -208,7 +208,7 @@ def integrate_ca_steps(
         anchor_b = None
         if anchor is not None:
             anchor_b = anchor[int(b.item())] if anchor.ndim == 2 else anchor
-        coords[idx] = _single(steps[idx], anchor_b)
+        coords[idx] = _single(steps[idx], anchor_b).to(dtype=coords.dtype)
     return coords
 
 
@@ -250,7 +250,7 @@ def ca_local_step_targets(
 
     target = torch.zeros_like(true_ca)
     if mask.any():
-        target[mask] = torch.einsum("ni,nij->nj", global_steps[mask], frames[frame_idx[mask]])
+        target[mask] = torch.einsum("ni,nij->nj", global_steps[mask], frames[frame_idx[mask]]).to(dtype=target.dtype)
     return target, mask
 
 
@@ -277,7 +277,7 @@ def integrate_local_ca_steps(
         for i in range(1, steps_s.shape[0]):
             frame_i = frames_s[i - 1] if frame_offset == "prev" else frames_s[i]
             global_step = torch.matmul(steps_s[i], frame_i.transpose(-1, -2))
-            coords[i] = coords[i - 1] + global_step
+            coords[i] = (coords[i - 1] + global_step).to(dtype=coords.dtype)
         return coords
 
     if batch_idx is None:
@@ -291,7 +291,7 @@ def integrate_local_ca_steps(
         anchor_b = None
         if anchor is not None:
             anchor_b = anchor[int(b.item())] if anchor.ndim == 2 else anchor
-        coords[idx] = _single(local_steps[idx], frames[idx], anchor_b)
+        coords[idx] = _single(local_steps[idx], frames[idx], anchor_b).to(dtype=coords.dtype)
     return coords
 
 
@@ -480,7 +480,7 @@ def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tup
 
     if batch_idx is None:
         if true_ca.shape[0] > 1:
-            target[1:] = true_ca[1:] - true_ca[:-1]
+            target[1:] = (true_ca[1:] - true_ca[:-1]).to(dtype=target.dtype)
             mask[1:] = True
         return target, mask
 
@@ -488,7 +488,7 @@ def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tup
         idx = torch.where(batch_idx == b)[0]
         if idx.numel() < 2:
             continue
-        target[idx[1:]] = true_ca[idx[1:]] - true_ca[idx[:-1]]
+        target[idx[1:]] = (true_ca[idx[1:]] - true_ca[idx[:-1]]).to(dtype=target.dtype)
         mask[idx[1:]] = True
     return target, mask
 
