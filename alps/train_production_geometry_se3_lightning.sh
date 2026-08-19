@@ -141,6 +141,22 @@ PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/model
 BATCH_SIZE=${BATCH_SIZE:-4}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-4}
 TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-64}
+MIN_SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES:-40}
+SE3_NUM_ATOM_TYPES=${SE3_NUM_ATOM_TYPES:-${MIN_SE3_NUM_ATOM_TYPES}}
+
+if ! [[ "${MIN_SE3_NUM_ATOM_TYPES}" =~ ^[0-9]+$ ]]; then
+  log "Invalid MIN_SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES}; expected integer"
+  exit 2
+fi
+if ! [[ "${SE3_NUM_ATOM_TYPES}" =~ ^[0-9]+$ ]]; then
+  log "Invalid SE3_NUM_ATOM_TYPES=${SE3_NUM_ATOM_TYPES}; expected integer"
+  exit 2
+fi
+if (( SE3_NUM_ATOM_TYPES < MIN_SE3_NUM_ATOM_TYPES )); then
+  log "SE3_NUM_ATOM_TYPES=${SE3_NUM_ATOM_TYPES} is below minimum ${MIN_SE3_NUM_ATOM_TYPES}; clamping"
+  SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES}
+fi
+
 RUN_TAG="prod_se3_${MODEL_TAG}_gh200_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 VISUALIZATION_DIR=${VISUALIZATION_DIR:-${CHECKPOINT_DIR}/visualizations}
@@ -163,6 +179,7 @@ print_kv "target_effective_batch_size" "${TARGET_EFFECTIVE_BATCH_SIZE}"
 print_kv "run_tag" "${RUN_TAG}"
 print_kv "devices" "${DEVICES}"
 print_kv "strategy" "${STRATEGY}"
+print_kv "se3_num_atom_types" "${SE3_NUM_ATOM_TYPES}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -210,7 +227,7 @@ CMD=(
   --se3-atom-depth "${SE3_ATOM_DEPTH:-3}"
   --se3-atom-heads "${SE3_ATOM_HEADS:-4}"
   --se3-atom-dim-head "${SE3_ATOM_DIM_HEAD:-16}"
-  --se3-num-atom-types "${SE3_NUM_ATOM_TYPES:-20}"
+  --se3-num-atom-types "${SE3_NUM_ATOM_TYPES}"
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-1.0}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-8}"
