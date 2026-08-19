@@ -24,11 +24,12 @@ def _safe_gotennet_spherical_harmonics(degree, rel_pos, *args, **kwargs):
 	"""Avoid NaNs from normalized spherical harmonics at zero displacement."""
 	if kwargs.get('normalize', False):
 		finite = torch.isfinite(rel_pos).all(dim=-1, keepdim=True)
-		nonzero = rel_pos.norm(dim=-1, keepdim=True) > 1e-12
+		norm = rel_pos.norm(dim=-1, keepdim=True)
+		nonzero = norm > 1e-12
 		valid = finite & nonzero
-		axis = torch.zeros_like(rel_pos)
-		axis[..., 0] = 1.0
-		rel_pos = torch.where(valid, rel_pos, axis)
+		rel_pos = torch.where(valid, rel_pos / norm.clamp_min(1e-12), torch.zeros_like(rel_pos))
+		kwargs = dict(kwargs)
+		kwargs['normalize'] = False
 		out = _ORIGINAL_GOTENNET_SPHERICAL_HARMONICS(degree, rel_pos, *args, **kwargs)
 		out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
 		return torch.where(valid, out, torch.zeros_like(out))
