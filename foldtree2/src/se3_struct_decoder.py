@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from gotennet_pytorch import GotenNet
+import gotennet_pytorch.gotennet as _gotennet_backend
 from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 from foldtree2.src.folding_refiner import QuaternionFoldingRefiner
@@ -14,6 +15,28 @@ from foldtree2.src.losses.fape import rotation_matrix_to_quaternion
 from torch_geometric.nn import TransformerConv, GATConv, GCNConv, global_mean_pool
 
 import pytorch_lightning as L
+
+
+_ORIGINAL_GOTENNET_SPHERICAL_HARMONICS = _gotennet_backend.spherical_harmonics
+
+
+def _safe_gotennet_spherical_harmonics(degree, rel_pos, *args, **kwargs):
+	"""Avoid NaNs from normalized spherical harmonics at zero displacement."""
+	if kwargs.get('normalize', False):
+		finite = torch.isfinite(rel_pos).all(dim=-1, keepdim=True)
+		nonzero = rel_pos.norm(dim=-1, keepdim=True) > 1e-12
+		valid = finite & nonzero
+		axis = torch.zeros_like(rel_pos)
+		axis[..., 0] = 1.0
+		rel_pos = torch.where(valid, rel_pos, axis)
+		out = _ORIGINAL_GOTENNET_SPHERICAL_HARMONICS(degree, rel_pos, *args, **kwargs)
+		out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+		return torch.where(valid, out, torch.zeros_like(out))
+	out = _ORIGINAL_GOTENNET_SPHERICAL_HARMONICS(degree, rel_pos, *args, **kwargs)
+	return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+_gotennet_backend.spherical_harmonics = _safe_gotennet_spherical_harmonics
 
 
 def _normalize_vec(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
