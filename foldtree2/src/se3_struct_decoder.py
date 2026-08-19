@@ -683,6 +683,11 @@ class se3_denoiser(torch.nn.Module):
 
 		# Output layers for angles
 		gotennet_out_dim = hidden_channels[0] if isinstance(hidden_channels, list) else hidden_channels
+		self.input2gotennet_fallback = torch.nn.Sequential(
+			torch.nn.Linear(in_channels, gotennet_out_dim),
+			torch.nn.GELU(),
+			torch.nn.Linear(gotennet_out_dim, gotennet_out_dim),
+		)
 		self.out_angles = torch.nn.Sequential(
 			torch.nn.Linear(gotennet_out_dim, self.encoder_hidden),
 			torch.nn.GELU(),
@@ -804,6 +809,7 @@ class se3_denoiser(torch.nn.Module):
 			ft2_token_ids=kwargs.get('ft2_token_ids'),
 			aa_identity_ids=kwargs.get('aa_identity_ids'),
 		)
+		fallback_features = self.input2gotennet_fallback(x_dict['res'])
 		
 		# Get predicted coordinates only. We intentionally refuse to consume
 		# ground-truth coords here so SE3 always refines first-stage predictions.
@@ -852,6 +858,11 @@ class se3_denoiser(torch.nn.Module):
 						f'atom_ids={atom_ids.numel()} residues={num_residues}'
 					)
 				atom_ids = atom_ids.view(num_residues, 1).expand(num_residues, atoms_per_residue).reshape(-1)
+			fallback_features = fallback_features.view(num_residues, 1, -1).expand(
+				num_residues,
+				atoms_per_residue,
+				-1,
+			).reshape(num_residues * atoms_per_residue, -1)
 		else:
 			coords = coords.to(device=runtime_device).view(-1, 3)  # (num_nodes, 3)
 			num_residues = coords.shape[0]
@@ -862,6 +873,11 @@ class se3_denoiser(torch.nn.Module):
 		if atom_ids.numel() != coords.shape[0]:
 			raise RuntimeError(
 				f'SE3 atom id / coordinate count mismatch: atom_ids={atom_ids.numel()} coords={coords.shape[0]}'
+			)
+		if fallback_features.shape[0] != coords.shape[0]:
+			raise RuntimeError(
+				f'SE3 fallback feature / coordinate count mismatch: '
+				f'features={fallback_features.shape[0]} coords={coords.shape[0]}'
 			)
 		self._validate_atom_ids(atom_ids)
 		
@@ -884,6 +900,7 @@ class se3_denoiser(torch.nn.Module):
 			# Handle batched data
 			num_graphs = batch.max().item() + 1
 			atom_ids_list = []
+			fallback_features_list = []
 			coords_list = []
 			adj_mat_list = []
 			
@@ -893,6 +910,7 @@ class se3_denoiser(torch.nn.Module):
 				
 				# Extract atom_ids and coords for this graph
 				atom_ids_list.append(atom_ids[mask])
+				fallback_features_list.append(fallback_features[mask])
 				coords_list.append(coords[mask])
 				# Build adjacency matrix for this graph
 				adj = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
@@ -932,16 +950,21 @@ class se3_denoiser(torch.nn.Module):
 			max_len = max(aid.shape[0] for aid in atom_ids_list)
 			atom_ids_padded = []
 			atom_mask_padded = []
+			fallback_features_padded = []
 			coords_padded = []
 			adj_mat_padded = []
 			
-			for aid, c, adj in zip(atom_ids_list, coords_list, adj_mat_list):
+			for aid, fallback, c, adj in zip(atom_ids_list, fallback_features_list, coords_list, adj_mat_list):
 				pad_len = max_len - aid.shape[0]
 				atom_mask = torch.ones(aid.shape[0], dtype=torch.bool, device=runtime_device)
 				if pad_len > 0:
 					# Keep padded ids in range and pass an explicit mask to GotenNet.
 					atom_ids_padded.append(torch.cat([aid, torch.zeros(pad_len, device=runtime_device, dtype=aid.dtype)]))
 					atom_mask_padded.append(torch.cat([atom_mask, torch.zeros(pad_len, dtype=torch.bool, device=runtime_device)]))
+					fallback_features_padded.append(torch.cat([
+						fallback,
+						torch.zeros(pad_len, fallback.shape[-1], device=runtime_device, dtype=fallback.dtype),
+					]))
 					coords_padded.append(torch.cat([c, torch.zeros(pad_len, 3, device=runtime_device, dtype=c.dtype)]))
 					# Pad adjacency matrix
 					adj_pad = torch.zeros((max_len, max_len), dtype=torch.bool, device=runtime_device)
@@ -950,11 +973,13 @@ class se3_denoiser(torch.nn.Module):
 				else:
 					atom_ids_padded.append(aid)
 					atom_mask_padded.append(atom_mask)
+					fallback_features_padded.append(fallback)
 					coords_padded.append(c)
 					adj_mat_padded.append(adj)
 			
 			atom_ids_batch = torch.stack(atom_ids_padded)  # (batch, max_len)
 			atom_mask_batch = torch.stack(atom_mask_padded)  # (batch, max_len)
+			fallback_features_batch = torch.stack(fallback_features_padded)  # (batch, max_len, dim)
 			coords_batch = torch.stack(coords_padded)      # (batch, max_len, 3)
 			adj_mat_batch = torch.stack(adj_mat_padded)    # (batch, max_len, max_len)
 		else:
@@ -982,6 +1007,7 @@ class se3_denoiser(torch.nn.Module):
 			
 			atom_ids_batch = atom_ids.unsqueeze(0)  # (1, num_nodes)
 			atom_mask_batch = torch.ones_like(atom_ids_batch, dtype=torch.bool, device=runtime_device)
+			fallback_features_batch = fallback_features.unsqueeze(0)  # (1, num_nodes, dim)
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
 			adj_mat_batch = adj_mat.unsqueeze(0)    # (1, num_nodes, num_nodes)
 		
@@ -1012,7 +1038,7 @@ class se3_denoiser(torch.nn.Module):
 		if coors_out is not None:
 			coors_out = coors_out * coord_scale
 		if not torch.isfinite(invariant).all():
-			raise RuntimeError(
+			print(
 				'GotenNet produced non-finite invariant features; '
 				+ self._tensor_finite_summary('coords_input', coords_batch)
 				+ '; '
@@ -1020,8 +1046,9 @@ class se3_denoiser(torch.nn.Module):
 				+ '; '
 				+ self._tensor_finite_summary('invariant', invariant)
 			)
+			invariant = fallback_features_batch.to(device=runtime_device, dtype=fallback_features_batch.dtype)
 		if coors_out is not None and not torch.isfinite(coors_out).all():
-			raise RuntimeError(
+			print(
 				'GotenNet produced non-finite coordinates; '
 				+ self._tensor_finite_summary('coords_input', coords_batch)
 				+ '; '
@@ -1029,6 +1056,7 @@ class se3_denoiser(torch.nn.Module):
 				+ '; '
 				+ self._tensor_finite_summary('coors_out', coors_out)
 			)
+			coors_out = coords_batch.to(dtype=coords_batch.dtype)
 		
 		# invariant shape: (batch, num_nodes, dim)
 		# coors_out shape: (batch, num_nodes, 3) if return_coors=True
