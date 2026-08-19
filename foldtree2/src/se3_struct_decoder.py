@@ -701,6 +701,26 @@ class se3_denoiser(torch.nn.Module):
 		atom_logits = self.input2atomids(x_dict['res'])
 		return torch.argmax(atom_logits, dim=-1).to(dtype=torch.long, device=runtime_device)
 
+	def _gotennet_num_atom_embeddings(self):
+		atom_embed = getattr(getattr(self.gotennet, 'node_init', None), 'atom_embed', None)
+		if atom_embed is not None and hasattr(atom_embed, 'num_embeddings'):
+			return int(atom_embed.num_embeddings)
+		return int(self.num_atom_types)
+
+	def _validate_atom_ids(self, atom_ids, context='SE3 atom ids'):
+		if atom_ids.numel() == 0:
+			return
+		num_embeddings = self._gotennet_num_atom_embeddings()
+		min_atom_id = int(atom_ids.min().detach().cpu())
+		max_atom_id = int(atom_ids.max().detach().cpu())
+		if min_atom_id < 0 or max_atom_id >= num_embeddings:
+			raise RuntimeError(
+				f'{context} out of range for GotenNet atom embedding: '
+				f'min_id={min_atom_id} max_id={max_atom_id} '
+				f'valid_range=[0,{num_embeddings - 1}] shape={tuple(atom_ids.shape)}. '
+				'Check that FoldTree2 VQ token ids and --se3-num-atom-types/codebook size match.'
+			)
+
 	def _dot_product_contacts_for_graph(self, dot_prod, graph_idx, num_residues, atoms_per_residue, device):
 		if dot_prod is None:
 			return None
@@ -746,17 +766,6 @@ class se3_denoiser(torch.nn.Module):
 			ft2_token_ids=kwargs.get('ft2_token_ids'),
 			aa_identity_ids=kwargs.get('aa_identity_ids'),
 		)
-
-		# Fail fast with a readable message instead of a CUDA device-side assert.
-		atom_embed = getattr(getattr(self.gotennet, 'node_init', None), 'atom_embed', None)
-		if atom_embed is not None and hasattr(atom_embed, 'num_embeddings'):
-			max_atom_id = int(atom_ids.max().detach().cpu()) if atom_ids.numel() > 0 else -1
-			if max_atom_id >= atom_embed.num_embeddings:
-				raise RuntimeError(
-					f'atom_ids out of range for GotenNet atom embedding: max_id={max_atom_id} '
-					f'num_embeddings={atom_embed.num_embeddings}. '
-					'Ensure GotenNet is initialized with num_atoms >= num_atom_types.'
-				)
 		
 		# Get predicted coordinates only. We intentionally refuse to consume
 		# ground-truth coords here so SE3 always refines first-stage predictions.
@@ -799,6 +808,11 @@ class se3_denoiser(torch.nn.Module):
 					)
 				atom_ids = atom_type_ids.to(dtype=torch.long, device=runtime_device).reshape(-1)
 			else:
+				if atom_ids.numel() != num_residues:
+					raise RuntimeError(
+						f'Expected one SE3 atom id per residue before atom expansion: '
+						f'atom_ids={atom_ids.numel()} residues={num_residues}'
+					)
 				atom_ids = atom_ids.view(num_residues, 1).expand(num_residues, atoms_per_residue).reshape(-1)
 		else:
 			coords = coords.to(device=runtime_device).view(-1, 3)  # (num_nodes, 3)
@@ -807,6 +821,11 @@ class se3_denoiser(torch.nn.Module):
 
 		if atom_ids.device != runtime_device:
 			atom_ids = atom_ids.to(device=runtime_device)
+		if atom_ids.numel() != coords.shape[0]:
+			raise RuntimeError(
+				f'SE3 atom id / coordinate count mismatch: atom_ids={atom_ids.numel()} coords={coords.shape[0]}'
+			)
+		self._validate_atom_ids(atom_ids)
 		
 		#use dot product results to add adges
 		x_dict['dot_prod'] = edge_attr_dict.get('dot_prod', None) if edge_attr_dict is not None else None
@@ -874,14 +893,17 @@ class se3_denoiser(torch.nn.Module):
 			# Pad to same length
 			max_len = max(aid.shape[0] for aid in atom_ids_list)
 			atom_ids_padded = []
+			atom_mask_padded = []
 			coords_padded = []
 			adj_mat_padded = []
 			
 			for aid, c, adj in zip(atom_ids_list, coords_list, adj_mat_list):
 				pad_len = max_len - aid.shape[0]
+				atom_mask = torch.ones(aid.shape[0], dtype=torch.bool, device=runtime_device)
 				if pad_len > 0:
-					# Pad with -1 for atom_ids (GotenNet treats negative as padding)
-					atom_ids_padded.append(torch.cat([aid, torch.full((pad_len,), -1, device=runtime_device, dtype=aid.dtype)]))
+					# Keep padded ids in range and pass an explicit mask to GotenNet.
+					atom_ids_padded.append(torch.cat([aid, torch.zeros(pad_len, device=runtime_device, dtype=aid.dtype)]))
+					atom_mask_padded.append(torch.cat([atom_mask, torch.zeros(pad_len, dtype=torch.bool, device=runtime_device)]))
 					coords_padded.append(torch.cat([c, torch.zeros(pad_len, 3, device=runtime_device, dtype=c.dtype)]))
 					# Pad adjacency matrix
 					adj_pad = torch.zeros((max_len, max_len), dtype=torch.bool, device=runtime_device)
@@ -889,10 +911,12 @@ class se3_denoiser(torch.nn.Module):
 					adj_mat_padded.append(adj_pad)
 				else:
 					atom_ids_padded.append(aid)
+					atom_mask_padded.append(atom_mask)
 					coords_padded.append(c)
 					adj_mat_padded.append(adj)
 			
 			atom_ids_batch = torch.stack(atom_ids_padded)  # (batch, max_len)
+			atom_mask_batch = torch.stack(atom_mask_padded)  # (batch, max_len)
 			coords_batch = torch.stack(coords_padded)      # (batch, max_len, 3)
 			adj_mat_batch = torch.stack(adj_mat_padded)    # (batch, max_len, max_len)
 		else:
@@ -919,11 +943,12 @@ class se3_denoiser(torch.nn.Module):
 				adj_mat[:dot_contacts.shape[0], :dot_contacts.shape[1]] |= dot_contacts[:num_nodes, :num_nodes]
 			
 			atom_ids_batch = atom_ids.unsqueeze(0)  # (1, num_nodes)
+			atom_mask_batch = torch.ones_like(atom_ids_batch, dtype=torch.bool, device=runtime_device)
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
 			adj_mat_batch = adj_mat.unsqueeze(0)    # (1, num_nodes, num_nodes)
 		
 		# Forward pass through GotenNet
-		invariant, coors_out = self.gotennet(atom_ids_batch, adj_mat=adj_mat_batch, coors=coords_batch)
+		invariant, coors_out = self.gotennet(atom_ids_batch, adj_mat=adj_mat_batch, coors=coords_batch, mask=atom_mask_batch)
 		
 		# invariant shape: (batch, num_nodes, dim)
 		# coors_out shape: (batch, num_nodes, 3) if return_coors=True

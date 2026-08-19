@@ -807,7 +807,24 @@ class GeometryFocusedModule(pl.LightningModule):
         if vq is None or not hasattr(vq, "discretize_z"):
             return None
         token_ids, _ = vq.discretize_z(z_local)
-        return token_ids.to(device=z_local.device, dtype=torch.long)
+        token_ids = token_ids.to(device=z_local.device, dtype=torch.long)
+        embeddings = getattr(vq, "embeddings", None)
+        weight = getattr(embeddings, "weight", None)
+        if weight is not None:
+            self._validate_token_ids_for_embedding(token_ids, int(weight.shape[0]), "FoldTree2 VQ token ids")
+        return token_ids
+
+    @staticmethod
+    def _validate_token_ids_for_embedding(token_ids: torch.Tensor, num_embeddings: int, context: str) -> None:
+        if token_ids.numel() == 0:
+            return
+        min_token_id = int(token_ids.min().detach().cpu())
+        max_token_id = int(token_ids.max().detach().cpu())
+        if min_token_id < 0 or max_token_id >= num_embeddings:
+            raise RuntimeError(
+                f"{context} out of range: min_id={min_token_id} max_id={max_token_id} "
+                f"valid_range=[0,{num_embeddings - 1}] shape={tuple(token_ids.shape)}"
+            )
 
     @staticmethod
     def _get_codebook_vectors(encoder: nn.Module, token_ids: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
@@ -818,6 +835,11 @@ class GeometryFocusedModule(pl.LightningModule):
         weight = getattr(embeddings, "weight", None)
         if weight is None:
             raise RuntimeError("SE3 codebook-vector input requires encoder.vector_quantizer.embeddings.weight")
+        GeometryFocusedModule._validate_token_ids_for_embedding(
+            token_ids,
+            int(weight.shape[0]),
+            "SE3 codebook-vector token ids",
+        )
         return F.embedding(token_ids, weight).detach()
 
     @staticmethod
