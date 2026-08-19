@@ -221,8 +221,10 @@ def gauge_normalize_frames_to_chain_start(
             return
         base_R_t = rotations[idx[0]].transpose(-1, -2)
         base_origin = origins[idx[0]]
-        norm_rot[idx] = torch.matmul(base_R_t, rotations[idx])
-        norm_origins[idx] = torch.einsum("ij,nj->ni", base_R_t, origins[idx] - base_origin)
+        local_rot = torch.matmul(base_R_t, rotations[idx]).to(dtype=norm_rot.dtype)
+        local_origins = torch.einsum("ij,nj->ni", base_R_t, origins[idx] - base_origin).to(dtype=norm_origins.dtype)
+        norm_rot[idx] = local_rot
+        norm_origins[idx] = local_origins
 
     if batch_idx is None:
         _single(torch.arange(rotations.shape[0], device=rotations.device))
@@ -256,7 +258,8 @@ def gauge_normalize_points_to_chain_start(
             return
         base_R_t = chain_start_rotations[idx[0]].transpose(-1, -2)
         base_origin = chain_start_origins[idx[0]]
-        norm_points[idx] = torch.einsum("ij,nj->ni", base_R_t, points[idx] - base_origin)
+        local_points = torch.einsum("ij,nj->ni", base_R_t, points[idx] - base_origin).to(dtype=norm_points.dtype)
+        norm_points[idx] = local_points
 
     if batch_idx is None:
         _single(torch.arange(points.shape[0], device=points.device))
