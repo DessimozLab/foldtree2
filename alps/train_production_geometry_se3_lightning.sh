@@ -138,9 +138,9 @@ MODEL_TAG=${MODEL_TAG:-40char}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
 PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt}
 
-BATCH_SIZE=${BATCH_SIZE:-8}
-VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-8}
-TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-128}
+BATCH_SIZE=${BATCH_SIZE:-4}
+VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-4}
+TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-64}
 RUN_TAG="prod_se3_${MODEL_TAG}_gh200_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 VISUALIZATION_DIR=${VISUALIZATION_DIR:-${CHECKPOINT_DIR}/visualizations}
@@ -198,25 +198,25 @@ CMD=(
   --se3-use-codebook-vectors
   --se3-use-distance-contacts
   --se3-distance-contact-cutoff "${SE3_DISTANCE_CONTACT_CUTOFF:-8.0}"
-  --se3-hidden "${SE3_HIDDEN:-128}"
-  --se3-depth "${SE3_DEPTH:-8}"
-  --se3-heads "${SE3_HEADS:-8}"
-  --se3-dim-head "${SE3_DIM_HEAD:-32}"
-  --se3-residue-hidden "${SE3_RESIDUE_HIDDEN:-128}"
-  --se3-residue-depth "${SE3_RESIDUE_DEPTH:-8}"
-  --se3-residue-heads "${SE3_RESIDUE_HEADS:-8}"
-  --se3-residue-dim-head "${SE3_RESIDUE_DIM_HEAD:-32}"
-  --se3-atom-hidden "${SE3_ATOM_HIDDEN:-128}"
-  --se3-atom-depth "${SE3_ATOM_DEPTH:-6}"
-  --se3-atom-heads "${SE3_ATOM_HEADS:-8}"
-  --se3-atom-dim-head "${SE3_ATOM_DIM_HEAD:-32}"
-  --se3-num-atom-types "${SE3_NUM_ATOM_TYPES:-0}"
+  --se3-hidden "${SE3_HIDDEN:-64}"
+  --se3-depth "${SE3_DEPTH:-4}"
+  --se3-heads "${SE3_HEADS:-4}"
+  --se3-dim-head "${SE3_DIM_HEAD:-16}"
+  --se3-residue-hidden "${SE3_RESIDUE_HIDDEN:-64}"
+  --se3-residue-depth "${SE3_RESIDUE_DEPTH:-4}"
+  --se3-residue-heads "${SE3_RESIDUE_HEADS:-4}"
+  --se3-residue-dim-head "${SE3_RESIDUE_DIM_HEAD:-16}"
+  --se3-atom-hidden "${SE3_ATOM_HIDDEN:-64}"
+  --se3-atom-depth "${SE3_ATOM_DEPTH:-3}"
+  --se3-atom-heads "${SE3_ATOM_HEADS:-4}"
+  --se3-atom-dim-head "${SE3_ATOM_DIM_HEAD:-16}"
+  --se3-num-atom-types "${SE3_NUM_ATOM_TYPES:-20}"
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-1.0}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
-  --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-16}"
+  --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-8}"
   --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
-  --se3-max-nodes "${SE3_MAX_NODES:-0}"
+  --se3-max-nodes "${SE3_MAX_NODES:-2048}"
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
