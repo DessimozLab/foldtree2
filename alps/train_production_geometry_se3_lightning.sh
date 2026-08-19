@@ -46,6 +46,7 @@ trap on_exit EXIT
 
 export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
 export PYTHONFAULTHANDLER=${PYTHONFAULTHANDLER:-1}
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 
 TRACE_SCRIPT=${TRACE_SCRIPT:-0}
 if [[ "${TRACE_SCRIPT}" == "1" ]]; then
@@ -79,7 +80,7 @@ dump_vars \
   SLURM_SUBMIT_DIR
 
 log "Runtime environment"
-dump_vars NCCL_DEBUG PYTHONFAULTHANDLER CUDA_VISIBLE_DEVICES OMP_NUM_THREADS MKL_NUM_THREADS
+dump_vars NCCL_DEBUG PYTHONFAULTHANDLER PYTORCH_CUDA_ALLOC_CONF CUDA_VISIBLE_DEVICES OMP_NUM_THREADS MKL_NUM_THREADS
 
 # Optional: export VENV_PATH before submitting.
 if [[ -n "${VENV_PATH:-}" ]]; then
@@ -138,9 +139,10 @@ MODEL_TAG=${MODEL_TAG:-40char}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
 PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt}
 
-BATCH_SIZE=${BATCH_SIZE:-4}
-VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-4}
-TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-64}
+BATCH_SIZE=${BATCH_SIZE:-2}
+VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-2}
+TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-32}
+TRAIN_PRECISION=${PRECISION:-bf16-mixed}
 MIN_SE3_NUM_ATOM_TYPES=${MIN_SE3_NUM_ATOM_TYPES:-40}
 SE3_NUM_ATOM_TYPES=${SE3_NUM_ATOM_TYPES:-${MIN_SE3_NUM_ATOM_TYPES}}
 
@@ -179,6 +181,7 @@ print_kv "target_effective_batch_size" "${TARGET_EFFECTIVE_BATCH_SIZE}"
 print_kv "run_tag" "${RUN_TAG}"
 print_kv "devices" "${DEVICES}"
 print_kv "strategy" "${STRATEGY}"
+print_kv "precision" "${TRAIN_PRECISION}"
 print_kv "se3_num_atom_types" "${SE3_NUM_ATOM_TYPES}"
 
 CMD=(
@@ -193,7 +196,7 @@ CMD=(
   --accelerator "${ACCELERATOR:-cuda}"
   --devices "${DEVICES}"
   --strategy "${STRATEGY}"
-  --precision "${PRECISION:-32-true}"
+  --precision "${TRAIN_PRECISION}"
   --pretrained-encoder-path "${PRETRAINED_ENCODER}"
   --pretrained-encoder-full-path "${PRETRAINED_ENCODER}"
   --pretrained-geometry-decoder-path "${PRETRAINED_GEOMETRY_DECODER}"
@@ -215,25 +218,25 @@ CMD=(
   --se3-use-codebook-vectors
   --se3-use-distance-contacts
   --se3-distance-contact-cutoff "${SE3_DISTANCE_CONTACT_CUTOFF:-8.0}"
-  --se3-hidden "${SE3_HIDDEN:-64}"
-  --se3-depth "${SE3_DEPTH:-4}"
-  --se3-heads "${SE3_HEADS:-4}"
-  --se3-dim-head "${SE3_DIM_HEAD:-16}"
-  --se3-residue-hidden "${SE3_RESIDUE_HIDDEN:-64}"
-  --se3-residue-depth "${SE3_RESIDUE_DEPTH:-4}"
-  --se3-residue-heads "${SE3_RESIDUE_HEADS:-4}"
-  --se3-residue-dim-head "${SE3_RESIDUE_DIM_HEAD:-16}"
-  --se3-atom-hidden "${SE3_ATOM_HIDDEN:-64}"
-  --se3-atom-depth "${SE3_ATOM_DEPTH:-3}"
-  --se3-atom-heads "${SE3_ATOM_HEADS:-4}"
-  --se3-atom-dim-head "${SE3_ATOM_DIM_HEAD:-16}"
+  --se3-hidden "${SE3_HIDDEN:-32}"
+  --se3-depth "${SE3_DEPTH:-3}"
+  --se3-heads "${SE3_HEADS:-2}"
+  --se3-dim-head "${SE3_DIM_HEAD:-8}"
+  --se3-residue-hidden "${SE3_RESIDUE_HIDDEN:-32}"
+  --se3-residue-depth "${SE3_RESIDUE_DEPTH:-3}"
+  --se3-residue-heads "${SE3_RESIDUE_HEADS:-2}"
+  --se3-residue-dim-head "${SE3_RESIDUE_DIM_HEAD:-8}"
+  --se3-atom-hidden "${SE3_ATOM_HIDDEN:-32}"
+  --se3-atom-depth "${SE3_ATOM_DEPTH:-2}"
+  --se3-atom-heads "${SE3_ATOM_HEADS:-2}"
+  --se3-atom-dim-head "${SE3_ATOM_DIM_HEAD:-8}"
   --se3-num-atom-types "${SE3_NUM_ATOM_TYPES}"
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-1.0}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
-  --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-8}"
+  --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-4}"
   --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
-  --se3-max-nodes "${SE3_MAX_NODES:-2048}"
+  --se3-max-nodes "${SE3_MAX_NODES:-1024}"
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
