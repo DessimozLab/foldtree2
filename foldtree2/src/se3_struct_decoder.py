@@ -947,8 +947,23 @@ class se3_denoiser(torch.nn.Module):
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
 			adj_mat_batch = adj_mat.unsqueeze(0)    # (1, num_nodes, num_nodes)
 		
-		# Forward pass through GotenNet
-		invariant, coors_out = self.gotennet(atom_ids_batch, adj_mat=adj_mat_batch, coors=coords_batch, mask=atom_mask_batch)
+		# GotenNet coordinate refinement is numerically sensitive under CUDA
+		# bf16 autocast; run this block in fp32 while leaving the outer trainer
+		# in mixed precision.
+		autocast_device = runtime_device.type if runtime_device.type in ('cuda', 'cpu') else 'cpu'
+		gotennet_param = next(self.gotennet.parameters(), None)
+		gotennet_dtype = gotennet_param.dtype if gotennet_param is not None else coords_batch.dtype
+		with torch.autocast(device_type=autocast_device, enabled=False):
+			invariant, coors_out = self.gotennet(
+				atom_ids_batch,
+				adj_mat=adj_mat_batch,
+				coors=coords_batch.to(dtype=gotennet_dtype),
+				mask=atom_mask_batch,
+			)
+		if not torch.isfinite(invariant).all():
+			raise RuntimeError('GotenNet produced non-finite invariant features')
+		if coors_out is not None and not torch.isfinite(coors_out).all():
+			raise RuntimeError('GotenNet produced non-finite coordinates')
 		
 		# invariant shape: (batch, num_nodes, dim)
 		# coors_out shape: (batch, num_nodes, 3) if return_coors=True
