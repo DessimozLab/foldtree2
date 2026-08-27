@@ -1,0 +1,54 @@
+[2026-08-19 03:13:56+0200] Logging initialized
+  log_file                             /home/dmoi/projects/foldtree2/train_production_geometry_se3_lightning_manual_20260819_031356.log
+  script                               /home/dmoi/projects/foldtree2/alps/train_production_geometry_se3_lightning.sh
+  host                                 dmoi-WS-C621E-SAGE-Series
+  start_time_utc                       2026-08-19T01:13:56Z
+[2026-08-19 03:13:56+0200] SLURM metadata
+  SLURM_JOB_ID                         <unset>
+  SLURM_JOB_NAME                       <unset>
+  SLURM_JOB_NODELIST                   <unset>
+  SLURM_NNODES                         <unset>
+  SLURM_NTASKS                         <unset>
+  SLURM_NTASKS_PER_NODE                <unset>
+  SLURM_CPUS_PER_TASK                  <unset>
+  SLURM_GPUS                           <unset>
+  SLURM_GPUS_PER_NODE                  <unset>
+  SLURM_GPUS_PER_TASK                  <unset>
+  SLURM_SUBMIT_DIR                     <unset>
+[2026-08-19 03:13:56+0200] Runtime environment
+  NCCL_DEBUG                           WARN
+  PYTHONFAULTHANDLER                   1
+  PYTORCH_CUDA_ALLOC_CONF              expandable_segments:True
+  CUDA_VISIBLE_DEVICES                 <unset>
+  OMP_NUM_THREADS                      <unset>
+  MKL_NUM_THREADS                      <unset>
+[2026-08-19 03:13:56+0200] VENV_PATH not set; using current environment
+[2026-08-19 03:13:56+0200] Installing editable package from PROJECT_ROOT=/home/dmoi/projects/foldtree2
+WARNING: Ignoring invalid distribution -orch (/home/dmoi/miniforge3/lib/python3.10/site-packages)
+WARNING: Ignoring invalid distribution -vidia-cudnn-cu12 (/home/dmoi/miniforge3/lib/python3.10/site-packages)
+Obtaining file:///home/dmoi/projects/foldtree2
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × pip subprocess to install build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [7 lines of output]
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f3f5e7fb790>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f3f5e7fba90>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f3f5e7fbd30>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f3f5e7fbf10>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f3f5e7fbfd0>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=61.0 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=61.0
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: subprocess-exited-with-error
+
+× pip subprocess to install build dependencies did not run successfully.
+│ exit code: 1
+╰─> See above for output.
+
+note: This error originates from a subprocess, and is likely not a problem with pip.
+[2026-08-19 03:14:06+0200] Script failed with exit code 1 after 10s
