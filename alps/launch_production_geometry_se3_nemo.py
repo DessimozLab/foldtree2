@@ -76,7 +76,8 @@ def main() -> int:
         "PROJECT_ROOT": str(project_root),
         # The existing launcher owns the four-GPU Lightning process.
         "DEVICES": str(args.gpus_per_node),
-        "STRATEGY": os.environ.get("STRATEGY", "auto"),
+        "STRATEGY": os.environ.get("STRATEGY", "ddp_find_unused_parameters_true"),
+        "NEMO_RUN": "1",
         "PYTHONUNBUFFERED": "1",
     }
     env.update(parse_env_overrides(args.env))

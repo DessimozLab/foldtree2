@@ -105,6 +105,14 @@ if [[ -z "${STRATEGY:-}" ]]; then
   fi
 fi
 
+# NeMo-Run launches this shell script as one Slurm task with all GPUs on the
+# node. Lightning then creates one subprocess per GPU. Normalize the task
+# count it validates without launching multiple copies of this shell script.
+if [[ "${NEMO_RUN:-0}" == "1" && "${DEVICES}" -gt 1 ]]; then
+  export SLURM_NTASKS_PER_NODE="${DEVICES}"
+  export SLURM_NTASKS="${DEVICES}"
+fi
+
 PROJECT_ROOT=${PROJECT_ROOT:-/users/dmoi/foldtree2/}
 
 log "Installing editable package from PROJECT_ROOT=${PROJECT_ROOT}"
