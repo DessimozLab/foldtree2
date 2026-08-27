@@ -20,6 +20,7 @@ python alps/launch_production_geometry_se3_nemo.py \
   --account a0117 \
   --gpus-per-node 4 \
   --time 08:00:00 \
+  --slurm-environment pygmk3 \
   --env DATASET=/capstor/store/cscs/swissai/a0117/structalnfinal.h5 \
   --env EPOCHS=100 \
   --env BATCH_SIZE=1

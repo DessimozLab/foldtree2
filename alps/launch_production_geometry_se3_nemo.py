@@ -40,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpus-per-node", type=int, default=int(os.environ.get("GPUS_PER_NODE", "4")))
     parser.add_argument("--time", default=os.environ.get("WALLTIME", "08:00:00"))
     parser.add_argument(
+        "--slurm-environment",
+        default=os.environ.get("SLURM_ENVIRONMENT", "pygmk3"),
+        help="Alps Slurm environment bundle passed to the generated sbatch wrapper; empty disables it",
+    )
+    parser.add_argument(
         "--job-dir",
         default=os.environ.get("NEMO_RUN_JOB_DIR", "/capstor/store/cscs/swissai/a0117/nemo-run"),
     )
@@ -63,6 +68,7 @@ def main() -> int:
     args = build_parser().parse_args()
     project_root = Path(args.project_root).expanduser()
     script = Path(args.script)
+    job_dir = Path(args.job_dir).expanduser()
     if not script.is_absolute():
         script = project_root / script
 
@@ -84,6 +90,7 @@ def main() -> int:
     print(f"  account: {args.account}")
     print(f"  partition: {args.partition or '<cluster default>'}")
     print(f"  time: {args.time}")
+    print(f"  slurm_environment: {args.slurm_environment or '<disabled>'}")
     print(f"  env: {env}")
 
     if args.print_only:
@@ -97,15 +104,23 @@ def main() -> int:
             "environment with `pip install nemo-run`."
         ) from exc
 
+    job_dir.mkdir(parents=True, exist_ok=True)
+    additional_parameters = {}
+    if args.slurm_environment:
+        additional_parameters["environment"] = args.slurm_environment
     executor_kwargs = {
         "account": args.account,
         "nodes": args.nodes,
         "ntasks_per_node": 1,
         "gpus_per_node": args.gpus_per_node,
         "time": args.time,
-        "job_dir": args.job_dir,
-        "tunnel": run.LocalTunnel(job_dir=args.job_dir),
+        "job_dir": str(job_dir),
+        "tunnel": run.LocalTunnel(job_dir=str(job_dir)),
         "env_vars": env,
+        # Keep the command and shared filesystem paths intact; NeMo-Run still
+        # needs a passthrough packager to materialize its sbatch wrapper.
+        "packager": run.Packager(),
+        "additional_parameters": additional_parameters,
     }
     if args.partition:
         executor_kwargs["partition"] = args.partition
