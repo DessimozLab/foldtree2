@@ -2,10 +2,12 @@
 #SBATCH --job-name=ft2-prod-staged-gh200
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
+# Lightning DDP launches one worker per Slurm task/GPU.
+# Keep this aligned with DEVICES below.
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=4
-#SBATCH --gpus-per-task=4
+#SBATCH --gpus-per-task=1
 #SBATCH --gres=gpu:4
 #SBATCH --gres-flags=enforce-binding
 #SBATCH --account=a0117
@@ -69,8 +71,8 @@ BATCH_SIZE=${BATCH_SIZE:-1}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-1}
 TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-16}
 TRAIN_PRECISION=${PRECISION:-32-true}
-DEVICES=${DEVICES:-1}
-STRATEGY=${STRATEGY:-auto}
+DEVICES=${DEVICES:-4}
+STRATEGY=${STRATEGY:-ddp_find_unused_parameters_true}
 
 STAGED_HIDDEN=${STAGED_HIDDEN:-128}
 STAGED_HEADS=${STAGED_HEADS:-4}
