@@ -134,7 +134,9 @@ def main() -> int:
         executor_kwargs["partition"] = args.partition
 
     executor = run.SlurmExecutor(**executor_kwargs)
-    task = run.Script(command)
+    # Use inline content; passing the command positionally makes NeMo-Run
+    # interpret the entire shell command as a script filename (bash cd ...).
+    task = run.Script(inline=command)
     with run.Experiment(args.name, base_dir=str(experiment_base_dir)) as experiment:
         experiment.add(task, executor=executor, name="training")
         experiment.run(detach=args.detach)
