@@ -105,6 +105,12 @@ def main() -> int:
         ) from exc
 
     job_dir.mkdir(parents=True, exist_ok=True)
+    # Experiment stores its metadata below <base_dir>/experiments/<name>/<id>,
+    # while LocalTunnel appends <name>/<id> to its own job_dir. Point both at
+    # the same tree so the generated sbatch wrapper exists where it is submitted.
+    experiment_base_dir = job_dir
+    executor_job_dir = job_dir / "experiments"
+    executor_job_dir.mkdir(parents=True, exist_ok=True)
     additional_parameters = {}
     if args.slurm_environment:
         additional_parameters["environment"] = args.slurm_environment
@@ -114,8 +120,8 @@ def main() -> int:
         "ntasks_per_node": 1,
         "gpus_per_node": args.gpus_per_node,
         "time": args.time,
-        "job_dir": str(job_dir),
-        "tunnel": run.LocalTunnel(job_dir=str(job_dir)),
+        "job_dir": str(executor_job_dir),
+        "tunnel": run.LocalTunnel(job_dir=str(executor_job_dir)),
         "env_vars": env,
         # Keep the command and shared filesystem paths intact; NeMo-Run still
         # needs a passthrough packager to materialize its sbatch wrapper.
@@ -127,7 +133,7 @@ def main() -> int:
 
     executor = run.SlurmExecutor(**executor_kwargs)
     task = run.Script(command)
-    with run.Experiment(args.name) as experiment:
+    with run.Experiment(args.name, base_dir=str(experiment_base_dir)) as experiment:
         experiment.add(task, executor=executor, name="training")
         experiment.run(detach=args.detach)
     return 0
