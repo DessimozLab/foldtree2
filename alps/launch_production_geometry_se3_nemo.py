@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--slurm-environment",
         default=os.environ.get("SLURM_ENVIRONMENT", "pygmk3"),
-        help="Alps Slurm environment bundle passed to the generated sbatch wrapper; empty disables it",
+        help="Alps Pyxis environment passed to the generated srun task; empty disables it",
     )
     parser.add_argument(
         "--job-dir",
@@ -113,9 +113,12 @@ def main() -> int:
     os.environ["NEMORUN_HOME"] = str(experiment_base_dir)
     executor_job_dir = job_dir / "experiments"
     executor_job_dir.mkdir(parents=True, exist_ok=True)
-    additional_parameters = {}
+    # Keep the outer sbatch wrapper on the host Slurm installation. Applying
+    # --environment to sbatch runs that wrapper inside the container, which
+    # makes its nested srun resolve against incompatible container libraries.
+    srun_args = []
     if args.slurm_environment:
-        additional_parameters["environment"] = args.slurm_environment
+        srun_args.append(f"--environment={args.slurm_environment}")
     executor_kwargs = {
         "account": args.account,
         "nodes": args.nodes,
@@ -128,7 +131,7 @@ def main() -> int:
         # Keep the command and shared filesystem paths intact; NeMo-Run still
         # needs a passthrough packager to materialize its sbatch wrapper.
         "packager": run.Packager(),
-        "additional_parameters": additional_parameters,
+        "srun_args": srun_args,
     }
     if args.partition:
         executor_kwargs["partition"] = args.partition
