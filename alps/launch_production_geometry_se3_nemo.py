@@ -104,7 +104,7 @@ def main() -> int:
         "gpus_per_node": args.gpus_per_node,
         "time": args.time,
         "job_dir": args.job_dir,
-        "tunnel": run.LocalTunnel(),
+        "tunnel": run.LocalTunnel(job_dir=args.job_dir),
         "env_vars": env,
     }
     if args.partition:
