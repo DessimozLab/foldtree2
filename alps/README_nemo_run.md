@@ -30,7 +30,17 @@ Use `--print-only` to inspect the resolved command and resources without
 submitting. Job-specific settings can be supplied repeatedly with `--env
 KEY=VALUE`; these become environment variables consumed by the existing Alps
 launcher. The launcher requests one Slurm task with all GPUs on the node,
-matching the current Lightning configuration.
+matching the current Lightning configuration. The same `--job-dir` is also the
+NeMo-Run metadata home, so set it when inspecting the experiment later:
+
+```bash
+NEMORUN_HOME=/capstor/store/cscs/swissai/a0117/nemo-run \
+  nemo experiment logs ft2-prod-se3_1787859357
+```
+
+Replace the experiment ID with the one printed by the submit command.
+Alternatively, inspect the Slurm output files below
+`/capstor/store/cscs/swissai/a0117/nemo-run/experiments/ft2-prod-se3/`.
 
 
 python alps/launch_production_geometry_se3_nemo.py \

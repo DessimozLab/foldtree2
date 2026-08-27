@@ -91,6 +91,7 @@ def main() -> int:
     print(f"  partition: {args.partition or '<cluster default>'}")
     print(f"  time: {args.time}")
     print(f"  slurm_environment: {args.slurm_environment or '<disabled>'}")
+    print(f"  nemorun_home: {args.job_dir}")
     print(f"  env: {env}")
 
     if args.print_only:
@@ -109,6 +110,7 @@ def main() -> int:
     # while LocalTunnel appends <name>/<id> to its own job_dir. Point both at
     # the same tree so the generated sbatch wrapper exists where it is submitted.
     experiment_base_dir = job_dir
+    os.environ["NEMORUN_HOME"] = str(experiment_base_dir)
     executor_job_dir = job_dir / "experiments"
     executor_job_dir.mkdir(parents=True, exist_ok=True)
     additional_parameters = {}
