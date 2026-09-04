@@ -595,7 +595,9 @@ class GeometryFocusedModule(pl.LightningModule):
                 {name: torch.nn.Parameter(torch.zeros((), dtype=torch.float32)) for name in self.uncertainty_term_names}
             )
 
-        self.save_hyperparameters(ignore=["encoder", "transformer_geom_decoder", "se3_decoder", "se3_atom_decoder"])
+        self.save_hyperparameters(
+            ignore=["encoder", "transformer_geom_decoder", "se3_decoder", "se3_atom_decoder", "staged_refiner"]
+        )
 
     def configure_optimizers(self):
         train_params = [] if self.train_se3_only else list(self.transformer_geom_decoder.parameters())

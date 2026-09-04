@@ -9,7 +9,7 @@ import argparse
 import math
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -29,162 +29,7 @@ from foldtree2.src.losses.fape import (
     rotation_matrix_to_quaternion,
 )
 from foldtree2.src.losses.losses import quaternion_fape_loss, quaternion_geodesic_loss
-
-
-class StagedTransformerRefiner(nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        num_atom_types: int,
-        hidden: int = 128,
-        heads: int = 4,
-        layers: int = 2,
-        dropout: float = 0.05,
-        max_step: float = 4.0,
-        max_refine_delta: float = 2.0,
-    ):
-        super().__init__()
-        self.hidden = int(hidden)
-        self.max_step = float(max_step)
-        self.max_refine_delta = float(max_refine_delta)
-        self.input_proj = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, hidden), nn.GELU())
-        self.type_embed = nn.Embedding(max(4, int(num_atom_types)), hidden)
-        self.coord_proj = nn.Sequential(nn.LayerNorm(3), nn.Linear(3, hidden), nn.GELU())
-        self.contact_proj = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, hidden), nn.GELU())
-
-        self.stage1 = self._encoder(hidden, heads, layers, dropout)
-        self.stage2 = self._encoder(hidden, heads, layers, dropout)
-        self.stage3 = self._encoder(hidden, heads, layers, dropout)
-
-        self.step1 = nn.Linear(hidden, 3)
-        self.delta2 = nn.Linear(hidden, 3)
-        self.delta3 = nn.Linear(hidden, 3)
-        self.angle1 = nn.Linear(hidden, 3)
-        self.angle2 = nn.Linear(hidden, 3)
-        self.angle3 = nn.Linear(hidden, 3)
-
-    @staticmethod
-    def _encoder(hidden: int, heads: int, layers: int, dropout: float) -> nn.TransformerEncoder:
-        layer = nn.TransformerEncoderLayer(
-            d_model=hidden,
-            nhead=max(1, int(heads)),
-            dim_feedforward=hidden * 4,
-            dropout=float(dropout),
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        return nn.TransformerEncoder(layer, num_layers=max(1, int(layers)))
-
-    @staticmethod
-    def _pack(x: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
-        if batch_idx is None:
-            idx = torch.arange(x.shape[0], device=x.device)
-            return x.unsqueeze(0), torch.ones((1, x.shape[0]), dtype=torch.bool, device=x.device), [idx]
-        values = torch.unique(batch_idx, sorted=True)
-        indices = [(batch_idx == b).nonzero(as_tuple=True)[0] for b in values]
-        max_len = max((idx.numel() for idx in indices), default=0)
-        packed = x.new_zeros((len(indices), max_len, x.shape[-1]))
-        mask = torch.zeros((len(indices), max_len), dtype=torch.bool, device=x.device)
-        for i, idx in enumerate(indices):
-            packed[i, : idx.numel()] = x[idx]
-            mask[i, : idx.numel()] = True
-        return packed, mask, indices
-
-    @staticmethod
-    def _unpack(x: torch.Tensor, indices: list[torch.Tensor], n_nodes: int) -> torch.Tensor:
-        flat = x.new_zeros((n_nodes, x.shape[-1]))
-        for i, idx in enumerate(indices):
-            flat[idx] = x[i, : idx.numel()]
-        return flat
-
-    @staticmethod
-    def _coords_from_steps(steps: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
-        coords = torch.zeros_like(steps)
-        if batch_idx is None:
-            if steps.shape[0] > 1:
-                coords[1:] = torch.cumsum(steps[:-1].float(), dim=0).to(dtype=coords.dtype)
-            return coords
-        for b in torch.unique(batch_idx, sorted=True):
-            idx = (batch_idx == b).nonzero(as_tuple=True)[0]
-            if idx.numel() > 1:
-                coords[idx[1:]] = torch.cumsum(steps[idx[:-1]].float(), dim=0).to(dtype=coords.dtype)
-        return coords
-
-    @staticmethod
-    def _contact_aggregate(x: torch.Tensor, contact: Optional[torch.Tensor], batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
-        if contact is None or contact.numel() == 0:
-            return torch.zeros_like(x)
-        out = torch.zeros_like(x)
-        groups = [torch.arange(x.shape[0], device=x.device)] if batch_idx is None else [
-            (batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)
-        ]
-        for gi, idx in enumerate(groups):
-            n = idx.numel()
-            if n == 0:
-                continue
-            adj = contact[0 if contact.shape[0] == 1 else gi, :n, :n].to(device=x.device, dtype=x.dtype)
-            denom = adj.sum(dim=-1, keepdim=True).clamp_min(1.0)
-            out[idx] = adj @ x[idx] / denom
-        return out
-
-    def forward(
-        self,
-        features: torch.Tensor,
-        token_ids: torch.Tensor,
-        seed_coords: torch.Tensor,
-        contact: Optional[torch.Tensor],
-        batch_idx: Optional[torch.Tensor],
-    ) -> Dict[str, Dict[str, torch.Tensor]]:
-        features = torch.nan_to_num(features.float(), nan=0.0, posinf=0.0, neginf=0.0)
-        seed_coords = torch.nan_to_num(seed_coords.float(), nan=0.0, posinf=0.0, neginf=0.0).clamp(-32.0, 32.0)
-        token_ids = token_ids.long().clamp(0, self.type_embed.num_embeddings - 1)
-
-        h0 = self.input_proj(features)
-        type_h = self.type_embed(token_ids)
-        h_seq, mask, indices = self._pack(h0, batch_idx)
-        key_padding = ~mask
-
-        h1 = self.stage1(h_seq, src_key_padding_mask=key_padding)
-        h1_flat = self._unpack(h1, indices, features.shape[0])
-        step1 = torch.tanh(self.step1(h1_flat)) * self.max_step
-        coords1 = self._coords_from_steps(step1, batch_idx)
-        angles1 = torch.tanh(self.angle1(h1_flat)) * torch.pi
-
-        contact_h = self.contact_proj(self._contact_aggregate(h1_flat + type_h, contact, batch_idx))
-        h2_in = h1_flat + type_h + self.coord_proj(coords1 - seed_coords) + contact_h
-        h2_seq, mask, indices = self._pack(h2_in, batch_idx)
-        h2 = self.stage2(h2_seq, src_key_padding_mask=~mask)
-        h2_flat = self._unpack(h2, indices, features.shape[0])
-        coords2 = coords1 + torch.tanh(self.delta2(h2_flat)) * self.max_refine_delta
-        angles2 = torch.tanh(self.angle2(h2_flat)) * torch.pi
-
-        contact_h2 = self.contact_proj(self._contact_aggregate(h2_flat + type_h, contact, batch_idx))
-        h3_in = h2_flat + type_h + self.coord_proj(coords2 - coords1) + contact_h2
-        h3_seq, mask, indices = self._pack(h3_in, batch_idx)
-        h3 = self.stage3(h3_seq, src_key_padding_mask=~mask)
-        h3_flat = self._unpack(h3, indices, features.shape[0])
-        coords3 = coords2 + torch.tanh(self.delta3(h3_flat)) * self.max_refine_delta
-        angles3 = torch.tanh(self.angle3(h3_flat)) * torch.pi
-
-        return {
-            "stage1": {"coords": coords1, "steps": step1, "angles": angles1, "z": h1_flat},
-            "stage2": {"coords": coords2, "steps": self._coords_to_steps(coords2, batch_idx), "angles": angles2, "z": h2_flat},
-            "stage3": {"coords": coords3, "steps": self._coords_to_steps(coords3, batch_idx), "angles": angles3, "z": h3_flat},
-        }
-
-    @staticmethod
-    def _coords_to_steps(coords: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
-        steps = torch.zeros_like(coords)
-        if batch_idx is None:
-            if coords.shape[0] > 1:
-                steps[1:] = coords[1:] - coords[:-1]
-            return steps
-        for b in torch.unique(batch_idx, sorted=True):
-            idx = (batch_idx == b).nonzero(as_tuple=True)[0]
-            if idx.numel() > 1:
-                steps[idx[1:]] = coords[idx[1:]] - coords[idx[:-1]]
-        return steps
+from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner
 
 
 class ProductionStagedTransformerModule(base.GeometryFocusedModule):
@@ -197,6 +42,9 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         stage_loss_weights: str = "0.25,0.5,1.0",
         **kwargs,
     ):
+        kwargs.pop("use_se3", None)
+        kwargs.pop("se3_decoder", None)
+        kwargs.pop("se3_atom_decoder", None)
         super().__init__(*args, use_se3=False, se3_decoder=None, se3_atom_decoder=None, **kwargs)
         self.staged_refiner = staged_refiner
         self.production_coordinate_source = str(production_coordinate_source)
@@ -417,6 +265,11 @@ def main():
     args = base.parse_args()
     for key, value in vars(staged_args).items():
         setattr(args, key, value)
+    staged_cli = []
+    for key, value in vars(staged_args).items():
+        option = "--" + key.replace("_", "-")
+        staged_cli.extend([option, str(value)])
+    sys.argv = [sys.argv[0], *remaining, *staged_cli]
 
     base.pl.seed_everything(args.seed, workers=True)
     data_module = base.GeometryOnlyDataModule(
@@ -453,7 +306,7 @@ def main():
         dropout=args.staged_dropout,
         max_step=args.staged_max_step,
         max_refine_delta=args.staged_max_refine_delta,
-    ).to(device)
+    ).to(device).float()
 
     constructor = inspect.signature(base.GeometryFocusedModule.__init__)
     aliases = {"lr_scheduler_name": "lr_scheduler", "max_epochs": "epochs", "clip_grad_norm": "clip_grad"}

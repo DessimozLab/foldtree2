@@ -237,6 +237,108 @@ class Position_MLP(nn.Module):
 		return self.net(x)
 
 
+class StagedTransformerRefiner(nn.Module):
+	"""Three-stage residue-coordinate refiner used by the staged trainer."""
+	def __init__(self, input_dim, num_atom_types, hidden=128, heads=4, layers=2, dropout=0.05, max_step=4.0, max_refine_delta=2.0):
+		super().__init__()
+		self.hidden = int(hidden)
+		self.max_step = float(max_step)
+		self.max_refine_delta = float(max_refine_delta)
+		self.input_proj = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, hidden), nn.GELU())
+		self.type_embed = nn.Embedding(max(4, int(num_atom_types)), hidden)
+		self.coord_proj = nn.Sequential(nn.LayerNorm(3), nn.Linear(3, hidden), nn.GELU())
+		self.contact_proj = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, hidden), nn.GELU())
+		self.stage1 = self._encoder(hidden, heads, layers, dropout)
+		self.stage2 = self._encoder(hidden, heads, layers, dropout)
+		self.stage3 = self._encoder(hidden, heads, layers, dropout)
+		self.step1 = nn.Linear(hidden, 3)
+		self.delta2 = nn.Linear(hidden, 3)
+		self.delta3 = nn.Linear(hidden, 3)
+		self.angle1 = nn.Linear(hidden, 3)
+		self.angle2 = nn.Linear(hidden, 3)
+		self.angle3 = nn.Linear(hidden, 3)
+
+	@staticmethod
+	def _encoder(hidden, heads, layers, dropout):
+		layer = nn.TransformerEncoderLayer(d_model=hidden, nhead=max(1, int(heads)), dim_feedforward=hidden * 4, dropout=float(dropout), activation="gelu", batch_first=True, norm_first=True)
+		return nn.TransformerEncoder(layer, num_layers=max(1, int(layers)))
+
+	@staticmethod
+	def _pack(x, batch_idx):
+		if batch_idx is None:
+			idx = torch.arange(x.shape[0], device=x.device)
+			return x.unsqueeze(0), torch.ones((1, x.shape[0]), dtype=torch.bool, device=x.device), [idx]
+		indices = [(batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)]
+		max_len = max((idx.numel() for idx in indices), default=0)
+		packed = x.new_zeros((len(indices), max_len, x.shape[-1]))
+		mask = torch.zeros((len(indices), max_len), dtype=torch.bool, device=x.device)
+		for i, idx in enumerate(indices):
+			packed[i, :idx.numel()] = x[idx]
+			mask[i, :idx.numel()] = True
+		return packed, mask, indices
+
+	@staticmethod
+	def _unpack(x, indices, n_nodes):
+		flat = x.new_zeros((n_nodes, x.shape[-1]))
+		for i, idx in enumerate(indices):
+			flat[idx] = x[i, :idx.numel()]
+		return flat
+
+	@staticmethod
+	def _coords_from_steps(steps, batch_idx):
+		coords = torch.zeros_like(steps)
+		groups = [torch.arange(steps.shape[0], device=steps.device)] if batch_idx is None else [(batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)]
+		for idx in groups:
+			if idx.numel() > 1:
+				coords[idx[1:]] = torch.cumsum(steps[idx[:-1]].float(), dim=0).to(dtype=coords.dtype)
+		return coords
+
+	@staticmethod
+	def _contact_aggregate(x, contact, batch_idx):
+		if contact is None or contact.numel() == 0:
+			return torch.zeros_like(x)
+		out = torch.zeros_like(x)
+		groups = [torch.arange(x.shape[0], device=x.device)] if batch_idx is None else [(batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)]
+		for graph_idx, idx in enumerate(groups):
+			if idx.numel() == 0:
+				continue
+			adj = contact[0 if contact.shape[0] == 1 else graph_idx, :idx.numel(), :idx.numel()].to(device=x.device, dtype=x.dtype)
+			out[idx] = adj @ x[idx] / adj.sum(dim=-1, keepdim=True).clamp_min(1.0)
+		return out
+
+	@staticmethod
+	def _coords_to_steps(coords, batch_idx):
+		steps = torch.zeros_like(coords)
+		groups = [torch.arange(coords.shape[0], device=coords.device)] if batch_idx is None else [(batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)]
+		for idx in groups:
+			if idx.numel() > 1:
+				steps[idx[1:]] = coords[idx[1:]] - coords[idx[:-1]]
+		return steps
+
+	def forward(self, features, token_ids, seed_coords, contact, batch_idx):
+		parameter = next(self.parameters())
+		features = torch.nan_to_num(features.to(dtype=parameter.dtype), nan=0.0, posinf=0.0, neginf=0.0)
+		seed_coords = torch.nan_to_num(seed_coords.to(dtype=parameter.dtype), nan=0.0, posinf=0.0, neginf=0.0).clamp(-32.0, 32.0)
+		token_ids = token_ids.long().clamp(0, self.type_embed.num_embeddings - 1)
+		type_h = self.type_embed(token_ids)
+		h_seq, mask, indices = self._pack(self.input_proj(features), batch_idx)
+		h1_flat = self._unpack(self.stage1(h_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		step1 = torch.tanh(self.step1(h1_flat)) * self.max_step
+		coords1 = self._coords_from_steps(step1, batch_idx)
+		stages = {"stage1": {"coords": coords1, "steps": step1, "angles": torch.tanh(self.angle1(h1_flat)) * torch.pi, "z": h1_flat}}
+		contact_h = self.contact_proj(self._contact_aggregate(h1_flat + type_h, contact, batch_idx))
+		h2_seq, mask, indices = self._pack(h1_flat + type_h + self.coord_proj(coords1 - seed_coords) + contact_h, batch_idx)
+		h2_flat = self._unpack(self.stage2(h2_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		coords2 = coords1 + torch.tanh(self.delta2(h2_flat)) * self.max_refine_delta
+		stages["stage2"] = {"coords": coords2, "steps": self._coords_to_steps(coords2, batch_idx), "angles": torch.tanh(self.angle2(h2_flat)) * torch.pi, "z": h2_flat}
+		contact_h2 = self.contact_proj(self._contact_aggregate(h2_flat + type_h, contact, batch_idx))
+		h3_seq, mask, indices = self._pack(h2_flat + type_h + self.coord_proj(coords2 - coords1) + contact_h2, batch_idx)
+		h3_flat = self._unpack(self.stage3(h3_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		coords3 = coords2 + torch.tanh(self.delta3(h3_flat)) * self.max_refine_delta
+		stages["stage3"] = {"coords": coords3, "steps": self._coords_to_steps(coords3, batch_idx), "angles": torch.tanh(self.angle3(h3_flat)) * torch.pi, "z": h3_flat}
+		return stages
+
+
 	
 	
 class AttentionPooling(nn.Module):
@@ -459,7 +561,9 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		if trans_pred is None:
 			return None
 		if batch is None:
-			coords = torch.cumsum(trans_pred.float(), dim=0)
+			coords = torch.zeros_like(trans_pred)
+			if trans_pred.shape[0] > 1:
+				coords[1:] = torch.cumsum(trans_pred[:-1].float(), dim=0).to(dtype=coords.dtype)
 			return coords.to(dtype=trans_pred.dtype)
 
 		coords = torch.zeros_like(trans_pred)
@@ -467,7 +571,8 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			idx = torch.where(batch == b)[0]
 			if idx.numel() == 0:
 				continue
-			coords[idx] = torch.cumsum(trans_pred[idx].float(), dim=0).to(dtype=coords.dtype)
+			if idx.numel() > 1:
+				coords[idx[1:]] = torch.cumsum(trans_pred[idx[:-1]].float(), dim=0).to(dtype=coords.dtype)
 		return coords
 
 	def _pack_coords_for_batch(self, coords_flat, batch):
@@ -624,6 +729,7 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			'angles': angles,
 			'z': z,
 			'coords_pred': coords_out,
+			'coords_pred_flat': coords,
 			'contact_probs': edge_attr,
 			'ords': data.x_dict.get('ords', None),
 		}
