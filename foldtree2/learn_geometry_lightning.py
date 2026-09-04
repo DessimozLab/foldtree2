@@ -464,7 +464,7 @@ class GeometryFocusedModule(pl.LightningModule):
         coarse_backbone_angle_weight: float = 0.0,
         se3_input_source: str = "coarse_ca",
         se3_contact_sketch_top_k: int = 16,
-        se3_contact_sketch_threshold: float = 0.0,
+        se3_contact_sketch_threshold: float = math.inf,
         se3_contact_sketch_min_seq_sep: int = 3,
         se3_contact_coord_scale: float = 10.0,
         se3_contact_local_window: int = 1,
@@ -484,6 +484,9 @@ class GeometryFocusedModule(pl.LightningModule):
         se3_use_codebook_vectors: bool = False,
         se3_use_distance_contacts: bool = False,
         se3_distance_contact_cutoff: float = 8.0,
+        fape_pair_sample_size: int = 0,
+        use_plddt_mask: bool = False,
+        plddt_threshold: float = 0.3,
     ):
         super().__init__()
         self.encoder = encoder
@@ -564,6 +567,9 @@ class GeometryFocusedModule(pl.LightningModule):
         self.se3_use_codebook_vectors = bool(se3_use_codebook_vectors)
         self.se3_use_distance_contacts = bool(se3_use_distance_contacts)
         self.se3_distance_contact_cutoff = float(se3_distance_contact_cutoff)
+        self.fape_pair_sample_size = max(0, int(fape_pair_sample_size))
+        self.use_plddt_mask = bool(use_plddt_mask)
+        self.plddt_threshold = float(plddt_threshold)
 
         for p in self.encoder.parameters():
             p.requires_grad = False
@@ -739,22 +745,32 @@ class GeometryFocusedModule(pl.LightningModule):
             q = rotation_matrix_to_quaternion(R)
             return R, t, q
 
-        forward = torch.zeros_like(ca_coords)
-        forward[:-1] = ca_coords[1:] - ca_coords[:-1]
-        forward[-1] = forward[-2]
-        forward = forward / torch.clamp(torch.norm(forward, dim=-1, keepdim=True), min=1e-8)
+        prev_ca = torch.roll(ca_coords, shifts=1, dims=0)
+        next_ca = torch.roll(ca_coords, shifts=-1, dims=0)
+        prev_ca[0] = ca_coords[0] + (ca_coords[0] - ca_coords[1])
+        next_ca[-1] = ca_coords[-1] + (ca_coords[-1] - ca_coords[-2])
 
-        global_up = torch.tensor([0.0, 0.0, 1.0], device=ca_coords.device, dtype=ca_coords.dtype).expand_as(forward)
-        almost_parallel = (torch.abs((forward * global_up).sum(dim=-1)) > 0.95).unsqueeze(-1)
-        alt_up = torch.tensor([0.0, 1.0, 0.0], device=ca_coords.device, dtype=ca_coords.dtype).expand_as(forward)
-        up = torch.where(almost_parallel, alt_up, global_up)
+        forward_raw = next_ca - prev_ca
+        forward = forward_raw / torch.clamp(torch.norm(forward_raw, dim=-1, keepdim=True), min=1e-8)
+        normal_raw = torch.cross(ca_coords - prev_ca, next_ca - ca_coords, dim=-1)
+        if n > 2:
+            first_segment = ca_coords[1] - ca_coords[0]
+            second_segment = ca_coords[2] - ca_coords[1]
+            penultimate_segment = ca_coords[-2] - ca_coords[-3]
+            last_segment = ca_coords[-1] - ca_coords[-2]
+            normal_raw[0] = torch.cross(first_segment, second_segment, dim=-1)
+            normal_raw[-1] = torch.cross(penultimate_segment, last_segment, dim=-1)
+        normal = normal_raw / torch.clamp(torch.norm(normal_raw, dim=-1, keepdim=True), min=1e-8)
+        degenerate = torch.norm(normal_raw, dim=-1) < 1e-8
+        if degenerate.any():
+            neighbor_raw = next_ca[degenerate] - prev_ca[degenerate]
+            fallback = torch.cross(neighbor_raw, ca_coords[degenerate] - prev_ca[degenerate], dim=-1)
+            normal[degenerate] = fallback / torch.clamp(torch.norm(fallback, dim=-1, keepdim=True), min=1e-8)
 
-        right = torch.cross(up, forward, dim=-1)
+        right = torch.cross(forward, normal, dim=-1)
         right = right / torch.clamp(torch.norm(right, dim=-1, keepdim=True), min=1e-8)
-
-        normal = torch.cross(forward, right, dim=-1)
+        normal = torch.cross(right, forward, dim=-1)
         normal = normal / torch.clamp(torch.norm(normal, dim=-1, keepdim=True), min=1e-8)
-
         R = torch.stack([forward, normal, right], dim=-1)
 
         # For FAPE, translations must be frame origins, not CA->next step vectors.
@@ -764,6 +780,29 @@ class GeometryFocusedModule(pl.LightningModule):
             t[1:] = torch.cumsum(steps, dim=0)
         q = rotation_matrix_to_quaternion(R)
         return R, t, q
+
+    @staticmethod
+    def _frames_from_n_ca_c(
+        n_coords: torch.Tensor,
+        ca_coords: torch.Tensor,
+        c_coords: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build rotation-equivariant residue frames from refined N-CA-C atoms."""
+        if n_coords.shape != ca_coords.shape or c_coords.shape != ca_coords.shape:
+            raise ValueError("N, CA, and C coordinates must have matching shapes")
+        if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
+            raise ValueError(f"Expected atom coordinates with shape [N,3], got {tuple(ca_coords.shape)}")
+
+        x_raw = c_coords - ca_coords
+        x_axis = x_raw / torch.clamp(torch.norm(x_raw, dim=-1, keepdim=True), min=1e-8)
+        y_raw = n_coords - ca_coords
+        y_raw = y_raw - (y_raw * x_axis).sum(dim=-1, keepdim=True) * x_axis
+        y_axis = y_raw / torch.clamp(torch.norm(y_raw, dim=-1, keepdim=True), min=1e-8)
+        z_axis = torch.cross(x_axis, y_axis, dim=-1)
+        z_axis = z_axis / torch.clamp(torch.norm(z_axis, dim=-1, keepdim=True), min=1e-8)
+        y_axis = torch.cross(z_axis, x_axis, dim=-1)
+        y_axis = y_axis / torch.clamp(torch.norm(y_axis, dim=-1, keepdim=True), min=1e-8)
+        return torch.stack([x_axis, y_axis, z_axis], dim=-1)
 
     def _derive_se3_qt(self, se3_coords: torch.Tensor, batch_idx: Optional[torch.Tensor]):
         if batch_idx is None:
@@ -860,12 +899,25 @@ class GeometryFocusedModule(pl.LightningModule):
             raise RuntimeError(f"Expected AA logits with shape [N,20], got {tuple(aa_logits.shape)}")
         return torch.argmax(aa_logits, dim=-1).to(dtype=torch.long)
 
+    def _get_plddt_mask(self, data_batch) -> Optional[torch.Tensor]:
+        if not self.use_plddt_mask:
+            return None
+        plddt = node_x(data_batch, "plddt")
+        if plddt is None:
+            raise RuntimeError("--use-plddt-mask requires data['plddt'].x")
+        plddt = plddt.float().reshape(-1)
+        return torch.isfinite(plddt) & (plddt >= self.plddt_threshold)
+
     def _geometry_dot_contact_sketch(
         self,
         z: torch.Tensor,
         batch_idx: Optional[torch.Tensor],
+        contact_temp: Optional[torch.Tensor] = None,
+        contact_bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         z = F.normalize(z.float(), p=2, dim=-1)
+        contact_temp = torch.as_tensor(1.0 if contact_temp is None else contact_temp, device=z.device, dtype=z.dtype)
+        contact_bias = torch.as_tensor(0.0 if contact_bias is None else contact_bias, device=z.device, dtype=z.dtype)
 
         if batch_idx is None:
             graph_indices = [torch.arange(z.shape[0], device=z.device)]
@@ -885,7 +937,8 @@ class GeometryFocusedModule(pl.LightningModule):
                 sketches.append(sketch)
                 continue
 
-            scores = z[idx] @ z[idx].transpose(0, 1)
+            logits = contact_temp * (z[idx] @ z[idx].transpose(0, 1)) + contact_bias
+            scores = torch.sigmoid(logits)
             pos = torch.arange(n, device=z.device)
             valid = pos[:, None].sub(pos[None, :]).abs() >= min_seq_sep
             valid.fill_diagonal_(False)
@@ -940,6 +993,7 @@ class GeometryFocusedModule(pl.LightningModule):
                 raise RuntimeError("--se3-use-codebook-vectors requires encoder codebook vectors")
             se3_node_features = torch.cat([z_local, codebook_vectors], dim=-1)
         aa_identity_ids = self._get_aa_identity_ids(out_local)
+        plddt_mask = self._get_plddt_mask(data_batch)
         true_R, true_t, true_q, true_angles, true_coords, batch_idx = get_true_geometry(data_batch)
 
         pred_rt = out_local["rt_pred"]
@@ -980,6 +1034,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     pred_q_for_fape,
                     pred_t_origin,
                     batch=batch_idx,
+                    pair_sample_size=self.fape_pair_sample_size or None,
                 )
             if self.use_quat_geodesic_loss and self.rotation_target_frame == "local":
                 true_R_local, local_rot_mask = previous_local_rotation_targets(true_R, batch_idx=batch_idx)
@@ -1185,11 +1240,17 @@ class GeometryFocusedModule(pl.LightningModule):
                     se3_seed_coords = se3_seed_coords * self.se3_contact_coord_scale
                     se3_seed_coords = se3_seed_coords.detach() if self.train_se3_only else se3_seed_coords
                     se3_edge_attr_dict = {
-                        "dot_prod": self._geometry_dot_contact_sketch(se3_seed_coords, batch_idx),
+                        "dot_prod": self._geometry_dot_contact_sketch(
+                            contact_z,
+                            batch_idx,
+                            contact_temp=getattr(self.transformer_geom_decoder, "contact_temp", None),
+                            contact_bias=getattr(self.transformer_geom_decoder, "contact_bias", None),
+                        ),
                         # The initial residue pass is intentionally seeded
                         # only by the learned dot-product contact graph.
                         "use_distance_contacts": False,
                         "distance_contact_cutoff": self.se3_distance_contact_cutoff,
+                        "node_mask": plddt_mask,
                     }
                 elif self.se3_input_source == "coarse_ca":
                     se3_seed_coords = pred_ca_trace
@@ -1215,6 +1276,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     aa_identity_ids=aa_identity_ids,
                     coords_pred=se3_seed_coords,
                 )
+                se3_coords_step = None
                 if out_s.get("coors_out") is not None:
                     se3_coords_step = self._flatten_batched_coords(out_s["coors_out"], batch_idx)
                     se3_coords_step = se3_coords_step.to(se3_seed_coords.device, dtype=se3_seed_coords.dtype)
@@ -1267,7 +1329,12 @@ class GeometryFocusedModule(pl.LightningModule):
                         q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
                         true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
                         raw_terms["fape_quat_se3"] = quaternion_fape_loss(
-                            true_q, true_t_origin, q_se3, t_se3, batch=batch_idx
+                            true_q,
+                            true_t_origin,
+                            q_se3,
+                            t_se3,
+                            batch=batch_idx,
+                            pair_sample_size=self.fape_pair_sample_size or None,
                         )
                         raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
 
@@ -1284,20 +1351,31 @@ class GeometryFocusedModule(pl.LightningModule):
                     atom_decoder = self.se3_atom_decoder
                     if atom_decoder is None:
                         raise RuntimeError("--use-se3-atom-refine requires an atom SE3 decoder")
+                    if se3_coords_step is None:
+                        raise RuntimeError("--use-se3-atom-refine requires residue SE3 coordinates")
                     if pred_coarse_atoms is None or true_coarse_atoms is None or true_R_atoms is None or true_ca_atoms is None:
                         raise RuntimeError("--use-se3-atom-refine requires --use-coarse-backbone-loss")
                     atom_type_count = pred_coarse_atoms.shape[1]
-                    atom_node_count = pred_coarse_atoms.shape[0] * atom_type_count
+                    refined_se3_R = out_s.get("rotmat_pred", None)
+                    if refined_se3_R is None:
+                        refined_se3_q, _ = self._derive_se3_qt(se3_coords_step, batch_idx)
+                        refined_se3_R = quaternion_to_rotation_matrix(refined_se3_q)
+                    refined_se3_R = refined_se3_R.to(device=se3_coords_step.device, dtype=se3_coords_step.dtype)
+                    pred_atom_seed = coarse_backbone_atoms_from_ca_frames(
+                        se3_coords_step,
+                        refined_se3_R,
+                        atom_names=coarse_atom_names,
+                    )
+                    atom_node_count = pred_atom_seed.shape[0] * atom_type_count
                     if self.se3_atom_max_nodes > 0 and atom_node_count > self.se3_atom_max_nodes:
-                        zero = torch.zeros((), device=pred_coarse_atoms.device, dtype=torch.float32)
+                        zero = torch.zeros((), device=pred_atom_seed.device, dtype=torch.float32)
                         for param in self.parameters():
                             if param.requires_grad:
                                 zero = zero + param.float().sum() * 0.0
                         return zero, raw_terms, raw_terms, True, batch_idx
-                    # Refine the supervised coarse backbone atom slots only.
+                    # Refine the residue-level SE3 structure's backbone atom slots only.
                     # num_atom_types is the GotenNet embedding vocabulary, not
                     # the number of atom coordinates per residue.
-                    pred_atom_seed = pred_coarse_atoms
                     # The first SE3 pass uses FoldTree2 discrete character
                     # IDs. This second pass is atom-level, so its first four
                     # channels are explicitly the coarse backbone order
@@ -1313,7 +1391,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     canonical_coarse_ids = torch.tensor(
                         [0, 3, 1, 2], device=pred_atom_seed.device, dtype=torch.long
                     )
-                    atom_type_ids[:, :pred_coarse_atoms.shape[1]] = canonical_coarse_ids
+                    atom_type_ids[:, :pred_atom_seed.shape[1]] = canonical_coarse_ids
                     out_atom = atom_decoder(
                         data_batch,
                         edge_attr_dict={
@@ -1322,6 +1400,7 @@ class GeometryFocusedModule(pl.LightningModule):
                             # initial dot-product graph has produced coarse
                             # atom coordinates.
                             "use_distance_contacts": self.se3_use_distance_contacts,
+                            "node_mask": plddt_mask,
                         },
                         coords_pred_atoms=pred_atom_seed,
                         atom_type_ids=atom_type_ids,
@@ -1330,6 +1409,11 @@ class GeometryFocusedModule(pl.LightningModule):
                     if se3_atoms is None:
                         raise RuntimeError("SE3 atom refinement did not return coors_out_atoms")
                     se3_atoms = se3_atoms.to(device=true_coarse_atoms.device, dtype=true_coarse_atoms.dtype)
+                    final_se3_R = self._frames_from_n_ca_c(
+                        se3_atoms[:, n_idx],
+                        se3_atoms[:, ca_idx],
+                        se3_atoms[:, c_idx],
+                    )
                     data_batch["se3_atoms_pred"].x = se3_atoms
                     supervised_se3_atoms = se3_atoms[:, :pred_coarse_atoms.shape[1]]
                     data_batch["se3_ca_pred"].x = se3_atoms[:, ca_idx]
@@ -1347,10 +1431,11 @@ class GeometryFocusedModule(pl.LightningModule):
                             true_coarse_atoms,
                             supervised_se3_atoms,
                             true_R_atoms,
-                            pred_R_for_fape,
+                            final_se3_R,
                             true_ca_atoms,
                             se3_atoms[:, ca_idx],
                             batch=batch_idx,
+                            pair_sample_size=self.fape_pair_sample_size or None,
                         )
                     if self.use_se3_coarse_geometry_losses:
                         if self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
@@ -1382,15 +1467,16 @@ class GeometryFocusedModule(pl.LightningModule):
                                 true_coarse_atoms,
                                 supervised_se3_atoms,
                                 true_R_atoms,
-                                pred_R_for_fape,
+                                final_se3_R,
                                 true_ca_atoms,
                                 se3_atoms[:, ca_idx],
                                 batch=batch_idx,
+                                pair_sample_size=self.fape_pair_sample_size or None,
                             )
                         if self.use_coarse_backbone_angle_loss and self.coarse_backbone_angle_weight > 0 and true_angles is not None:
                             pred_bb_angles, pred_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
                                 se3_atoms[:, ca_idx],
-                                pred_R_for_fape,
+                                final_se3_R,
                                 batch=batch_idx,
                                 n_coords=se3_atoms[:, n_idx],
                                 c_coords=se3_atoms[:, c_idx],
@@ -1744,8 +1830,8 @@ def parse_args():
     parser.add_argument(
         "--se3-contact-sketch-threshold",
         type=float,
-        default=0.0,
-        help="Minimum normalized dot product included in the SE3 contact sketch",
+        default=math.inf,
+        help="Minimum calibrated contact probability; use inf to rely on top-k and sequence neighbors",
     )
     parser.add_argument(
         "--se3-use-distance-contacts",
@@ -1758,6 +1844,12 @@ def parse_args():
         type=float,
         default=8.0,
         help="Distance-contact cutoff in angstroms",
+    )
+    parser.add_argument(
+        "--fape-pair-sample-size",
+        type=int,
+        default=0,
+        help="Sample this many frame/point pairs per graph for FAPE; 0 uses all pairs",
     )
     parser.add_argument(
         "--se3-contact-sketch-min-seq-sep",

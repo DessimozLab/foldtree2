@@ -176,6 +176,7 @@ CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/result
 VISUALIZATION_DIR=${VISUALIZATION_DIR:-${CHECKPOINT_DIR}/visualizations}
 VISUALIZATION_SAMPLE_INDEX=${VISUALIZATION_SAMPLE_INDEX:-0}
 VISUALIZATION_MAX_RESIDUES=${VISUALIZATION_MAX_RESIDUES:-256}
+FAPE_PAIR_SAMPLE_SIZE=${FAPE_PAIR_SAMPLE_SIZE:-1024}
 mkdir -p "${CHECKPOINT_DIR}" "${VISUALIZATION_DIR}"
 
 cd "${PROJECT_ROOT}"
@@ -199,6 +200,7 @@ print_kv "se3_max_nodes" "${SE3_MAX_NODES}"
 print_kv "se3_atom_max_nodes" "${SE3_ATOM_MAX_NODES}"
 print_kv "enable_se3_distance_contacts" "${ENABLE_SE3_DISTANCE_CONTACTS}"
 print_kv "enable_se3_atom_refine" "${ENABLE_SE3_ATOM_REFINE}"
+print_kv "fape_pair_sample_size" "${FAPE_PAIR_SAMPLE_SIZE}"
 
 CMD=(
   python foldtree2/learn_production_geometry_se3_lightning.py
@@ -251,6 +253,7 @@ CMD=(
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-4}"
   --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
+  --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
   --se3-max-nodes "${SE3_MAX_NODES}"
   --se3-atom-max-nodes "${SE3_ATOM_MAX_NODES}"
   --no-use-frame-fape-loss

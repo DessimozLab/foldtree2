@@ -14,9 +14,38 @@ from foldtree2.src.losses.fape import (
     integrate_local_ca_steps,
 )
 from foldtree2.src.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
+from foldtree2.learn_geometry_lightning import GeometryFocusedModule
 
 
 class TestCoarseCALoss(unittest.TestCase):
+    def test_derived_frames_rotate_with_coordinates(self):
+        generator = torch.Generator().manual_seed(17)
+        random_matrix = torch.randn(3, 3, generator=generator)
+        q, _ = torch.linalg.qr(random_matrix)
+        if torch.linalg.det(q) < 0:
+            q[:, 0] *= -1
+
+        ca = torch.stack([
+            torch.arange(7, dtype=torch.float32),
+            torch.sin(torch.arange(7, dtype=torch.float32)),
+            torch.cos(torch.arange(7, dtype=torch.float32)),
+        ], dim=-1)
+        n = ca + torch.tensor([[-0.5, 0.8, 0.2]]).expand_as(ca)
+        c = ca + torch.tensor([[1.4, -0.3, 0.6]]).expand_as(ca)
+
+        ca_rot = ca @ q.T
+        n_rot = n @ q.T
+        c_rot = c @ q.T
+
+        R, t, _ = GeometryFocusedModule._frames_from_ca_only(ca)
+        R_rot, t_rot, _ = GeometryFocusedModule._frames_from_ca_only(ca_rot)
+        self.assertTrue(torch.allclose(R_rot, q @ R, atol=1e-5, rtol=1e-5))
+        self.assertTrue(torch.allclose(t_rot, t @ q.T, atol=1e-5, rtol=1e-5))
+
+        nca_R = GeometryFocusedModule._frames_from_n_ca_c(n, ca, c)
+        nca_R_rot = GeometryFocusedModule._frames_from_n_ca_c(n_rot, ca_rot, c_rot)
+        self.assertTrue(torch.allclose(nca_R_rot, q @ nca_R, atol=1e-5, rtol=1e-5))
+
     def _rot_z(self, angle):
         c = torch.cos(torch.tensor(angle))
         s = torch.sin(torch.tensor(angle))

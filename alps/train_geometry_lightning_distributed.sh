@@ -29,6 +29,7 @@ DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structs_training_mk2.h5}
 
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-/capstor/store/cscs/swissai/a0117/foldtree2/models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt}
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/foldtree2/results/geometry/ddp_${SLURM_JOB_ID}}
+FAPE_PAIR_SAMPLE_SIZE=${FAPE_PAIR_SAMPLE_SIZE:-1024}
 mkdir -p "${CHECKPOINT_DIR}"
 
 NODES=${NODES:-${SLURM_JOB_NUM_NODES:-2}}
@@ -97,6 +98,7 @@ if [[ "${USE_SE3}" == "1" ]]; then
       --use-se3-atom-refine
       --se3-atom-weight "${SE3_ATOM_WEIGHT:-0.05}"
       --se3-atom-fape-weight "${SE3_ATOM_FAPE_WEIGHT:-0.25}"
+      --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
     )
   fi
 else

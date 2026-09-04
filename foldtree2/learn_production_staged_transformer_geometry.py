@@ -164,7 +164,14 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         if true_q is not None and true_t is not None:
             pred_q, pred_t = self._stage_frame_outputs(coords, batch_idx)
             true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
-            raw_terms[f"{name}_fape"] = weight * quaternion_fape_loss(true_q, true_t_origin, pred_q, pred_t, batch=batch_idx)
+            raw_terms[f"{name}_fape"] = weight * quaternion_fape_loss(
+                true_q,
+                true_t_origin,
+                pred_q,
+                pred_t,
+                batch=batch_idx,
+                pair_sample_size=self.fape_pair_sample_size or None,
+            )
             raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(pred_q, true_q)
         if true_angles is not None and angles is not None:
             mask = torch.isfinite(angles) & torch.isfinite(true_angles)
@@ -222,7 +229,12 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
             raise RuntimeError("Staged transformer training requires data['coords'].x")
 
         features = torch.cat([z_local.float(), codebook_vectors.float(), out["se3_contact_z"].float()], dim=-1)
-        contact = self._geometry_dot_contact_sketch(out["seed_coords"], batch_idx)
+        contact = self._geometry_dot_contact_sketch(
+            out["se3_contact_z"],
+            batch_idx,
+            contact_temp=getattr(self.transformer_geom_decoder, "contact_temp", None),
+            contact_bias=getattr(self.transformer_geom_decoder, "contact_bias", None),
+        )
         stages = self.staged_refiner(features, ft2_token_ids, out["seed_coords"], contact, batch_idx)
 
         raw_terms: Dict[str, torch.Tensor] = {}
@@ -259,6 +271,11 @@ def main():
     parser.add_argument("--staged-dropout", type=float, default=0.05)
     parser.add_argument("--staged-max-step", type=float, default=4.0)
     parser.add_argument("--staged-max-refine-delta", type=float, default=2.0)
+    parser.add_argument("--staged-use-mhc", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--staged-mhc-streams", type=int, default=4)
+    parser.add_argument("--staged-mhc-sinkhorn-iters", type=int, default=5)
+    parser.add_argument("--staged-mhc-temperature", type=float, default=1.0)
+    parser.add_argument("--staged-mhc-eps", type=float, default=1e-6)
     parser.add_argument("--stage-loss-weights", type=str, default="0.25,0.5,1.0")
     staged_args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
@@ -306,6 +323,11 @@ def main():
         dropout=args.staged_dropout,
         max_step=args.staged_max_step,
         max_refine_delta=args.staged_max_refine_delta,
+        use_mhc=args.staged_use_mhc,
+        mhc_streams=args.staged_mhc_streams,
+        mhc_sinkhorn_iters=args.staged_mhc_sinkhorn_iters,
+        mhc_temperature=args.staged_mhc_temperature,
+        mhc_eps=args.staged_mhc_eps,
     ).to(device).float()
 
     constructor = inspect.signature(base.GeometryFocusedModule.__init__)

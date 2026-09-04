@@ -335,6 +335,7 @@ def coarse_backbone_fape_loss(
     batch: Optional[Tensor] = None,
     d_clamp: float = 10.0,
     reduction: str = "mean",
+    pair_sample_size: Optional[int] = None,
 ) -> Tensor:
     """Frame-aligned point error over a coarse per-residue atom set."""
     if true_atoms.shape != pred_atoms.shape or true_atoms.ndim != 3 or true_atoms.shape[-1] != 3:
@@ -358,10 +359,18 @@ def coarse_backbone_fape_loss(
         true_origins_s: Tensor,
         pred_origins_s: Tensor,
     ) -> Tensor:
-        true_diff = true_atoms_s.unsqueeze(0) - true_origins_s[:, None, None, :]
-        pred_diff = pred_atoms_s.unsqueeze(0) - pred_origins_s[:, None, None, :]
-        true_local = torch.einsum("imaj,ijk->imak", true_diff, true_frames_s)
-        pred_local = torch.einsum("imaj,ijk->imak", pred_diff, pred_frames_s)
+        if pair_sample_size is not None and pair_sample_size > 0 and pair_sample_size < true_atoms_s.shape[0] ** 2:
+            sample_i = torch.randint(true_atoms_s.shape[0], (pair_sample_size,), device=true_atoms_s.device)
+            sample_j = torch.randint(true_atoms_s.shape[0], (pair_sample_size,), device=true_atoms_s.device)
+            true_diff = true_atoms_s[sample_j] - true_origins_s[sample_i, None, :]
+            pred_diff = pred_atoms_s[sample_j] - pred_origins_s[sample_i, None, :]
+            true_local = torch.einsum("kij,kaj->kai", true_frames_s[sample_i].transpose(-1, -2), true_diff)
+            pred_local = torch.einsum("kij,kaj->kai", pred_frames_s[sample_i].transpose(-1, -2), pred_diff)
+        else:
+            true_diff = true_atoms_s.unsqueeze(0) - true_origins_s[:, None, None, :]
+            pred_diff = pred_atoms_s.unsqueeze(0) - pred_origins_s[:, None, None, :]
+            true_local = torch.einsum("imaj,ijk->imak", true_diff, true_frames_s)
+            pred_local = torch.einsum("imaj,ijk->imak", pred_diff, pred_frames_s)
         error = torch.linalg.vector_norm(pred_local - true_local, dim=-1).clamp(max=d_clamp)
         if reduction == "mean":
             return error.mean()
@@ -730,13 +739,22 @@ def _fape_single_structure(
     d_clamp: float = 10.0,
     eps: float = 1e-8,
     reduction: str = "mean",
+    pair_sample_size: Optional[int] = None,
 ) -> Tensor:
     """Pairwise local-frame FAPE for a single structure."""
-    diff_pred = pred_t.unsqueeze(1) - pred_t.unsqueeze(0)
-    diff_true = true_t.unsqueeze(1) - true_t.unsqueeze(0)
-
-    local_pred = torch.einsum("nij,nmj->nmi", pred_R.transpose(-1, -2), diff_pred)
-    local_true = torch.einsum("nij,nmj->nmi", true_R.transpose(-1, -2), diff_true)
+    n = true_t.shape[0]
+    if pair_sample_size is not None and pair_sample_size > 0 and pair_sample_size < n ** 2:
+        sample_i = torch.randint(n, (pair_sample_size,), device=true_t.device)
+        sample_j = torch.randint(n, (pair_sample_size,), device=true_t.device)
+        diff_pred = pred_t[sample_j] - pred_t[sample_i]
+        diff_true = true_t[sample_j] - true_t[sample_i]
+        local_pred = torch.einsum("nij,nj->ni", pred_R[sample_i].transpose(-1, -2), diff_pred)
+        local_true = torch.einsum("nij,nj->ni", true_R[sample_i].transpose(-1, -2), diff_true)
+    else:
+        diff_pred = pred_t.unsqueeze(1) - pred_t.unsqueeze(0)
+        diff_true = true_t.unsqueeze(1) - true_t.unsqueeze(0)
+        local_pred = torch.einsum("nij,nmj->nmi", pred_R.transpose(-1, -2), diff_pred)
+        local_true = torch.einsum("nij,nmj->nmi", true_R.transpose(-1, -2), diff_true)
 
     error = torch.linalg.vector_norm(local_pred - local_true, dim=-1)
     error = torch.clamp(error, max=d_clamp)
@@ -759,6 +777,7 @@ def quaternion_fape_loss(
     d_clamp: float = 10.0,
     eps: float = 1e-8,
     reduction: str = "mean",
+    pair_sample_size: Optional[int] = None,
 ) -> Tensor:
     """Frame-aligned point error from quaternion + translation frames."""
     true_q = normalize_quaternion(true_q, eps=eps)
@@ -768,7 +787,7 @@ def quaternion_fape_loss(
     pred_R = quaternion_to_rotation_matrix(pred_q)
 
     if batch is None:
-        return _fape_single_structure(true_R, true_t, pred_R, pred_t, d_clamp=d_clamp, eps=eps, reduction=reduction)
+        return _fape_single_structure(true_R, true_t, pred_R, pred_t, d_clamp=d_clamp, eps=eps, reduction=reduction, pair_sample_size=pair_sample_size)
 
     losses = []
     for b in torch.unique(batch, sorted=True):
@@ -784,6 +803,7 @@ def quaternion_fape_loss(
                 d_clamp=d_clamp,
                 eps=eps,
                 reduction="mean",
+                pair_sample_size=pair_sample_size,
             )
         )
 

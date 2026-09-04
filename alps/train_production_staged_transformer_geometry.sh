@@ -81,6 +81,7 @@ STAGED_DROPOUT=${STAGED_DROPOUT:-0.05}
 STAGED_MAX_STEP=${STAGED_MAX_STEP:-4.0}
 STAGED_MAX_REFINE_DELTA=${STAGED_MAX_REFINE_DELTA:-2.0}
 STAGE_LOSS_WEIGHTS=${STAGE_LOSS_WEIGHTS:-0.25,0.5,1.0}
+FAPE_PAIR_SAMPLE_SIZE=${FAPE_PAIR_SAMPLE_SIZE:-1024}
 
 RUN_TAG="prod_staged_${MODEL_TAG}_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
@@ -102,6 +103,7 @@ print_kv "staged_heads" "${STAGED_HEADS}"
 print_kv "staged_layers" "${STAGED_LAYERS}"
 print_kv "staged_max_step" "${STAGED_MAX_STEP}"
 print_kv "staged_max_refine_delta" "${STAGED_MAX_REFINE_DELTA}"
+print_kv "fape_pair_sample_size" "${FAPE_PAIR_SAMPLE_SIZE}"
 
 CMD=(
   python foldtree2/learn_production_staged_transformer_geometry.py
@@ -139,6 +141,7 @@ CMD=(
   --staged-max-step "${STAGED_MAX_STEP}"
   --staged-max-refine-delta "${STAGED_MAX_REFINE_DELTA}"
   --stage-loss-weights "${STAGE_LOSS_WEIGHTS}"
+  --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss

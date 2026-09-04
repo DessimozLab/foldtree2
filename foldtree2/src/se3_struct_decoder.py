@@ -239,11 +239,12 @@ class Position_MLP(nn.Module):
 
 class StagedTransformerRefiner(nn.Module):
 	"""Three-stage residue-coordinate refiner used by the staged trainer."""
-	def __init__(self, input_dim, num_atom_types, hidden=128, heads=4, layers=2, dropout=0.05, max_step=4.0, max_refine_delta=2.0):
+	def __init__(self, input_dim, num_atom_types, hidden=128, heads=4, layers=2, dropout=0.05, max_step=4.0, max_refine_delta=2.0, use_mhc=False, mhc_streams=4, mhc_sinkhorn_iters=5, mhc_temperature=1.0, mhc_eps=1e-6):
 		super().__init__()
 		self.hidden = int(hidden)
 		self.max_step = float(max_step)
 		self.max_refine_delta = float(max_refine_delta)
+		self.use_mhc = bool(use_mhc)
 		self.input_proj = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, hidden), nn.GELU())
 		self.type_embed = nn.Embedding(max(4, int(num_atom_types)), hidden)
 		self.coord_proj = nn.Sequential(nn.LayerNorm(3), nn.Linear(3, hidden), nn.GELU())
@@ -251,6 +252,20 @@ class StagedTransformerRefiner(nn.Module):
 		self.stage1 = self._encoder(hidden, heads, layers, dropout)
 		self.stage2 = self._encoder(hidden, heads, layers, dropout)
 		self.stage3 = self._encoder(hidden, heads, layers, dropout)
+		if self.use_mhc:
+			self.mhc = nn.ModuleList([
+				ManifoldHyperConnections(
+					d_model=hidden,
+					num_streams=max(1, int(mhc_streams)),
+					sinkhorn_iters=max(1, int(mhc_sinkhorn_iters)),
+					temperature=float(mhc_temperature),
+					eps=float(mhc_eps),
+					dropout=dropout,
+				)
+				for _ in range(3)
+			])
+		else:
+			self.mhc = None
 		self.step1 = nn.Linear(hidden, 3)
 		self.delta2 = nn.Linear(hidden, 3)
 		self.delta3 = nn.Linear(hidden, 3)
@@ -315,6 +330,15 @@ class StagedTransformerRefiner(nn.Module):
 				steps[idx[1:]] = coords[idx[1:]] - coords[idx[:-1]]
 		return steps
 
+	def _run_stage(self, stage, x, mask, stage_index):
+		if not self.use_mhc:
+			return stage(x, src_key_padding_mask=~mask)
+		stream_state = self.mhc[stage_index].init_streams(x)
+		for layer in stage.layers:
+			h = layer(self.mhc[stage_index].readout(stream_state, for_block=True), src_key_padding_mask=~mask)
+			stream_state = self.mhc[stage_index].step(stream_state, h, residual=True)
+		return self.mhc[stage_index].readout(stream_state)
+
 	def forward(self, features, token_ids, seed_coords, contact, batch_idx):
 		parameter = next(self.parameters())
 		features = torch.nan_to_num(features.to(dtype=parameter.dtype), nan=0.0, posinf=0.0, neginf=0.0)
@@ -322,18 +346,18 @@ class StagedTransformerRefiner(nn.Module):
 		token_ids = token_ids.long().clamp(0, self.type_embed.num_embeddings - 1)
 		type_h = self.type_embed(token_ids)
 		h_seq, mask, indices = self._pack(self.input_proj(features), batch_idx)
-		h1_flat = self._unpack(self.stage1(h_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		h1_flat = self._unpack(self._run_stage(self.stage1, h_seq, mask, 0), indices, features.shape[0])
 		step1 = torch.tanh(self.step1(h1_flat)) * self.max_step
 		coords1 = self._coords_from_steps(step1, batch_idx)
 		stages = {"stage1": {"coords": coords1, "steps": step1, "angles": torch.tanh(self.angle1(h1_flat)) * torch.pi, "z": h1_flat}}
 		contact_h = self.contact_proj(self._contact_aggregate(h1_flat + type_h, contact, batch_idx))
 		h2_seq, mask, indices = self._pack(h1_flat + type_h + self.coord_proj(coords1 - seed_coords) + contact_h, batch_idx)
-		h2_flat = self._unpack(self.stage2(h2_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		h2_flat = self._unpack(self._run_stage(self.stage2, h2_seq, mask, 1), indices, features.shape[0])
 		coords2 = coords1 + torch.tanh(self.delta2(h2_flat)) * self.max_refine_delta
 		stages["stage2"] = {"coords": coords2, "steps": self._coords_to_steps(coords2, batch_idx), "angles": torch.tanh(self.angle2(h2_flat)) * torch.pi, "z": h2_flat}
 		contact_h2 = self.contact_proj(self._contact_aggregate(h2_flat + type_h, contact, batch_idx))
 		h3_seq, mask, indices = self._pack(h2_flat + type_h + self.coord_proj(coords2 - coords1) + contact_h2, batch_idx)
-		h3_flat = self._unpack(self.stage3(h3_seq, src_key_padding_mask=~mask), indices, features.shape[0])
+		h3_flat = self._unpack(self._run_stage(self.stage3, h3_seq, mask, 2), indices, features.shape[0])
 		coords3 = coords2 + torch.tanh(self.delta3(h3_flat)) * self.max_refine_delta
 		stages["stage3"] = {"coords": coords3, "steps": self._coords_to_steps(coords3, batch_idx), "angles": torch.tanh(self.angle3(h3_flat)) * torch.pi, "z": h3_flat}
 		return stages
@@ -501,8 +525,12 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 			nn.GELU(),
 			nn.Conv1d(angle_hidden, angle_hidden, kernel_size=self.head_kernel_size, padding=self.head_padding),
 			nn.GELU(),
-			nn.Conv1d(angle_hidden, 3, kernel_size=1),
-			nn.Tanh()
+			nn.Conv1d(angle_hidden, 6, kernel_size=1)
+		)
+		self.angle_to_translation = nn.Sequential(
+			nn.Linear(6, angle_hidden),
+			nn.GELU(),
+			nn.Linear(angle_hidden, 3),
 		)
 
 		rt_hidden = RTdecoder_hidden[0] if isinstance(RTdecoder_hidden, list) else int(RTdecoder_hidden)
@@ -670,11 +698,21 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		z_seq, _, idx_by_graph = self._pack_node_features_for_batch(z, batch)
 		z_seq_ch = z_seq.transpose(1, 2)
 
+		if self.output_angles:
+			angles_seq = self.angle_head(z_seq_ch).transpose(1, 2)
+			angles_logits = self._unpack_node_features_from_batch(angles_seq, idx_by_graph, z.shape[0])
+			angles = _sincos_logits_to_angles(angles_logits)
+		else:
+			angles_logits = None
+			angles = None
+
 		quat_seq = self.r_head(z_seq_ch).transpose(1, 2)
 		quat_pred_raw = self._unpack_node_features_from_batch(quat_seq, idx_by_graph, z.shape[0])
 
 		trans_seq_logits = self.t_head(z_seq_ch).transpose(1, 2)
 		trans_logits = self._unpack_node_features_from_batch(trans_seq_logits, idx_by_graph, z.shape[0])
+		if angles_logits is not None:
+			trans_logits = trans_logits + self.angle_to_translation(angles_logits)
 
 		# Centered sigmoid keeps translations bounded to [-translation_limit, translation_limit].
 		trans_pred = trans_logits * self.translation_limit
@@ -682,13 +720,6 @@ class Transformer_Geometry_Decoder(torch.nn.Module):
 		frame_outputs_all = _frame_outputs_from_rt_pred(rt_pred)
 		coords = self._coords_from_translations(frame_outputs_all['trans_pred'], batch)
 		
-		if self.output_angles:
-			angles_seq = self.angle_head(z_seq_ch).transpose(1, 2)
-			angles_logits = self._unpack_node_features_from_batch(angles_seq, idx_by_graph, z.shape[0])
-			angles = angles_logits * torch.pi
-		else:
-			angles = None
-
 		coords_out = self._pack_coords_for_batch(coords, batch)
 
 		if self.output_rt:
@@ -996,8 +1027,19 @@ class se3_denoiser(torch.nn.Module):
 		# For GotenNet, we need a dense adjacency matrix
 		residue_batch = data['res'].batch if hasattr(data['res'], 'batch') else None
 		batch = residue_batch
+		node_mask = edge_attr_dict.get('node_mask', None) if edge_attr_dict is not None else None
+		if node_mask is not None:
+			node_mask = node_mask.to(device=runtime_device, dtype=torch.bool).reshape(-1)
+			expected_mask_size = residue_batch.numel() if residue_batch is not None else (num_residues if atom_level else atom_ids.shape[0])
+			if node_mask.numel() != expected_mask_size:
+				raise RuntimeError(
+					f'Node mask / residue count mismatch: mask={node_mask.numel()} '
+					f'residues={expected_mask_size}'
+				)
 		if atom_level and residue_batch is not None:
 			batch = residue_batch.repeat_interleave(atoms_per_residue)
+		if node_mask is not None and atom_level:
+			node_mask = node_mask.repeat_interleave(atoms_per_residue)
 		if batch is not None and batch.device != runtime_device:
 			batch = batch.to(device=runtime_device)
 		
@@ -1063,6 +1105,8 @@ class se3_denoiser(torch.nn.Module):
 			for aid, fallback, c, adj in zip(atom_ids_list, fallback_features_list, coords_list, adj_mat_list):
 				pad_len = max_len - aid.shape[0]
 				atom_mask = torch.ones(aid.shape[0], dtype=torch.bool, device=runtime_device)
+				if node_mask is not None:
+					atom_mask = node_mask[mask]
 				if pad_len > 0:
 					# Keep padded ids in range and pass an explicit mask to GotenNet.
 					atom_ids_padded.append(torch.cat([aid, torch.zeros(pad_len, device=runtime_device, dtype=aid.dtype)]))
@@ -1112,7 +1156,11 @@ class se3_denoiser(torch.nn.Module):
 				adj_mat[:dot_contacts.shape[0], :dot_contacts.shape[1]] |= dot_contacts[:num_nodes, :num_nodes]
 			
 			atom_ids_batch = atom_ids.unsqueeze(0)  # (1, num_nodes)
-			atom_mask_batch = torch.ones_like(atom_ids_batch, dtype=torch.bool, device=runtime_device)
+			atom_mask_batch = (
+				node_mask.unsqueeze(0)
+				if node_mask is not None
+				else torch.ones_like(atom_ids_batch, dtype=torch.bool, device=runtime_device)
+			)
 			fallback_features_batch = fallback_features.unsqueeze(0)  # (1, num_nodes, dim)
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
 			adj_mat_batch = adj_mat.unsqueeze(0)    # (1, num_nodes, num_nodes)
@@ -1154,15 +1202,14 @@ class se3_denoiser(torch.nn.Module):
 			)
 			invariant = fallback_features_batch.to(device=runtime_device, dtype=fallback_features_batch.dtype)
 		if coors_out is not None and not torch.isfinite(coors_out).all():
-			print(
-				'GotenNet produced non-finite coordinates; '
+			raise RuntimeError(
+				'GotenNet produced non-finite coordinates; refusing to substitute input coordinates. '
 				+ self._tensor_finite_summary('coords_input', coords_batch)
 				+ '; '
 				+ self._tensor_finite_summary('coords_scaled', coords_for_gotennet)
 				+ '; '
 				+ self._tensor_finite_summary('coors_out', coors_out)
 			)
-			coors_out = coords_batch.to(dtype=coords_batch.dtype)
 		
 		# invariant shape: (batch, num_nodes, dim)
 		# coors_out shape: (batch, num_nodes, 3) if return_coors=True
