@@ -40,6 +40,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         production_coordinate_source: str = "auto",
         production_coordinate_scale: float = 1.0,
         stage_loss_weights: str = "0.25,0.5,1.0",
+        stage_angle_loss: bool = True,
         **kwargs,
     ):
         kwargs.pop("use_se3", None)
@@ -53,6 +54,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         if len(weights) != 3:
             raise ValueError("--stage-loss-weights must contain three comma-separated values")
         self.stage_loss_weights = weights
+        self.stage_angle_loss = bool(stage_angle_loss)
         self._production_bottleneck = None
 
         def capture_bottleneck(_module, inputs):
@@ -173,7 +175,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 pair_sample_size=self.fape_pair_sample_size or None,
             )
             raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(pred_q, true_q)
-        if true_angles is not None and angles is not None:
+        if self.stage_angle_loss and true_angles is not None and angles is not None:
             mask = torch.isfinite(angles) & torch.isfinite(true_angles)
             if mask.any():
                 raw_terms[f"{name}_angles"] = weight * base.periodic_angle_smooth_l1(angles[mask], true_angles[mask])
@@ -277,6 +279,7 @@ def main():
     parser.add_argument("--staged-mhc-temperature", type=float, default=1.0)
     parser.add_argument("--staged-mhc-eps", type=float, default=1e-6)
     parser.add_argument("--stage-loss-weights", type=str, default="0.25,0.5,1.0")
+    parser.add_argument("--stage-angle-loss", action=argparse.BooleanOptionalAction, default=True)
     staged_args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     args = base.parse_args()
@@ -285,7 +288,10 @@ def main():
     staged_cli = []
     for key, value in vars(staged_args).items():
         option = "--" + key.replace("_", "-")
-        staged_cli.extend([option, str(value)])
+        if isinstance(value, bool):
+            staged_cli.append(option if value else "--no-" + key.replace("_", "-"))
+        else:
+            staged_cli.extend([option, str(value)])
     sys.argv = [sys.argv[0], *remaining, *staged_cli]
 
     base.pl.seed_everything(args.seed, workers=True)
@@ -347,6 +353,7 @@ def main():
         production_coordinate_source=args.production_coordinate_source,
         production_coordinate_scale=args.production_coordinate_scale,
         stage_loss_weights=args.stage_loss_weights,
+        stage_angle_loss=args.stage_angle_loss,
         **kwargs,
     )
 
