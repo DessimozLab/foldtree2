@@ -1541,6 +1541,24 @@ class GeometryFocusedModule(pl.LightningModule):
         self._log_loss_terms("val", total_loss, raw_terms, weighted_terms, se3_skip, batch, data_batch_idx)
         return total_loss
 
+    @staticmethod
+    def _progress_bar_loss_name(name: str) -> str:
+        replacements = {
+            "stage1": "s1",
+            "stage2": "s2",
+            "stage3": "s3",
+            "backbone": "bb",
+            "angles": "ang",
+            "fape_quat": "fape",
+            "quat_geodesic": "quat",
+            "coarse": "crs",
+            "atom_refine": "atom",
+        }
+        short_name = name
+        for source, target in replacements.items():
+            short_name = short_name.replace(source, target)
+        return short_name
+
     def _log_loss_terms(self, stage: str, total_loss, raw_terms, weighted_terms, se3_skip, batch, data_batch_idx):
         batch_size = self._batch_size_for_logs(batch, data_batch_idx)
         on_step = stage == "train"
@@ -1572,6 +1590,17 @@ class GeometryFocusedModule(pl.LightningModule):
                 batch_size=batch_size,
                 sync_dist=True,
             )
+            if stage == "train":
+                self.log(
+                    f"loss/{self._progress_bar_loss_name(name)}",
+                    value,
+                    on_step=True,
+                    on_epoch=False,
+                    prog_bar=True,
+                    logger=False,
+                    batch_size=batch_size,
+                    sync_dist=True,
+                )
 
         self.log(
             f"{stage}/se3_skip",

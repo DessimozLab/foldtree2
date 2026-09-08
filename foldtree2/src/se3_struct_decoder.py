@@ -305,7 +305,7 @@ class StagedTransformerRefiner(nn.Module):
 		groups = [torch.arange(steps.shape[0], device=steps.device)] if batch_idx is None else [(batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)]
 		for idx in groups:
 			if idx.numel() > 1:
-				coords[idx[1:]] = torch.cumsum(steps[idx[:-1]].float(), dim=0).to(dtype=coords.dtype)
+				coords[idx[1:]] = torch.cumsum(steps[idx[1:]].float(), dim=0).to(dtype=coords.dtype)
 		return coords
 
 	@staticmethod
@@ -348,6 +348,9 @@ class StagedTransformerRefiner(nn.Module):
 		h_seq, mask, indices = self._pack(self.input_proj(features), batch_idx)
 		h1_flat = self._unpack(self._run_stage(self.stage1, h_seq, mask, 0), indices, features.shape[0])
 		step1 = torch.tanh(self.step1(h1_flat)) * self.max_step
+		for idx in indices:
+			if idx.numel() > 0:
+				step1[idx[0]] = 0.0
 		coords1 = self._coords_from_steps(step1, batch_idx)
 		stages = {"stage1": {"coords": coords1, "steps": step1, "angles": torch.tanh(self.angle1(h1_flat)) * torch.pi, "z": h1_flat}}
 		contact_h = self.contact_proj(self._contact_aggregate(h1_flat + type_h, contact, batch_idx))

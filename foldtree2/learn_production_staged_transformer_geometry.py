@@ -8,12 +8,14 @@ import inspect
 import argparse
 import math
 import sys
+import json
 from pathlib import Path
 from typing import Dict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import yaml
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,6 +43,9 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         production_coordinate_scale: float = 1.0,
         stage_loss_weights: str = "0.25,0.5,1.0",
         stage_angle_loss: bool = True,
+        stage_quat_loss: bool = True,
+        stage_ca_loss: bool = True,
+        stage_fape_clamp: float = 10.0,
         **kwargs,
     ):
         kwargs.pop("use_se3", None)
@@ -55,6 +60,9 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
             raise ValueError("--stage-loss-weights must contain three comma-separated values")
         self.stage_loss_weights = weights
         self.stage_angle_loss = bool(stage_angle_loss)
+        self.stage_quat_loss = bool(stage_quat_loss)
+        self.stage_ca_loss = bool(stage_ca_loss)
+        self.stage_fape_clamp = float(stage_fape_clamp)
         self._production_bottleneck = None
 
         def capture_bottleneck(_module, inputs):
@@ -69,6 +77,16 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
             parameter.requires_grad = False
         for parameter in self.transformer_geom_decoder.parameters():
             parameter.requires_grad = False
+        self.encoder.eval()
+        self.transformer_geom_decoder.eval()
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.encoder.eval()
+        self.transformer_geom_decoder.eval()
+        return self
+
+    def on_train_epoch_start(self):
         self.encoder.eval()
         self.transformer_geom_decoder.eval()
 
@@ -152,17 +170,28 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         coords = stage["coords"]
         steps = stage["steps"]
         angles = stage["angles"]
-        raw_terms[f"{name}_ca"] = weight * coarse_ca_loss(
-            steps,
-            true_coords,
-            batch_idx=batch_idx,
-            pred_ca=coords,
-            step_weight=self.coarse_ca_step_weight if self.use_coarse_ca_step_loss else 0.0,
-            bond_weight=self.coarse_ca_bond_weight if self.use_coarse_ca_bond_loss else 0.0,
-            pairwise_weight=self.coarse_ca_pairwise_weight if self.use_coarse_ca_pairwise_loss else 0.0,
-            pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
-            pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
-        )
+        if self.stage_ca_loss:
+            step_weight = self.coarse_ca_step_weight if self.use_coarse_ca_step_loss else 0.0
+            bond_weight = self.coarse_ca_bond_weight if self.use_coarse_ca_bond_loss else 0.0
+            pairwise_weight = self.coarse_ca_pairwise_weight if self.use_coarse_ca_pairwise_loss else 0.0
+            _ca_total, ca_components = coarse_ca_loss(
+                steps,
+                true_coords,
+                batch_idx=batch_idx,
+                pred_ca=coords,
+                step_weight=step_weight,
+                bond_weight=bond_weight,
+                pairwise_weight=pairwise_weight,
+                pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
+                pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                return_components=True,
+            )
+            if step_weight > 0:
+                raw_terms[f"{name}_step"] = weight * step_weight * ca_components["step"]
+            if bond_weight > 0:
+                raw_terms[f"{name}_bond"] = weight * bond_weight * ca_components["bond"]
+            if pairwise_weight > 0:
+                raw_terms[f"{name}_pair"] = weight * pairwise_weight * ca_components["pairwise"]
         if true_q is not None and true_t is not None:
             pred_q, pred_t = self._stage_frame_outputs(coords, batch_idx)
             true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
@@ -172,9 +201,11 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 pred_q,
                 pred_t,
                 batch=batch_idx,
+                d_clamp=self.stage_fape_clamp,
                 pair_sample_size=self.fape_pair_sample_size or None,
             )
-            raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(pred_q, true_q)
+            if self.stage_quat_loss:
+                raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(pred_q, true_q)
         if self.stage_angle_loss and true_angles is not None and angles is not None:
             mask = torch.isfinite(angles) & torch.isfinite(true_angles)
             if mask.any():
@@ -266,6 +297,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
 
 
 def main():
+    original_argv = sys.argv[1:]
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--staged-hidden", type=int, default=128)
     parser.add_argument("--staged-heads", type=int, default=4)
@@ -280,10 +312,31 @@ def main():
     parser.add_argument("--staged-mhc-eps", type=float, default=1e-6)
     parser.add_argument("--stage-loss-weights", type=str, default="0.25,0.5,1.0")
     parser.add_argument("--stage-angle-loss", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--stage-quat-loss", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--stage-ca-loss", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--stage-fape-clamp", type=float, default=10.0)
     staged_args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     args = base.parse_args()
+    config_values = {}
+    if args.config:
+        config_path = Path(args.config)
+        with config_path.open("r", encoding="utf-8") as config_file:
+            if config_path.suffix.lower() in {".yaml", ".yml"}:
+                config_values = yaml.safe_load(config_file) or {}
+            elif config_path.suffix.lower() == ".json":
+                config_values = json.load(config_file) or {}
+    staged_cli_options = {
+        token.split("=", 1)[0]
+        for token in original_argv
+        if token.startswith("--staged-") or token in {"--stage-loss-weights", "--stage-angle-loss", "--no-stage-angle-loss"}
+    }
     for key, value in vars(staged_args).items():
+        option = "--" + key.replace("_", "-")
+        negative_option = "--no-" + key.replace("_", "-")
+        if key in config_values and option not in staged_cli_options and negative_option not in staged_cli_options:
+            value = config_values[key]
+            setattr(staged_args, key, value)
         setattr(args, key, value)
     staged_cli = []
     for key, value in vars(staged_args).items():
@@ -354,6 +407,9 @@ def main():
         production_coordinate_scale=args.production_coordinate_scale,
         stage_loss_weights=args.stage_loss_weights,
         stage_angle_loss=args.stage_angle_loss,
+        stage_quat_loss=args.stage_quat_loss,
+        stage_ca_loss=args.stage_ca_loss,
+        stage_fape_clamp=args.stage_fape_clamp,
         **kwargs,
     )
 
@@ -387,6 +443,7 @@ def main():
     print(
         "Production staged transformer training: "
         f"hidden={args.staged_hidden} layers={args.staged_layers} heads={args.staged_heads} "
+        f"mhc={args.staged_use_mhc} mhc_streams={args.staged_mhc_streams} "
         f"max_step={args.staged_max_step} max_refine_delta={args.staged_max_refine_delta} "
         f"micro_batch_size={args.batch_size} accumulation={accum_steps}"
     )

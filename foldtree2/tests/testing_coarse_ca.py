@@ -15,9 +15,23 @@ from foldtree2.src.losses.fape import (
 )
 from foldtree2.src.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
 from foldtree2.learn_geometry_lightning import GeometryFocusedModule
+from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner
 
 
 class TestCoarseCALoss(unittest.TestCase):
+    def test_staged_step_coordinate_round_trip(self):
+        coords = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [3.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+        ])
+        batch = torch.tensor([0, 0, 0, 1, 1])
+        steps = StagedTransformerRefiner._coords_to_steps(coords, batch)
+        rebuilt = StagedTransformerRefiner._coords_from_steps(steps, batch)
+        self.assertTrue(torch.allclose(rebuilt, coords))
+
     def test_derived_frames_rotate_with_coordinates(self):
         generator = torch.Generator().manual_seed(17)
         random_matrix = torch.randn(3, 3, generator=generator)
