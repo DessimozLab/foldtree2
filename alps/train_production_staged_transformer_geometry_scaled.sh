@@ -130,7 +130,7 @@ CMD=(
   --transformer-nheads "${TRANSFORMER_NHEADS:-1}"
   --se3-num-atom-types "${SE3_NUM_ATOM_TYPES:-40}"
   --se3-contact-sketch-top-k "${CONTACT_SKETCH_TOP_K:-8}"
-  --se3-contact-sketch-threshold "${CONTACT_SKETCH_THRESHOLD:-0.0}"
+  --se3-contact-sketch-threshold "${CONTACT_SKETCH_THRESHOLD:-inf}"
   --se3-contact-sketch-min-seq-sep "${CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
   --se3-contact-local-window "${CONTACT_LOCAL_WINDOW:-1}"
   --staged-hidden "${STAGED_HIDDEN}"

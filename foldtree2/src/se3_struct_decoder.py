@@ -10,7 +10,7 @@ from foldtree2.src.dynamictan import *
 from foldtree2.src.quantizers import *
 from foldtree2.src.folding_refiner import QuaternionFoldingRefiner
 from foldtree2.src.manifold_hyper_connections import ManifoldHyperConnections
-from foldtree2.src.losses.fape import rotation_matrix_to_quaternion
+from foldtree2.src.losses.fape import rotation_matrix_to_quaternion, equivariant_ca_frame_rotmat
 
 from torch_geometric.nn import TransformerConv, GATConv, GCNConv, global_mean_pool
 
@@ -40,32 +40,19 @@ def _safe_gotennet_spherical_harmonics(degree, rel_pos, *args, **kwargs):
 _gotennet_backend.spherical_harmonics = _safe_gotennet_spherical_harmonics
 
 
-def _normalize_vec(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-	return x / x.norm(dim=-1, keepdim=True).clamp_min(eps)
-
-
-def _safe_orthogonal(v: torch.Tensor) -> torch.Tensor:
-	"""Build a deterministic unit vector orthogonal to v."""
-	x_axis = torch.zeros_like(v)
-	x_axis[..., 0] = 1.0
-	y_axis = torch.zeros_like(v)
-	y_axis[..., 1] = 1.0
-	use_x = v[..., 0].abs() < 0.9
-	base = torch.where(use_x.unsqueeze(-1), x_axis, y_axis)
-	ortho = torch.cross(v, base, dim=-1)
-	return _normalize_vec(ortho)
-
-
 def _compute_local_frame_from_ca(ca_coords: torch.Tensor):
-	"""Build local frames from CA coordinates only.
+	"""Build local frames from CA coordinates only, via the shared equivariant builder.
 
 	Returns:
 		rotmat: (N, 3, 3)
 		trans: (N, 3) global translations (CA positions)
 		quat: (N, 4) unit quaternions (w, x, y, z)
+		twist_undefined: (N,) bool; True where CA geometry alone cannot fix the frame's
+			twist about the tangent (see `equivariant_ca_frame_rotmat`). Callers must
+			mask orientation-dependent losses for these residues.
 	"""
 	if ca_coords is None:
-		return None, None, None
+		return None, None, None, None
 
 	if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
 		raise RuntimeError(f'Expected CA coords with shape [N,3], got {tuple(ca_coords.shape)}')
@@ -73,44 +60,16 @@ def _compute_local_frame_from_ca(ca_coords: torch.Tensor):
 	coords = torch.nan_to_num(ca_coords, nan=0.0, posinf=0.0, neginf=0.0)
 	n = coords.shape[0]
 	if n == 0:
-		return None, None, None
+		return None, None, None, None
 
-	if n == 1:
-		rot = torch.eye(3, dtype=coords.dtype, device=coords.device).unsqueeze(0)
-		trans = coords
-		quat = rotation_matrix_to_quaternion(rot)
-		return rot, trans, quat
-
-	prev_ca = torch.roll(coords, shifts=1, dims=0)
-	next_ca = torch.roll(coords, shifts=-1, dims=0)
-	prev_ca[0] = coords[0] + (coords[0] - coords[1])
-	next_ca[-1] = coords[-1] + (coords[-1] - coords[-2])
-
-	v_prev = coords - prev_ca
-	v_next = next_ca - coords
-
-	e1 = _normalize_vec(v_prev + v_next)
-	degenerate_e1 = (v_prev + v_next).norm(dim=-1) < 1e-8
-	if degenerate_e1.any():
-		e1[degenerate_e1] = _normalize_vec(v_next[degenerate_e1])
-
-	normal = torch.cross(v_prev, v_next, dim=-1)
-	e2 = _normalize_vec(normal)
-	degenerate_e2 = normal.norm(dim=-1) < 1e-8
-	if degenerate_e2.any():
-		e2[degenerate_e2] = _safe_orthogonal(e1[degenerate_e2])
-
-	e3 = _normalize_vec(torch.cross(e1, e2, dim=-1))
-	e2 = _normalize_vec(torch.cross(e3, e1, dim=-1))
-
-	rot = torch.stack([e1, e2, e3], dim=-1)
+	rot, twist_undefined = equivariant_ca_frame_rotmat(coords)
 	rot = torch.nan_to_num(rot, nan=0.0, posinf=0.0, neginf=0.0)
 	trans = coords
 	quat = rotation_matrix_to_quaternion(rot)
 	quat = torch.nan_to_num(quat, nan=0.0, posinf=0.0, neginf=0.0)
 	quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-8)
 
-	return rot, trans, quat
+	return rot, trans, quat, twist_undefined
 
 
 def _frame_outputs_from_coords(coords_flat):
@@ -125,9 +84,10 @@ def _frame_outputs_from_coords(coords_flat):
 			'rotmat_pred': None,
 			'local_frames_pred': None,
 			'rt_pred': None,
+			'twist_undefined': None,
 		}
 
-	rot, trans, quat = _compute_local_frame_from_ca(coords_flat)
+	rot, trans, quat, twist_undefined = _compute_local_frame_from_ca(coords_flat)
 	if rot is None or trans is None or quat is None:
 		return {
 			'quat_pred': None,
@@ -139,6 +99,7 @@ def _frame_outputs_from_coords(coords_flat):
 			'rotmat_pred': None,
 			'local_frames_pred': None,
 			'rt_pred': None,
+			'twist_undefined': None,
 		}
 
 	trans_local = torch.einsum('...ij,...j->...i', rot.transpose(-1, -2), trans)
@@ -155,6 +116,7 @@ def _frame_outputs_from_coords(coords_flat):
 		'rotmat_pred': rot,
 		'local_frames_pred': local_frames,
 		'rt_pred': rt_pred,
+		'twist_undefined': twist_undefined,
 	}
 
 
@@ -931,6 +893,27 @@ class se3_denoiser(torch.nn.Module):
 
 		return residue_contacts.repeat_interleave(atoms_per_residue, dim=0).repeat_interleave(atoms_per_residue, dim=1)
 
+	@staticmethod
+	def _covalent_atom_contacts(num_residues, atoms_per_residue, device):
+		adj = torch.zeros((num_residues * atoms_per_residue, num_residues * atoms_per_residue), dtype=torch.bool, device=device)
+		if atoms_per_residue < 4:
+			return adj
+		ca_idx, c_idx, cb_idx, n_idx = 0, 1, 2, 3
+		intra_residue_edges = ((n_idx, ca_idx), (ca_idx, c_idx), (ca_idx, cb_idx))
+		for residue_idx in range(num_residues):
+			base = residue_idx * atoms_per_residue
+			for src_atom, dst_atom in intra_residue_edges:
+				src = base + src_atom
+				dst = base + dst_atom
+				adj[src, dst] = True
+				adj[dst, src] = True
+			if residue_idx + 1 < num_residues:
+				src = base + c_idx
+				dst = (residue_idx + 1) * atoms_per_residue + n_idx
+				adj[src, dst] = True
+				adj[dst, src] = True
+		return adj
+
 
 	def forward(self, data, edge_attr_dict=None, **kwargs):
 		if isinstance(data, dict):
@@ -1054,6 +1037,7 @@ class se3_denoiser(torch.nn.Module):
 			fallback_features_list = []
 			coords_list = []
 			adj_mat_list = []
+			mask_list = []
 			
 			for i in range(num_graphs):
 				mask = batch == i
@@ -1063,8 +1047,12 @@ class se3_denoiser(torch.nn.Module):
 				atom_ids_list.append(atom_ids[mask])
 				fallback_features_list.append(fallback_features[mask])
 				coords_list.append(coords[mask])
+				mask_list.append(mask)
 				# Build adjacency matrix for this graph
 				adj = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
+				if atom_level:
+					num_residues_i = max(1, num_nodes // atoms_per_residue)
+					adj |= self._covalent_atom_contacts(num_residues_i, atoms_per_residue, runtime_device)[:num_nodes, :num_nodes]
 				
 				#add the contacts by looking at the distance 
 				# Compute pairwise distances
@@ -1105,11 +1093,13 @@ class se3_denoiser(torch.nn.Module):
 			coords_padded = []
 			adj_mat_padded = []
 			
-			for aid, fallback, c, adj in zip(atom_ids_list, fallback_features_list, coords_list, adj_mat_list):
+			for aid, fallback, c, adj, graph_mask in zip(
+				atom_ids_list, fallback_features_list, coords_list, adj_mat_list, mask_list
+			):
 				pad_len = max_len - aid.shape[0]
 				atom_mask = torch.ones(aid.shape[0], dtype=torch.bool, device=runtime_device)
 				if node_mask is not None:
-					atom_mask = node_mask[mask]
+					atom_mask = node_mask[graph_mask]
 				if pad_len > 0:
 					# Keep padded ids in range and pass an explicit mask to GotenNet.
 					atom_ids_padded.append(torch.cat([aid, torch.zeros(pad_len, device=runtime_device, dtype=aid.dtype)]))
@@ -1139,6 +1129,9 @@ class se3_denoiser(torch.nn.Module):
 			# Single graph case
 			num_nodes = atom_ids.shape[0]
 			adj_mat = torch.zeros((num_nodes, num_nodes), dtype=torch.bool, device=runtime_device)
+			if atom_level:
+				num_residues_i = max(1, num_nodes // atoms_per_residue)
+				adj_mat |= self._covalent_atom_contacts(num_residues_i, atoms_per_residue, runtime_device)[:num_nodes, :num_nodes]
 			
 			# Build adjacency matrix from point cloud distances
 			if use_distance_contacts:
@@ -1259,6 +1252,7 @@ class se3_denoiser(torch.nn.Module):
 			'rotmat_pred': frame_outputs['rotmat_pred'],
 			'local_frames_pred': frame_outputs['local_frames_pred'],
 			'rt_pred': frame_outputs['rt_pred'],
+			'twist_undefined': frame_outputs.get('twist_undefined', None),
 		}
 
 

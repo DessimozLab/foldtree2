@@ -4,12 +4,14 @@ import unittest
 import torch
 
 from foldtree2.src.losses.fape import (
+    equivariant_ca_frame_rotmat,
     quaternion_fape_loss,
     quaternion_geodesic_loss,
     quaternion_to_rotation_matrix,
     rotation_matrix_to_quaternion,
 )
 from foldtree2.learn_geometry_lightning import (
+    GeometryFocusedModule,
     compose_previous_local_rotations,
     gauge_normalize_frames_to_chain_start,
     previous_local_rotation_targets,
@@ -40,6 +42,36 @@ class FapeQuaternionTests(unittest.TestCase):
 
         self.assertTrue(torch.isclose(quaternion_geodesic_loss(q, q), torch.tensor(0.0)))
         self.assertTrue(torch.isclose(quaternion_geodesic_loss(-q, q), torch.tensor(0.0)))
+
+    def test_ca_only_frames_from_perfect_trace_match_exactly(self):
+        # A perfect predicted CA trace must incur zero residue FAPE/geodesic loss
+        # when both true and predicted frames are derived from CA coordinates by
+        # the same function -- guards against comparing CA-only pred frames to
+        # N-CA-C true frames, which have a different (mismatched) twist convention.
+        ca = torch.stack([
+            torch.arange(6, dtype=torch.float32),
+            torch.sin(torch.arange(6, dtype=torch.float32)),
+            torch.cos(torch.arange(6, dtype=torch.float32) * 0.5),
+        ], dim=-1)
+
+        pred_R, pred_t, pred_q, _ = GeometryFocusedModule._frames_from_ca_only(ca)
+        true_R, true_t, true_q, _ = GeometryFocusedModule._frames_from_ca_only(ca)
+
+        fape = quaternion_fape_loss(true_q, true_t, pred_q, pred_t)
+        geodesic = quaternion_geodesic_loss(pred_q, true_q)
+        self.assertTrue(torch.isclose(fape, torch.tensor(0.0), atol=1e-5))
+        self.assertTrue(torch.isclose(geodesic, torch.tensor(0.0), atol=1e-5))
+
+        # An N-CA-C-derived frame with a different (but still valid) twist
+        # convention must NOT be used as the true target for CA-only predictions,
+        # since it generally disagrees even for this identical trace.
+        n = ca + torch.tensor([[-0.5, 0.8, 0.2]]).expand_as(ca)
+        c = ca + torch.tensor([[1.4, -0.3, 0.6]]).expand_as(ca)
+        n_ca_c_R = GeometryFocusedModule._frames_from_n_ca_c(n, ca, c)
+        n_ca_c_q = rotation_matrix_to_quaternion(n_ca_c_R)
+        mismatched_geodesic = quaternion_geodesic_loss(pred_q, n_ca_c_q)
+        self.assertFalse(torch.isclose(mismatched_geodesic, torch.tensor(0.0), atol=1e-3))
+
 
     def test_quaternion_geodesic_returns_so3_angle_in_radians(self):
         identity = torch.tensor([[1.0, 0.0, 0.0, 0.0]])

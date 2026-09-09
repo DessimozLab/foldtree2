@@ -29,6 +29,7 @@ from foldtree2.src.losses.fape import (
     coarse_ca_loss,
     quaternion_to_rotation_matrix,
     rotation_matrix_to_quaternion,
+    select_valid_frame_rows,
 )
 from foldtree2.src.losses.losses import quaternion_fape_loss, quaternion_geodesic_loss
 from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner
@@ -157,16 +158,18 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
     def _stage_frame_outputs(self, coords: torch.Tensor, batch_idx: Optional[torch.Tensor]):
         q_parts = []
         t_parts = []
+        twist_parts = []
         groups = [torch.arange(coords.shape[0], device=coords.device)] if batch_idx is None else [
             (batch_idx == b).nonzero(as_tuple=True)[0] for b in torch.unique(batch_idx, sorted=True)
         ]
         for idx in groups:
-            _R, t, q = self._frames_from_ca_only(coords[idx])
+            _R, t, q, twist_undefined = self._frames_from_ca_only(coords[idx])
             q_parts.append(q)
             t_parts.append(t)
-        return torch.cat(q_parts, dim=0), torch.cat(t_parts, dim=0)
+            twist_parts.append(twist_undefined)
+        return torch.cat(q_parts, dim=0), torch.cat(t_parts, dim=0), torch.cat(twist_parts, dim=0)
 
-    def _add_stage_losses(self, raw_terms, name, stage, weight, true_R, true_t, true_q, true_angles, true_coords, batch_idx):
+    def _add_stage_losses(self, raw_terms, name, stage, weight, true_R, true_t, true_q, true_angles, true_coords, batch_idx, plddt_mask=None):
         coords = stage["coords"]
         steps = stage["steps"]
         angles = stage["angles"]
@@ -184,6 +187,8 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 pairwise_weight=pairwise_weight,
                 pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
                 pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                plddt=plddt_mask,
+                plddt_thresh=0.5,
                 return_components=True,
             )
             if step_weight > 0:
@@ -192,26 +197,40 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 raw_terms[f"{name}_bond"] = weight * bond_weight * ca_components["bond"]
             if pairwise_weight > 0:
                 raw_terms[f"{name}_pair"] = weight * pairwise_weight * ca_components["pairwise"]
-        if true_q is not None and true_t is not None:
-            pred_q, pred_t = self._stage_frame_outputs(coords, batch_idx)
-            true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
-            raw_terms[f"{name}_fape"] = weight * quaternion_fape_loss(
-                true_q,
-                true_t_origin,
-                pred_q,
-                pred_t,
-                batch=batch_idx,
-                d_clamp=self.stage_fape_clamp,
-                pair_sample_size=self.fape_pair_sample_size or None,
-            )
-            if self.stage_quat_loss:
-                raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(pred_q, true_q)
+        if true_coords is not None:
+            # Residue supervision here only ever sees a CA trace, so the true
+            # frame must also be CA-only (not the dataset's N-CA-C `true_q`) or
+            # the twist convention mismatch penalizes an otherwise-perfect trace.
+            pred_q, pred_t, pred_twist_undefined = self._stage_frame_outputs(coords, batch_idx)
+            true_q_ca, true_t_ca, true_twist_undefined = self._derive_se3_qt(true_coords, batch_idx)
+            valid = ~pred_twist_undefined & ~true_twist_undefined
+            if plddt_mask is not None:
+                valid = valid & plddt_mask
+            if valid.any():
+                fape_batch, (fape_true_q, fape_true_t, fape_pred_q, fape_pred_t) = select_valid_frame_rows(
+                    valid, batch_idx, true_q_ca, true_t_ca, pred_q, pred_t
+                )
+                raw_terms[f"{name}_fape"] = weight * quaternion_fape_loss(
+                    fape_true_q,
+                    fape_true_t,
+                    fape_pred_q,
+                    fape_pred_t,
+                    batch=fape_batch,
+                    d_clamp=self.stage_fape_clamp,
+                    pair_sample_size=self.fape_pair_sample_size or None,
+                )
+                if self.stage_quat_loss:
+                    raw_terms[f"{name}_quat"] = weight * quaternion_geodesic_loss(
+                        pred_q[valid], true_q_ca[valid]
+                    )
         if self.stage_angle_loss and true_angles is not None and angles is not None:
             mask = torch.isfinite(angles) & torch.isfinite(true_angles)
+            if plddt_mask is not None:
+                mask = mask & plddt_mask.unsqueeze(-1)
             if mask.any():
                 raw_terms[f"{name}_angles"] = weight * base.periodic_angle_smooth_l1(angles[mask], true_angles[mask])
         if self.use_coarse_backbone_loss and true_R is not None:
-            pred_q, _pred_t = self._stage_frame_outputs(coords, batch_idx)
+            pred_q, _pred_t, twist_undefined = self._stage_frame_outputs(coords, batch_idx)
             pred_R = quaternion_to_rotation_matrix(pred_q)
             pred_atoms = coarse_backbone_atoms_from_ca_frames(coords, pred_R, atom_names=("ca", "c", "cb", "n"))
             true_atoms = coarse_backbone_atoms_from_ca_frames(true_coords, true_R, atom_names=("ca", "c", "cb", "n"))
@@ -225,25 +244,32 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 true_atoms[:, 2] = true_cb.to(device=true_atoms.device, dtype=true_atoms.dtype)
             if true_n is not None:
                 true_atoms[:, 3] = true_n.to(device=true_atoms.device, dtype=true_atoms.dtype)
-            raw_terms[f"{name}_backbone_atoms"] = weight * self.coarse_backbone_atom_weight * F.smooth_l1_loss(
-                pred_atoms, true_atoms, beta=0.5
-            )
-            raw_terms[f"{name}_backbone_fape"] = weight * self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
-                true_atoms, pred_atoms, true_R, pred_R, true_coords, coords, batch=batch_idx
-            )
-            if true_angles is not None and self.coarse_backbone_angle_weight > 0:
-                pred_bb, pred_mask = coarse_backbone_dihedrals_from_ca_frames(
-                    coords, pred_R, batch=batch_idx, n_coords=pred_atoms[:, 3], c_coords=pred_atoms[:, 1]
+            valid = ~twist_undefined
+            if plddt_mask is not None:
+                valid = valid & plddt_mask
+            if valid.any():
+                bb_batch, (bb_pred_atoms, bb_true_atoms, bb_true_R, bb_pred_R, bb_true_coords, bb_coords) = (
+                    select_valid_frame_rows(valid, batch_idx, pred_atoms, true_atoms, true_R, pred_R, true_coords, coords)
                 )
-                true_bb, true_mask = coarse_backbone_dihedrals_from_ca_frames(
-                    true_coords, true_R, batch=batch_idx, n_coords=true_atoms[:, 3], c_coords=true_atoms[:, 1]
+                raw_terms[f"{name}_backbone_atoms"] = weight * self.coarse_backbone_atom_weight * F.smooth_l1_loss(
+                    bb_pred_atoms, bb_true_atoms, beta=0.5
                 )
-                mask = pred_mask & true_mask
-                if mask.any():
-                    delta = base.wrap_to_pi_torch(pred_bb - true_bb)
-                    raw_terms[f"{name}_backbone_angles"] = weight * self.coarse_backbone_angle_weight * F.smooth_l1_loss(
-                        delta[mask], torch.zeros_like(delta[mask])
+                raw_terms[f"{name}_backbone_fape"] = weight * self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
+                    bb_true_atoms, bb_pred_atoms, bb_true_R, bb_pred_R, bb_true_coords, bb_coords, batch=bb_batch
+                )
+                if true_angles is not None and self.coarse_backbone_angle_weight > 0:
+                    pred_bb, pred_mask = coarse_backbone_dihedrals_from_ca_frames(
+                        coords, pred_R, batch=batch_idx, n_coords=pred_atoms[:, 3], c_coords=pred_atoms[:, 1]
                     )
+                    true_bb, true_mask = coarse_backbone_dihedrals_from_ca_frames(
+                        true_coords, true_R, batch=batch_idx, n_coords=true_atoms[:, 3], c_coords=true_atoms[:, 1]
+                    )
+                    mask = pred_mask & true_mask & valid
+                    if mask.any():
+                        delta = base.wrap_to_pi_torch(pred_bb - true_bb)
+                        raw_terms[f"{name}_backbone_angles"] = weight * self.coarse_backbone_angle_weight * F.smooth_l1_loss(
+                            delta[mask], torch.zeros_like(delta[mask])
+                        )
 
     def _compute_total_loss(self, data_batch, debug_label: str = ""):
         data_batch = base.ensure_edge_attrs_inplace(base.ensure_float32_inplace(data_batch), edge_dim=getattr(self.encoder, "edge_dim", 1))
@@ -260,6 +286,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         true_R, true_t, true_q, true_angles, true_coords, batch_idx = base.get_true_geometry(data_batch)
         if true_coords is None:
             raise RuntimeError("Staged transformer training requires data['coords'].x")
+        plddt_mask = self._get_plddt_mask(data_batch)
 
         features = torch.cat([z_local.float(), codebook_vectors.float(), out["se3_contact_z"].float()], dim=-1)
         contact = self._geometry_dot_contact_sketch(
@@ -283,6 +310,7 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 true_angles,
                 true_coords,
                 batch_idx,
+                plddt_mask,
             )
 
         if self.nan_guard:

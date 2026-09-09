@@ -222,22 +222,27 @@ class ProductionGeometrySE3Module(base.GeometryFocusedModule):
             batch_idx = getattr(data_batch["res"], "batch", None)
             q_parts = []
             step_parts = []
+            twist_parts = []
             groups = [torch.arange(seed.shape[0], device=seed.device)] if batch_idx is None else [
                 torch.where(batch_idx == value)[0] for value in torch.unique(batch_idx, sorted=True)
             ]
             for indices in groups:
                 seed_i = seed[indices]
-                R_i, _t_i, q_i = self._frames_from_ca_only(seed_i)
+                R_i, _t_i, q_i, twist_i = self._frames_from_ca_only(seed_i)
                 steps_i = torch.zeros_like(seed_i)
                 if seed_i.shape[0] > 1:
                     delta_i = seed_i[1:] - seed_i[:-1]
                     steps_i[:-1] = torch.einsum("nij,nj->ni", R_i[:-1].transpose(-1, -2), delta_i)
                 q_parts.append(q_i)
                 step_parts.append(steps_i)
+                twist_parts.append(twist_i)
             pseudo_q = torch.cat(q_parts, dim=0)
             pseudo_steps = torch.cat(step_parts, dim=0)
             output["rt_pred"] = torch.cat([pseudo_q, pseudo_steps], dim=-1)
             output["ca_step_pred"] = pseudo_steps
+            # CA-only pseudo-frames cannot fix twist at collinear residues; the
+            # shared loss stack must mask orientation losses for these rows.
+            output["twist_undefined"] = torch.cat(twist_parts, dim=0)
 
         # The shared SE3 path applies se3_contact_coord_scale. Normalize that
         # factor here so production-coordinate-scale remains an independent flag.

@@ -251,7 +251,7 @@ CMD=(
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-1.0}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-4}"
-  --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
+  --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-inf}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
   --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
   --se3-max-nodes "${SE3_MAX_NODES}"
@@ -261,12 +261,12 @@ CMD=(
   --no-use-decoder-angle-loss
   --use-coarse-ca-loss
   --use-coarse-backbone-loss
-  --use-coarse-backbone-atom-loss
-  --use-coarse-c-loss
-  --use-coarse-cb-loss
-  --use-coarse-n-loss
-  --use-coarse-backbone-fape-loss
-  --use-coarse-backbone-angle-loss
+  --no-use-coarse-backbone-atom-loss
+  --no-use-coarse-c-loss
+  --no-use-coarse-cb-loss
+  --no-use-coarse-n-loss
+  --no-use-coarse-backbone-fape-loss
+  --no-use-coarse-backbone-angle-loss
   --coarse-backbone-angle-weight "${COARSE_BACKBONE_ANGLE_WEIGHT:-0.05}"
   --use-se3-coarse-geometry-losses
   --use-se3-residue-loss

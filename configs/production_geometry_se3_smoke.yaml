@@ -47,7 +47,7 @@ se3_atom_heads: 1
 se3_atom_dim_head: 4
 se3_num_atom_types: 40
 se3_contact_sketch_top_k: 2
-se3_contact_sketch_threshold: 0.0
+se3_contact_sketch_threshold: .inf
 se3_contact_sketch_min_seq_sep: 3
 se3_contact_local_window: 1
 se3_contact_coord_scale: 1.0

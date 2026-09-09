@@ -6,19 +6,42 @@ from torch_geometric.data import HeteroData
 from foldtree2.src.losses.fape import (
     backbone_dihedrals_from_n_ca_c,
     ca_local_step_targets,
+    ca_bond_length_loss,
+    ca_pairwise_distance_loss,
+    ca_step_loss,
     coarse_backbone_dihedrals_from_ca_frames,
     coarse_backbone_atoms_from_ca_frames,
     coarse_backbone_fape_loss,
     coarse_ca_loss,
+    equivariant_ca_frame_rotmat,
     integrate_ca_steps,
     integrate_local_ca_steps,
+    shift_prev_valid,
 )
 from foldtree2.src.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
 from foldtree2.learn_geometry_lightning import GeometryFocusedModule
-from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner
+from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner, se3_denoiser
 
 
 class TestCoarseCALoss(unittest.TestCase):
+    def test_atom_graph_has_mandatory_covalent_edges(self):
+        adj = se3_denoiser._covalent_atom_contacts(num_residues=3, atoms_per_residue=4, device=torch.device("cpu"))
+        ca_idx, c_idx, cb_idx, n_idx = 0, 1, 2, 3
+
+        for residue_idx in range(3):
+            base = residue_idx * 4
+            for src_atom, dst_atom in ((n_idx, ca_idx), (ca_idx, c_idx), (ca_idx, cb_idx)):
+                src = base + src_atom
+                dst = base + dst_atom
+                self.assertTrue(adj[src, dst])
+                self.assertTrue(adj[dst, src])
+
+        for residue_idx in range(2):
+            src = residue_idx * 4 + c_idx
+            dst = (residue_idx + 1) * 4 + n_idx
+            self.assertTrue(adj[src, dst])
+            self.assertTrue(adj[dst, src])
+
     def test_staged_step_coordinate_round_trip(self):
         coords = torch.tensor([
             [0.0, 0.0, 0.0],
@@ -51,14 +74,93 @@ class TestCoarseCALoss(unittest.TestCase):
         n_rot = n @ q.T
         c_rot = c @ q.T
 
-        R, t, _ = GeometryFocusedModule._frames_from_ca_only(ca)
-        R_rot, t_rot, _ = GeometryFocusedModule._frames_from_ca_only(ca_rot)
+        R, t, _, _ = GeometryFocusedModule._frames_from_ca_only(ca)
+        R_rot, t_rot, _, _ = GeometryFocusedModule._frames_from_ca_only(ca_rot)
         self.assertTrue(torch.allclose(R_rot, q @ R, atol=1e-5, rtol=1e-5))
         self.assertTrue(torch.allclose(t_rot, t @ q.T, atol=1e-5, rtol=1e-5))
 
         nca_R = GeometryFocusedModule._frames_from_n_ca_c(n, ca, c)
         nca_R_rot = GeometryFocusedModule._frames_from_n_ca_c(n_rot, ca_rot, c_rot)
         self.assertTrue(torch.allclose(nca_R_rot, q @ nca_R, atol=1e-5, rtol=1e-5))
+
+    def test_two_residue_chain_flags_twist_undefined(self):
+        # Every residue of a two-residue chain has perfectly collinear
+        # neighbor-extrapolated segments, so CA geometry alone cannot fix a
+        # twist about the tangent for either residue.
+        ca = torch.tensor([[0.0, 0.0, 0.0], [1.0, 2.0, 0.5]])
+        rot, twist_undefined = equivariant_ca_frame_rotmat(ca)
+        self.assertTrue(torch.equal(twist_undefined, torch.tensor([True, True])))
+        # The frame must still be a valid (numerically stable) orthonormal basis.
+        identity = torch.eye(3).unsqueeze(0).expand(2, 3, 3)
+        self.assertTrue(torch.allclose(rot @ rot.transpose(-1, -2), identity, atol=1e-5))
+
+    def test_straight_chain_flags_only_collinear_residues(self):
+        # A perfectly straight three-residue chain is collinear everywhere, but
+        # a kinked one should only flag the undefined residue(s).
+        straight = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+        _, straight_undefined = equivariant_ca_frame_rotmat(straight)
+        self.assertTrue(straight_undefined.all())
+
+        kinked = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 0.0]])
+        _, kinked_undefined = equivariant_ca_frame_rotmat(kinked)
+        self.assertFalse(kinked_undefined[1])
+
+    def test_ca_step_loss_requires_both_endpoints_confident(self):
+        # Residues 0..3; only residue 2 is low-confidence.
+        true_ca = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [3.8, 0.0, 0.0],
+            [7.6, 0.0, 0.0],
+            [11.4, 0.0, 0.0],
+        ])
+        pred_steps = torch.zeros_like(true_ca)
+        pred_steps[1:] = true_ca[1:] - true_ca[:-1]
+        plddt = torch.tensor([1.0, 1.0, 0.0, 1.0])
+
+        # Steps landing at 1 (0->1) and arriving via 2 (1->2, 2->3) all touch
+        # residue 2 as an endpoint except step 0->1; only that step should count.
+        loss = ca_step_loss(pred_steps, true_ca, plddt=plddt, plddt_thresh=0.5)
+        self.assertTrue(torch.isclose(loss, torch.tensor(0.0), atol=1e-5))
+
+        # Perturb only the step that should be excluded (landing at residue 2);
+        # the masked loss must stay zero even though the raw steps disagree there.
+        bad_steps = pred_steps.clone()
+        bad_steps[2] += 5.0
+        masked_loss = ca_step_loss(bad_steps, true_ca, plddt=plddt, plddt_thresh=0.5)
+        self.assertTrue(torch.isclose(masked_loss, torch.tensor(0.0), atol=1e-5))
+        unmasked_loss = ca_step_loss(bad_steps, true_ca)
+        self.assertGreater(float(unmasked_loss), 0.1)
+
+    def test_ca_bond_and_pairwise_losses_require_both_endpoints_confident(self):
+        true_ca = torch.tensor([
+            [0.0, 0.0, 0.0],
+            [3.8, 0.0, 0.0],
+            [7.6, 0.0, 0.0],
+            [11.4, 0.0, 0.0],
+        ])
+        pred_steps = torch.zeros_like(true_ca)
+        pred_steps[1:] = true_ca[1:] - true_ca[:-1]
+        pred_steps[2] = torch.tensor([100.0, 0.0, 0.0])  # only touches residue 2
+        plddt = torch.tensor([1.0, 1.0, 0.0, 1.0])
+
+        bond_masked = ca_bond_length_loss(pred_steps, plddt=plddt, plddt_thresh=0.5)
+        self.assertTrue(torch.isclose(bond_masked, torch.tensor(0.0), atol=1e-5))
+        bond_unmasked = ca_bond_length_loss(pred_steps)
+        self.assertGreater(float(bond_unmasked), 1.0)
+
+        pred_ca = true_ca.clone()
+        pred_ca[2] += 100.0
+        pairwise_masked = ca_pairwise_distance_loss(pred_ca, true_ca, min_seq_sep=1, plddt=plddt, plddt_thresh=0.5)
+        self.assertTrue(torch.isclose(pairwise_masked, torch.tensor(0.0), atol=1e-5))
+        pairwise_unmasked = ca_pairwise_distance_loss(pred_ca, true_ca, min_seq_sep=1)
+        self.assertGreater(float(pairwise_unmasked), 1.0)
+
+    def test_shift_prev_valid_marks_chain_starts_false(self):
+        valid = torch.tensor([True, True, False, True])
+        batch = torch.tensor([0, 0, 1, 1])
+        prev_valid = shift_prev_valid(valid, batch_idx=batch)
+        # Chain starts (residues 0 and 2) have no previous residue.
+        self.assertEqual(prev_valid.tolist(), [False, True, False, False])
 
     def _rot_z(self, angle):
         c = torch.cos(torch.tensor(angle))

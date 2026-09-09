@@ -40,10 +40,13 @@ from foldtree2.src.losses.fape import (
     coarse_backbone_atoms_from_ca_frames,
     coarse_backbone_fape_loss,
     coarse_ca_loss,
+    equivariant_ca_frame_rotmat,
     integrate_local_ca_steps,
     quaternion_to_rotation_matrix,
     reconstruct_positions,
     rotation_matrix_to_quaternion,
+    select_valid_frame_rows,
+    shift_prev_valid,
 )
 from foldtree2.src.losses.losses import quaternion_fape_loss, quaternion_geodesic_loss
 from foldtree2.src.mono_decoders import Transformer_Geometry_Decoder
@@ -731,7 +734,12 @@ class GeometryFocusedModule(pl.LightningModule):
         return origins
 
     @staticmethod
-    def _frames_from_ca_only(ca_coords: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _frames_from_ca_only(ca_coords: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Derive per-residue frames from a CA trace using the shared equivariant builder.
+
+        Returns (R, t, q, twist_undefined); see `equivariant_ca_frame_rotmat` for what
+        `twist_undefined` means and why callers must mask orientation losses with it.
+        """
         if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
             raise ValueError(f"Expected [N,3] CA coords, got {tuple(ca_coords.shape)}")
 
@@ -739,39 +747,7 @@ class GeometryFocusedModule(pl.LightningModule):
         if n == 0:
             raise ValueError("Empty coordinate tensor")
 
-        if n == 1:
-            R = torch.eye(3, device=ca_coords.device, dtype=ca_coords.dtype).unsqueeze(0)
-            t = torch.zeros((1, 3), device=ca_coords.device, dtype=ca_coords.dtype)
-            q = rotation_matrix_to_quaternion(R)
-            return R, t, q
-
-        prev_ca = torch.roll(ca_coords, shifts=1, dims=0)
-        next_ca = torch.roll(ca_coords, shifts=-1, dims=0)
-        prev_ca[0] = ca_coords[0] + (ca_coords[0] - ca_coords[1])
-        next_ca[-1] = ca_coords[-1] + (ca_coords[-1] - ca_coords[-2])
-
-        forward_raw = next_ca - prev_ca
-        forward = forward_raw / torch.clamp(torch.norm(forward_raw, dim=-1, keepdim=True), min=1e-8)
-        normal_raw = torch.cross(ca_coords - prev_ca, next_ca - ca_coords, dim=-1)
-        if n > 2:
-            first_segment = ca_coords[1] - ca_coords[0]
-            second_segment = ca_coords[2] - ca_coords[1]
-            penultimate_segment = ca_coords[-2] - ca_coords[-3]
-            last_segment = ca_coords[-1] - ca_coords[-2]
-            normal_raw[0] = torch.cross(first_segment, second_segment, dim=-1)
-            normal_raw[-1] = torch.cross(penultimate_segment, last_segment, dim=-1)
-        normal = normal_raw / torch.clamp(torch.norm(normal_raw, dim=-1, keepdim=True), min=1e-8)
-        degenerate = torch.norm(normal_raw, dim=-1) < 1e-8
-        if degenerate.any():
-            neighbor_raw = next_ca[degenerate] - prev_ca[degenerate]
-            fallback = torch.cross(neighbor_raw, ca_coords[degenerate] - prev_ca[degenerate], dim=-1)
-            normal[degenerate] = fallback / torch.clamp(torch.norm(fallback, dim=-1, keepdim=True), min=1e-8)
-
-        right = torch.cross(forward, normal, dim=-1)
-        right = right / torch.clamp(torch.norm(right, dim=-1, keepdim=True), min=1e-8)
-        normal = torch.cross(right, forward, dim=-1)
-        normal = normal / torch.clamp(torch.norm(normal, dim=-1, keepdim=True), min=1e-8)
-        R = torch.stack([forward, normal, right], dim=-1)
+        R, twist_undefined = equivariant_ca_frame_rotmat(ca_coords)
 
         # For FAPE, translations must be frame origins, not CA->next step vectors.
         t = torch.zeros_like(ca_coords)
@@ -779,7 +755,7 @@ class GeometryFocusedModule(pl.LightningModule):
             steps = ca_coords[1:] - ca_coords[:-1]
             t[1:] = torch.cumsum(steps, dim=0)
         q = rotation_matrix_to_quaternion(R)
-        return R, t, q
+        return R, t, q, twist_undefined
 
     @staticmethod
     def _frames_from_n_ca_c(
@@ -805,25 +781,32 @@ class GeometryFocusedModule(pl.LightningModule):
         return torch.stack([x_axis, y_axis, z_axis], dim=-1)
 
     def _derive_se3_qt(self, se3_coords: torch.Tensor, batch_idx: Optional[torch.Tensor]):
+        """Derive quaternion/translation frames from a CA-only trace.
+
+        Also returns `twist_undefined` (see `equivariant_ca_frame_rotmat`); callers
+        must exclude those rows from orientation-dependent losses.
+        """
         if batch_idx is None:
-            _, t, q = self._frames_from_ca_only(se3_coords)
-            return q, t
+            _, t, q, twist_undefined = self._frames_from_ca_only(se3_coords)
+            return q, t, twist_undefined
 
         q_parts = []
         t_parts = []
+        twist_parts = []
         for b in torch.unique(batch_idx, sorted=True):
             mask = batch_idx == b
             coords_b = se3_coords[mask]
             if coords_b.shape[0] == 0:
                 continue
-            _, t_b, q_b = self._frames_from_ca_only(coords_b)
+            _, t_b, q_b, twist_b = self._frames_from_ca_only(coords_b)
             q_parts.append(q_b)
             t_parts.append(t_b)
+            twist_parts.append(twist_b)
 
         if not q_parts:
             raise RuntimeError("Unable to derive SE3 q/t from empty batched coordinates")
 
-        return torch.cat(q_parts, dim=0), torch.cat(t_parts, dim=0)
+        return torch.cat(q_parts, dim=0), torch.cat(t_parts, dim=0), torch.cat(twist_parts, dim=0)
 
     @staticmethod
     def _coords_to_steps(coords: torch.Tensor, batch_idx: Optional[torch.Tensor]) -> torch.Tensor:
@@ -926,6 +909,7 @@ class GeometryFocusedModule(pl.LightningModule):
 
         max_len = max((idx.numel() for idx in graph_indices), default=0)
         sketches = []
+        degrees: list[tuple[float, int]] = []
         top_k = max(0, self.se3_contact_sketch_top_k)
         min_seq_sep = max(0, self.se3_contact_sketch_min_seq_sep)
         local_window = max(0, self.se3_contact_local_window)
@@ -967,9 +951,23 @@ class GeometryFocusedModule(pl.LightningModule):
                 contact |= (local > 0) & (local <= local_window)
             sketch[:n, :n] = contact
             sketches.append(sketch)
+            degrees.append((float(contact.float().sum(dim=-1).mean()), max(1, n - 1)))
 
         if len(sketches) == 0:
             return torch.zeros((0, 0, 0), dtype=torch.bool, device=z.device)
+
+        if degrees:
+            mean_degree = sum(d for d, _ in degrees) / len(degrees)
+            mean_degree_frac = sum(d / n for d, n in degrees) / len(degrees)
+            if self.trainer is not None and getattr(self, "training", False):
+                self.log("train/se3_contact_mean_degree", mean_degree, on_step=True, on_epoch=True, batch_size=len(degrees))
+                self.log("train/se3_contact_mean_degree_frac", mean_degree_frac, on_step=True, on_epoch=True, batch_size=len(degrees))
+            if mean_degree_frac > 0.5:
+                warnings.warn(
+                    f"SE3 contact graph is unexpectedly dense (mean degree fraction={mean_degree_frac:.2f}); "
+                    "check --se3-contact-sketch-top-k and --se3-contact-sketch-threshold."
+                )
+
         return torch.stack(sketches, dim=0)
 
     def _prepare_geometry_outputs(self, data_batch):
@@ -1014,30 +1012,58 @@ class GeometryFocusedModule(pl.LightningModule):
         )
 
         raw_terms: Dict[str, torch.Tensor] = {}
+        # Set only by CA-only pseudo-frame fallbacks (e.g. decoders without an RT
+        # head); flags residues whose twist about the backbone tangent cannot be
+        # determined from CA geometry alone (see `equivariant_ca_frame_rotmat`).
+        twist_undefined = out_local.get("twist_undefined")
 
         if true_q is not None and true_t is not None and (self.use_frame_fape_loss or self.use_quat_geodesic_loss):
-            true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
+            # Predicted frames are CA-only pseudo-frames (no RT head) exactly when
+            # `twist_undefined` is set; the true frame must then also be CA-only,
+            # not the dataset's N-CA-C `true_R`/`true_q`, or the twist-convention
+            # mismatch penalizes an otherwise-correct CA trace.
+            if twist_undefined is not None:
+                if true_coords is None:
+                    raise RuntimeError("CA-only pseudo-frame residue loss requires data['coords'].x")
+                true_q_src, true_t_origin, true_twist_undefined = self._derive_se3_qt(true_coords, batch_idx)
+                true_R_src = quaternion_to_rotation_matrix(true_q_src)
+                valid_orientation = ~twist_undefined & ~true_twist_undefined
+            else:
+                true_q_src = true_q
+                true_R_src = true_R
+                true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
+                valid_orientation = None
+            if plddt_mask is not None:
+                valid_orientation = plddt_mask if valid_orientation is None else (valid_orientation & plddt_mask)
             pred_t_origin = self._step_translations_to_origins(pred_t, batch_idx=batch_idx)
-            true_q_for_fape = true_q
+            true_q_for_fape = true_q_src
             true_t_for_fape = true_t_origin
             if self.rotation_target_frame == "local":
                 true_R_for_fape, true_t_for_fape = gauge_normalize_frames_to_chain_start(
-                    true_R,
+                    true_R_src,
                     true_t_origin,
                     batch_idx=batch_idx,
                 )
                 true_q_for_fape = rotation_matrix_to_quaternion(true_R_for_fape)
-            if self.use_frame_fape_loss:
+            if self.use_frame_fape_loss and (valid_orientation is None or valid_orientation.any()):
+                fape_batch, (fape_true_q, fape_true_t, fape_pred_q, fape_pred_t) = select_valid_frame_rows(
+                    valid_orientation, batch_idx, true_q_for_fape, true_t_for_fape, pred_q_for_fape, pred_t_origin
+                )
                 raw_terms["fape_quat"] = quaternion_fape_loss(
-                    true_q_for_fape,
-                    true_t_for_fape,
-                    pred_q_for_fape,
-                    pred_t_origin,
-                    batch=batch_idx,
+                    fape_true_q,
+                    fape_true_t,
+                    fape_pred_q,
+                    fape_pred_t,
+                    batch=fape_batch,
                     pair_sample_size=self.fape_pair_sample_size or None,
                 )
             if self.use_quat_geodesic_loss and self.rotation_target_frame == "local":
-                true_R_local, local_rot_mask = previous_local_rotation_targets(true_R, batch_idx=batch_idx)
+                true_R_local, local_rot_mask = previous_local_rotation_targets(true_R_src, batch_idx=batch_idx)
+                if valid_orientation is not None:
+                    local_rot_mask = local_rot_mask & valid_orientation
+                if plddt_mask is not None:
+                    # A relative rotation spans two residues; both must be confident.
+                    local_rot_mask = local_rot_mask & shift_prev_valid(plddt_mask, batch_idx=batch_idx)
                 if local_rot_mask.any():
                     true_q_local = rotation_matrix_to_quaternion(true_R_local)
                     raw_terms["quat_geodesic"] = quaternion_geodesic_loss(
@@ -1045,7 +1071,11 @@ class GeometryFocusedModule(pl.LightningModule):
                         true_q_local[local_rot_mask],
                     )
             elif self.use_quat_geodesic_loss:
-                raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q)
+                geodesic_mask = valid_orientation
+                if geodesic_mask is None:
+                    raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q, true_q_src)
+                elif geodesic_mask.any():
+                    raw_terms["quat_geodesic"] = quaternion_geodesic_loss(pred_q[geodesic_mask], true_q_src[geodesic_mask])
 
         pred_coords_local = reconstruct_positions(
             pred_R,
@@ -1059,6 +1089,8 @@ class GeometryFocusedModule(pl.LightningModule):
 
         if self.use_decoder_angle_loss and out_local.get("angles") is not None and true_angles is not None:
             angle_mask = torch.isfinite(out_local["angles"]) & torch.isfinite(true_angles)
+            if plddt_mask is not None:
+                angle_mask = angle_mask & plddt_mask.unsqueeze(-1)
             if angle_mask.any():
                 raw_terms["angles"] = periodic_angle_smooth_l1(out_local["angles"][angle_mask], true_angles[angle_mask])
 
@@ -1069,7 +1101,8 @@ class GeometryFocusedModule(pl.LightningModule):
         true_R_atoms = None
         true_ca_atoms = None
 
-        if self.use_coarse_backbone_loss:
+        needs_coarse_backbone_atoms = self.use_coarse_backbone_loss or self.use_se3_atom_refine
+        if needs_coarse_backbone_atoms:
             if true_coords is None or true_R is None:
                 raise RuntimeError("Coarse backbone loss requires data['coords'].x and data['R_true'].x")
             pred_coarse_atoms = coarse_backbone_atoms_from_ca_frames(
@@ -1119,41 +1152,48 @@ class GeometryFocusedModule(pl.LightningModule):
             data_batch["coarse_cb_pred"].x = pred_coarse_atoms[:, cb_idx]
             data_batch["coarse_n_pred"].x = pred_coarse_atoms[:, n_idx]
 
-            if self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
+            coarse_batch, (pred_coarse_atoms_valid, true_coarse_atoms_valid, true_R_atoms_valid,
+                           pred_R_for_fape_valid, true_ca_atoms_valid, pred_ca_trace_valid) = select_valid_frame_rows(
+                plddt_mask, batch_idx, pred_coarse_atoms, true_coarse_atoms, true_R_atoms,
+                pred_R_for_fape, true_ca_atoms, pred_ca_trace,
+            )
+
+            add_frozen_backbone_losses = self.use_coarse_backbone_loss and not self.train_se3_only
+            if add_frozen_backbone_losses and self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
                 raw_terms["coarse_backbone_atoms"] = self.coarse_backbone_atom_weight * F.smooth_l1_loss(
-                    pred_coarse_atoms,
-                    true_coarse_atoms,
+                    pred_coarse_atoms_valid,
+                    true_coarse_atoms_valid,
                     beta=0.5,
                 )
-            if self.use_coarse_c_loss and self.coarse_c_weight > 0:
+            if add_frozen_backbone_losses and self.use_coarse_c_loss and self.coarse_c_weight > 0:
                 raw_terms["coarse_c"] = self.coarse_c_weight * F.smooth_l1_loss(
-                    pred_coarse_atoms[:, c_idx],
-                    true_coarse_atoms[:, c_idx],
+                    pred_coarse_atoms_valid[:, c_idx],
+                    true_coarse_atoms_valid[:, c_idx],
                     beta=0.5,
                 )
-            if self.use_coarse_cb_loss and self.coarse_cb_weight > 0:
+            if add_frozen_backbone_losses and self.use_coarse_cb_loss and self.coarse_cb_weight > 0:
                 raw_terms["coarse_cb"] = self.coarse_cb_weight * F.smooth_l1_loss(
-                    pred_coarse_atoms[:, cb_idx],
-                    true_coarse_atoms[:, cb_idx],
+                    pred_coarse_atoms_valid[:, cb_idx],
+                    true_coarse_atoms_valid[:, cb_idx],
                     beta=0.5,
                 )
-            if self.use_coarse_n_loss and self.coarse_n_weight > 0:
+            if add_frozen_backbone_losses and self.use_coarse_n_loss and self.coarse_n_weight > 0:
                 raw_terms["coarse_n"] = self.coarse_n_weight * F.smooth_l1_loss(
-                    pred_coarse_atoms[:, n_idx],
-                    true_coarse_atoms[:, n_idx],
+                    pred_coarse_atoms_valid[:, n_idx],
+                    true_coarse_atoms_valid[:, n_idx],
                     beta=0.5,
                 )
-            if self.use_coarse_backbone_fape_loss and self.coarse_backbone_fape_weight > 0:
+            if add_frozen_backbone_losses and self.use_coarse_backbone_fape_loss and self.coarse_backbone_fape_weight > 0:
                 raw_terms["coarse_backbone_fape"] = self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
-                    true_coarse_atoms,
-                    pred_coarse_atoms,
-                    true_R_atoms,
-                    pred_R_for_fape,
-                    true_ca_atoms,
-                    pred_ca_trace,
-                    batch=batch_idx,
+                    true_coarse_atoms_valid,
+                    pred_coarse_atoms_valid,
+                    true_R_atoms_valid,
+                    pred_R_for_fape_valid,
+                    true_ca_atoms_valid,
+                    pred_ca_trace_valid,
+                    batch=coarse_batch,
                 )
-            if self.use_coarse_backbone_angle_loss and self.coarse_backbone_angle_weight > 0 and true_angles is not None:
+            if add_frozen_backbone_losses and self.use_coarse_backbone_angle_loss and self.coarse_backbone_angle_weight > 0 and true_angles is not None:
                 pred_bb_angles, pred_angle_mask = coarse_backbone_dihedrals_from_ca_frames(
                     pred_ca_trace,
                     pred_R_for_fape,
@@ -1167,6 +1207,8 @@ class GeometryFocusedModule(pl.LightningModule):
                     c_coords=true_coarse_atoms[:, c_idx],
                 )
                 angle_mask = pred_angle_mask & true_angle_mask
+                if plddt_mask is not None:
+                    angle_mask = angle_mask & plddt_mask
                 if angle_mask.any():
                     angle_target = true_angles.to(device=pred_bb_angles.device, dtype=pred_bb_angles.dtype)
                     derived_delta = wrap_to_pi_torch(pred_bb_angles - angle_target)
@@ -1176,7 +1218,7 @@ class GeometryFocusedModule(pl.LightningModule):
                         + 0.25 * F.smooth_l1_loss(frame_delta[angle_mask], torch.zeros_like(frame_delta[angle_mask]))
                     )
 
-        if self.use_coarse_ca_loss:
+        if self.use_coarse_ca_loss and not self.train_se3_only:
             if true_coords is None:
                 raise RuntimeError("Coarse CA loss requires data['coords'].x")
             frames = None
@@ -1207,6 +1249,8 @@ class GeometryFocusedModule(pl.LightningModule):
                 pairwise_weight=ca_pairwise_weight,
                 pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
                 pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                plddt=plddt_mask,
+                plddt_thresh=0.5,
                 return_components=True,
             )
             raw_terms["coarse_ca"] = ca_total * self.coarse_ca_weight
@@ -1322,25 +1366,42 @@ class GeometryFocusedModule(pl.LightningModule):
                             pairwise_weight=ca_pairwise_weight,
                             pairwise_max_seq_sep=self.coarse_ca_pairwise_max_seq_sep,
                             pairwise_max_pairs=self.coarse_ca_pairwise_max_pairs,
+                            plddt=plddt_mask,
+                            plddt_thresh=0.5,
                             return_components=True,
                         )
                         raw_terms["se3_coarse_ca"] = se3_ca_total * self.coarse_ca_weight
-                    if self.use_se3_residue_loss and true_q is not None and true_t is not None:
-                        q_se3, t_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
-                        true_t_origin = self._step_translations_to_origins(true_t, batch_idx=batch_idx)
-                        raw_terms["fape_quat_se3"] = quaternion_fape_loss(
-                            true_q,
-                            true_t_origin,
-                            q_se3,
-                            t_se3,
-                            batch=batch_idx,
-                            pair_sample_size=self.fape_pair_sample_size or None,
-                        )
-                        raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(q_se3, true_q)
+                    if self.use_se3_residue_loss and true_coords is not None:
+                        # Predicted frames here come from a CA-only trace, so the
+                        # true frame must also be CA-only rather than the dataset's
+                        # N-CA-C `true_q`, or the twist convention mismatch
+                        # penalizes an otherwise-correct CA trace.
+                        q_se3, t_se3, twist_undefined_se3 = self._derive_se3_qt(se3_coords_step, batch_idx)
+                        true_q_ca, true_t_ca, true_twist_undefined_se3 = self._derive_se3_qt(true_coords, batch_idx)
+                        valid_se3 = ~twist_undefined_se3 & ~true_twist_undefined_se3
+                        if plddt_mask is not None:
+                            valid_se3 = valid_se3 & plddt_mask
+                        if valid_se3.any():
+                            fape_batch, (fape_true_q, fape_true_t, fape_q, fape_t) = select_valid_frame_rows(
+                                valid_se3, batch_idx, true_q_ca, true_t_ca, q_se3, t_se3
+                            )
+                            raw_terms["fape_quat_se3"] = quaternion_fape_loss(
+                                fape_true_q,
+                                fape_true_t,
+                                fape_q,
+                                fape_t,
+                                batch=fape_batch,
+                                pair_sample_size=self.fape_pair_sample_size or None,
+                            )
+                            raw_terms["quat_geodesic_se3"] = quaternion_geodesic_loss(
+                                q_se3[valid_se3], true_q_ca[valid_se3]
+                            )
 
                 if self.use_se3_angle_loss and out_s.get("angles") is not None and true_angles is not None:
                     se3_angle_pred = out_s["angles"][..., :3]
                     se3_angle_mask = torch.isfinite(se3_angle_pred) & torch.isfinite(true_angles)
+                    if plddt_mask is not None:
+                        se3_angle_mask = se3_angle_mask & plddt_mask.unsqueeze(-1)
                     if se3_angle_mask.any():
                         raw_terms["se3_angles"] = periodic_angle_smooth_l1(
                             se3_angle_pred[se3_angle_mask],
@@ -1358,7 +1419,7 @@ class GeometryFocusedModule(pl.LightningModule):
                     atom_type_count = pred_coarse_atoms.shape[1]
                     refined_se3_R = out_s.get("rotmat_pred", None)
                     if refined_se3_R is None:
-                        refined_se3_q, _ = self._derive_se3_qt(se3_coords_step, batch_idx)
+                        refined_se3_q, _, _ = self._derive_se3_qt(se3_coords_step, batch_idx)
                         refined_se3_R = quaternion_to_rotation_matrix(refined_se3_q)
                     refined_se3_R = refined_se3_R.to(device=se3_coords_step.device, dtype=se3_coords_step.dtype)
                     pred_atom_seed = coarse_backbone_atoms_from_ca_frames(
@@ -1939,6 +2000,18 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Train on transformer quaternion/frame FAPE loss",
+    )
+    parser.add_argument(
+        "--use-plddt-mask",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Exclude low-confidence (pLDDT) residues from supervised losses",
+    )
+    parser.add_argument(
+        "--plddt-threshold",
+        type=float,
+        default=0.3,
+        help="Minimum pLDDT (0-1 scale) for a residue to be used in supervised losses",
     )
     parser.add_argument(
         "--use-quat-geodesic-loss",
@@ -2552,6 +2625,8 @@ def main():
         use_frame_fape_loss=args.use_frame_fape_loss,
         use_quat_geodesic_loss=args.use_quat_geodesic_loss,
         use_decoder_angle_loss=args.use_decoder_angle_loss,
+        use_plddt_mask=args.use_plddt_mask,
+        plddt_threshold=args.plddt_threshold,
         use_coarse_ca_loss=args.use_coarse_ca_loss,
         use_coarse_ca_step_loss=args.use_coarse_ca_step_loss,
         use_coarse_ca_bond_loss=args.use_coarse_ca_bond_loss,

@@ -122,6 +122,113 @@ def rotation_matrix_to_quaternion(rot_matrices: torch.Tensor) -> torch.Tensor:
     return quat.reshape(*rot_matrices.shape[:-2], 4)
 
 
+def _safe_orthogonal_axis(v: Tensor, eps: float = 1e-8) -> Tensor:
+    """Deterministic unit vector orthogonal to ``v`` using fixed global axes.
+
+    Not rotation-equivariant. Only valid as a numerically-stable placeholder for
+    frame columns whose orientation is genuinely undefined by local geometry;
+    callers must mask any loss that depends on the result.
+    """
+    x_axis = torch.zeros_like(v)
+    x_axis[..., 0] = 1.0
+    y_axis = torch.zeros_like(v)
+    y_axis[..., 1] = 1.0
+    use_x = v[..., 0].abs() < 0.9
+    base = torch.where(use_x.unsqueeze(-1), x_axis, y_axis)
+    ortho = torch.cross(v, base, dim=-1)
+    return ortho / torch.clamp(torch.norm(ortho, dim=-1, keepdim=True), min=eps)
+
+
+def equivariant_ca_frame_rotmat(ca_coords: Tensor, eps: float = 1e-8) -> tuple[Tensor, Tensor]:
+    """Build rotation-equivariant local backbone frames from CA coordinates only.
+
+    Shared by every CA-only frame builder in the codebase so degenerate-geometry
+    handling lives in exactly one place.
+
+    Column 0 (the tangent) is the bisector of the incoming/outgoing CA-CA segments,
+    which stays well-defined for any non-collinear triple. Column 1/2 (the twist
+    about the tangent) comes from ``cross(v_prev, v_next)``, which is zero whenever
+    the two neighboring segments are exactly collinear (e.g. every residue of a
+    two-residue chain, or perfectly straight stretches) -- CA geometry alone cannot
+    fix a rotation about the tangent in that case, and no equivariant choice exists
+    (SO(3) acts transitively on the directions orthogonal to a single axis). Those
+    rows fall back to an arbitrary, non-equivariant axis purely to keep the returned
+    matrix orthonormal; ``twist_undefined`` flags them so callers can exclude them
+    from orientation-dependent losses.
+
+    Returns:
+        rot: [N,3,3] orthonormal frame per residue.
+        twist_undefined: [N] bool, True where the frame's twist is not determined by
+            CA geometry (columns 1/2 of ``rot`` are numerically arbitrary there).
+    """
+    if ca_coords.ndim != 2 or ca_coords.shape[-1] != 3:
+        raise ValueError(f"Expected [N,3] CA coords, got {tuple(ca_coords.shape)}")
+    n = ca_coords.shape[0]
+    if n == 0:
+        raise ValueError("Empty coordinate tensor")
+
+    if n == 1:
+        rot = torch.eye(3, device=ca_coords.device, dtype=ca_coords.dtype).unsqueeze(0)
+        return rot, torch.ones(1, dtype=torch.bool, device=ca_coords.device)
+
+    prev_ca = torch.roll(ca_coords, shifts=1, dims=0)
+    next_ca = torch.roll(ca_coords, shifts=-1, dims=0)
+    prev_ca[0] = ca_coords[0] + (ca_coords[0] - ca_coords[1])
+    next_ca[-1] = ca_coords[-1] + (ca_coords[-1] - ca_coords[-2])
+
+    v_prev = ca_coords - prev_ca
+    v_next = next_ca - ca_coords
+
+    e1_raw = v_prev + v_next
+    e1_norm = torch.norm(e1_raw, dim=-1)
+    e1 = e1_raw / e1_norm.clamp_min(eps).unsqueeze(-1)
+    tangent_degenerate = e1_norm < eps
+    if tangent_degenerate.any():
+        fallback = v_next[tangent_degenerate]
+        e1[tangent_degenerate] = fallback / torch.clamp(torch.norm(fallback, dim=-1, keepdim=True), min=eps)
+
+    normal_raw = torch.cross(v_prev, v_next, dim=-1)
+    if n > 2:
+        # At chain endpoints, prev/next are extrapolated as mirror images of the
+        # real neighbor, so v_prev == v_next there and cross(v_prev, v_next) is
+        # structurally zero regardless of the chain's actual curvature. Use the
+        # real adjacent backbone segments instead so endpoints only get flagged
+        # undefined when the chain is genuinely straight there.
+        normal_raw[0] = torch.cross(ca_coords[1] - ca_coords[0], ca_coords[2] - ca_coords[1], dim=-1)
+        normal_raw[-1] = torch.cross(ca_coords[-2] - ca_coords[-3], ca_coords[-1] - ca_coords[-2], dim=-1)
+    normal_norm = torch.norm(normal_raw, dim=-1)
+    twist_undefined = normal_norm < eps
+    e2 = normal_raw / normal_norm.clamp_min(eps).unsqueeze(-1)
+    if twist_undefined.any():
+        e2[twist_undefined] = _safe_orthogonal_axis(e1[twist_undefined], eps=eps)
+
+    e3 = torch.cross(e1, e2, dim=-1)
+    e3 = e3 / torch.clamp(torch.norm(e3, dim=-1, keepdim=True), min=eps)
+    e2 = torch.cross(e3, e1, dim=-1)
+    e2 = e2 / torch.clamp(torch.norm(e2, dim=-1, keepdim=True), min=eps)
+
+    rot = torch.stack([e1, e2, e3], dim=-1)
+    return rot, twist_undefined
+
+
+def select_valid_frame_rows(
+    valid: Optional[Tensor],
+    batch_idx: Optional[Tensor],
+    *tensors: Tensor,
+) -> tuple[Optional[Tensor], tuple[Tensor, ...]]:
+    """Filter frame-derived tensors (and the batch index) down to ``valid`` rows.
+
+    Used to drop residues whose CA-only twist is undefined before computing
+    rotation-dependent losses. Returns the inputs unchanged if ``valid`` is None.
+    """
+    if valid is None:
+        return batch_idx, tensors
+    idx = valid.nonzero(as_tuple=True)[0]
+    filtered_batch = batch_idx[idx] if batch_idx is not None else None
+    filtered = tuple(t[idx] for t in tensors)
+    return filtered_batch, filtered
+
+
 def reconstruct_positions(
     R: torch.Tensor,
     T: torch.Tensor,
@@ -502,6 +609,20 @@ def _ca_step_targets(true_ca: Tensor, batch_idx: Optional[Tensor] = None) -> tup
     return target, mask
 
 
+def shift_prev_valid(valid: Tensor, batch_idx: Optional[Tensor] = None) -> Tensor:
+    """Return ``valid[i-1]`` within the same chain (False at chain starts)."""
+    prev_valid = torch.zeros_like(valid)
+    if batch_idx is None:
+        if valid.shape[0] > 1:
+            prev_valid[1:] = valid[:-1]
+        return prev_valid
+    for b in torch.unique(batch_idx, sorted=True):
+        idx = torch.where(batch_idx == b)[0]
+        if idx.numel() > 1:
+            prev_valid[idx[1:]] = valid[idx[:-1]]
+    return prev_valid
+
+
 def ca_step_loss(
     pred_steps: Tensor,
     true_ca: Tensor,
@@ -523,8 +644,9 @@ def ca_step_loss(
             frame_offset=frame_offset,
         )
     if plddt is not None:
-        good = plddt.squeeze(-1) >= plddt_thresh
-        step_mask = step_mask & good
+        good = plddt.reshape(-1) >= plddt_thresh
+        # A step spans two residues; both endpoints must be confident.
+        step_mask = step_mask & good & shift_prev_valid(good, batch_idx=batch_idx)
     if step_mask.sum() == 0:
         return torch.tensor(0.0, device=pred_steps.device, dtype=pred_steps.dtype)
     return F.smooth_l1_loss(pred_steps[step_mask], target_steps[step_mask], beta=beta)
@@ -534,6 +656,8 @@ def ca_bond_length_loss(
     pred_steps: Tensor,
     batch_idx: Optional[Tensor] = None,
     target_length: float = 3.8,
+    plddt: Optional[Tensor] = None,
+    plddt_thresh: float = 0.3,
 ) -> Tensor:
     """Penalize local CA step lengths away from the canonical CA-CA spacing."""
     if pred_steps.ndim != 2 or pred_steps.shape[-1] != 3:
@@ -549,6 +673,11 @@ def ca_bond_length_loss(
             if idx.numel() > 0:
                 mask[idx[0]] = False
 
+    if plddt is not None:
+        good = plddt.reshape(-1) >= plddt_thresh
+        # Each step's bond length spans two residues; both must be confident.
+        mask = mask & good & shift_prev_valid(good, batch_idx=batch_idx)
+
     if mask.sum() == 0:
         return torch.tensor(0.0, device=pred_steps.device, dtype=pred_steps.dtype)
     lengths = pred_steps[mask].norm(dim=-1)
@@ -563,12 +692,14 @@ def ca_pairwise_distance_loss(
     min_seq_sep: int = 2,
     max_seq_sep: Optional[int] = 64,
     max_pairs: Optional[int] = 4096,
+    plddt: Optional[Tensor] = None,
+    plddt_thresh: float = 0.3,
 ) -> Tensor:
     """dRMSD-style loss on CA pairwise distances within each chain."""
     if pred_ca.shape != true_ca.shape:
         raise ValueError(f"Shape mismatch: pred_ca={tuple(pred_ca.shape)} true_ca={tuple(true_ca.shape)}")
 
-    def _single(pred_s: Tensor, true_s: Tensor) -> Optional[Tensor]:
+    def _single(pred_s: Tensor, true_s: Tensor, good_s: Optional[Tensor]) -> Optional[Tensor]:
         n = pred_s.shape[0]
         if n <= min_seq_sep:
             return None
@@ -576,6 +707,9 @@ def ca_pairwise_distance_loss(
         if max_seq_sep is not None:
             seq_sep = pairs[1] - pairs[0]
             pairs = pairs[:, seq_sep <= int(max_seq_sep)]
+        if good_s is not None:
+            # Both residues in the pair must be confident.
+            pairs = pairs[:, good_s[pairs[0]] & good_s[pairs[1]]]
         if pairs.shape[1] == 0:
             return None
         if max_pairs is not None and pairs.shape[1] > max_pairs:
@@ -585,15 +719,16 @@ def ca_pairwise_distance_loss(
         true_d = (true_s[pairs[0]] - true_s[pairs[1]]).norm(dim=-1)
         return F.smooth_l1_loss(pred_d, true_d, beta=0.5)
 
+    good = None if plddt is None else (plddt.reshape(-1) >= plddt_thresh)
     losses = []
     if batch_idx is None:
-        val = _single(pred_ca, true_ca)
+        val = _single(pred_ca, true_ca, good)
         if val is not None:
             losses.append(val)
     else:
         for b in torch.unique(batch_idx, sorted=True):
             idx = torch.where(batch_idx == b)[0]
-            val = _single(pred_ca[idx], true_ca[idx])
+            val = _single(pred_ca[idx], true_ca[idx], None if good is None else good[idx])
             if val is not None:
                 losses.append(val)
 
@@ -641,7 +776,7 @@ def coarse_ca_loss(
             plddt=plddt,
             plddt_thresh=plddt_thresh,
         ),
-        "bond": ca_bond_length_loss(pred_steps, batch_idx=batch_idx),
+        "bond": ca_bond_length_loss(pred_steps, batch_idx=batch_idx, plddt=plddt, plddt_thresh=plddt_thresh),
         "pairwise": ca_pairwise_distance_loss(
             pred_ca,
             true_ca,
@@ -649,6 +784,8 @@ def coarse_ca_loss(
             min_seq_sep=pairwise_min_seq_sep,
             max_seq_sep=pairwise_max_seq_sep,
             max_pairs=pairwise_max_pairs,
+            plddt=plddt,
+            plddt_thresh=plddt_thresh,
         ),
     }
     total = (
@@ -1492,6 +1629,9 @@ __all__ = [
     "quaternion_angle_loss",
     "quaternion_to_rotation_matrix",
     "rotation_matrix_to_quaternion",
+    "equivariant_ca_frame_rotmat",
+    "select_valid_frame_rows",
+    "shift_prev_valid",
     "reconstruct_positions",
     "integrate_ca_steps",
     "integrate_local_ca_steps",

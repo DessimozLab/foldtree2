@@ -79,7 +79,7 @@ CMD=(
   --se3-contact-coord-scale "${SE3_CONTACT_COORD_SCALE:-20}"
   --se3-contact-local-window "${SE3_CONTACT_LOCAL_WINDOW:-1}"
   --se3-contact-sketch-top-k "${SE3_CONTACT_SKETCH_TOP_K:-8}"
-  --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-0.0}"
+  --se3-contact-sketch-threshold "${SE3_CONTACT_SKETCH_THRESHOLD:-inf}"
   --se3-contact-sketch-min-seq-sep "${SE3_CONTACT_SKETCH_MIN_SEQ_SEP:-3}"
   --se3-max-nodes "${SE3_MAX_NODES:-0}"
   --no-use-frame-fape-loss
