@@ -528,15 +528,22 @@ def main():
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
     overfit_batches = 0.0
     if args.overfit_batches > 0:
-        train_batch_count = len(data_module.train_dataloader())
-        val_batch_count = len(data_module.val_dataloader()) if data_module.val_dataset is not None else train_batch_count
-        # Lightning interprets overfit_batches as a fraction when it is below
-        # one, and applies that fraction to both loaders. Use the smaller
-        # loader so requesting one batch remains valid for validation too.
-        overfit_batches = min(
-            1.0,
-            args.overfit_batches / max(1, min(train_batch_count, val_batch_count)),
+        # Lightning treats overfit_batches=1 as the full loader. Restrict the
+        # datasets directly instead, so this option cannot accidentally start
+        # an unbounded workstation run.
+        train_count = min(len(data_module.train_dataset), args.overfit_batches * args.batch_size)
+        data_module.train_dataset = torch.utils.data.Subset(
+            data_module.train_dataset, range(max(1, train_count))
         )
+        if data_module.val_dataset is not None:
+            val_count = min(len(data_module.val_dataset), args.overfit_batches * args.val_batch_size)
+            data_module.val_dataset = torch.utils.data.Subset(
+                data_module.val_dataset, range(max(1, val_count))
+            )
+        if args.limit_train_batches is None:
+            args.limit_train_batches = args.overfit_batches
+        if args.limit_val_batches is None:
+            args.limit_val_batches = args.overfit_batches
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_callback = base.pl.callbacks.ModelCheckpoint(
