@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ft2-prod-staged-gh200-scaled
-#SBATCH --time=08:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 # Lightning DDP launches one worker per Slurm task/GPU.
 # Keep this aligned with DEVICES below.
@@ -63,13 +63,15 @@ log "Installing editable package from PROJECT_ROOT=${PROJECT_ROOT}"
 pip install --no-cache-dir --no-deps -e "${PROJECT_ROOT}"
 
 DATASET=${DATASET:-/capstor/store/cscs/swissai/a0117/structalnfinal.h5}
-MODEL_TAG=${MODEL_TAG:-40char_staged_transformer_512h4x8}
+MODEL_TAG=${MODEL_TAG:-40char_staged_transformer_512h4x8_coarsefull}
 PRETRAINED_ENCODER=${PRETRAINED_ENCODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt}
 PRETRAINED_GEOMETRY_DECODER=${PRETRAINED_GEOMETRY_DECODER:-${PROJECT_ROOT}/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt}
 
 BATCH_SIZE=${BATCH_SIZE:-1}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-1}
-TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-32}
+# Keep the per-GPU micro-batch conservative for variable-length structures;
+# accumulate across all four GH200 workers to stabilize the optimizer.
+TARGET_EFFECTIVE_BATCH_SIZE=${TARGET_EFFECTIVE_BATCH_SIZE:-64}
 TRAIN_PRECISION=${PRECISION:-bf16-mixed}
 DEVICES=${DEVICES:-4}
 STRATEGY=${STRATEGY:-ddp_find_unused_parameters_true}
@@ -82,6 +84,12 @@ STAGED_MAX_STEP=${STAGED_MAX_STEP:-4.0}
 STAGED_MAX_REFINE_DELTA=${STAGED_MAX_REFINE_DELTA:-2.0}
 STAGE_LOSS_WEIGHTS=${STAGE_LOSS_WEIGHTS:-0.25,0.5,1.0}
 FAPE_PAIR_SAMPLE_SIZE=${FAPE_PAIR_SAMPLE_SIZE:-1024}
+
+# A complete pass over the held-out split is required to compare loss-stack
+# experiments. Increase NUM_WORKERS only after confirming HDF5 access on Alps.
+NUM_WORKERS=${NUM_WORKERS:-0}
+EPOCHS=${EPOCHS:-100}
+LEARNING_RATE=${LEARNING_RATE:-1e-5}
 
 RUN_TAG="prod_staged_${MODEL_TAG}_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
@@ -107,12 +115,12 @@ print_kv "staged_max_refine_delta" "${STAGED_MAX_REFINE_DELTA}"
 CMD=(
   python foldtree2/learn_production_staged_transformer_geometry.py
   --dataset "${DATASET}"
-  --epochs "${EPOCHS:-100}"
+  --epochs "${EPOCHS}"
   --batch-size "${BATCH_SIZE}"
   --val-batch-size "${VAL_BATCH_SIZE}"
   --target-effective-batch-size "${TARGET_EFFECTIVE_BATCH_SIZE}"
-  --learning-rate "${LEARNING_RATE:-1e-5}"
-  --num-workers "${NUM_WORKERS:-0}"
+  --learning-rate "${LEARNING_RATE}"
+  --num-workers "${NUM_WORKERS}"
   --accelerator "${ACCELERATOR:-cuda}"
   --devices "${DEVICES}"
   --strategy "${STRATEGY}"
