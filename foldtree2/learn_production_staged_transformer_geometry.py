@@ -91,6 +91,47 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         self.encoder.eval()
         self.transformer_geom_decoder.eval()
 
+    def on_fit_start(self):
+        trainable = [parameter for parameter in self.parameters() if parameter.requires_grad]
+        frozen = [parameter for parameter in self.parameters() if not parameter.requires_grad]
+        trainable_count = sum(parameter.numel() for parameter in trainable)
+        frozen_count = sum(parameter.numel() for parameter in frozen)
+        if not trainable:
+            raise RuntimeError("Staged geometry refiner has no trainable parameters")
+        print(
+            "Staged trainability: "
+            f"trainable_params={trainable_count} frozen_params={frozen_count}"
+        )
+
+    def on_before_optimizer_step(self, optimizer):
+        # This is the most useful early signal for a frozen-backbone run: the
+        # loss can be finite while the staged refiner receives no gradient.
+        super().on_before_optimizer_step(optimizer)
+        squared_norm = None
+        with_grad = 0
+        for parameter in self.staged_refiner.parameters():
+            if parameter.grad is None:
+                continue
+            with_grad += 1
+            value = parameter.grad.detach().float().pow(2).sum()
+            squared_norm = value if squared_norm is None else squared_norm + value
+        grad_norm = torch.sqrt(squared_norm) if squared_norm is not None else torch.zeros((), device=self.device)
+        self.log(
+            "train/staged_grad_norm",
+            grad_norm,
+            on_step=True,
+            on_epoch=False,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        self.log(
+            "train/staged_params_with_grad",
+            float(with_grad),
+            on_step=True,
+            on_epoch=False,
+            sync_dist=True,
+        )
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             self.staged_refiner.parameters(),
@@ -234,7 +275,15 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 mask = mask & plddt_mask.unsqueeze(-1)
             if mask.any():
                 raw_terms[f"{name}_angles"] = weight * base.periodic_angle_smooth_l1(angles[mask], true_angles[mask])
-        if self.use_coarse_backbone_loss and true_R is not None:
+        backbone_terms_enabled = (
+            self.use_coarse_backbone_atom_loss
+            or self.use_coarse_c_loss
+            or self.use_coarse_cb_loss
+            or self.use_coarse_n_loss
+            or self.use_coarse_backbone_fape_loss
+            or self.use_coarse_backbone_angle_loss
+        )
+        if self.use_coarse_backbone_loss and backbone_terms_enabled and true_R is not None:
             pred_q, _pred_t, twist_undefined = self._stage_frame_outputs(coords, batch_idx)
             pred_R = quaternion_to_rotation_matrix(pred_q)
             pred_atoms = coarse_backbone_atoms_from_ca_frames(coords, pred_R, atom_names=("ca", "c", "cb", "n"))
@@ -256,20 +305,32 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
                 bb_batch, (bb_pred_atoms, bb_true_atoms, bb_true_R, bb_pred_R, bb_true_coords, bb_coords) = (
                     select_valid_frame_rows(valid, batch_idx, pred_atoms, true_atoms, true_R, pred_R, true_coords, coords)
                 )
-                raw_terms[f"{name}_backbone_atoms"] = weight * self.coarse_backbone_atom_weight * F.smooth_l1_loss(
-                    bb_pred_atoms, bb_true_atoms, beta=0.5
+                if self.use_coarse_backbone_atom_loss and self.coarse_backbone_atom_weight > 0:
+                    raw_terms[f"{name}_backbone_atoms"] = weight * self.coarse_backbone_atom_weight * F.smooth_l1_loss(
+                        bb_pred_atoms, bb_true_atoms, beta=0.5
+                    )
+                atom_terms = (
+                    ("c", 1, self.use_coarse_c_loss, self.coarse_c_weight),
+                    ("cb", 2, self.use_coarse_cb_loss, self.coarse_cb_weight),
+                    ("n", 3, self.use_coarse_n_loss, self.coarse_n_weight),
                 )
-                raw_terms[f"{name}_backbone_fape"] = weight * self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
-                    bb_true_atoms, bb_pred_atoms, bb_true_R, bb_pred_R, bb_true_coords, bb_coords, batch=bb_batch
-                )
-                if true_angles is not None and self.coarse_backbone_angle_weight > 0:
+                for atom_name, atom_index, enabled, atom_weight in atom_terms:
+                    if enabled and atom_weight > 0:
+                        raw_terms[f"{name}_{atom_name}"] = weight * atom_weight * F.smooth_l1_loss(
+                            bb_pred_atoms[:, atom_index], bb_true_atoms[:, atom_index], beta=0.5
+                        )
+                if self.use_coarse_backbone_fape_loss and self.coarse_backbone_fape_weight > 0:
+                    raw_terms[f"{name}_backbone_fape"] = weight * self.coarse_backbone_fape_weight * coarse_backbone_fape_loss(
+                        bb_true_atoms, bb_pred_atoms, bb_true_R, bb_pred_R, bb_true_coords, bb_coords, batch=bb_batch
+                    )
+                if self.use_coarse_backbone_angle_loss and true_angles is not None and self.coarse_backbone_angle_weight > 0:
                     pred_bb, pred_mask = coarse_backbone_dihedrals_from_ca_frames(
                         coords, pred_R, batch=batch_idx, n_coords=pred_atoms[:, 3], c_coords=pred_atoms[:, 1]
                     )
                     true_bb, true_mask = coarse_backbone_dihedrals_from_ca_frames(
                         true_coords, true_R, batch=batch_idx, n_coords=true_atoms[:, 3], c_coords=true_atoms[:, 1]
                     )
-                    mask = pred_mask & true_mask & valid
+                    mask = pred_mask & true_mask & valid.unsqueeze(-1)
                     if mask.any():
                         delta = base.wrap_to_pi_torch(pred_bb - true_bb)
                         raw_terms[f"{name}_backbone_angles"] = weight * self.coarse_backbone_angle_weight * F.smooth_l1_loss(
@@ -355,6 +416,12 @@ def main():
     parser.add_argument("--stage-quat-loss", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--stage-ca-loss", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--stage-fape-clamp", type=float, default=10.0)
+    parser.add_argument(
+        "--overfit-batches",
+        type=int,
+        default=0,
+        help="Number of fixed batches for an optimization sanity check; 0 disables it",
+    )
     staged_args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     args = base.parse_args()
@@ -369,7 +436,12 @@ def main():
     staged_cli_options = {
         token.split("=", 1)[0]
         for token in original_argv
-        if token.startswith("--staged-") or token in {"--stage-loss-weights", "--stage-angle-loss", "--no-stage-angle-loss"}
+        if token.startswith("--staged-") or token in {
+            "--stage-loss-weights",
+            "--stage-angle-loss",
+            "--no-stage-angle-loss",
+            "--overfit-batches",
+        }
     }
     for key, value in vars(staged_args).items():
         option = "--" + key.replace("_", "-")
@@ -454,6 +526,17 @@ def main():
     )
 
     accum_steps = max(1, math.ceil(args.target_effective_batch_size / max(1, args.batch_size)))
+    overfit_batches = 0.0
+    if args.overfit_batches > 0:
+        train_batch_count = len(data_module.train_dataloader())
+        val_batch_count = len(data_module.val_dataloader()) if data_module.val_dataset is not None else train_batch_count
+        # Lightning interprets overfit_batches as a fraction when it is below
+        # one, and applies that fraction to both loaders. Use the smaller
+        # loader so requesting one batch remains valid for validation too.
+        overfit_batches = min(
+            1.0,
+            args.overfit_batches / max(1, min(train_batch_count, val_batch_count)),
+        )
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_callback = base.pl.callbacks.ModelCheckpoint(
@@ -475,6 +558,7 @@ def main():
         accumulate_grad_batches=accum_steps,
         gradient_clip_val=args.clip_grad,
         gradient_clip_algorithm="norm",
+        overfit_batches=overfit_batches,
         log_every_n_steps=args.log_every_n_steps,
         limit_train_batches=args.limit_train_batches if args.limit_train_batches is not None else 1.0,
         limit_val_batches=args.limit_val_batches if args.limit_val_batches is not None else 1.0,
