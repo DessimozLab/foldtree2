@@ -208,6 +208,7 @@ class StagedTransformerRefiner(nn.Module):
 		self.max_refine_delta = float(max_refine_delta)
 		self.use_mhc = bool(use_mhc)
 		self.input_proj = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, hidden), nn.GELU())
+		self.aa_prob_proj = nn.Sequential(nn.LayerNorm(20), nn.Linear(20, hidden), nn.GELU())
 		self.type_embed = nn.Embedding(max(4, int(num_atom_types)), hidden)
 		self.coord_proj = nn.Sequential(nn.LayerNorm(3), nn.Linear(3, hidden), nn.GELU())
 		self.contact_proj = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, hidden), nn.GELU())
@@ -301,13 +302,24 @@ class StagedTransformerRefiner(nn.Module):
 			stream_state = self.mhc[stage_index].step(stream_state, h, residual=True)
 		return self.mhc[stage_index].readout(stream_state)
 
-	def forward(self, features, token_ids, seed_coords, contact, batch_idx):
+	def forward(self, features, token_ids, seed_coords, contact, batch_idx, aa_probs=None):
 		parameter = next(self.parameters())
 		features = torch.nan_to_num(features.to(dtype=parameter.dtype), nan=0.0, posinf=0.0, neginf=0.0)
 		seed_coords = torch.nan_to_num(seed_coords.to(dtype=parameter.dtype), nan=0.0, posinf=0.0, neginf=0.0).clamp(-32.0, 32.0)
 		token_ids = token_ids.long().clamp(0, self.type_embed.num_embeddings - 1)
 		type_h = self.type_embed(token_ids)
-		h_seq, mask, indices = self._pack(self.input_proj(features), batch_idx)
+		input_h = self.input_proj(features)
+		h_seq, mask, indices = self._pack(input_h, batch_idx)
+		aa_prob_proj = getattr(self, "aa_prob_proj", None)
+		if aa_probs is None or aa_prob_proj is None:
+			aa_prob_h = torch.zeros_like(input_h)
+		else:
+			aa_probs = aa_probs.to(device=features.device, dtype=parameter.dtype)
+			if aa_probs.ndim != 2 or aa_probs.shape != (features.shape[0], 20):
+				raise ValueError(f"Expected aa_probs with shape ({features.shape[0]}, 20), got {tuple(aa_probs.shape)}")
+			aa_probs = torch.nan_to_num(aa_probs, nan=0.0, posinf=0.0, neginf=0.0)
+			aa_prob_h = aa_prob_proj(aa_probs)
+		h_seq = h_seq + self._pack(aa_prob_h, batch_idx)[0]
 		h1_flat = self._unpack(self._run_stage(self.stage1, h_seq, mask, 0), indices, features.shape[0])
 		step1 = torch.tanh(self.step1(h1_flat)) * self.max_step
 		for idx in indices:

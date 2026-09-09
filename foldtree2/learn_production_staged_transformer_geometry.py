@@ -153,6 +153,11 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
         output = dict(output)
         output["se3_contact_z"] = contact_embedding
         output["seed_coords"] = seed.float() * self.production_coordinate_scale
+        aa_logits = output.get("aa", output.get("aa_pred", None))
+        if aa_logits is not None:
+            if aa_logits.ndim != 2 or aa_logits.shape[-1] != 20:
+                raise RuntimeError(f"Expected amino-acid decoder logits with shape [N,20], got {tuple(aa_logits.shape)}")
+            output["aa_probs"] = torch.softmax(aa_logits.float(), dim=-1)
         return output
 
     def _stage_frame_outputs(self, coords: torch.Tensor, batch_idx: Optional[torch.Tensor]):
@@ -295,7 +300,14 @@ class ProductionStagedTransformerModule(base.GeometryFocusedModule):
             contact_temp=getattr(self.transformer_geom_decoder, "contact_temp", None),
             contact_bias=getattr(self.transformer_geom_decoder, "contact_bias", None),
         )
-        stages = self.staged_refiner(features, ft2_token_ids, out["seed_coords"], contact, batch_idx)
+        stages = self.staged_refiner(
+            features,
+            ft2_token_ids,
+            out["seed_coords"],
+            contact,
+            batch_idx,
+            aa_probs=out.get("aa_probs"),
+        )
 
         raw_terms: Dict[str, torch.Tensor] = {}
         for i, stage_name in enumerate(("stage1", "stage2", "stage3")):
