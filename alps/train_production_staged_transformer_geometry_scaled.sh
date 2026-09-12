@@ -91,6 +91,14 @@ NUM_WORKERS=${NUM_WORKERS:-0}
 EPOCHS=${EPOCHS:-100}
 LEARNING_RATE=${LEARNING_RATE:-1e-5}
 
+# Lightning launches one process per allocated Slurm task.  A NeMo-Run
+# executor configured with ntasks-per-node=1 cannot launch DEVICES=4 here.
+if [[ -n "${SLURM_JOB_ID:-}" && "${SLURM_NTASKS_PER_NODE:-${DEVICES}}" != "${DEVICES}" ]]; then
+  log "ERROR: SLURM_NTASKS_PER_NODE=${SLURM_NTASKS_PER_NODE:-unset} does not match DEVICES=${DEVICES}"
+  log "Submit this script directly with sbatch, or allocate one Slurm task per GPU."
+  exit 2
+fi
+
 RUN_TAG="prod_staged_${MODEL_TAG}_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 mkdir -p "${CHECKPOINT_DIR}"
@@ -128,7 +136,7 @@ CMD=(
   --pretrained-encoder-path "${PRETRAINED_ENCODER}"
   --pretrained-encoder-full-path "${PRETRAINED_ENCODER}"
   --pretrained-geometry-decoder-path "${PRETRAINED_GEOMETRY_DECODER}"
-  --production-coordinate-source "${PRODUCTION_COORDINATE_SOURCE:-auto}"
+  --production-coordinate-source "${PRODUCTION_COORDINATE_SOURCE:-bottleneck}"
   --production-coordinate-scale "${PRODUCTION_COORDINATE_SCALE:-1.0}"
   --checkpoint-dir "${CHECKPOINT_DIR}"
   --save-top-k "${SAVE_TOP_K:--1}"
@@ -149,6 +157,9 @@ CMD=(
   --staged-max-refine-delta "${STAGED_MAX_REFINE_DELTA}"
   --stage-loss-weights "${STAGE_LOSS_WEIGHTS}"
   --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
+  --stage-angle-loss
+  --stage-quat-loss
+  --stage-ca-loss
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss

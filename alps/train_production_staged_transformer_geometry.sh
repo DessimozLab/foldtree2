@@ -83,6 +83,12 @@ STAGED_MAX_REFINE_DELTA=${STAGED_MAX_REFINE_DELTA:-2.0}
 STAGE_LOSS_WEIGHTS=${STAGE_LOSS_WEIGHTS:-0.25,0.5,1.0}
 FAPE_PAIR_SAMPLE_SIZE=${FAPE_PAIR_SAMPLE_SIZE:-1024}
 
+if [[ -n "${SLURM_JOB_ID:-}" && "${SLURM_NTASKS_PER_NODE:-${DEVICES}}" != "${DEVICES}" ]]; then
+  log "ERROR: SLURM_NTASKS_PER_NODE=${SLURM_NTASKS_PER_NODE:-unset} does not match DEVICES=${DEVICES}"
+  log "Submit this script directly with sbatch, or allocate one Slurm task per GPU."
+  exit 2
+fi
+
 RUN_TAG="prod_staged_${MODEL_TAG}_bs${BATCH_SIZE}_eff${TARGET_EFFECTIVE_BATCH_SIZE}"
 CHECKPOINT_DIR=${CHECKPOINT_DIR:-/capstor/store/cscs/swissai/a0117/chkpts/results/geometry/${RUN_TAG}}
 mkdir -p "${CHECKPOINT_DIR}"
@@ -142,6 +148,9 @@ CMD=(
   --staged-max-refine-delta "${STAGED_MAX_REFINE_DELTA}"
   --stage-loss-weights "${STAGE_LOSS_WEIGHTS}"
   --fape-pair-sample-size "${FAPE_PAIR_SAMPLE_SIZE}"
+  --stage-angle-loss
+  --stage-quat-loss
+  --stage-ca-loss
   --no-use-frame-fape-loss
   --no-use-quat-geodesic-loss
   --no-use-decoder-angle-loss
