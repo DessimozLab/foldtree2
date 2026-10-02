@@ -13,6 +13,7 @@ from foldtree2.src import encoder as ecdr
 from foldtree2.src import mono_decoders
 from foldtree2.src.pdbgraphmk2 import PDB2PyG
 from foldtree2.src.config_paths import resolve_aapropcsv_path
+from foldtree2.src.ancestral import run_ancestral, ancestral_states_to_fasta
 from torch_geometric.data import HeteroData
 
 import traceback
@@ -121,11 +122,13 @@ class treebuilder():
 			self.device = torch.device(kwargs['device'])
 		else:
 			self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-			self.encoder = self.encoder.to(self.device)
-			self.encoder.device = self.device
-			if self.decoder is not None:
-				self.decoder = self.decoder.to(self.device)
-				self.decoder.device = self.device
+		# Explicit devices must override device attributes serialized in models,
+		# just as automatic selection does (e.g. GPU-trained models on CPU).
+		self.encoder = self.encoder.to(self.device)
+		self.encoder.device = self.device
+		if self.decoder is not None:
+			self.decoder = self.decoder.to(self.device)
+			self.decoder.device = self.device
 		
 		self.encoder.eval()
 		if self.decoder is not None:
@@ -478,18 +481,19 @@ class treebuilder():
 	#ancestral reconstruction
 	#raxml-ng --ancestral --msa ali.fa --tree best.tre --model HKY --prefix ASR
 
-	def run_raxml_ng_ancestral_struct(self, fasta_file, tree_file, matrix_file, nsymbols, output_prefix):
+	def run_raxml_ng_ancestral_struct(self, fasta_file, tree_file, matrix_file, nsymbols, output_prefix, *, fitted_model=None):
 		"""Run RAxML-NG ancestral state reconstruction for encoded structural alignments."""
 		model = 'MULTI'+str(nsymbols)+'_GTR{'+matrix_file+'}+I'
 		if self.raxmlng_path == None:
 			self.raxmlng_path = 'raxml-ng'
 
-		raxml_cmd = self.raxmlng_path + ' --ancestral --msa '+fasta_file+' --tree '+tree_file+' --model '+model+' --prefix '+output_prefix + ' --force perf_threads'
-		if self.overwrite:
-			raxml_cmd += ' --redo'
-		self.log(raxml_cmd, level=2)
-		subprocess.run(raxml_cmd, shell=True)
-		return fasta_file.replace('raxml_aln.fasta' , 'raxml.ancestralStates')
+		def execute(command):
+			self.log(str(command), level=2)
+			subprocess.run(command, check=True)
+		outputs = run_ancestral(fasta_file, tree_file, fitted_model if fitted_model is not None else model,
+			output_prefix, executable=self.raxmlng_path, overwrite=self.overwrite,
+			freeze_fitted=fitted_model is not None, runner=execute)
+		return str(outputs['states'])
 
 	def madroot( self, treefile  , madroot_path = 'mad' ):
 		"""Root a tree with MAD and return the rooted tree file path."""
@@ -499,16 +503,7 @@ class treebuilder():
 	
 	def ancestral2fasta(self, ancestral_file , outfasta = None ):
 		"""Convert a RAxML ancestral states table into FASTA format."""
-		if outfasta is None:
-			outfasta = ancestral_file + '.fasta'
-		with open( outfasta , 'w') as g:        
-			with open( ancestral_file , 'r') as f:
-				for l in f:
-					words = l.split('	')
-					if len(words) == 2:
-						identifier, seq = words
-						g.write('>' + identifier + '\n' + seq + '\n')
-		return outfasta
+		return ancestral_states_to_fasta(ancestral_file, outfasta)
 
 	def ancestralfasta2df(self, outfasta ):
 		"""Load ancestral FASTA into a DataFrame and map symbols back to indices."""

@@ -137,18 +137,28 @@ def run_raxml_sitelh(
     raxml_path: str,
     threads: int,
 ) -> Path:
+    # RAxML-NG treats --evaluate and --sitelh as separate commands. Optimize
+    # model/branch lengths on the supplied topology before computing site LH.
+    evaluation_prefix = Path(f"{output_prefix}_evaluate")
+    evaluate = [raxml_path, "--force", "--redo", "--evaluate", "--msa", str(alignment_file),
+                "--model", model, "--tree", str(tree_file), "--threads", str(threads),
+                "--prefix", str(evaluation_prefix)]
+    result = subprocess.run(evaluate, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"RAxML evaluation failed\n{result.stdout}\n{result.stderr}")
     cmd = [
         raxml_path,
         "--force",
         "--redo",
-        "--evaluate",
         "--msa",
         str(alignment_file),
         "--model",
-        model,
+        f"{evaluation_prefix}.raxml.bestModel",
         "--tree",
-        str(tree_file),
+        f"{evaluation_prefix}.raxml.bestTree",
         "--sitelh",
+        "--opt-model", "off",
+        "--opt-branches", "off",
         "--threads",
         str(threads),
         "--prefix",
@@ -247,14 +257,13 @@ def analyze_alphabet_phylogenetic_info(
 ) -> pd.DataFrame:
     records = read_alignment_file(spec.alignment)
     aln_length = len(records[0].seq)
+    if len(site_likelihoods) != aln_length:
+        raise ValueError(f"Site-likelihood count {len(site_likelihoods)} differs from alignment length {aln_length}: {spec.alignment}")
     columns = ["".join(rec.seq[i] for rec in records) for i in range(aln_length)]
     bg_freqs = compute_global_background_frequencies(columns, valid_states, gap_char)
 
     rows: List[Dict[str, object]] = []
     for col_idx, col in enumerate(columns):
-        if col_idx >= len(site_likelihoods):
-            continue
-
         tip_stats = compute_column_tip_stats(col, valid_states, gap_char)
         if tip_stats["gap_fraction"] > gap_occ_max:
             continue

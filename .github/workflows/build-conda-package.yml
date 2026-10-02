@@ -41,7 +41,8 @@ jobs:
         shell: bash -el {0}
         run: |
           echo "Building conda package..."
-          conda build conda-recipe \
+          python scripts/stage_conda_source.py --destination "$RUNNER_TEMP/foldtree2-conda-source"
+          conda build "$RUNNER_TEMP/foldtree2-conda-source/conda-recipe" \
             --croot /tmp/cb \
             --prefix-length 80 \
             --no-test \

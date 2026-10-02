@@ -150,3 +150,7 @@ models/
 *.tar.gz
 *.rar
 *.7z
+
+# Canonical benchmark cohort and published 3Di model provenance.
+!configs/oma_benchmark_cohort.json
+!foldtree2/config/3diphy_submats/Q.3Di.AF.provenance.json

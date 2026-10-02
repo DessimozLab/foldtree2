@@ -11,6 +11,7 @@ on:
       - '.conda_build_ignore'
       - 'pyproject.toml'
       - 'setup.py'
+      - 'scripts/stage_conda_source.py'
       - '.github/workflows/test-conda-build.yml'
       - '.github/workflows/build-conda-package.yml'
 
@@ -24,6 +25,7 @@ on:
       - '.conda_build_ignore'
       - 'pyproject.toml'
       - 'setup.py'
+      - 'scripts/stage_conda_source.py'
       - '.github/workflows/test-conda-build.yml'
       - '.github/workflows/build-conda-package.yml'
 
@@ -59,7 +61,8 @@ jobs:
         shell: bash -el {0}
         run: |
           echo "Testing conda build..."
-          conda build conda-recipe \
+          python scripts/stage_conda_source.py --destination "$RUNNER_TEMP/foldtree2-conda-source"
+          conda build "$RUNNER_TEMP/foldtree2-conda-source/conda-recipe" \
             --croot /tmp/cb \
             --prefix-length 80 \
             --no-test
@@ -155,8 +158,8 @@ jobs:
             exit 1
           fi
 
-          if ! find . -path "*/share/foldtree2/models/production*" | grep -q .; then
-            echo "❌ ERROR: Missing models/production directory"
+          if find . -type f -path "*/models/*" | grep -q .; then
+            echo "❌ ERROR: Model bundles must not be included in the code package"
             exit 1
           fi
           

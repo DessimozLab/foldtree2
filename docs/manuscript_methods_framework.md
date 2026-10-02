@@ -20,11 +20,11 @@ The production FoldTree2 workflow follows:
 5. Maximum-likelihood tree inference under a custom MULTI-state model.
 6. Optional tree rooting and ancestral reconstruction.
 
-Implemented in the treebuilder workflow in [foldtree2/ft2treebuilder.py](foldtree2/ft2treebuilder.py).
+Implemented in the treebuilder workflow in [foldtree2/ft2treebuilder.py](../foldtree2/ft2treebuilder.py).
 
 ## 3. Structural Data Representation
 ### 3.1 Graph construction
-Protein structures are transformed into graph objects using PDB2PyG in [foldtree2/src/pdbgraph.py](foldtree2/src/pdbgraph.py). Residues are represented as nodes; edge sets include at least backbone connectivity and contact relations, with additional geometric and secondary-structure-derived information depending on preprocessing mode.
+Protein structures are transformed into graph objects using PDB2PyG in [foldtree2/src/pdbgraph.py](../foldtree2/src/pdbgraph.py). Residues are represented as nodes; edge sets include at least backbone connectivity and contact relations, with additional geometric and secondary-structure-derived information depending on preprocessing mode.
 
 The representation includes:
 - residue-level physicochemical descriptors from aaindex-style features,
@@ -35,11 +35,11 @@ The representation includes:
 This representation was selected to preserve both local stereochemistry and nonlocal fold constraints relevant for evolutionary comparison (#REF_PROTEIN_GRAPH_LEARNING).
 
 ### 3.2 Coordinate-frame consistency
-Internal conversion workflows explicitly track transformations between coordinate-space, local frames, and quaternion/RT parameterizations (see [docs/representation_conversion_guide.md](docs/representation_conversion_guide.md)). This supports geometric consistency checks and robustness tests under controlled perturbations (#REF_FAPE, #REF_LDDT).
+Internal conversion workflows explicitly track transformations between coordinate-space, local frames, and quaternion/RT parameterizations (see [docs/representation_conversion_guide.md](representation_conversion_guide.md)). This supports geometric consistency checks and robustness tests under controlled perturbations (#REF_FAPE, #REF_LDDT).
 
 ## 4. Neural Encoder and Discrete Structural Alphabet
 ### 4.1 Encoder architecture
-The default encoder (mk1_Encoder) is implemented in [foldtree2/src/encoder.py](foldtree2/src/encoder.py). It is organized into:
+The default encoder (mk1_Encoder) is implemented in [foldtree2/src/encoder.py](../foldtree2/src/encoder.py). It is organized into:
 - input module (feature normalization, projection),
 - body module (graph message passing; SAGE/GAT/Transformer options),
 - head module (projection to latent space and quantization interface).
@@ -47,7 +47,7 @@ The default encoder (mk1_Encoder) is implemented in [foldtree2/src/encoder.py](f
 This split is intentional to support optimizer partitioning and ablation of message-passing variants.
 
 ### 4.2 Vector quantization and codebook dynamics
-FoldTree2 uses vector quantization to map latent residue embeddings to discrete tokens, enabling downstream alignment and likelihood modeling in a finite alphabet. The EMA quantizer implementation is in [foldtree2/src/quantizers.py](foldtree2/src/quantizers.py).
+FoldTree2 uses vector quantization to map latent residue embeddings to discrete tokens, enabling downstream alignment and likelihood modeling in a finite alphabet. The EMA quantizer implementation is in [foldtree2/src/quantizers.py](../foldtree2/src/quantizers.py).
 
 Key design choices include:
 - configurable codebook size (num_embeddings) as a controllable phylogenetic granularity parameter,
@@ -63,13 +63,13 @@ Training uses a multi-head decoder stack (notably MultiMonoDecoder) to supervise
 - optional secondary-structure and angular terms,
 - optional edge/contact-related objectives.
 
-Implementation details are in [foldtree2/src/mono_decoders.py](foldtree2/src/mono_decoders.py) and training orchestration in [foldtree2/learn_lightning.py](foldtree2/learn_lightning.py).
+Implementation details are in [foldtree2/src/mono_decoders.py](../foldtree2/src/mono_decoders.py) and training orchestration in [foldtree2/learn_lightning.py](../foldtree2/learn_lightning.py).
 
 Multi-task supervision was used as an inductive bias to avoid a token space that only reconstructs one narrow signal, thereby encouraging biologically meaningful latent partitions (#REF_MULTITASK_LEARNING).
 
 ## 6. Model Training Protocol
 ### 6.1 Training framework
-The recommended trainer uses PyTorch Lightning in [foldtree2/learn_lightning.py](foldtree2/learn_lightning.py), with support for:
+The recommended trainer uses PyTorch Lightning in [foldtree2/learn_lightning.py](../foldtree2/learn_lightning.py), with support for:
 - single- and multi-GPU training,
 - distributed strategies (including DDP/FSDP/DeepSpeed options),
 - mixed precision,
@@ -84,10 +84,10 @@ Training scripts expose:
 - deterministic CuDNN toggles,
 - serialized config files for reproducible reruns.
 
-Representative benchmark-ready hyperparameter sweeps are organized in [benchmark_configs/config_30_embeddings.yaml](benchmark_configs/config_30_embeddings.yaml) and sibling config files for multiple alphabet sizes.
+Representative benchmark-ready hyperparameter sweeps are organized in [benchmark_configs/config_30_embeddings.yaml](../benchmark_configs/config_30_embeddings.yaml) and sibling config files for multiple alphabet sizes.
 
 ## 7. Structural Substitution Matrix Estimation
-Custom structure-derived substitution matrices are generated with [foldtree2/makesubmat.py](foldtree2/makesubmat.py).
+Custom structure-derived substitution matrices are generated with [foldtree2/makesubmat.py](../foldtree2/makesubmat.py).
 
 The workflow includes:
 1. selecting/downloading representative structures from AFDB cluster resources,
@@ -96,10 +96,16 @@ The workflow includes:
 4. counting token substitutions,
 5. exporting MAFFT-compatible and RAxML-compatible matrices.
 
+The current preparation workflow counts every repeated pair in headerless
+reference records and checks sustained log-odds convergence before promoting
+matrices. See the [training guide](training.md) for the numerical criteria and
+the [maintenance checklist](documentation_maintenance.md) when adding results.
+Older matrix/result generations must remain identifiable by checksums and protocol.
+
 This stage was designed to ensure scoring functions in alignment and likelihood inference are matched to the learned alphabet rather than borrowed from amino-acid substitution assumptions (#REF_FOLDSEEK, #REF_CUSTOM_SUBSTITUTION_MATRICES).
 
 ## 8. Tree Inference from Structural Tokens
-The treebuilder routine in [foldtree2/ft2treebuilder.py](foldtree2/ft2treebuilder.py) performs:
+The treebuilder routine in [foldtree2/ft2treebuilder.py](../foldtree2/ft2treebuilder.py) performs:
 - structure encoding to token sequences,
 - symbol remapping for MAFFT/RAxML-safe alphabets,
 - MAFFT text-mode alignment under the custom matrix,
@@ -117,10 +123,16 @@ This provides a direct sequence-based comparator under widely used phylogenomic 
 
 ## 10. Benchmark Programs Implemented in the Repository
 ### 10.1 Information-theoretic benchmarking notebook
-The notebook [foldtree2/notebooks/benchmarks/treelikelihood_info_theory_benchmark.ipynb](foldtree2/notebooks/benchmarks/treelikelihood_info_theory_benchmark.ipynb) compares amino-acid and FoldTree2 structural-character pipelines at family level, including site-likelihood extraction and cross-representation analyses.
+The notebook [foldtree2/notebooks/benchmarks/treelikelihood_info_theory_benchmark.ipynb](../foldtree2/notebooks/benchmarks/treelikelihood_info_theory_benchmark.ipynb) compares amino-acid and FoldTree2 structural-character pipelines at family level, including site-likelihood extraction and cross-representation analyses.
+
+The current standalone [experiment scripts](experiments.md) provide reusable
+discrete-alphabet descriptions and per-family fixed-AA-topology gain. They do
+not reproduce the complete species-supermatrix/ASTRAL notebook workflow.
+Independently aligned representations require explicit site correspondence
+before any cross-alphabet column MI is interpreted.
 
 ### 10.2 Scripted phylogenetic information gain analysis
-The command-line benchmark script [scripts/phylogenetic_information_gain.py](scripts/phylogenetic_information_gain.py) computes, per alignment column:
+The command-line benchmark script [scripts/phylogenetic_information_gain.py](../scripts/phylogenetic_information_gain.py) computes, per alignment column:
 - tree-based site log-likelihood,
 - IID baseline log-likelihood from global state frequencies,
 - phylogenetic information gain:
@@ -132,7 +144,7 @@ The command-line benchmark script [scripts/phylogenetic_information_gain.py](scr
 This benchmark was chosen to separate pure compositional effects from topology-aware phylogenetic signal (#REF_INFORMATION_THEORY_PHYLOGENY, #REF_MUTUAL_INFORMATION).
 
 ### 10.3 Alphabet-size scaling benchmarks
-Config sweeps in [benchmark_configs/config_30_embeddings.yaml](benchmark_configs/config_30_embeddings.yaml) and related files (10 to 40 embeddings) evaluate how discrete alphabet cardinality affects model fit and downstream tree-inference performance.
+Config sweeps in [benchmark_configs/config_30_embeddings.yaml](../benchmark_configs/config_30_embeddings.yaml) and related files (10 to 40 embeddings) evaluate how discrete alphabet cardinality affects model fit and downstream tree-inference performance.
 
 ## 11. Practical Design Choices and Their Rationale
 ### 11.1 Why discretize structure?

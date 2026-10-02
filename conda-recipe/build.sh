@@ -46,8 +46,4 @@ if [ -d "foldtree2/config" ]; then
     cp -r foldtree2/config $PREFIX/share/foldtree2/
 fi
 
-# Always create production models directory; copy files when present.
-mkdir -p "$PREFIX/share/foldtree2/models/production"
-if [ -d "models/production" ]; then
-    cp -r models/production/. "$PREFIX/share/foldtree2/models/production/"
-fi
+# Model bundles are distributed separately; staging never includes them.

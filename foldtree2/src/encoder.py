@@ -65,6 +65,29 @@ def _foldcomp_chunk_producer_process(
 
 # Note: datadir is defined but may not be used throughout the module
 datadir = '../../datasets/foldtree2/'
+
+RESIDUE_TRACK_ORDER = ('contact_number', 'local_contacts', 'global_contacts',
+	'range_bin', 'burial_bin', 'bend_bin', 'torsion_bin', 'wcn')
+
+
+def residue_features_for_encoder(data, expected_width):
+	"""Add the named tracks used by 865-feature training graphs when needed.
+
+	Legacy graphs/checkpoints use 857 features. The newer HDF5 schema appends
+	these eight scalar tracks, in this order; live PDB graphs store them as nodes.
+	"""
+	features = data['res'].x
+	if features.shape[1] == expected_width:
+		return features
+	if features.shape[1] == 857 and expected_width == 865:
+		tracks = []
+		for name in RESIDUE_TRACK_ORDER:
+			if name not in data.node_types or data[name].x.shape != (features.shape[0], 1):
+				raise ValueError(f'Missing scalar residue track {name} for the 865-feature encoder')
+			tracks.append(data[name].x.to(device=features.device, dtype=features.dtype))
+		return torch.cat([features, *tracks], dim=1)
+	raise ValueError(f'Graph has {features.shape[1]} residue features; encoder expects {expected_width}')
+
 #encoder super class
 
 class mk1_Encoder(torch.nn.Module):
@@ -292,6 +315,7 @@ class mk1_Encoder(torch.nn.Module):
 	
 	def forward(self, data, edge_attr_dict=None, **kwargs):
 		x_dict, edge_index_dict, edge_attr_dict = data.x_dict, data.edge_index_dict, data.edge_attr_dict
+		x_dict['res'] = residue_features_for_encoder(data, self.in_channels)
 		
 		# ===================== INPUT PROCESSING =====================
 		# Ensure input is contiguous and has the correct dtype for LayerNorm
@@ -996,5 +1020,3 @@ def load_encoded_fasta(filename, alphabet=None, replace=None):
 	#hex starts at 1
 	encoded_df['hex2'] = encoded_df.ord.map( lambda x: [ hex(c) for c in x] )
 	return encoded_df
-
-	

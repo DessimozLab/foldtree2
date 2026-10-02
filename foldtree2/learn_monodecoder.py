@@ -11,6 +11,7 @@ import torch
 from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
+from foldtree2.src.training_protocol import held_out_split
 from foldtree2.src import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, recon_loss_diag_with_regs, aa_reconstruction_loss, angles_reconstruction_loss, ss_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss, quaternion_geodesic_loss, quaternion_angle_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
@@ -74,13 +75,13 @@ def build_notebook_mono_configs(args, converter, hidden_dims, ndim_godnode, ndim
 			'aa_decoder_dropout': args.aa_decoder_dropout,
 			'amino_mapper': converter.aaindex,
 			'nheads': 10,
-			'dropout': 0.05,
+			'dropout': args.sequence_dropout,
 			'normalize': False,
 			'residual': False,
 			'use_cnn_decoder': args.sequence_use_cnn_decoder,
 			'output_ss': args.sequence_output_ss,
 			'learn_positions': True,
-			'use_xsatransformer': True,
+			'use_xsatransformer': args.sequence_use_xsatransformer,
 			'use_mhc': False,
 			'mhc_streams': 4,
 			'mhc_sinkhorn_iters': 5,
@@ -112,7 +113,7 @@ def build_notebook_mono_configs(args, converter, hidden_dims, ndim_godnode, ndim
 	mono_configs['geometry_cnn'] = {
 			'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 			'concat_positions': False,
-			'conv_channels': [geometry_cnn_hidden_size, max(1, geometry_cnn_hidden_size // 2), max(1, geometry_cnn_hidden_size // 3), 3],
+			'conv_channels': args.geometry_cnn_conv_channels or [geometry_cnn_hidden_size, max(1, geometry_cnn_hidden_size // 2), max(1, geometry_cnn_hidden_size // 3), 3],
 			'kernel_sizes': [3, 3, 3, 3],
 			'Xdecoder_hidden': [geometry_cnn_hidden_size, geometry_cnn_hidden_size],
 			'metadata': converter.metadata,
@@ -234,6 +235,10 @@ parser.add_argument('--device', type=str, default=None,
 					help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
 parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
 					help='Learning rate (default: 1e-4)')
+parser.add_argument('--adamw-weight-decay', type=float, default=1e-6,
+					help='AdamW weight decay; notebook production recipe uses 0.01')
+parser.add_argument('--num-workers', type=int, default=4,
+					help='Training HDF5 data loader workers (default: 4)')
 parser.add_argument('--batch-size', '-bs', type=int, default=10,
 					help='Batch size (default: 10)')
 parser.add_argument('--max-residues', type=int, default=None,
@@ -264,6 +269,10 @@ parser.add_argument('--sequence-use-cnn-decoder', action=argparse.BooleanOptiona
 					help='Use the CNN AA head inside sequence_transformer, matching the notebook (default: True)')
 parser.add_argument('--sequence-output-ss', action=argparse.BooleanOptionalAction, default=False,
 					help='Allow sequence_transformer to emit secondary structure predictions (default: False)')
+parser.add_argument('--sequence-use-xsatransformer', action=argparse.BooleanOptionalAction, default=True,
+					help='Use XSA attention in the sequence decoder')
+parser.add_argument('--sequence-dropout', type=float, default=0.05)
+parser.add_argument('--geometry-cnn-conv-channels', type=int, nargs='+', default=None)
 parser.add_argument('--geometry-output-rt', action=argparse.BooleanOptionalAction, default=None,
 					help='Allow geometry_transformer to emit rotation/translation outputs (default: follows --output-rt)')
 parser.add_argument('--geometry-output-ss', action=argparse.BooleanOptionalAction, default=True,
@@ -295,6 +304,8 @@ parser.add_argument('--run-name', type=str, default=None,
 					help='Name for this training run (default: auto-generated from timestamp)')
 parser.add_argument('--metrics-output', type=str, default=None,
 					help='Optional path to write final training/validation metrics as JSON (default: None)')
+parser.add_argument('--preflight-only', action='store_true',
+					help='Check one stored graph and model forward pass without training or saving checkpoints')
 parser.add_argument('--final-val-samples', type=int, default=0,
 					help='If > 0, export final metrics using quick validation on this many samples; 0 uses full validation loader (default: 0)')
 parser.add_argument('--save-config', type=str, default=None,
@@ -308,6 +319,8 @@ parser.add_argument('--lr-schedule', type=str, default='plateau',
 					help='Learning rate schedule (default: plateau)')
 parser.add_argument('--lr-min', type=float, default=1e-6,
 					help='Minimum learning rate for cosine/linear schedules (default: 1e-6)')
+parser.add_argument('--plateau-monitor', choices=['validation_loss', 'training_aa_sum'], default='validation_loss',
+					help='Plateau scheduler metric; notebook monitors summed training AA loss')
 parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, default=2,
 					help='Number of gradient accumulation steps (default: 2)')
 parser.add_argument('--num-cycles', type=int, default=3,
@@ -812,11 +825,9 @@ if args.max_residues is not None:
 	print(f"Kept {len(keep_indices)} / {len(struct_dat)} structures after max_residues filter")
 	struct_dat = torch.utils.data.Subset(struct_dat, keep_indices)
 
-# Create train/validation split
-torch.manual_seed(args.val_seed)
-val_size = int(len(struct_dat) * args.val_split)
-train_size = len(struct_dat) - val_size
-train_dataset, val_dataset = torch.utils.data.random_split(struct_dat, [train_size, val_size])
+# Match the notebook split without changing the model initialization RNG seed.
+train_dataset, val_dataset = held_out_split(struct_dat, args.val_split, args.val_seed)
+train_size, val_size = len(train_dataset), len(val_dataset)
 
 print(f"Dataset split: {train_size} training samples, {val_size} validation samples")
 
@@ -824,8 +835,9 @@ print(f"Dataset split: {train_size} training samples, {val_size} validation samp
 # Only enable pin_memory when the training device is cuda:0 (or unspecified cuda).
 _dev = (args.device or '').strip()
 _pin_memory = _dev in ('', 'cuda', 'cuda:0')
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=_pin_memory)
-val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=_pin_memory)
+train_loader = DataLoader(train_dataset, batch_size=1 if args.preflight_only else args.batch_size,
+	shuffle=True, num_workers=0 if args.preflight_only else args.num_workers, pin_memory=_pin_memory)
+val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=_pin_memory)
 data_sample = next(iter(train_loader))
 
 # Set device
@@ -846,6 +858,15 @@ ndim_fft2r = get_node_feature_dim(data_sample, 'fourier2dr')
 modeldir = args.output_dir
 os.makedirs(modeldir, exist_ok=True)
 modelname = args.model_name
+
+if not args.preflight_only:
+	# Keep an auditable record of the exact approved split and resolved defaults.
+	with open(os.path.join(modeldir, modelname + '_resolved_config.json'), 'w') as stream:
+		json.dump(vars(args), stream, indent=2, sort_keys=True)
+	with open(os.path.join(modeldir, modelname + '_split.json'), 'w') as stream:
+		json.dump({'dataset': os.path.realpath(args.dataset), 'seed': args.val_seed,
+			'fraction': args.val_split, 'protocol': 'notebook_permutation_prefix_rounded_v1',
+			'training_indices': train_dataset.indices, 'validation_indices': val_dataset.indices}, stream)
 
 # Setup TensorBoard
 if args.run_name:
@@ -1068,9 +1089,9 @@ else:
 			{'params': params, 'lr': args.learning_rate},
 			{'params': uncertainy_weighting.parameters(), 'lr': args.learning_rate * 0.1}
 		]
-		optimizer = torch.optim.AdamW(param_groups, weight_decay=0.000001)
+		optimizer = torch.optim.AdamW(param_groups, weight_decay=args.adamw_weight_decay)
 	else:
-		optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=0.000001)
+		optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=args.adamw_weight_decay)
 
 # Define scheduler function with process group initialization
 def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_steps, **kwargs):
@@ -1148,6 +1169,23 @@ if args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial']:
 	print(f"  Min learning rate: {args.lr_min}")
 
 # Function to analyze gradient norms
+if args.preflight_only:
+	encoder.eval()
+	decoder.eval()
+	probe = data_sample.to(device)
+	with torch.no_grad():
+		amp_dtype = torch.bfloat16 if device.type == 'cuda' and torch.cuda.is_bf16_supported() else torch.float16
+		with autocast(enabled=args.mixed_precision and device.type == 'cuda', dtype=amp_dtype):
+			z, _ = encoder(probe)
+			probe['res'].x = z
+			out = decoder(probe, None)
+		if not torch.isfinite(z).all() or not torch.isfinite(out['aa']).all():
+			raise ValueError('Nonfinite model outputs in HDF5 preflight')
+	print(f'PREFLIGHT PASSED: dataset={args.dataset}, input_dim={ndim}, alphabet={args.num_embeddings}, '
+		f'train={train_size}, validation={val_size}, device={device}, AA_shape={tuple(out["aa"].shape)}')
+	writer.close()
+	sys.exit(0)
+
 def analyze_gradient_norms(model, top_k=3):
 	"""
 	Analyzes gradients in the given model and returns the top_k layers with
@@ -1662,11 +1700,6 @@ for epoch in range(args.epochs):
 	total_quat_angle_loss = 0
 	
 	for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
-		# Periodically clear CUDA cache to avoid OOM errors
-		if torch.cuda.is_available() and batch_idx % 10 == 0 and batch_idx > 0:
-			import gc
-			torch.cuda.empty_cache()
-			gc.collect()
 		data = data.to(device)
 
 		# Skip unstable batches early if any input node features contain NaN/Inf.
@@ -2044,8 +2077,6 @@ for epoch in range(args.epochs):
 			if scheduler is not None and scheduler_step_mode == 'step':
 				scheduler.step()
 			
-			torch.cuda.empty_cache()  # Clear cache after each update to reduce fragmentation
-			gc.collect()  # Run garbage collection to free memory
 			global_step += 1
 
 		
@@ -2114,7 +2145,8 @@ for epoch in range(args.epochs):
 	# Update learning rate scheduler (for epoch-based schedulers)
 	if scheduler is not None and scheduler_step_mode == 'epoch':
 		if args.lr_schedule == 'plateau':
-			scheduler.step(val_metrics['val/loss'])  # Use validation loss for plateau scheduler
+			metric = total_loss_x if args.plateau_monitor == 'training_aa_sum' else val_metrics['val/loss']
+			scheduler.step(metric)
 		else:
 			scheduler.step()
 	
@@ -2294,6 +2326,9 @@ torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pt"))
 writer.add_hparams(hparams_dict, metrics_dict)
 
 if args.metrics_output:
+	# Production exports use the selected best pair, so report its held-out metrics.
+	encoder = torch.load(os.path.join(modeldir, modelname + '_best_encoder.pt'), map_location=device, weights_only=False)
+	decoder = torch.load(os.path.join(modeldir, modelname + '_best_decoder.pt'), map_location=device, weights_only=False)
 	if args.final_val_samples and args.final_val_samples > 0:
 		final_metrics = quick_validate(
 			encoder,
@@ -2307,6 +2342,7 @@ if args.metrics_output:
 		final_metrics = validate(encoder, decoder, val_loader, device, args)
 
 	metrics_payload = {
+		'checkpoint': modelname + '_best_encoder.pt',
 		'train': {
 			'aa_loss': float(avg_loss_x),
 			'edge_loss': float(avg_loss_edge),
@@ -2324,6 +2360,11 @@ if args.metrics_output:
 			'dataset': args.dataset,
 			'epochs': int(args.epochs),
 			'batch_size': int(args.batch_size),
+			'adamw_weight_decay': float(args.adamw_weight_decay),
+			'plateau_monitor': args.plateau_monitor,
+			'split_protocol': 'notebook_permutation_prefix_rounded_v1',
+			'val_seed': args.val_seed,
+			'val_split': args.val_split,
 			'edgeweight': float(edgeweight),
 			'logitweight': float(logitweight),
 			'xweight': float(xweight),

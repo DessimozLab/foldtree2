@@ -16,7 +16,7 @@ name = "foldtree2"
 version = "0.1.0"
 description = "Maximum likelihood phylogenetic tree inference from protein structures."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = { file = "LICENSE.txt" }
 authors = [
   { name = "Dave Moi", email = "dmoi@unil.ch" }
@@ -40,6 +40,8 @@ dependencies = [
   "networkx",
   "einops",
   "pytorch-lightning",
+  "tensorboard",
+  "colour",
   "torch-geometric",
   "biopython",
   "datasketch",

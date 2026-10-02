@@ -1,0 +1,50 @@
+{
+  "best_val_loss": 11.251873448491096,
+  "checkpoint": "production_10char_best_encoder.pt",
+  "config": {
+    "aa_decoder_hidden_size": 100,
+    "adamw_weight_decay": 0.01,
+    "batch_size": 8,
+    "dataset": "/mnt/data2/datasets/ft2_train_final.h5",
+    "edgeweight": 0.1,
+    "encoder_hidden_size": 100,
+    "epochs": 100,
+    "geometry_cnn_hidden_size": 100,
+    "hidden_size": 100,
+    "logitweight": 0.1,
+    "model_name": "production_10char",
+    "plateau_monitor": "training_aa_sum",
+    "sequence_hidden_size": 100,
+    "split_protocol": "notebook_permutation_prefix_rounded_v1",
+    "val_seed": 7,
+    "val_split": 0.1,
+    "vqweight": 0.15,
+    "xweight": 0.1
+  },
+  "train": {
+    "aa_loss": 1.3023158390437608,
+    "angles_loss": 0.0,
+    "edge_loss": 1.3369327837387017,
+    "fft2_loss": 0.0,
+    "logit_loss": 8.493652521825469,
+    "ss_loss": 0.0,
+    "total_loss": 11.333662267794123,
+    "vq_loss": 0.20076112318619163
+  },
+  "validation": {
+    "aa_accuracy": 0.6156437250955679,
+    "aa_loss": 1.3079567125865392,
+    "angles_loss": 0.0,
+    "delta_loss": 0.0,
+    "edge_loss": 1.2959336412535987,
+    "fape_loss": 0.0,
+    "fft2_loss": 0.0,
+    "lddt_loss": 0.0,
+    "logit_loss": NaN,
+    "loss": NaN,
+    "quat_angle_loss": 0.0,
+    "quat_geo_loss": 0.0,
+    "ss_loss": 0.0,
+    "vq_loss": 0.2141986746450394
+  }
+}

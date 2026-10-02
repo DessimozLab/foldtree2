@@ -2,200 +2,72 @@
   <img src="logo.png" alt="FoldTree2 Logo" width="300"/>
 </p>
 
-# FoldTree2: Maximum Likelihood Phylogenetic Tree Inference from Protein Structures
+# FoldTree2
 
-FoldTree2 is a Python package and toolkit for inferring phylogenetic trees from protein structures using maximum likelihood methods. It provides tools for converting protein structure files (PDBs) into graph representations, deriving structural alignments, and building phylogenetic trees based on structural data.
+Infer maximum-likelihood phylogenetic trees from protein structures. FoldTree2
+encodes structures into a learned discrete alphabet, aligns the tokens with
+MAFFT, and estimates a tree with RAxML-NG using model-specific matrices.
 
-## TLDR
-Quick setup and run (from the repository root):
+## Install
+
+From a checkout of this repository, start with a CPU environment:
 
 ```bash
-conda env create --name foldtree2 --file=foldtree2.yml
-conda activate foldtree2
-pip install .
+conda create -n foldtree2-cpu -c conda-forge -c bioconda python=3.10 pip mafft
+conda activate foldtree2-cpu
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install .
+foldtree2 --help
 ```
 
-Then run a set of PDB structures with the production model using explicit encoder/decoder checkpoints:
+See the [installation guide](docs/installation.md) for validation status, CUDA,
+executable checks, and troubleshooting. Models and benchmark datasets are not
+installed by pip. Bundled native tools have been used on Linux; other platforms
+are not validated here. A Linux C++ runtime workaround was needed in the fresh
+installation check; see the guide if `foldtree2 --help` raises an ABI import error.
+
+## Build a tree with a local model bundle
+
+Obtain a trusted, matching bundle following the [user guide](docs/user_guide.md).
+The existing 30-character bundle is an example, not a claim that 30 is optimal.
+Use at least four usable PDB files, unique filename stems, and a new output folder.
 
 ```bash
 foldtree2 \
   --encoder models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt \
   --decoder models/production/30char_minimal_decoder/final_30char_contacts_aa_decoder_full_epoch_52.pt \
+  --mafftmat models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52_mafftmat.mtx \
+  --submat models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52_submat.txt \
+  --charmaps models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52_pair_counts.pkl \
   --structures "/path/to/structures/*.pdb" \
-  --outdir results/
+  --device cpu --ncores 4 --outdir results/new_run
 ```
 
-## Features
-- **PDB to Graph Conversion:** Convert protein structures into graph-based representations suitable for machine learning and phylogenetic analysis.
-- **Custom Substitution Matrices:** Generate and use structure-based substitution matrices for alignments.
-- **Maximum Likelihood Tree Inference:** Build phylogenetic trees from structural alignments using maximum likelihood approaches.
-- **Flexible Pipeline:** Modular scripts for each step: graph creation, encoding, alignment, and tree inference.
+The final inferred tree is `results/new_run/*_.raxml.bestTree` in Newick format.
+It is unrooted and does not automatically contain bootstrap support. See the
+[user guide](docs/user_guide.md) for input handling, outputs, optional rooting
+and reconstruction, and rerun limitations.
 
-## Installation
+## Documentation
 
-### Using pip and conda
+- [Installation and troubleshooting](docs/installation.md)
+- [Model bundles, inputs, tree inference, and outputs](docs/user_guide.md)
+- [Custom training and matrix building](docs/training.md)
+- [Running information and phylogenetic-gain experiments](docs/experiments.md)
+- [Production preparation and developer release checklist](docs/production_alphabet_readiness.md)
+- [Updating documentation as experiments are added or completed](docs/documentation_maintenance.md)
+- [Representation conversion details](docs/representation_conversion_guide.md)
+- [Staged geometry training](docs/staged_geometry_training.md)
+- [Manuscript methods framework](docs/manuscript_methods_framework.md)
 
-First create the environment 
+## Command-line tools
 
-```bash
-conda env create --name foldtree2 --file=foldtree2.yml
-conda activate foldtree2
-```
-and then install the project with pip
+`foldtree2` and `ft2treebuilder` are aliases for tree inference. `pdbs-to-graphs`
+creates training datasets; `makesubmat` estimates matrices. `hex2maffttext` and
+`maffttext2hex` convert token representations. `raxml-ng` and `mad` wrap bundled
+native tools; MAFFT itself must be installed separately. Most Python CLIs have
+`--help`; native/conversion tools have their own usage conventions.
 
-```bash
-pip install .
-```
-This will install all required dependencies as specified in `pyproject.toml` and `setup.py`.
+## License and contact
 
-
-## Command Line Tools
-
-FoldTree2 provides several command-line tools that are automatically installed and available system-wide:
-
-- **`foldtree2`** / **`ft2treebuilder`**: Main phylogenetic tree inference pipeline
-- **`pdbs-to-graphs`**: Convert PDB files to graph representations
-- **`makesubmat`**: Generate structure-based substitution matrices
-- **`raxml-ng`**: Maximum likelihood phylogenetic inference (bundled RAxML-NG)
-- **`mad`**: Minimal Ancestor Deviation tree rooting
-- **`hex2maffttext`** / **`maffttext2hex`**: MAFFT format conversion utilities
-
-All tools include help documentation accessible with the `--help` flag.
-
-## Quick Start: Using Pretrained Models
-
-For most users, FoldTree2 provides pretrained models that can be used directly to infer phylogenetic trees from protein structures.
-
-### Basic Workflow
-Build phylogenetic trees from a folder of PDB structures using pretrained models:
-
-```bash
-ft2treebuilder \
-  --encoder <PATH_TO_ENCODER.pt> \
-  --decoder <PATH_TO_DECODER.pt> \
-  --structures <YOURSTRUCTUREFOLDER> \
-  --outdir <RESULTSFOLDER>
-```
-
-This single command will:
-1. Convert PDB files to graph representations
-2. Use the trained encoder to extract discrete structural characters and the decoder for sequence/geometry reconstruction
-3. Create structural alignments
-4. Infer a maximum likelihood phylogenetic tree
-
-### Available Pretrained Models
-Models are stored in the `models/` directory. Examples include:
-- `30char_minimal_decoder/`: Production model with a 30-character structural alphabet
-- Additional models may be available in the `models/` directory
-
-Each model directory contains separate `*.pt` checkpoints for the encoder and decoder, which you pass with `--encoder` and `--decoder` respectively.
-
-### Output Files
-The pipeline generates several output files in your results directory:
-- **Phylogenetic tree**: `.tre` files in Newick format
-- **Alignments**: `.aln` files showing structural alignments
-- **Log files**: Detailed information about the inference process
-
-## Advanced Usage: Training Custom Models
-
-For advanced users who want to train their own models or work with specialized datasets, FoldTree2 provides a complete training pipeline. Foldtree2 production models are trained on a large, diverse set of protein structures from the AFDB cluster database, but you can train your own models on custom datasets.
-
-Why do this instead of using a pretrained model?
-- **Emphasize domain-specific structure signals**: If your proteins are enriched for particular folds, repeats, interfaces, or conformational regimes, a custom encoder can better capture those patterns than a general model.
-- **Control how structures are compressed into discrete characters**: FoldTree2 encodes structure graphs into a discrete alphabet, and this bottleneck determines what information is preserved in downstream alignments/tree inference.
-- **Tune phylogenetic granularity with alphabet size**: Smaller alphabets (fewer embeddings) tend to merge subtle differences and can be more robust/noise-tolerant; larger alphabets preserve finer structural distinctions and can improve resolution for closely related clades.
-- **Adapt to your data quality and objectives**: You can tune model capacity and training settings to prioritize broad family-level separation or fine-grained subfamily/strain-level structure variation.
-
-### 1. Prepare Training Data
-Convert your PDB files to a graph HDF5 dataset suitable for training:
-```bash
-pdbs-to-graphs <input_pdb_dir> <training_graphs.h5>
-```
-
-### 2. Train Custom Models
-FoldTree2 provides several training scripts with different features:
-
-#### Standard Training
-```bash
-python learn_monodecoder.py \
-  --dataset <training_graphs.h5> \
-  --modelname <my_custom_model> \
-  --epochs 100 \
-  --batch-size 20 \
-  --hidden-size 256 \
-  --embedding-dim 128 \
-  --outdir ./models/
-
-```
-See the complete list of options with `--help`.
-
-#### Lightning-based Training (Recommended)
-For advanced features like distributed training, automatic checkpointing, and logging:
-```bash
-python learn_lightning.py \
-  --dataset <training_graphs.h5> \
-  --modelname <my_lightning_model> \
-  --epochs 100 \
-  --batch-size 20 \
-  --learning-rate 1e-4 \
-  --outdir ./models/ \
-  --clip-grad
-```
-See the complete list of options with `--help`.
-
-#### Key Training Parameters
-- `--dataset`: Path to your HDF5 graph dataset
-- `--modelname`: Name for your trained model
-- `--epochs`: Number of training epochs (default: 100)
-- `--batch-size`: Training batch size (default: 20)
-- `--hidden-size`: Hidden layer dimensions (default: 256)
-- `--embedding-dim`: Embedding dimensions (default: 128)
-- `--num-embeddings`: Size of the discrete structural alphabet used by the encoder
-- `--learning-rate`: Learning rate (default: 1e-4)
-- `--clip-grad`: Enable gradient clipping for stability
-
-### 3. Generate Custom Substitution Matrices
-Create structure-based substitution matrices using your trained model:
-```bash
-makesubmat \
-  --modelname <my_custom_model> \
-  --outdir_base <results_dir> \
-  --dataset <input_graphs.h5> \
-  --download_structs \
-  --convert_to_pyg \
-  --align_structs \
-  --encode_alns
-```
-
-This script downloads structures from the AFDB cluster database, aligns clusters using Foldseek, encodes structures with your trained model, and derives substitution matrices.
-
-See the complete list of options with `--help`.
-
-### 4. Use Your Custom Model
-Once trained, use explicit encoder and decoder checkpoints in the main pipeline:
-```bash
-foldtree2 --encoder <PATH_TO_ENCODER.pt> \
-  --decoder <PATH_TO_DECODER.pt> \
-  --structures <YOURSTRUCTUREFOLDER> \
-  --outdir <RESULTSFOLDER>
-```
-
-### Training Tips
-- **GPU Acceleration**: Training is significantly faster with CUDA-enabled GPUs
-- **Dataset Size**: Larger, more diverse datasets generally produce better models
-- **Hyperparameter Tuning**: Experiment with different learning rates, batch sizes, and architectures
-- **Monitoring**: Use TensorBoard logs to monitor training progress
-- **Checkpointing**: Save model checkpoints regularly to resume training if interrupted
-
-## Requirements
-- Python 3.7+
-- See `pyproject.toml` or `setup.py` for a full list of dependencies.
-
-## License
-MIT License (see LICENSE.txt)
-
-## Author
-Dave Moi (<dmoi@unil.ch>)
-
----
-For more details, see the source code and scripts in the repository.
+MIT License: [LICENSE.txt](LICENSE.txt). Dave Moi (<dmoi@unil.ch>).

@@ -26,6 +26,8 @@ setup(
         "networkx",
         "einops",
         "pytorch-lightning",
+        "tensorboard",
+        "colour",
         "torch-geometric",
         "biopython",
         "datasketch",
@@ -37,7 +39,7 @@ setup(
         "ete3",
         "gemmi",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.9",
     include_package_data=True,
     classifiers=[
         "Development Status :: 3 - Alpha",

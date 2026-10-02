@@ -9,7 +9,6 @@ import numpy as np
 import torch
 import tqdm
 
-from foldtree2.src import pdbgraph
 from foldtree2.src import pdbgraphmk2
 
 def print_about():
@@ -289,9 +288,11 @@ def main(argv=None):
     if args.verbose:
         print(f'Input mode: {mode}')
 
-    # Keep legacy behavior for PDB mode, switch to mk2 for Foldcomp-compatible modes.
+    # All structure conversion uses the production mk2 graph implementation.
     if mode == 'pdb':
-        converter = pdbgraph.PDB2PyG(aapropcsv=args.aapropcsv)
+        if args.foldxdir is not None or args.add_prody or args.distance != 15:
+            parser.error('Legacy FoldX, ProDy and custom distance options are not supported by pdbgraphmk2 conversion.')
+        converter = pdbgraphmk2.PDB2PyG(aapropcsv=args.aapropcsv)
         files = _resolve_structure_files(args.input_path, mode='pdb')
         print(f'Found {len(files)} PDB files from {args.input_path}')
         np.random.shuffle(files)
@@ -314,12 +315,10 @@ def main(argv=None):
 
         output_mode = 'a' if manifest_path and (os.path.exists(args.output_h5) or os.path.exists(manifest_path)) else 'w'
         if args.multiprocessing:
-            converter.store_pyg_mp(
+            converter.store_pyg_mp_pool(
                 files,
                 filename=args.output_h5,
-                foldxdir=args.foldxdir,
                 verbose=args.verbose,
-                add_prody=args.add_prody,
                 ncpu=args.ncpu,
                 checkpoint_manifest=manifest_path,
                 output_mode=output_mode,
@@ -328,10 +327,7 @@ def main(argv=None):
             converter.store_pyg(
                 files,
                 filename=args.output_h5,
-                foldxdir=args.foldxdir,
                 verbose=args.verbose,
-                add_prody=args.add_prody,
-                distance=args.distance,
                 checkpoint_manifest=manifest_path,
                 output_mode=output_mode,
             )

@@ -120,6 +120,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_cmd conda
+require_cmd python
 require_cmd find
 require_cmd awk
 require_cmd stat
@@ -132,26 +133,10 @@ WORK_DIR="$(mktemp -d -t foldtree2-conda-test-XXXXXX)"
 STAGE_DIR="${WORK_DIR}/stage"
 mkdir -p "${STAGE_DIR}"
 
-# Conda copies source to its own work dir before build. Stage a slim source tree so
-# very large training data files are never copied in the first place.
-log "Preparing slim source tree"
-cp -a "${RECIPE_DIR}" "${STAGE_DIR}/"
-
-for path in foldtree2 models/production; do
-  if [[ -e "${ROOT_DIR}/${path}" ]]; then
-    mkdir -p "${STAGE_DIR}/$(dirname "${path}")"
-    cp -a "${ROOT_DIR}/${path}" "${STAGE_DIR}/${path}"
-  fi
-done
-
-# Keep this directory present even when no production model file exists yet.
-mkdir -p "${STAGE_DIR}/models/production"
-
-for file in README.md LICENSE.txt pyproject.toml setup.py MANIFEST.in .conda_build_ignore; do
-  if [[ -f "${ROOT_DIR}/${file}" ]]; then
-    cp -a "${ROOT_DIR}/${file}" "${STAGE_DIR}/"
-  fi
-done
+# Exclude datasets/models before copying, not after a potentially huge cp -a.
+log "Preparing code-only source tree"
+python "${ROOT_DIR}/scripts/stage_conda_source.py" \
+  --source "${ROOT_DIR}" --recipe-dir "${RECIPE_DIR}" --destination "${STAGE_DIR}"
 
 RECIPE_BASENAME="$(basename "${RECIPE_DIR}")"
 STAGED_RECIPE_DIR="${STAGE_DIR}/${RECIPE_BASENAME}"
@@ -284,8 +269,8 @@ if ! find "${PAYLOAD_DIR}" -path '*/share/foldtree2/mafft_tools/hex2maffttext' |
   fail "Missing required bundled MAFFT helper hex2maffttext"
 fi
 
-if ! find "${PAYLOAD_DIR}" -path '*/share/foldtree2/models/production*' | grep -q .; then
-  fail "Missing required production model directory under share/foldtree2/models/production"
+if find "${PAYLOAD_DIR}" -type f -path '*/models/*' | grep -q .; then
+  fail "Model bundles must be distributed separately, not included in the code package"
 fi
 
 if (( RUN_SMOKE_INSTALL == 1 )); then

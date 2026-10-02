@@ -32,11 +32,13 @@ import numpy as np
 import tqdm
 import torch
 import importlib
+import random
 from matplotlib import pyplot as plt
 
 # Optional: import custom modules if available
 from foldtree2.src import AFDB_tools, foldseek2tree
-from foldtree2.src.pdbgraph import PDB2PyG, StructureDataset
+from foldtree2.src.pdbgraph import StructureDataset
+from foldtree2.src.pdbgraphmk2 import PDB2PyG
 from foldtree2.src.download_utils import download_structures, verify_downloads
 import foldtree2.src.encoder as ft2
 
@@ -144,6 +146,7 @@ makesubmat --modelname my_model --encode_alns
 	# Processing parameters
 	parser.add_argument('--dataset', type=str, default='structalignmk4.h5', 
 						help='HDF5 dataset filename for storing PyG-converted structures')
+	parser.add_argument('--device', default=None, help='Encoding device, e.g. cpu or cuda:0 (default: auto)')
 	parser.add_argument('--fident_thresh', type=float, default=0.3, 
 						help='Sequence identity threshold for including alignment pairs in matrix computation (default: 0.3)')
 	parser.add_argument('--monitor-convergence', action='store_true',
@@ -152,8 +155,17 @@ makesubmat --modelname my_model --encode_alns
 						help='Update interval (in alignment files) for convergence snapshots (default: 5)')
 	parser.add_argument('--aln-limit', type=int, default=None,
 						help='Optional limit on number of alignment files to process (default: all)')
-	parser.add_argument('--convergence-threshold', type=float, default=0.01,
-						help='Gradient-norm threshold used to label convergence (default: 0.01)')
+	parser.add_argument('--convergence-threshold', type=float, default=0.025,
+						help='Frobenius-change threshold used to label convergence (default: 0.025)')
+	parser.add_argument('--relative-convergence-threshold', type=float, default=None,
+						help='Optional relative Frobenius-change threshold; replaces the absolute criterion')
+	parser.add_argument('--convergence-patience', type=int, default=1,
+						help='Required consecutive informative stable updates (default: 1, notebook criterion)')
+	parser.add_argument('--convergence-min-files', type=int, default=100)
+	parser.add_argument('--convergence-min-pairs', type=int, default=10000)
+	parser.add_argument('--alignment-seed', type=int, default=42)
+	parser.add_argument('--require-convergence', action='store_true',
+						help='Exit nonzero if reference alignments do not establish convergence')
 	parser.add_argument('--live-plot', action='store_true',
 						help='Render live convergence plots while processing alignments')
 	parser.add_argument('--rawcounts', action='store_true', 
@@ -317,6 +329,8 @@ def convert_to_pyg(dataset, out_h5, foldxdir=None):
 		out_h5 (str): Output HDF5 file path for converted data
 		foldxdir (str, optional): Directory containing FoldX energy data
 	"""
+	if foldxdir is not None:
+		raise ValueError('FoldX features are not supported by pdbgraphmk2 conversion')
 	converter = PDB2PyG()
 	pdbfiles = find_recursive_pdbs(dataset)
 	print(f"Found {len(pdbfiles)} PDB files for conversion.")
@@ -325,7 +339,7 @@ def convert_to_pyg(dataset, out_h5, foldxdir=None):
 		print("No PDB files found. Please check the dataset path.")
 		sys.exit(1)
 	
-	converter.store_pyg(pdbfiles, filename=out_h5, foldxdir=foldxdir,
+	converter.store_pyg(pdbfiles, filename=out_h5,
 						verbose=False)
 
 def encode_structures(encoder, modeldir, modelname, device, dataset):
@@ -373,7 +387,8 @@ def encode_structures(encoder, modeldir, modelname, device, dataset):
 	
 	# Encode structures and save as FASTA
 	output_path = os.path.join(modeldir, modelname + '_aln_encoded.fasta')
-	encoder.encode_structures_fasta(encoder_loader, output_path, replace=True)
+	with torch.no_grad():
+		encoder.encode_structures_fasta(encoder_loader, output_path, replace=True)
 	print("Encoding complete. Encoded FASTA saved.")
 	return output_path
 
@@ -468,8 +483,7 @@ def compute_pair_counts_and_bg(
 
 		submat_chunk = np.zeros((len(char_set), len(char_set)))
 		try:
-			aln_df = pd.read_table(rep)
-			aln_df.columns = cols
+			aln_df = pd.read_table(rep, header=None, names=cols)
 		except Exception as exc:
 			print(f"Warning: Could not read {rep}: {exc}")
 			continue
@@ -515,7 +529,8 @@ def compute_pair_counts_and_bg(
 								alnzip = [[a, b] for a, b in zip(qaln_ft2, taln_ft2) if a is not None and b is not None]
 								alnzip = np.array(alnzip)
 								if alnzip.size > 0:
-									submat_chunk[alnzip[:, 0], alnzip[:, 1]] += 1
+									# Repeated state pairs must each contribute a count.
+									np.add.at(submat_chunk, (alnzip[:, 0], alnzip[:, 1]), 1)
 
 		submat += submat_chunk
 		files_processed += 1
@@ -529,7 +544,8 @@ def compute_pair_counts_and_bg(
 					current_log_odds = compute_log_odds_from_counts(submat, bg_norm)
 				else:
 					current_log_odds = np.zeros_like(submat)
-				monitor.update(files_processed, current_log_odds)
+				monitor.update(files_processed, current_log_odds, pair_count=float(submat.sum()),
+					state_coverage=bool(np.all(background_freq > 0)))
 				if live_plot:
 					fig = monitor.plot_convergence(figsize=plot_figsize)
 					if show_plots:
@@ -549,13 +565,23 @@ def compute_pair_counts_and_bg(
 class MatrixConvergenceMonitor:
 	"""Track and visualize matrix convergence during iterative compilation."""
 
-	def __init__(self, matrix_size, convergence_threshold=0.01):
+	def __init__(self, matrix_size, convergence_threshold=0.025, patience=1,
+			min_files=100, min_pairs=10000, relative_threshold=None):
 		self.matrix_size = matrix_size
 		self.convergence_threshold = convergence_threshold
+		self.patience = patience
+		self.min_files = min_files
+		self.min_pairs = min_pairs
+		self.relative_threshold = relative_threshold
+		self.stable_updates = 0
+		self.prev_pair_count = None
 		self.history = {
 			'iteration': [],
 			'frobenius_norm': [],
 			'gradient_norm': [],
+			'relative_change': [],
+			'pair_count': [],
+			'stable_updates': [],
 			'max_change': [],
 			'mean_change': [],
 			'nonzero_elements': [],
@@ -563,7 +589,7 @@ class MatrixConvergenceMonitor:
 		}
 		self.prev_matrix = None
 
-	def update(self, iteration, current_matrix):
+	def update(self, iteration, current_matrix, pair_count=None, state_coverage=True):
 		"""Update convergence metrics with a new matrix snapshot."""
 		frob_norm = float(np.linalg.norm(current_matrix, 'fro'))
 		if self.prev_matrix is not None:
@@ -575,18 +601,28 @@ class MatrixConvergenceMonitor:
 			grad_norm = 0.0
 			max_change = 0.0
 			mean_change = 0.0
+		relative_change = grad_norm / max(float(np.linalg.norm(self.prev_matrix, 'fro')), 1e-12) if self.prev_matrix is not None else float('inf')
+		informative = pair_count is not None and self.prev_pair_count is not None and pair_count > self.prev_pair_count
+		finite = bool(np.isfinite(current_matrix).all() and np.isfinite(relative_change))
+		stable = relative_change < self.relative_threshold if self.relative_threshold is not None else grad_norm < self.convergence_threshold
+		eligible = iteration >= self.min_files and pair_count is not None and pair_count >= self.min_pairs and state_coverage
+		self.stable_updates = self.stable_updates + 1 if informative and finite and stable and eligible else 0
 
 		nonzero = int(np.count_nonzero(current_matrix))
 
 		self.history['iteration'].append(int(iteration))
 		self.history['frobenius_norm'].append(frob_norm)
 		self.history['gradient_norm'].append(grad_norm)
+		self.history['relative_change'].append(relative_change if np.isfinite(relative_change) else None)
+		self.history['pair_count'].append(pair_count)
+		self.history['stable_updates'].append(self.stable_updates)
 		self.history['max_change'].append(max_change)
 		self.history['mean_change'].append(mean_change)
 		self.history['nonzero_elements'].append(nonzero)
 		self.history['snapshots'].append(current_matrix.copy())
 
 		self.prev_matrix = current_matrix.copy()
+		self.prev_pair_count = pair_count
 
 	def plot_convergence(self, figsize=(18, 12)):
 		"""Generate notebook-style convergence visualization."""
@@ -692,7 +728,14 @@ class MatrixConvergenceMonitor:
 			'final_gradient_norm': float(self.history['gradient_norm'][-1]),
 			'mean_gradient_norm': mean_grad,
 			'max_gradient_norm': float(np.max(self.history['gradient_norm'])),
-			'is_converged': bool(self.history['gradient_norm'][-1] < self.convergence_threshold),
+			'is_converged': bool(self.stable_updates >= self.patience),
+			'final_relative_change': self.history['relative_change'][-1],
+			'stable_updates': self.stable_updates,
+			'required_stable_updates': self.patience,
+			'minimum_files': self.min_files,
+			'minimum_pairs': self.min_pairs,
+			'absolute_threshold': self.convergence_threshold,
+			'relative_threshold': self.relative_threshold,
 			'sparsity': float(sparsity),
 		}
 
@@ -999,6 +1042,12 @@ def main():
 		sys.exit(0)
 		
 	args = parse_args()
+	if args.require_convergence:
+		args.monitor_convergence = True
+	if args.convergence_patience < 1 or args.convergence_min_files < 1 or args.convergence_min_pairs < 1:
+		raise ValueError('Convergence patience and minimum evidence must be positive')
+	if args.convergence_threshold <= 0 or (args.relative_convergence_threshold is not None and args.relative_convergence_threshold <= 0):
+		raise ValueError('Convergence thresholds must be positive')
 
 	if args.plot and not args.monitor_convergence:
 		args.monitor_convergence = True
@@ -1034,7 +1083,7 @@ def main():
 	model = os.path.join(args.modeldir, args.modelname)
 	encoder = torch.load(model + '.pt', map_location=torch.device('cpu'),
 						weights_only=False)
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 	encoder = encoder.to(device)
 	encoder.device = device
 
@@ -1068,7 +1117,6 @@ def main():
 	if not os.path.exists(os.path.join(args.datadir, 'struct_align')):
 		print("No structure alignments found. Please run --download_structs and --align_structs first.")
 		sys.exit(1)
-	device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 	encoder = encoder.to(device)
 	encoder.device = device
 	encoder.eval()
@@ -1085,6 +1133,8 @@ def main():
 	encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
 	char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df)
 	alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
+	alnfiles.sort()
+	random.Random(args.alignment_seed).shuffle(alnfiles)
 	print(f"Found {len(alnfiles)} alignment files.")
 	if len(alnfiles) == 0:
 		print("No alignment files found. Please run --align_structs first.")
@@ -1094,7 +1144,9 @@ def main():
 	print(f"Processing up to {max_files} alignment files...")
 	monitor = None
 	if args.monitor_convergence:
-		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold)
+		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold,
+			patience=args.convergence_patience, min_files=args.convergence_min_files,
+			min_pairs=args.convergence_min_pairs, relative_threshold=args.relative_convergence_threshold)
 
 	pair_counts, background_freq, processing_stats = compute_pair_counts_and_bg(
 		alnfiles,
@@ -1199,6 +1251,9 @@ def main():
 		processing_stats=processing_stats,
 		fident_thresh=args.fident_thresh,
 	)
+	metrics_payload['counting_method'] = 'headerless_all_pair_occurrences_v2'
+	metrics_payload['alignment_seed'] = args.alignment_seed
+	metrics_payload['available_alignment_files'] = len(alnfiles)
 
 	if args.metrics_json is not None:
 		metrics_dir = os.path.dirname(args.metrics_json)
@@ -1216,6 +1271,9 @@ def main():
 	if metrics_payload['convergence'] is not None:
 		print(f"  Final gradient norm: {metrics_payload['convergence']['final_gradient_norm']:.6f}")
 		print(f"  Converged: {metrics_payload['convergence']['is_converged']}")
+	if args.require_convergence and not metrics_payload['convergence']['is_converged']:
+		print('Matrix convergence was not established. Add more independent reference alignments or inspect the saved convergence history; production promotion is blocked.')
+		sys.exit(2)
 
 if __name__ == "__main__":
 	main()

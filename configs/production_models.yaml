@@ -1,0 +1,9 @@
+{
+  "models": [
+    {"size": 10, "directory": "models/production/10char_minimal_decoder", "encoder": "production_10char_best_encoder.pt", "decoder": "production_10char_best_decoder.pt", "mafft": "production_10char_best_encoder_mafftmat.mtx", "raxml": "production_10char_best_encoder_submat.txt"},
+    {"size": 20, "directory": "models/production/20char_minimal_decoder", "encoder": "final_20char_mk2_contactsfix_aa_encoder_full_epoch_41.pt", "decoder": "final_20char_mk2_contactsfix_aa_decoder_full_epoch_41.pt", "mafft": "final_20char_mk2_contactsfix_aa_encoder_full_epoch_41_mafftmat.mtx", "raxml": "final_20char_mk2_contactsfix_aa_encoder_full_epoch_41_submat.txt"},
+    {"size": 30, "directory": "models/production/30char_minimal_decoder", "encoder": "final_30char_contacts_aa_encoder_full_epoch_52.pt", "decoder": "final_30char_contacts_aa_decoder_full_epoch_52.pt", "mafft": "final_30char_contacts_aa_encoder_full_epoch_52_mafftmat.mtx", "raxml": "final_30char_contacts_aa_encoder_full_epoch_52_submat.txt"},
+    {"size": 40, "directory": "models/production/40char_minimal_decoder", "encoder": "final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt", "decoder": "final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt", "mafft": "final_40char_mk2_contactsfix_aa_encoder_full_epoch_40_mafftmat.mtx", "raxml": "final_40char_mk2_contactsfix_aa_encoder_full_epoch_40_submat.txt"},
+    {"size": 50, "directory": "models/production/50char_minimal_decoder", "encoder": "production_50char_best_encoder.pt", "decoder": "production_50char_best_decoder.pt", "mafft": "production_50char_best_encoder_mafftmat.mtx", "raxml": "production_50char_best_encoder_submat.txt"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "model": "Q.3Di.AF",
+  "citation": "Garg SG and Hochberg GKA (2025), doi:10.1093/molbev/msaf124",
+  "source": "https://edmond.mpg.de/api/access/datafile/311466",
+  "dataset": "https://doi.org/10.17617/3.1MJJBH",
+  "dataset_license": "CC0-1.0",
+  "article_license": "CC-BY-NC-4.0",
+  "format": "PAML lower triangle exchangeabilities followed by stationary frequencies",
+  "state_order": "ARNDCQEGHILKMFPSTWYV",
+  "note": "Order is the standard IQ-TREE/PAML amino-acid order; letters encode 3Di states, not amino acids."
+}
