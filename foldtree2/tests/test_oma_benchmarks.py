@@ -24,6 +24,22 @@ def test_native_reuse_follows_inherited_artifact_paths(tmp_path, representation,
     assert cohort.native_directory(root, representation, '1') == inherited
 
 
+def test_native_reuse_follows_chain_and_rejects_cycles(tmp_path):
+    old, new = tmp_path / 'old', tmp_path / 'new'
+    old.mkdir()
+    new.mkdir()
+    artifact = old / 'native' / 'FT2_20' / '1'
+    (old / 'queue_status.json').write_text(json.dumps({'jobs': {
+        'native_20_1': {'artifacts': str(artifact)}}}))
+    (new / 'queue_status.json').write_text(json.dumps({'jobs': {}, 'protocol': {
+        'reuse_native_root': str(old)}}))
+    assert cohort.native_directory(new, 'FT2_20', '1') == artifact
+    (old / 'queue_status.json').write_text(json.dumps({'jobs': {}, 'protocol': {
+        'reuse_native_root': str(new)}}))
+    with pytest.raises(ValueError, match='Cycle'):
+        cohort.native_directory(new, 'FT2_20', '1')
+
+
 def fixture_family(tmp_path):
     root = tmp_path / 'oma'
     markers = root / 'marker_genes'

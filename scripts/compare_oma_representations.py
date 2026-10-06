@@ -58,7 +58,8 @@ def shared_occupancy(records, supports, max_missing=.3):
     return np.logical_and.reduce(masks)
 
 
-def gain_family(family, frame, alignments, supports, native_root, entries, outdir, threads, native=False):
+def gain_family(family, frame, alignments, supports, native_root, entries, outdir, threads, native=False,
+                native_sitelh_threads=1):
     ident = family['family']
     projected = controlled_alignments(family, frame, native_root) if not native else None
     mask = shared_occupancy(projected, supports) if projected is not None else None
@@ -104,7 +105,7 @@ def gain_family(family, frame, alignments, supports, native_root, entries, outdi
             if native:
                 run(['raxml-ng', '--sitelh', '--redo', '--msa', alignment, '--tree', tree,
                      '--model', model, '--opt-model', 'off', '--opt-branches', 'off',
-                     '--threads', threads, '--prefix', destination / 'sites'], destination / 'sites.command.log')
+                     '--threads', native_sitelh_threads, '--prefix', destination / 'sites'], destination / 'sites.command.log')
                 sitelh = destination / 'sites.raxml.siteLH'
             else:
                 sitelh = run_raxml_sitelh(alignment, tree, model, destination / 'sites', 'raxml-ng', threads)
@@ -120,7 +121,8 @@ def gain_family(family, frame, alignments, supports, native_root, entries, outdi
             table.to_csv(output, index=False)
             summary = {'family': ident, 'model': name, 'protocol': protocol, **compute_summary_stats(table, name)}
             write_json(summary_file, summary)
-            complete_stage(destination, signature, [output, summary_file, sitelh])
+            complete_stage(destination, signature, [output, summary_file, sitelh],
+                           execution_threads=native_sitelh_threads if native else threads)
         rows.append(json.loads(summary_file.read_text()))
     return rows
 
@@ -138,10 +140,13 @@ def main():
     parser.add_argument('--folds', type=int, default=5)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--threads', type=int, default=8)
+    parser.add_argument('--native-sitelh-threads', type=int, default=1,
+                        help='Execution threads for frozen native likelihoods (default: 1). '
+                             'Does not change fitted models or cache identity; actual threads are recorded in completion metadata.')
     parser.add_argument('--max-families', type=int)
     parser.add_argument('--wait-for-service')
     args = parser.parse_args()
-    if not 1 <= args.threads <= 8 or min(args.orders) < 0 or args.folds < 2 or (args.max_families is not None and args.max_families < 1):
+    if not 1 <= args.native_sitelh_threads <= args.threads <= 8 or min(args.orders) < 0 or args.folds < 2 or (args.max_families is not None and args.max_families < 1):
         parser.error('Invalid thread, order, fold, or family limit')
     if len(set(args.sizes)) != len(args.sizes) or set(args.sizes) - {10, 20, 30, 40, 50}:
         parser.error('Select unique production alphabet sizes from 10, 20, 30, 40, 50')
@@ -173,10 +178,12 @@ def main():
     if 'information' in args.stages:
         info = args.outdir / 'information'
         info.mkdir(exist_ok=True)
-        frame.to_csv(info / 'sequences.csv', index=False)
-        analyze(frame, supports.copy(), alignments, info, args.orders, args.folds, args.seed,
-                {'entropy', 'mdl', 'mi', 'position', 'kmer'}, True)
-        write_json(info / 'completed.json', signature)
+        completed_info = info / 'completed.json'
+        if not completed_info.exists() or json.loads(completed_info.read_text()) != signature:
+            frame.to_csv(info / 'sequences.csv', index=False)
+            analyze(frame, supports.copy(), alignments, info, args.orders, args.folds, args.seed,
+                    {'entropy', 'mdl', 'mi', 'position', 'kmer'}, True)
+            write_json(completed_info, signature)
     failures = []
     families = sorted(cohort['families'], key=lambda f: f['family'])
     if args.max_families:
@@ -186,7 +193,8 @@ def main():
         for family in families:
             try:
                 aggregate.extend(gain_family(family, frame, alignments, supports, args.native_root,
-                    entries, args.outdir, args.threads, native=stage == 'native-gain'))
+                    entries, args.outdir, args.threads, native=stage == 'native-gain',
+                    native_sitelh_threads=args.native_sitelh_threads))
             except Exception as error:
                 failures.append({'stage': stage, 'family': family['family'], 'error': repr(error)})
             if aggregate:

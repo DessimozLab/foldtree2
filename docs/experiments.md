@@ -86,13 +86,56 @@ Reused artifact locations are recorded in `queue_status.json`; a finished queue
 with failures is not a complete sweep. Ten/50-state models are excluded until
 their trained production bundles and converged matrices are ready.
 
-Convergence uses the notebook's absolute Frobenius change criterion
-`||M_new - M_previous||_F < 0.025` on the final informative update (patience one),
+New builds use sustained EMA convergence of absolute Frobenius changes:
+`delta = ||M_new - M_previous||_F`, `EMA = (1/3)*delta + (2/3)*EMA_previous`.
+The EMA span is five informative updates (with five-update warmup), followed by
+five consecutive eligible updates with EMA below `0.025`. A threshold crossing
+resets patience; a nonfinite or noninformative update resets both EMA and patience.
+Use `--convergence-ema-span` and `--convergence-patience` to configure the monitor,
+or the corresponding `--matrix-convergence-*` flags in the production builder,
 with minimum 100 reference files, 10,000 pair counts, and full background-state
 coverage. Matrices are evaluated after all available references, not promoted
 at an early transient crossing. Previous production matrices are archived
 before replacement. Cached staging encodings are reused only when their staged
 encoder matches production. The manual notebook imports the same monitor.
+Previously promoted matrices retain their original single-update convergence
+reports; this code change does not retroactively certify them under the EMA rule.
+
+For additional independent references, `scripts/extend_matrix_references.py`
+excludes the original AFDB cluster IDs, deterministically samples five members
+per new cluster, reuses/downloads their PDBs, stores mk2 graphs in a separate
+HDF5 file, encodes them with the production checkpoint and runs Foldseek
+all-vs-all. It adds 1,000-family batches (bounded at 5,000 by default), preserving
+the original reference prefix and rebuilding counts over the combined unique
+families/accessions. New inputs stay on the data disk. Promotion requires the
+sustained EMA criterion; exhausted or failed builds remain staged. This does not
+add AFDB families to the fixed OMA benchmarking cohort.
+
+To rebuild using references already downloaded and encoded, without downloading,
+converting graphs, or retraining, use a new staging directory:
+
+```bash
+python scripts/rebuild_downloaded_matrix_references.py --size 50 \
+  --reference-root /mnt/data2/datasets/ft2_matrix_extension_20261003 \
+  --outdir /mnt/data2/datasets/ft2_matrix_readerfix_20261004 --threads 8
+```
+
+The encoded FASTA reader removes only CR/LF line delimiters, preserves valid
+control-character tokens, ignores blank lines, and retains the final record.
+Concatenation avoids adding blank sequence lines. Matrix compilation verifies
+the exact escaped encoder codebook before counting. The existing EMA gate is
+unchanged; only converged, validated matrices can enter production. Add
+`--benchmark-outdir runs/local_benchmarks/readerfix50_20261004` to run the
+remaining family benchmarks and both all-alphabet supermatrix modes after
+successful promotion. Failed rebuilds remain staged for inspection.
+
+An explicitly approved exception can be recorded with
+`scripts/promote_nonconverged_matrix.py --accept-nonconverged`, using a size,
+staging directory, and nonempty reason. This validates all artifacts and full
+state-pair coverage before recording a hash-bound acceptance sidecar. It never
+changes `is_converged` or the convergence threshold. FT2-50 was accepted this way
+on 2026-10-06; see the [readiness note](production_alphabet_readiness.md).
+Its benchmark provenance must retain and disclose this exception.
 
 Validate the selected bundle first. Use separate output directories:
 
@@ -124,6 +167,14 @@ fully dataset-hashed: use fresh directories and record dataset versions if
 families change.
 
 ## Native ancestral character reconstruction
+
+Inspect completed results with
+[`ancestral-sharpness-depth.ipynb`](../output/jupyter-notebook/ancestral-sharpness-depth.ipynb).
+It compares sharpness against normalized root-to-node distance, with equal-family
+weighting, family-bootstrap intervals, tip-entropy strata and individual-node
+posterior heatmaps. It reads existing artifact pointers without rerunning ASR.
+The default is 50 common completed families; set `MAX_FAMILIES=None` for the
+full available cohort. Missing models and partial baseline coverage are explicit.
 
 `scripts/ancestral_state_uncertainty.py` uses the same shared RAxML-NG
 `--ancestral` implementation and ancestral-table-to-FASTA conversion as the
@@ -189,11 +240,65 @@ parameters for site likelihoods. It is not a column-paired comparison.
 Ancestral reconstruction remains native and does not use controlled alignments.
 Rates retain AA LG+G+I, 3Di published Q.3Di.AF+G+I, and FT2 custom+I.
 
-Pending protocol integration: the intended primary controlled-gain benchmark
-concatenates the OMA family alignments and uses one fixed species tree.
-The current runner's controlled-gain output is per-family on each family's
-reference topology; it is not yet that concatenated species-tree benchmark.
-Native family trees and alignments remain reusable inputs for the final workflow.
+The per-family controlled-gain output above is distinct from the concatenated
+fixed-species-tree comparison below. Do not label it as a species-supermatrix result.
+
+### Concatenated OMA alignment on a fixed species topology
+
+`scripts/benchmark_species_supermatrix.py` extracts the notebook's supermatrix
+padding, species mapping and IID-relative phylogenetic information workflow.
+Its default fixed tree is `configs/oma_fixed_species_tree.nwk`, copied from the
+notebook's historical `Information_benchmark/aa_astral_tree.nwk` (21 species).
+This imported reference topology is not newly inferred from the current sweep.
+All representations use that same topology; branches and model nuisance
+parameters are fitted separately and frozen for site likelihoods. AA retains
+LG+G+I, 3Di the published Q.3Di.AF+G+I, and FT2 its size-specific GTR+I model.
+
+```bash
+python scripts/benchmark_species_supermatrix.py --sizes 10 20 30 40 \
+  --experiment-root runs/local_benchmarks/notebook_frobenius_20260930/experiments \
+  --native-root runs/local_benchmarks/full_native_ancestral_20261001 \
+  --species-tree configs/oma_fixed_species_tree.nwk \
+  --outdir runs/local_benchmarks/species_supermatrix_ready --threads 8
+```
+
+AA and 3Di are mandatory. Add `50` only after its bundle, matrices and family
+alignments are validated, using a fresh output directory for the expanded scope.
+Missing family/model inputs fail rather than shrinking the cohort. `--prepare-only`
+validates and concatenates without launching RAxML. `--max-families` is for pilots;
+`--prune-tree-to-cohort` explicitly permits trimming unused species in such a pilot.
+Full runs require an exact tree-tip/species match, without silent pruning.
+
+Native mode reuses each strategy's aligned family sequences, pads missing species
+with gaps, and concatenates in the same deterministic family order. It rejects
+multiple copies per species rather than arbitrarily assigning orthologs across
+families. Native columns have different widths and are not index-paired.
+`--column-mode controlled` instead uses verified FoldMason residue correspondence
+and projects FT2 tokens onto common columns. This mode shares an occupancy mask
+and additionally writes column-paired cross-alphabet MI.
+
+Outputs: per-model `supermatrix.fasta`, zero-based half-open `family_blocks.csv`,
+`site_metrics.csv.gz`, `family_metrics.csv`, fitted RAxML tree/model and
+`summary.json`; joint `summary.csv` and `paired_family_comparisons.csv` contain
+paired family-bootstrap intervals. Site metrics include tip entropy, normalized
+tip entropy, tree/IID log likelihoods, gain in nats and bits, and gain bits per
+valid tip. Missingness defaults to <=30% with at least four valid species.
+Family tables include zero-eligible-column families explicitly; comparisons
+report their actual common contributing families. The historical normalized
+gain is nats per bit of tip entropy, not a universal model-quality score.
+Do not compare raw likelihood totals as if alphabet sizes, native widths and
+coverage were identical. Use coverage reports and paired family differences;
+use controlled mode for homologous-column comparisons. Completion markers and
+input/output hashes guard against mixed model/tree/cohort results on resume.
+
+Both supermatrix modes are queued on the workstation for all currently ready
+alphabets. CPU execution is sequential: the current 10-character joint comparison,
+then full native supermatrix, then full controlled supermatrix, then AFDB reference
+expansion for 50. `--wait-for-service` can enforce this sequencing. After 50 passes
+the EMA gate and finishes its native family benchmarks, the extension workflow
+runs both supermatrix modes with all five FT2 sizes plus AA and 3Di. Native and
+controlled results have separate output directories and must not be pooled as
+one protocol.
 
 Reuse the same stored native alignment, fitted model and tree for each
 family/representation across information, native gain and ancestral analyses.

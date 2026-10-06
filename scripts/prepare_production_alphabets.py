@@ -34,6 +34,21 @@ def digest(path):
     return checksum.hexdigest()
 
 
+def check_convergence_acceptance(payload, acceptance, artifact_hashes, metrics_hash):
+    """Accept only an explicit, artifact-bound waiver; never relabel convergence."""
+    if payload.get('counting_method') != 'headerless_all_pair_occurrences_v2':
+        raise ValueError('Corrected matrix counting is required')
+    if payload.get('convergence', {}).get('is_converged'):
+        return 'converged'
+    if (not acceptance or acceptance.get('status') != 'accepted_nonconverged'
+            or acceptance.get('authorization') != 'explicit_user_approval'
+            or not acceptance.get('reason') or not acceptance.get('approved_at_utc')
+            or acceptance.get('artifact_sha256') != artifact_hashes
+            or acceptance.get('metrics_sha256') != metrics_hash):
+        raise ValueError('Converged matrices or an explicit matching acceptance record are required')
+    return 'accepted_nonconverged'
+
+
 def validate_bundle(entry, require_convergence=False):
     import numpy as np
     import torch
@@ -66,11 +81,16 @@ def validate_bundle(entry, require_convergence=False):
         raise ValueError(f'MAFFT symbols do not cover the full {size}-state codebook')
     report = {**entry, 'sha256': {k: digest(v) for k, v in paths.items()},
               'embedding_dim': encoder.out_channels, 'status': 'artifacts_validated'}
-    if require_convergence:
-        metrics = directory / (paths['encoder'].stem + '_metrics.json')
+    metrics = directory / (paths['encoder'].stem + '_metrics.json')
+    acceptance_path = directory / (paths['encoder'].stem + '_convergence_acceptance.json')
+    if require_convergence or acceptance_path.exists():
         payload = json.loads(metrics.read_text())
-        if payload.get('counting_method') != 'headerless_all_pair_occurrences_v2' or not payload.get('convergence', {}).get('is_converged'):
-            raise ValueError(f'Corrected, converged matrices are required: {directory}')
+        acceptance = json.loads(acceptance_path.read_text()) if acceptance_path.exists() else None
+        report['matrix_acceptance'] = check_convergence_acceptance(
+            payload, acceptance, report['sha256'], digest(metrics))
+        if report['matrix_acceptance'] == 'accepted_nonconverged':
+            report['convergence_acceptance'] = acceptance
+            report['acceptance_sha256'] = digest(acceptance_path)
         report['convergence_sha256'] = digest(metrics)
     return report
 
@@ -92,10 +112,13 @@ def main():
     parser.add_argument('--wait-for-training-pid', type=int, help='Wait for an existing training workflow before dependent stages')
     parser.add_argument('--rebuild-matrices', action='store_true', help='Regenerate matrices in staging and preserve originals before promotion')
     parser.add_argument('--matrix-convergence-threshold', type=float, default=0.025)
-    parser.add_argument('--matrix-convergence-patience', type=int, default=1)
+    parser.add_argument('--matrix-convergence-patience', type=int, default=5)
+    parser.add_argument('--matrix-convergence-ema-span', type=int, default=5)
     parser.add_argument('--reuse-staged-encoding', action='store_true',
                         help='Reuse staging encodings only if the staged encoder matches production')
     parser.add_argument('--matrix-update-interval', type=int, default=25)
+    parser.add_argument('--additional-matrix-alignments', type=Path,
+                        help='New independent AFDB families appended to the original reference set')
     args = parser.parse_args()
     os.chdir(ROOT)
     import yaml
@@ -181,7 +204,9 @@ def main():
                  '--monitor-convergence', '--save-history', '--require-convergence',
                  '--convergence-threshold', args.matrix_convergence_threshold,
                  '--convergence-patience', args.matrix_convergence_patience,
+                 '--convergence-ema-span', args.matrix_convergence_ema_span,
                  '--update-interval', args.matrix_update_interval,
+                 *(['--additional-alignments-root', args.additional_matrix_alignments] if args.additional_matrix_alignments else []),
                  *([] if reuse_encoding else ['--encode_alns'])], stage / 'matrices.log')
             staged_entry = {**entry, 'directory': str(matrix_stage)}
             validate_bundle(staged_entry, require_convergence=True)

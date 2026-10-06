@@ -119,7 +119,7 @@ def main():
         command(f'matrices_{size}', ['scripts/prepare_production_alphabets.py', '--sizes', size,
             '--stages', 'matrices', 'validate', '--rebuild-matrices', '--reuse-staged-encoding',
             '--device', 'cpu', '--threads', args.threads, '--outdir', stage,
-            '--matrix-convergence-patience', 1])
+            '--matrix-convergence-patience', 5, '--matrix-convergence-ema-span', 5])
         validate_bundle(entries[size], require_convergence=True)
 
     def native_ft2(size, family, base):

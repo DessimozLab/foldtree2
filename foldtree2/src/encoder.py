@@ -991,25 +991,38 @@ def load_model(file_path):
 	return model, optimizer, epoch
 
 def load_encoded_fasta(filename, alphabet=None, replace=None):
-	seqstr = ''
+	"""Read escaped structural tokens, preserving whitespace-valued tokens.
+
+	Only CR/LF line delimiters are removed: tabs and other control characters
+	are valid codebook symbols. Blank lines are ignored; the final record is
+	retained even when the file does not end with a newline.
+	"""
 	seqdict = {}
-
+	ID = None
+	parts = []
+	def finish_record():
+		if ID is not None:
+			if ID in seqdict:
+				raise ValueError(f'Duplicate encoded FASTA identifier: {ID}')
+			if not parts:
+				raise ValueError(f'Empty encoded FASTA sequence: {ID}')
+			seqdict[ID] = ''.join(parts)
 	with open(filename, 'r') as f:
-
-		#read all chars of file into a string
-		for i,line in enumerate(tqdm.tqdm(f)):
-
-			if line[0] == '>' and i > 0:
-				seqdict[ID] = seqstr[:-1]
+		for line in f:
+			line = line.rstrip('\r\n')
+			if not line:
+				continue
+			if line.startswith('>'):
+				finish_record()
 				ID = line[1:].strip()
-				seqstr = ''
-			elif line[0] == '>' and i == 0:
-				ID = line[1:].strip()
-				seqstr = ''
+				if not ID:
+					raise ValueError('Empty encoded FASTA identifier')
+				parts = []
 			else:
-				seqstr += line
-		if '' in seqdict:
-			del seqdict['']
+				if ID is None:
+					raise ValueError('Encoded FASTA sequence precedes its header')
+				parts.append(line)
+	finish_record()
 		
 	encoded_df = pd.DataFrame( seqdict.items() , columns=['protid', 'seq'] )
 	encoded_df['seqlen'] = encoded_df.seq.map( lambda x: len(x) )

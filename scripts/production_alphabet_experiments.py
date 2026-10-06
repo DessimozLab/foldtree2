@@ -93,7 +93,7 @@ def main():
     from ete3 import Tree
     entry = next(x for x in json.loads((ROOT / 'configs/production_models.yaml').read_text())['models'] if x['size'] == args.size)
     from prepare_production_alphabets import validate_bundle
-    validate_bundle(entry, require_convergence=True)
+    bundle_report = validate_bundle(entry, require_convergence=True)
     directory = ROOT / entry['directory']
     model = torch.load(directory / entry['encoder'], map_location=args.device, weights_only=False)
     model.eval()
@@ -113,6 +113,8 @@ def main():
                  'size': args.size, 'phylo_protocol': 'fixed_per_family_AA_topology_optimized_model_branches_v2',
                  'description_protocol': 'notebook_markov_and_mdl_protein_holdout',
                  'max_families': args.max_families}
+    if bundle_report.get('matrix_acceptance') == 'accepted_nonconverged':
+        signature['matrix_acceptance'] = bundle_report['convergence_acceptance']
     provenance = args.outdir / 'provenance.json'
     if provenance.exists() and json.loads(provenance.read_text()) != signature:
         raise ValueError('Output provenance differs; use a new output directory')

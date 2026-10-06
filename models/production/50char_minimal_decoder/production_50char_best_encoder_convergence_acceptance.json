@@ -1,0 +1,37 @@
+{
+  "approved_at_utc": "2026-10-06T15:55:40.186015+00:00",
+  "artifact_sha256": {
+    "decoder": "1a09234ea3cea47cb1eeb889fb5f851d9313e0ed1a07011b59ef147d9e32f4cd",
+    "encoder": "be639915fbbd2de7dfdc3bf3dee37ce6ef515627d72d326c6115a0b32b21ff2a",
+    "mafft": "a0525e2f5662a4aea2852b0021b2960d84da49b1d55003b3e1ac6e39d28f9c27",
+    "raxml": "5bee579f83dca5c7967ebd01939be31ba80c984abbf02a4a70011e4b701050f6"
+  },
+  "authorization": "explicit_user_approval",
+  "convergence": {
+    "absolute_threshold": 0.025,
+    "criterion": "sustained_ema_frobenius_v1",
+    "ema_alpha": 0.3333333333333333,
+    "ema_span": 5,
+    "ema_updates": 1012,
+    "final_ema_change": 0.08645587397139744,
+    "final_frobenius_norm": 48.2548396011652,
+    "final_gradient_norm": 0.10260920698999762,
+    "final_relative_change": 0.0021251788966873894,
+    "is_converged": false,
+    "max_gradient_norm": 821.5264321137826,
+    "mean_gradient_norm": 4.106945225284448,
+    "minimum_files": 100,
+    "minimum_pairs": 10000,
+    "relative_threshold": null,
+    "required_stable_updates": 5,
+    "sparsity": 0.0,
+    "stable_updates": 0,
+    "total_iterations": 1013
+  },
+  "limitation": "Did not meet the sustained EMA convergence criterion; benchmark results must disclose this.",
+  "metrics_sha256": "5b3dd0b0576841e532dce54b03b181c1131acf7b1c4a2cab4dae8fa21f926660",
+  "reason": "Explicit user instruction on 2026-10-06: push it through and make a note of it; continue benchmarking.",
+  "size": 50,
+  "source_staging": "/mnt/data2/datasets/ft2_matrix_readerfix_20261004/50/matrices",
+  "status": "accepted_nonconverged"
+}

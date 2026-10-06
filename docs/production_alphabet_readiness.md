@@ -1,5 +1,16 @@
 # Production alphabet preparation
 
+## FT2-50 acceptance exception (2026-10-06)
+
+The corrected 50-state matrix was explicitly accepted by the user for production
+and benchmarking despite failing the sustained EMA gate. It uses 25,325 reference
+alignment files and 26,709,596 counted pairs. Final EMA was 0.0864559 versus the
+0.025 threshold; `is_converged` remains false. This is an acceptance exception,
+not a convergence claim. The original failed build and history are preserved on
+data2. A hash-bound `*_convergence_acceptance.json` accompanies the production
+matrices and is recorded in benchmark provenance. Results using FT2-50 must
+disclose this limitation; other matrix validity checks remain enforced.
+
 For user-facing commands with portable input paths, see the
 [experiment guide](experiments.md) and [training guide](training.md). The paths
 and sample counts below describe this workstation's preparation run, not data
@@ -56,7 +67,9 @@ The corrected 20-state matrices were already promoted. The 10/50 matrices
 remain pending completion and validation of their fresh training runs.
 
 The convergence gate uses the approved absolute Frobenius-change threshold
-of 0.025. It requires one final informative stable update, with newly counted
+of 0.025 applied to an EMA (span five, alpha 1/3) of informative changes.
+After five-update EMA warmup it requires five consecutive eligible updates
+with EMA below the threshold. It still requires newly counted
 pairs, at least 100 reference files, at least 10,000 pairs, finite scores, and
 coverage of every state. Updates occur every 25 files in production. All 20,349
 available reference files are eligible; there is no notebook-style 5,000-file

@@ -107,16 +107,24 @@ def select_families(root, manifest=None, limit=None):
     return families[:limit] if limit else families, Path(manifest).resolve()
 
 
-def native_directory(root, representation, family):
+def native_directory(root, representation, family, _visited=None):
     """Resolve reused artifact locations recorded by the native sweep."""
     root = Path(root).resolve()
+    visited = set() if _visited is None else _visited
+    if root in visited:
+        raise ValueError(f'Cycle in native artifact reuse roots: {root}')
+    visited.add(root)
     status = root / 'queue_status.json'
     if status.exists():
-        jobs = json.loads(status.read_text())['jobs']
+        record = json.loads(status.read_text())
+        jobs = record['jobs']
         key = f'3Di_{family}' if representation == '3Di' else f'AA_{family}' if representation == 'AA' else f'native_{representation.removeprefix("FT2_")}_{family}'
         artifact = jobs.get(key, {}).get('artifacts')
         if isinstance(artifact, str):
             return Path(artifact)
+        inherited = record.get('protocol', {}).get('reuse_native_root')
+        if inherited:
+            return native_directory(inherited, representation, family, visited)
     return root / '3di' / family if representation == '3Di' else root / 'native' / representation / family
 
 

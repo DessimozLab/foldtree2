@@ -49,7 +49,7 @@ class ProductionAlphabetTests(unittest.TestCase):
         self.assertTrue(all(np.isfinite(row['backoff_entropy_rate_bits']) for row in rows))
 
     def test_convergence_requires_sustained_new_evidence(self):
-        monitor = MatrixConvergenceMonitor(2, patience=2, min_files=2, min_pairs=10)
+        monitor = MatrixConvergenceMonitor(2, patience=2, ema_span=1, min_files=2, min_pairs=10)
         matrix = np.ones((2, 2))
         monitor.update(1, matrix, pair_count=10)
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
@@ -60,8 +60,8 @@ class ProductionAlphabetTests(unittest.TestCase):
         monitor.update(4, matrix, pair_count=30)
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
 
-    def test_default_matches_single_update_notebook_threshold(self):
-        monitor = MatrixConvergenceMonitor(2, min_files=2, min_pairs=10)
+    def test_explicit_single_update_mode(self):
+        monitor = MatrixConvergenceMonitor(2, patience=1, ema_span=1, min_files=2, min_pairs=10)
         matrix = np.ones((2, 2))
         monitor.update(1, matrix, pair_count=10)
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
@@ -71,7 +71,7 @@ class ProductionAlphabetTests(unittest.TestCase):
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
 
     def test_updated_absolute_threshold(self):
-        monitor = MatrixConvergenceMonitor(2, min_files=2, min_pairs=10)
+        monitor = MatrixConvergenceMonitor(2, patience=1, ema_span=1, min_files=2, min_pairs=10)
         self.assertEqual(monitor.convergence_threshold, .025)
         matrix = np.ones((2, 2))
         monitor.update(1, matrix, pair_count=10)
@@ -90,6 +90,29 @@ class ProductionAlphabetTests(unittest.TestCase):
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
         monitor.update(3, np.ones((2, 2)) * 2, pair_count=30, state_coverage=False)
         self.assertFalse(monitor.get_convergence_summary()['is_converged'])
+
+    def test_ema_warmup_patience_and_spike_reset(self):
+        monitor = MatrixConvergenceMonitor(2, min_files=1, min_pairs=1)
+        matrix = np.ones((2, 2))
+        monitor.update(1, matrix, pair_count=1)
+        for iteration in range(2, 10):
+            matrix = matrix.copy()
+            matrix[0, 0] += .01
+            monitor.update(iteration, matrix, pair_count=iteration)
+            self.assertFalse(monitor.get_convergence_summary()['is_converged'])
+        matrix[0, 0] += .01
+        monitor.update(10, matrix, pair_count=10)
+        report = monitor.get_convergence_summary()
+        self.assertTrue(report['is_converged'])
+        self.assertAlmostEqual(report['final_ema_change'], .01)
+        matrix[0, 0] += .1
+        monitor.update(11, matrix, pair_count=11)
+        self.assertAlmostEqual(monitor.ema_change, .04)
+        self.assertEqual(monitor.stable_updates, 0)
+        self.assertFalse(monitor.get_convergence_summary()['is_converged'])
+        monitor.update(12, matrix, pair_count=11)
+        self.assertIsNone(monitor.ema_change)
+        self.assertEqual(monitor.ema_updates, 0)
 
 
 if __name__ == '__main__':

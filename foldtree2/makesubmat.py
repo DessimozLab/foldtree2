@@ -159,11 +159,15 @@ makesubmat --modelname my_model --encode_alns
 						help='Frobenius-change threshold used to label convergence (default: 0.025)')
 	parser.add_argument('--relative-convergence-threshold', type=float, default=None,
 						help='Optional relative Frobenius-change threshold; replaces the absolute criterion')
-	parser.add_argument('--convergence-patience', type=int, default=1,
-						help='Required consecutive informative stable updates (default: 1, notebook criterion)')
+	parser.add_argument('--convergence-patience', type=int, default=5,
+						help='Required consecutive eligible updates with EMA below threshold (default: 5)')
+	parser.add_argument('--convergence-ema-span', type=int, default=5,
+						help='EMA span in informative updates; alpha=2/(span+1), with span-update warmup (default: 5)')
 	parser.add_argument('--convergence-min-files', type=int, default=100)
 	parser.add_argument('--convergence-min-pairs', type=int, default=10000)
 	parser.add_argument('--alignment-seed', type=int, default=42)
+	parser.add_argument('--additional-alignments-root', default=None,
+						help='Additional AFDB family root containing FAMILY/allvall.csv; append after original references')
 	parser.add_argument('--require-convergence', action='store_true',
 						help='Exit nonzero if reference alignments do not establish convergence')
 	parser.add_argument('--live-plot', action='store_true',
@@ -392,7 +396,7 @@ def encode_structures(encoder, modeldir, modelname, device, dataset):
 	print("Encoding complete. Encoded FASTA saved.")
 	return output_path
 
-def build_char_set(encoded_df):
+def build_char_set(encoded_df, expected_size=None):
 	"""
 	Build the set of all structural tokens in the encoded sequences.
 	
@@ -413,6 +417,13 @@ def build_char_set(encoded_df):
 		char_set = char_set.union(set(seq))
 	char_set = list(char_set)
 	char_set.sort()  # Sort to ensure consistent order
+	if expected_size is not None:
+		replacements = {'"': chr(248), '#': chr(247), '>': chr(249), '=': chr(250),
+			'<': chr(251), '-': chr(252), ' ': chr(253), '\r': chr(254), '\n': chr(255)}
+		expected = {replacements.get(chr(i + 1), chr(i + 1)) for i in range(expected_size)}
+		if set(char_set) != expected:
+			raise ValueError(f'Encoded alphabet differs from the {expected_size}-state codebook: '
+				f'missing={sorted(expected - set(char_set))!r}, extra={sorted(set(char_set) - expected)!r}')
 	
 	print(f"Character set: {char_set}")
 	print('ord', [ord(c) for c in char_set])
@@ -565,8 +576,14 @@ def compute_pair_counts_and_bg(
 class MatrixConvergenceMonitor:
 	"""Track and visualize matrix convergence during iterative compilation."""
 
-	def __init__(self, matrix_size, convergence_threshold=0.025, patience=1,
-			min_files=100, min_pairs=10000, relative_threshold=None):
+	def __init__(self, matrix_size, convergence_threshold=0.025, patience=5,
+			min_files=100, min_pairs=10000, relative_threshold=None, ema_span=5):
+		if patience < 1 or ema_span < 1:
+			raise ValueError('Patience and EMA span must be positive')
+		self.ema_span = ema_span
+		self.ema_alpha = 2.0 / (ema_span + 1)
+		self.ema_change = None
+		self.ema_updates = 0
 		self.matrix_size = matrix_size
 		self.convergence_threshold = convergence_threshold
 		self.patience = patience
@@ -579,6 +596,7 @@ class MatrixConvergenceMonitor:
 			'iteration': [],
 			'frobenius_norm': [],
 			'gradient_norm': [],
+			'ema_change': [],
 			'relative_change': [],
 			'pair_count': [],
 			'stable_updates': [],
@@ -604,7 +622,16 @@ class MatrixConvergenceMonitor:
 		relative_change = grad_norm / max(float(np.linalg.norm(self.prev_matrix, 'fro')), 1e-12) if self.prev_matrix is not None else float('inf')
 		informative = pair_count is not None and self.prev_pair_count is not None and pair_count > self.prev_pair_count
 		finite = bool(np.isfinite(current_matrix).all() and np.isfinite(relative_change))
-		stable = relative_change < self.relative_threshold if self.relative_threshold is not None else grad_norm < self.convergence_threshold
+		change = relative_change if self.relative_threshold is not None else grad_norm
+		if informative and finite:
+			self.ema_change = change if self.ema_change is None else self.ema_alpha * change + (1 - self.ema_alpha) * self.ema_change
+			self.ema_updates += 1
+		else:
+			# Missing information must not make a stale EMA look converged.
+			self.ema_change = None
+			self.ema_updates = 0
+		threshold = self.relative_threshold if self.relative_threshold is not None else self.convergence_threshold
+		stable = self.ema_change is not None and self.ema_updates >= self.ema_span and self.ema_change < threshold
 		eligible = iteration >= self.min_files and pair_count is not None and pair_count >= self.min_pairs and state_coverage
 		self.stable_updates = self.stable_updates + 1 if informative and finite and stable and eligible else 0
 
@@ -613,6 +640,7 @@ class MatrixConvergenceMonitor:
 		self.history['iteration'].append(int(iteration))
 		self.history['frobenius_norm'].append(frob_norm)
 		self.history['gradient_norm'].append(grad_norm)
+		self.history['ema_change'].append(self.ema_change)
 		self.history['relative_change'].append(relative_change if np.isfinite(relative_change) else None)
 		self.history['pair_count'].append(pair_count)
 		self.history['stable_updates'].append(self.stable_updates)
@@ -642,6 +670,9 @@ class MatrixConvergenceMonitor:
 		axes[0, 0].grid(True, alpha=0.3)
 
 		axes[0, 1].plot(iterations, self.history['gradient_norm'], 'r-', linewidth=2)
+		axes[0, 1].plot(iterations, self.history['ema_change'], color='navy', label='EMA convergence statistic')
+		axes[0, 1].axhline(self.relative_threshold if self.relative_threshold is not None else self.convergence_threshold, color='black', linestyle='--', label='Threshold')
+		axes[0, 1].legend()
 		axes[0, 1].set_xlabel('Iteration (Alignment Files)')
 		axes[0, 1].set_ylabel('Gradient Norm')
 		axes[0, 1].set_title('Rate of Change (Matrix Gradient)')
@@ -726,6 +757,11 @@ class MatrixConvergenceMonitor:
 			'total_iterations': len(self.history['iteration']),
 			'final_frobenius_norm': float(self.history['frobenius_norm'][-1]),
 			'final_gradient_norm': float(self.history['gradient_norm'][-1]),
+			'criterion': 'sustained_ema_frobenius_v1',
+			'ema_span': self.ema_span,
+			'ema_alpha': self.ema_alpha,
+			'ema_updates': self.ema_updates,
+			'final_ema_change': self.ema_change,
 			'mean_gradient_norm': mean_grad,
 			'max_gradient_norm': float(np.max(self.history['gradient_norm'])),
 			'is_converged': bool(self.stable_updates >= self.patience),
@@ -1044,7 +1080,7 @@ def main():
 	args = parse_args()
 	if args.require_convergence:
 		args.monitor_convergence = True
-	if args.convergence_patience < 1 or args.convergence_min_files < 1 or args.convergence_min_pairs < 1:
+	if args.convergence_ema_span < 1 or args.convergence_patience < 1 or args.convergence_min_files < 1 or args.convergence_min_pairs < 1:
 		raise ValueError('Convergence patience and minimum evidence must be positive')
 	if args.convergence_threshold <= 0 or (args.relative_convergence_threshold is not None and args.relative_convergence_threshold <= 0):
 		raise ValueError('Convergence thresholds must be positive')
@@ -1131,10 +1167,17 @@ def main():
 		print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
 		sys.exit(1)
 	encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
-	char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df)
+	char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df, expected_size=encoder.num_embeddings)
 	alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
 	alnfiles.sort()
 	random.Random(args.alignment_seed).shuffle(alnfiles)
+	if args.additional_alignments_root:
+		extra = sorted(glob.glob(os.path.join(args.additional_alignments_root, '*/allvall.csv')))
+		original_ids = {os.path.basename(os.path.dirname(path)) for path in alnfiles}
+		if any(os.path.basename(os.path.dirname(path)) in original_ids for path in extra):
+			raise ValueError('Additional reference families overlap the original family set')
+		random.Random(args.alignment_seed).shuffle(extra)
+		alnfiles.extend(extra)
 	print(f"Found {len(alnfiles)} alignment files.")
 	if len(alnfiles) == 0:
 		print("No alignment files found. Please run --align_structs first.")
@@ -1146,7 +1189,8 @@ def main():
 	if args.monitor_convergence:
 		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold,
 			patience=args.convergence_patience, min_files=args.convergence_min_files,
-			min_pairs=args.convergence_min_pairs, relative_threshold=args.relative_convergence_threshold)
+			min_pairs=args.convergence_min_pairs, relative_threshold=args.relative_convergence_threshold,
+			ema_span=args.convergence_ema_span)
 
 	pair_counts, background_freq, processing_stats = compute_pair_counts_and_bg(
 		alnfiles,
