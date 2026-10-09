@@ -184,6 +184,21 @@ class ProductionGeometrySE3Module(base.GeometryFocusedModule):
             parameter.requires_grad = False
         self.transformer_geom_decoder.eval()
 
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['production_provenance'] = self.provenance
+
+    def on_load_checkpoint(self, checkpoint):
+        if checkpoint.get('production_provenance') != self.provenance:
+            raise ValueError('Resume rejected: incompatible production model, dataset, split or configuration')
+
+    def on_before_optimizer_step(self, optimizer):
+        grads = [p.grad for p in self.se3_decoder.parameters() if p.grad is not None]
+        if not grads or not all(torch.isfinite(g).all() for g in grads):
+            raise FloatingPointError('Missing or nonfinite SE3 gradients')
+        if any(p.grad is not None for m in (self.encoder, self.transformer_geom_decoder) for p in m.parameters()):
+            raise RuntimeError('Frozen production parameters received gradients')
+        self.log('train/gradient_norm', torch.stack([g.norm() for g in grads]).norm(), on_step=True)
+
     def _prepare_geometry_outputs(self, data_batch):
         with torch.no_grad():
             output = self.transformer_geom_decoder(data_batch, contact_pred_index=None)
@@ -285,8 +300,10 @@ def load_production_decoder(path: str, device: torch.device) -> torch.nn.Module:
 
 def main():
     args = base.parse_args()
-    if not args.pretrained_geometry_decoder_path:
-        raise ValueError("--pretrained-geometry-decoder-path is required for this trainer")
+    from foldtree2.se3_validation import production_pair, sha256
+    pair = production_pair(args.production_manifest)
+    args.pretrained_encoder_path = args.pretrained_encoder_full_path = pair['encoder']
+    args.pretrained_geometry_decoder_path = pair['decoder']
 
     # Reuse the established data split, encoder compatibility checks, SE3
     # construction, trainer setup, and all loss-related command-line options.
@@ -371,6 +388,15 @@ def main():
         production_coordinate_scale=args.production_coordinate_scale,
     )
     module = ProductionGeometrySE3Module(**module_kwargs)
+    if isinstance(encoder, base.FrozenProjectionEncoder) or residue_se3_decoder is None:
+        raise RuntimeError("Canonical production SE3 training requires the production encoder and SE3 decoder")
+    module.provenance = {
+        "encoder_sha256": sha256(pair['encoder']), "decoder_sha256": sha256(pair['decoder']),
+        "dataset_sha256": sha256(args.dataset),
+        "train_indices": getattr(data_module.train_dataset, 'indices', list(range(len(data_module.train_dataset)))),
+        "val_indices": getattr(data_module.val_dataset, 'indices', []),
+        "config": {k: v for k, v in vars(args).items() if k not in {'resume_from', 'epochs', 'checkpoint_dir', 'config'}},
+    }
 
     callbacks = []
     if args.enable_epoch_visualizations:
@@ -422,7 +448,7 @@ def main():
         f"coordinate_scale={module.production_coordinate_scale} "
         f"micro_batch_size={args.batch_size} accumulation={accum_steps}"
     )
-    trainer.fit(module, datamodule=data_module)
+    trainer.fit(module, datamodule=data_module, ckpt_path=args.resume_from)
 
 
 if __name__ == "__main__":

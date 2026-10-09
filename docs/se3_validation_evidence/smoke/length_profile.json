@@ -1,0 +1,11 @@
+[
+  {
+    "id": "A0A0W7X8K2",
+    "residues": 211,
+    "batch_size": 1,
+    "dense_adjacency_bytes": 44521,
+    "padding_residues": 0,
+    "forward_backward_seconds": 0.1730304209049791,
+    "peak_memory_bytes": 794980864
+  }
+]

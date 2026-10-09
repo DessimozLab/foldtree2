@@ -1,0 +1,19 @@
+{
+  "base_revision": "8351257599a6ac6e8997861f76c84bc7a9a23d85",
+  "protocol": "se3-residue-validation-v2-endpoint-masks",
+  "record_date": "2026-10-09",
+  "note": "Hashes identify the source packaged with this evidence. Run provenance separately binds the refiner implementation and loss functions executed during training; report rendering was updated after training.",
+  "source_sha256": {
+    "foldtree2/se3_validation.py": "3dc04bbabd1ae3a851eaf6e6a437c05bff0fc7a24ac5cd2d3f359d09bdb96709",
+    "foldtree2/src/se3_struct_decoder.py": "e5d27e59a827b93615f84c57c2cf2a9a755443aca2532fbca0a54771e88d7841",
+    "foldtree2/learn_geometry_lightning.py": "b0aa30d8105790b9781257cdaa9eb33ef8e8008cbfc5a43ebc976e522f79d1a2",
+    "foldtree2/learn_production_geometry_se3_lightning.py": "75a1fb0f57645bd8f2f9f5e5142e7b91235bb9319396062de49840a91e71a6c4",
+    "scripts/profile_se3_validation.py": "b73b5350384fe621fb5191144ede5b46caa90e6b1008fca14c1af6bc2a1b2bea",
+    "scripts/report_se3_validation.py": "eeee521d693ddef1f9f827e659c13eb2c8b568ca974aec06055095d99aa04a75",
+    "foldtree2/tests/test_se3_refiner.py": "b84fe7a97a4730b948ad79bdd27289ceac1d046b160a5f0d671aa8fcf3b04cfc",
+    "foldtree2/tests/test_se3_validation.py": "225bd17418c0b4b96b3306c1ae2b16eaa8c950dbebe1fad0727f9d5245401e99",
+    "configs/se3_validation_smoke.yaml": "0898849af09f04ccfefaf6730ed231b20328d8a463ddcc7da13548f6c649968e",
+    "configs/se3_validation_overfit.yaml": "d5405f044cb4c7b5c5b762567cff965c8f3f36c3245298a80d60d59dcc863d19",
+    "configs/se3_validation_pilot.yaml": "6ecaf6df18fbf36b891973cad73fa0e5a063e6a4de35c73b56156fb5d144e0f3"
+  }
+}

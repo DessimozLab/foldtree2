@@ -1,6 +1,6 @@
 import torch
-torch.set_default_dtype(torch.float64)  # recommended for equivariant network training
 import importlib
+import types
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -37,7 +37,34 @@ def _safe_gotennet_spherical_harmonics(degree, rel_pos, *args, **kwargs):
 	return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-_gotennet_backend.spherical_harmonics = _safe_gotennet_spherical_harmonics
+# Give only this subclass a private forward namespace. No backend globals are
+# modified, including during concurrent calls from unrelated models.
+class StableGotenNet(GotenNet):
+	_safe_forward = types.FunctionType(
+		GotenNet.forward.__code__,
+		{**GotenNet.forward.__globals__, 'spherical_harmonics': _safe_gotennet_spherical_harmonics},
+		GotenNet.forward.__name__, GotenNet.forward.__defaults__, GotenNet.forward.__closure__,
+	)
+	_safe_forward.__kwdefaults__ = GotenNet.forward.__kwdefaults__
+
+	def forward(self, atoms, coors, adj_mat=None, lens=None, mask=None):
+		# The backend's additive edge-value path does not fully mask padding.
+		# Compact valid nodes per graph before calling it, then restore padding.
+		if mask is None and lens is None:
+			return self._safe_forward(atoms, coors, adj_mat=adj_mat)
+		if mask is None:
+			mask = torch.arange(atoms.shape[1], device=atoms.device)[None] < lens[:, None]
+		features, positions = [], []
+		for i in range(atoms.shape[0]):
+			idx = torch.where(mask[i])[0]
+			if idx.numel() == 0:
+				raise ValueError('SE3 graph has no valid residues')
+			adj = None if adj_mat is None else adj_mat[i][idx][:, idx].unsqueeze(0)
+			h, c = self._safe_forward(atoms[i, idx].unsqueeze(0), coors[i, idx].unsqueeze(0), adj_mat=adj)
+			features.append(h.new_zeros(atoms.shape[1], h.shape[-1]).index_copy(0, idx, h[0]))
+			positions.append(c.new_zeros(atoms.shape[1], 3).index_copy(0, idx, c[0]))
+		return torch.stack(features), torch.stack(positions)
+
 
 
 def _compute_local_frame_from_ca(ca_coords: torch.Tensor):
@@ -772,9 +799,10 @@ class se3_denoiser(torch.nn.Module):
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 		# GotenNet for 3D structure processing
-		self.gotennet = GotenNet(
+		self.gotennet = StableGotenNet(
 			dim = hidden_channels[0] if isinstance(hidden_channels, list) else hidden_channels,
 			num_atoms = num_atom_types,
+			accept_embed = True,
 			max_degree = max_degree,
 			depth = depth,
 			heads = heads,
@@ -783,6 +811,7 @@ class se3_denoiser(torch.nn.Module):
 			return_coors = return_coors
 		).to(self.device)
 
+		self.token_embedding = torch.nn.Embedding(num_atom_types, hidden_channels[0])
 		self.bn = torch.nn.BatchNorm1d(in_channels)
 		self.dropout = torch.nn.Dropout(p=dropout_p)
 		
@@ -931,10 +960,21 @@ class se3_denoiser(torch.nn.Module):
 		if isinstance(data, dict):
 			x_dict, edge_index_dict = data, kwargs.get('edge_index_dict', {})
 		else:
-			x_dict, edge_index_dict = data.x_dict, data.edge_index_dict
+			x_dict, edge_index_dict = data.x_dict, data.collect('edge_index', allow_empty=True)
 		
+		feature_mask = edge_attr_dict.get('node_mask') if edge_attr_dict is not None else None
+		if feature_mask is None:
+			feature_mask = torch.ones(x_dict['res'].shape[0], device=x_dict['res'].device, dtype=torch.bool)
+		if not torch.isfinite(x_dict['res'][feature_mask]).all():
+			raise ValueError('SE3 received nonfinite valid features')
+		x_dict['res'] = x_dict['res'].masked_fill(~feature_mask.unsqueeze(-1), 0.0)
 		# Normalize and dropout input features
-		x_dict['res'] = self.bn(x_dict['res'])
+		valid_features = x_dict['res'][feature_mask]
+		if valid_features.shape[0] == 0:
+			raise ValueError('SE3 received no valid features')
+		normalized = (F.batch_norm(valid_features, self.bn.running_mean, self.bn.running_var,
+			self.bn.weight, self.bn.bias, training=False) if valid_features.shape[0] == 1 else self.bn(valid_features))
+		x_dict['res'] = torch.zeros_like(x_dict['res']).index_copy(0, torch.where(feature_mask)[0], normalized)
 		x_dict['res'] = self.dropout(x_dict['res'])
 		runtime_device = x_dict['res'].device
 		
@@ -1180,35 +1220,30 @@ class se3_denoiser(torch.nn.Module):
 		self.gotennet.float()
 		gotennet_param = next(self.gotennet.parameters(), None)
 		gotennet_dtype = gotennet_param.dtype if gotennet_param is not None else coords_batch.dtype
-		coords_for_gotennet = torch.nan_to_num(
-			coords_batch.to(dtype=gotennet_dtype),
-			nan=0.0,
-			posinf=0.0,
-			neginf=0.0,
-		)
-		coord_clip = 64.0
-		coord_abs = coords_for_gotennet.detach().abs().masked_fill(~atom_mask_batch.unsqueeze(-1), 0.0)
-		coord_scale = (coord_abs.amax(dim=(1, 2), keepdim=True) / coord_clip).clamp_min(1.0)
-		coords_for_gotennet = coords_for_gotennet / coord_scale
+		valid = atom_mask_batch.unsqueeze(-1)
+		if not torch.isfinite(coords_batch[atom_mask_batch]).all():
+			raise ValueError('SE3 received nonfinite valid coordinates')
+		coords_for_gotennet = coords_batch.to(dtype=gotennet_dtype).masked_fill(~valid, 0.0)
+		count = valid.sum(dim=1, keepdim=True).clamp_min(1)
+		center = coords_for_gotennet.sum(dim=1, keepdim=True) / count
+		centered = (coords_for_gotennet - center).masked_fill(~valid, 0.0)
+		radius = centered.detach().norm(dim=-1).amax(dim=1, keepdim=True).unsqueeze(-1)
+		coord_scale = (radius / 64.0).clamp_min(1.0)
+		coords_for_gotennet = centered / coord_scale
 		with torch.autocast(device_type=autocast_device, enabled=False):
 			invariant, coors_out = self.gotennet(
-				atom_ids_batch,
+				self.token_embedding(atom_ids_batch) + fallback_features_batch.float(),
 				adj_mat=adj_mat_batch,
 				coors=coords_for_gotennet,
 				mask=atom_mask_batch,
 			)
+		frame_coords_batch = None
 		if coors_out is not None:
-			coors_out = coors_out * coord_scale
-		if not torch.isfinite(invariant).all():
-			print(
-				'GotenNet produced non-finite invariant features; '
-				+ self._tensor_finite_summary('coords_input', coords_batch)
-				+ '; '
-				+ self._tensor_finite_summary('coords_scaled', coords_for_gotennet)
-				+ '; '
-				+ self._tensor_finite_summary('invariant', invariant)
-			)
-			invariant = fallback_features_batch.to(device=runtime_device, dtype=fallback_features_batch.dtype)
+			frame_coords_batch = (coors_out * coord_scale).masked_fill(~valid, 0.0)
+			coors_out = (frame_coords_batch + center).masked_fill(~valid, 0.0)
+		if not torch.isfinite(invariant[atom_mask_batch]).all():
+			raise RuntimeError('GotenNet produced nonfinite valid invariant features')
+		invariant = invariant.masked_fill(~valid, 0.0)
 		if coors_out is not None and not torch.isfinite(coors_out).all():
 			raise RuntimeError(
 				'GotenNet produced non-finite coordinates; refusing to substitute input coordinates. '
@@ -1244,7 +1279,40 @@ class se3_denoiser(torch.nn.Module):
 		angle_dtype = angle_param.dtype if angle_param is not None else z.dtype
 		with torch.autocast(device_type=autocast_device, enabled=False):
 			angles = self.out_angles(z.to(dtype=angle_dtype))
-		frame_outputs = _frame_outputs_from_coords(coors_out_flat)
+		if node_mask is not None:
+			angles = angles.masked_fill(~node_mask.unsqueeze(-1), 0.0)
+		if not torch.isfinite(angles).all():
+			raise RuntimeError('SE3 produced nonfinite angles')
+		# Build frames per chain so padding, chain boundaries and masked stencils
+		# cannot supply an artificial orientation.
+		if coors_out_flat is not None:
+			groups = [torch.arange(len(coors_out_flat), device=runtime_device)] if batch is None else [
+				torch.where(batch == i)[0] for i in range(num_graphs)]
+			frame_coords_flat = (torch.cat([frame_coords_batch[i, :len(idx)] for i, idx in enumerate(groups)])
+				if batch is not None else frame_coords_batch[0])
+			parts = [_frame_outputs_from_coords(frame_coords_flat[idx]) for idx in groups]
+			frame_outputs = {key: (torch.cat([part[key] for part in parts], 0)
+				if parts[0][key] is not None else None) for key in parts[0]}
+			# Orientation uses centered vectors; frame origins use restored coordinates.
+			frame_outputs['trans_pred'] = frame_outputs['trans_coords_pred'] = coors_out_flat
+			frame_outputs['trans_local_pred'] = torch.einsum('nij,nj->ni',
+				frame_outputs['rotmat_pred'].transpose(-1,-2), coors_out_flat)
+			frame_outputs['local_frames_pred'] = torch.cat([frame_outputs['rotmat_pred'],
+				frame_outputs['trans_local_pred'].unsqueeze(-1)], -1)
+			frame_outputs['rt_pred'] = torch.cat([frame_outputs['quat_pred'], coors_out_flat], -1)
+			if node_mask is not None:
+				stencil_parts = []
+				for idx in groups:
+					m = node_mask[idx].clone()
+					m[1:] &= node_mask[idx][:-1]
+					m[:-1] &= node_mask[idx][1:]
+					if len(idx) > 2:
+						m[0] &= node_mask[idx][2]
+						m[-1] &= node_mask[idx][-3]
+					stencil_parts.append(m)
+				frame_outputs['twist_undefined'] |= ~torch.cat(stencil_parts)
+		else:
+			frame_outputs = _frame_outputs_from_coords(None)
 		coors_out_atoms = None
 		if atom_level and coors_out_flat is not None:
 			coors_out_atoms = coors_out_flat.reshape(num_residues, atoms_per_residue, 3)

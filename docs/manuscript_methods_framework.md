@@ -198,3 +198,14 @@ Use and replace these tags during manuscript preparation:
 - #REF_MUTUAL_INFORMATION
 - #REF_FAPE
 - #REF_LDDT
+
+## 15. Experimental SE(3) residue refinement
+
+The experimental GotenNet residue refiner has separate
+[methods and configurations](se3_validation.md),
+[paired validation results](se3_validation_report.md), and
+[versioned evidence](se3_validation_evidence/README.md). Its structure-level
+holdouts do not establish independence from production pretraining. The
+completed pilot slightly improved CA-frame FAPE, but the 32-structure overfit
+gate failed; this refiner has not been promoted to a production reconstruction
+model. Atom geometry and full-data training remain unvalidated.

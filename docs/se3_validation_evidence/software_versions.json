@@ -1,0 +1,10 @@
+{
+  "torch": "2.8.0",
+  "torch-geometric": "2.6.1",
+  "pytorch-lightning": "2.6.0",
+  "gotennet-pytorch": "0.3.1",
+  "e3nn": "0.5.9",
+  "numpy": "1.26.4",
+  "PyYAML": "6.0.2",
+  "tmtools": "0.3.0 (temporary target /tmp/foldtree2-se3-deps)"
+}

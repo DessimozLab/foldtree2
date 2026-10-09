@@ -1,0 +1,1748 @@
+{
+  "identity": {
+    "format": 1,
+    "dataset_sha256": "2c970702701a5bf789dd46974ff689f02c0805dcf146746db8d1eba07a2b3673",
+    "encoder_sha256": "75d176f4dd11fa1e676c536be953b78a767c40c405b425a49182192fbb6a7fc6",
+    "decoder_sha256": "b9642afd20db829a5ce2dd1c908c86df0c351319347fccd2ad1d335b3aa9089d",
+    "preprocessing": {
+      "extractor_sha256": "ad5494de73bad022a80e47a75a0790d7d52aaab9f90867d7068f1175babdb36a",
+      "coordinate_source": "bottleneck",
+      "max_residues": 384,
+      "contact_top_k": 8,
+      "contact_min_sep": 3,
+      "contact_cutoff": 8.0,
+      "plddt_threshold": 0.5,
+      "features": "latent+codebook"
+    }
+  },
+  "train_ids": [
+    "A0A1S2MTV8",
+    "A0A0W7X8K2",
+    "A0A518IXF4",
+    "T1XI41",
+    "A0A094ZST1",
+    "A0A552Q9F5",
+    "A0A6M0S7I9",
+    "A0A078AW49",
+    "A0A0N4UQQ1",
+    "A0A1G3R0V7",
+    "A0A2W5KC43",
+    "A0A5D2C3K6",
+    "A0A0G1IXS9",
+    "A0A1X7UZW2",
+    "A0A7W1W0E0",
+    "A0A4V1LZW6",
+    "A0A1I7UZB1",
+    "A0A1I6M2U8",
+    "A0A6H0ACP5",
+    "A0A7S3RFH6",
+    "A0A2E2EUC0",
+    "A0A0L1I650",
+    "A0A2N7VJ36",
+    "A0A7V9IY55",
+    "A0A7V0UDR5",
+    "E5BHY7",
+    "D0VWQ8",
+    "A0A2W1BLI9",
+    "A0A1Y0ISQ8",
+    "A0A1C0U6B9",
+    "A0A2Z7DB88",
+    "A0A6J8DR86",
+    "A0A819IRJ0",
+    "A0A388Q026",
+    "A0A1J1CXQ6",
+    "E4X664",
+    "A0A532CPA4",
+    "A0A5F4C6F5",
+    "A0A6N7V3G6",
+    "A0A0C3F3X7",
+    "A0A814CSJ5",
+    "A0A0J8BGM5",
+    "A0A2I1GCN0",
+    "A0A7C2SMF9",
+    "A0A0P0VV04",
+    "A0A3Q9FH20",
+    "A0A4Y2FVY3",
+    "A0A4U3M5A3",
+    "V9DCF4",
+    "A8LZL8",
+    "A0A0D3BG52",
+    "A0A7C7PZ59",
+    "A0A1S8X6X0",
+    "A0A7J8SL61",
+    "A0A5C7Q1P3",
+    "F0JB82",
+    "A0A7I7R6D8",
+    "A0A6I2IZA8",
+    "A0A2U3LGJ8",
+    "A0A842WAQ1",
+    "A0A261VJK5",
+    "A0A811ZXZ7",
+    "A0A6A4HHR6",
+    "A0A834HIL9",
+    "A0A3P7L0J3",
+    "A0A3L8E054",
+    "A0A453M068",
+    "A0A650EMS2",
+    "A0A090SCU2",
+    "A0A3E0NMJ4",
+    "B4D8V5",
+    "A0A1W9TH00",
+    "A0A3P6UWI6",
+    "A0A447RPD0",
+    "A0A2B4R7I8",
+    "A0A5N7DJP5",
+    "A0A2G3AQY3",
+    "A0A1X6P8I7",
+    "A0A3R9U927",
+    "A0A383DHQ8",
+    "A0A1H4I820",
+    "A0A1T3BL69",
+    "A0A1G0IS09",
+    "A0A0A9WSV2",
+    "A0A5J4NTT7",
+    "A0A1Z4VET5",
+    "A0A2T7W106",
+    "A0A7W7YFF2",
+    "A0A679GMZ2",
+    "A0A0G0UVA7",
+    "A0A0C3J583",
+    "A0A2U3DB37",
+    "A0A826HQW7",
+    "A0A2C9KID2",
+    "A0A7E4V848",
+    "X7YD38",
+    "A0A7D7VCR2",
+    "A0A7Z6MRN1",
+    "A0A3R7PLV0",
+    "A0A183D362",
+    "M5RET2",
+    "A0A183RWV5",
+    "A0A0N9V5Z5",
+    "A0A1X7SK02",
+    "A0A2U3LV60",
+    "A0A498I9H1",
+    "A0A7V6BE69",
+    "A0A1H5B3U1",
+    "A0A3D2WGQ1",
+    "A0A7J7A7Z3",
+    "A0A7U9X401",
+    "A0A2V4WKE6",
+    "A0A4C1UAQ6",
+    "M1DKN5",
+    "A0A1V5NHK0",
+    "A0A7Y5SXY6",
+    "A0A2H0YY69",
+    "A0A2S7KVT8",
+    "A0A6A4MSV0",
+    "A0A1F6Y547",
+    "A0A533RHF4",
+    "A0A7V1ICF2",
+    "A0A1F5YIK9",
+    "A0A225AJ61",
+    "A0A2W1AXU7",
+    "A0A6J5F553",
+    "A0A7C2FKU4",
+    "A0A4S2VC88",
+    "A0A2S9QS59",
+    "A0A7T0FXQ8",
+    "A0A286U5H2",
+    "A0A1F3T3V7",
+    "A0A218XKH7",
+    "A0A1I7ZHH6",
+    "A0A4P7NBL8",
+    "A0A7W5GD41",
+    "A0A396PCM6",
+    "A0A7V4BRR6",
+    "A0A523TAE3",
+    "R5NU08",
+    "A0A0C2MM60",
+    "A9TZ86",
+    "A0A7T5EXW8",
+    "A0A225X366",
+    "M1C9E6",
+    "A0A5B7IGJ5",
+    "X6NHA2",
+    "A0A2H1CUX5",
+    "A0A4Q0UQ27",
+    "A0A7W8FPZ4",
+    "A0A136JU34",
+    "A0A2I1D3Y4",
+    "A0A0M3JRP1",
+    "A0A0A0CN64",
+    "A0A0L6UW91",
+    "F3AAV2",
+    "A0A1J0W0H2",
+    "A0A3Q0IVP5",
+    "A0A5A7NWS7",
+    "A0A0D2FHI7",
+    "A0A835D860",
+    "A0A1J5P8G6",
+    "A0A437AJB5",
+    "A0A5C4LK16",
+    "A0A2E0MJX7",
+    "A0A2S5J324",
+    "A0A6C0HV87",
+    "A0A2M7FZD0",
+    "A0A0K0EH19",
+    "A0A2S6TZG5",
+    "D6ZCC0",
+    "A0A4S2LAX2",
+    "R6JXB8",
+    "A0A7Y8V6F4",
+    "A0A2U2YYU3",
+    "A0A4Q7CN76",
+    "A0A2H2I3A3",
+    "A0A836S3Q8",
+    "A0A7C2VHF2",
+    "A0A2I0HPW5",
+    "A0A183C4J5",
+    "A0A7J8LNK3",
+    "A0A2T5M774",
+    "A0A3P8V5T8",
+    "K8CJN5",
+    "A0A1G6JJI9",
+    "A0A5J5KWJ0",
+    "A0A1W9XIA2",
+    "A0A7H8NHX7",
+    "A0A2T6ZYA0",
+    "A0A8A3QZ68",
+    "A0A7J4QZK6",
+    "A0A2G6K6Q1",
+    "A0A7W4YKK8",
+    "A0A7X7U2B1",
+    "A0A6B0QAD0",
+    "A0A0E0I883",
+    "A0A3Q9KG03",
+    "A0A2V7TTR4",
+    "A0A6A5PMD9",
+    "A0A812GUX2",
+    "A0A524Q7D1",
+    "A0A2E4S1Y7",
+    "A0A7J6XDU0",
+    "M1DYC2",
+    "A0A1Y4G8K1",
+    "A0A2X0Z9D0",
+    "A0A7X4BXD1",
+    "R1D3Y2",
+    "A0A1Y2VVF7",
+    "A0A4P8RQF2",
+    "A0A090SSC6",
+    "A0A3D8ZXE7",
+    "A0A2G9V095",
+    "A0A1F3NRZ8",
+    "A0A7H0FVX8",
+    "A0A024FV10",
+    "A0A2N1YD90",
+    "A0A3D3GHE3",
+    "A0A7Y5MQM2",
+    "A0A645GNG1",
+    "A0A4R0PH42",
+    "A0A803N3K9",
+    "A0A251MUU6",
+    "A0A7S4DKX2",
+    "A0A0F4RIU9",
+    "A0A6J5VPV0",
+    "A0A821XNT5",
+    "A0A183UTB7",
+    "A0A7U1EAA2",
+    "A0A3A5HLA6",
+    "A0A4S8LVH3",
+    "A0A5D3YEI4",
+    "A0A7J4N9E8",
+    "A0A1H5GAW3",
+    "V2X2K5",
+    "A0A2W4PD56",
+    "A0A7Z1LGV0",
+    "A0A1V6EQQ5",
+    "C7R5W4",
+    "I9NWW7",
+    "A0E829",
+    "A0A7R9W784",
+    "A0A6C0JZY1",
+    "A0A378N6P4",
+    "A0A1R1YC32",
+    "A0A1Y0KR89",
+    "A0A2I7N5X9",
+    "A0A5Q0N2S4",
+    "A0A7X8Y296",
+    "A0A376SY77",
+    "M4VRZ6",
+    "A0A5M8Q1N9",
+    "A0A653ZZQ6",
+    "A0A2E9GWD1",
+    "A0A813S3E8",
+    "A0A0S9KM46",
+    "A0A430A7M2",
+    "A0A261U4E5",
+    "A0A0B1TVG8",
+    "A0A433QN47",
+    "A0A6C1QWF9",
+    "B8BUY3",
+    "A0A0B3S2C3",
+    "A0A089JL53",
+    "A0A0N7KJ30",
+    "A0A1U8LGI1",
+    "A0A558BKF8",
+    "H2NZN2",
+    "A0A536PY99",
+    "A0A484N6Z2",
+    "O81657",
+    "A0A2H2JMW8",
+    "A0A232EE37",
+    "A0A1V3K8F5",
+    "A0A060PJ91",
+    "A0A5R9DSK8",
+    "A0A1V6D7S6",
+    "A0A011QU15",
+    "A0A6I9P8C1",
+    "V4YK55",
+    "A0A7V5YQU2",
+    "A0A2A3UB73",
+    "A0A0K8WHK3",
+    "A0A060TB91",
+    "A0A7D7RN71",
+    "A0A1B0CLD0",
+    "A0A2V9QQQ2",
+    "M5C2C8",
+    "A0A7W1YAX6",
+    "A0A7D7ZVM1",
+    "A0A3M0XM86",
+    "B4HZB0",
+    "A0A242Y272",
+    "A0A3P5VX94",
+    "A0A4D6LU51",
+    "A0A452ZH68",
+    "A0A811M992",
+    "Q2JIM9",
+    "A0A7S3WZV3",
+    "A0A2G5HDL2",
+    "A0A418TBS7",
+    "A0A816WZM4",
+    "A0A314V3Q9",
+    "A0A0Q5E7S2",
+    "A0A183W2T5",
+    "A0A4Q4MJI3",
+    "A0A1G5HYV6",
+    "A0A7X7L5Y1",
+    "A0A7E4RKV2",
+    "A0A7C5ESE1",
+    "R6R622",
+    "A0A4S8W708",
+    "A0A090E9W4",
+    "A0A4D9ACW3",
+    "A0A238H554",
+    "A0A0N4UJU1",
+    "A0A6N9Y4Z0",
+    "A0A4Y7R9A5",
+    "A0A7C9N327",
+    "A0A183LKJ6",
+    "A0A5B7DVP1",
+    "A0A370PG08",
+    "A0A4P7RMR6",
+    "A0A3E0N0J1",
+    "A0A3D5U656",
+    "A0A2W4VU68",
+    "A0A7G8EA54",
+    "A0A7C3ASL9",
+    "A0A016V570",
+    "A0A174D5D5",
+    "A0A453QCG5",
+    "A0A2W4X7A0",
+    "A0A2T5GZB6",
+    "A0A380NWM9",
+    "A0A7C4Z8E9",
+    "A0A1X7SGI1",
+    "A0A6F9D0L2",
+    "A0A1V4QJL6",
+    "A0A4V2Y3G1",
+    "A0A5N7UST5",
+    "A0A0G4ELB6",
+    "A0A5J5BZ94",
+    "M1D9S2",
+    "A0A3M7EXM4",
+    "A0A5C6EQT7",
+    "A0A0L6VFT0",
+    "A0A5M3XHG3",
+    "A0A182T3X3",
+    "A0A3B4WFH7",
+    "J1H358",
+    "A0A2W5T8S7",
+    "A0A0B8PLC1",
+    "R7ER13",
+    "A0A0W0FCA1",
+    "A0A387B345",
+    "A0A7U9I0Y6",
+    "A0A0W8DJX8",
+    "A0A2D6NYD1",
+    "A0A024UNT3",
+    "A0A6A5A9H1",
+    "A0A433BAQ5",
+    "A0A1A0TM53",
+    "A0A3C0ZVW8",
+    "A0A7S1ZTC2",
+    "A0A7V9BR22",
+    "A0A110B094",
+    "A0A1I6EJU4",
+    "A0A4R6RSN6",
+    "A0A6L4RTJ3",
+    "A0A1T5LCY8",
+    "B7FIT6",
+    "A0A6L3IKE2",
+    "A0A6J0VUQ8",
+    "A0A507EA67",
+    "A0A1I0PP75",
+    "A0A0P4UJ65",
+    "A0A6G0N1Q7",
+    "A0A0C2XL67",
+    "A0A820QAZ0",
+    "X1BD86",
+    "A0A3S9HN40",
+    "F4XUF3",
+    "A0A379D470",
+    "A0A182F8J5",
+    "A0A1B6AK70",
+    "A0A0G1CPL1",
+    "A0A0L6WTS6",
+    "A0A6A6GDH9",
+    "A0A4V1KIB7",
+    "F4Q0C9",
+    "A0A564SNQ6",
+    "A0A1U8CVM4",
+    "A0A432HA83",
+    "A0A1Q7B633",
+    "A0A3N1P9G8",
+    "A0A1E4NRF2",
+    "A0A2W5CEW5",
+    "A0A2T8KM90",
+    "A0A3D0VTY3",
+    "K9XCK6",
+    "A0A067D7A1",
+    "X0STB4",
+    "A0A5C7JIT0",
+    "A0A1V5Y607",
+    "A0A183LYM4",
+    "A0A072YEY9",
+    "A0A6I1WIC8",
+    "A0A4S4C8I2",
+    "A0A497QTX7",
+    "A0A3S3Q254",
+    "M1ZRZ2",
+    "A0A239RAQ7",
+    "A0A3B1KJR0",
+    "A0A498PKN1",
+    "A0A1I7V0Q6",
+    "V5IBZ7",
+    "A0A0B7HMK0",
+    "R5SE76",
+    "A0A6P5WFM5",
+    "A0A2S4LEZ2",
+    "A0A0B1SAJ2",
+    "A0A318IMU0",
+    "A0A270B675",
+    "A0A1H3J2X4",
+    "A0A1Q7C331",
+    "A0A536VKA5",
+    "A0A811MBX5",
+    "A0A388Q0T7",
+    "M6XCW6",
+    "A0A521GKU0",
+    "A0A077AVL6",
+    "A0A4Y7QA77",
+    "A0A7Y5JWR6",
+    "A0A7W4DSX8",
+    "A0A1F8F897",
+    "A0A7S3PU40",
+    "A0A090SUK1",
+    "K2FAR7",
+    "A0A2E7MLA5",
+    "A0A1B8QBJ5",
+    "W7XE21",
+    "A0A4Q1BKH3",
+    "A0A3N1XZT6",
+    "A0A820EDP4",
+    "A0A7W8P5V9",
+    "A0A2D0IKA5",
+    "A0A5A8EQ14",
+    "A0A3M0SFX7",
+    "A0A7R9QND7",
+    "A0A2K5QSJ8",
+    "A0A2G8SCX9",
+    "A0A4S4CD10",
+    "A0A7G9TNV4",
+    "A0A7Y5SNN6",
+    "A0A6I3A6Z6",
+    "A0A7J8FYY9",
+    "A0A251VK84",
+    "A0A5S4FJC5",
+    "A0A0U1BA54",
+    "R4KCW9",
+    "A0A2W5KBQ1",
+    "A0A150H3U1",
+    "A0A6P5FCJ7",
+    "A0A016QRK9",
+    "A0A100HKT4",
+    "A0A0T7BXZ2",
+    "A0A158DP31",
+    "A0A100WQN5",
+    "A0A428TAN4",
+    "A0A2E3YAD0",
+    "A0A2J6JPE1",
+    "A0A7R9Q8B3",
+    "A0A6B0S5T6",
+    "A0A661HZG7",
+    "A0A4W5MNP0",
+    "A0A1H3V3Z7",
+    "A0A2A9EFX9",
+    "A0A060Z520",
+    "A0A847H6F4",
+    "A0A059LR89",
+    "A0A178CHU2",
+    "C8ZYJ8",
+    "F0SKT0",
+    "A0A1E3BMH3",
+    "A0A3D8HL42",
+    "A0A5A7PA31",
+    "A0A1H0C3M6",
+    "A0A1J5IKF5",
+    "A0A7Z8K3X4",
+    "A0A512C6V2",
+    "A0A0B1RVJ0",
+    "A0A0G1JP58",
+    "A0A7V4JL22",
+    "A0A1F8TS46",
+    "A0A7W0EXT0",
+    "A0A0B7FU42",
+    "M1Q0J2",
+    "A0A5A9ERM4",
+    "A0A824KMM0",
+    "A0A1G1RQ93",
+    "A1Y744",
+    "A0A7S3FX83",
+    "A0A661Y714",
+    "A0A0F8Y3Z6",
+    "A0A849HU94",
+    "A0A6I3MKV2",
+    "A0A6G0UCI5",
+    "A0A7S0CM91",
+    "X6LBU3",
+    "A0A842S9X4",
+    "A0A537QVU3"
+  ],
+  "val_ids": [
+    "A0A7X7NQE9",
+    "A0A0A8E0U3",
+    "A0A535W6U9",
+    "A0A6A5VR63",
+    "A0A2I0IZG3",
+    "A0A369BWT3",
+    "A0A834HHK0",
+    "A0A1Z8LFE4",
+    "A0A090SU84",
+    "C1DPH0",
+    "A0A7U0Y520",
+    "A0A1M3C8K6",
+    "A0A6A5CBR2",
+    "A0A822IK92",
+    "A0A3P8WFV5",
+    "A0A1S7MJB9",
+    "A0A2U8E2U0",
+    "A0A371J632",
+    "B1T3M7",
+    "A0A1R2C7E4",
+    "M2B1I6",
+    "A0A3M3ZSS5",
+    "U2KK90",
+    "A0A2L2N589",
+    "B9Z7K4",
+    "A0A369Q603",
+    "A0A258RGS2",
+    "A0A151SQS5",
+    "A0A409X3R1",
+    "A0A7C1EMI0",
+    "A0A1Y4ACX2",
+    "A0A376TTS6",
+    "A0A2A2QM29",
+    "A0A2D7PG02",
+    "A0A4Q3GEE1",
+    "A0A7X6SRQ7",
+    "A0A5C7PQJ9",
+    "R7HF94",
+    "A0A6A4WFY3",
+    "A0A813B9R7",
+    "A0A2M8QNT0",
+    "A0A498K0X0",
+    "A0A0H5BQV2",
+    "A0A6M4P641",
+    "A0A815TF26",
+    "C2MHD1",
+    "A0A540VID4",
+    "A0A5C7IND3",
+    "A0A0C3NJR0",
+    "A0A6P4YBI3",
+    "A0A4U5M758",
+    "T1JKV8",
+    "A0A7G9B2K4",
+    "T1GD32",
+    "A0A3N9N3I3",
+    "A0A2D6G2C9",
+    "Q4TGN7",
+    "A0A7S4PX49",
+    "A0A2D4BUH7",
+    "A0A2W6B7D1",
+    "M1AWH7",
+    "A0A0G4J0I1",
+    "A0A7I8EL05",
+    "A0A2N9N1I8",
+    "F3ZWE0",
+    "A0A7K3MG78",
+    "A0A0P4WIN1",
+    "A0A553FBI6",
+    "A0A0V1M169",
+    "A0A4Y2A126",
+    "U3IK98",
+    "A0A2V9QAI4",
+    "A0A6F8YGX6",
+    "A0A2D7J020",
+    "A0A413FW00",
+    "A0A3A4V3T9",
+    "A0A445DHW8",
+    "C8WY07",
+    "A0A368LCG6",
+    "A0A7Y2KGK9",
+    "A0A0G4FEY9",
+    "K1R6E5",
+    "A0A813IM63",
+    "M4U5P9",
+    "A0A6B2LHX6",
+    "A0A2V8PTR9",
+    "A0A5C7P4N6",
+    "H2Z149",
+    "A0A417U4V8",
+    "A0A090X0R7",
+    "A0A0B1P1W2",
+    "A0A841EHM9",
+    "A0A7X9C6J4",
+    "A0A645IM89",
+    "A0A839E9G5",
+    "A0A250WT52",
+    "D0C729",
+    "A0A4W3HAT4",
+    "A0A559TDY8",
+    "A0A1M3DWN3",
+    "A0A5B7J9Z4",
+    "A0A1H8PLH6",
+    "A0A255PAN8",
+    "A0A6N6LPU7",
+    "A0A4S5J4Q2",
+    "A0A0R2MYH9",
+    "A0A7S4KP49",
+    "A0A2V5WWI7",
+    "A0A2H9RJA0",
+    "A0A4Q0J5K4",
+    "A0A672PU96",
+    "A0A427D4N5",
+    "A0A1I2RYL4",
+    "A0A259D9D2",
+    "A0A350BUU8",
+    "A0A7U3AXU0",
+    "A0A163FQP3",
+    "A0A1I2HR14",
+    "A0A2I0TIP6",
+    "A0A532URF4",
+    "A0A0G1BC95",
+    "A0A0B6X7W5",
+    "A0A090VC59",
+    "A0A2V6HLC0",
+    "A0A438K9F9",
+    "A0A7W0KP54",
+    "B2WB57",
+    "A0A7C5T9E6"
+  ],
+  "model": {
+    "hidden": 32,
+    "depth": 2,
+    "heads": 2,
+    "dim_head": 16
+  },
+  "optimizer": {
+    "learning_rate": 0.0005,
+    "effective_batch_size": 8,
+    "clip": 1.0
+  },
+  "seed": 42,
+  "implementation_sha256": "e5d27e59a827b93615f84c57c2cf2a9a755443aca2532fbca0a54771e88d7841",
+  "selection_sha256": "159c6155149b15522e73afd00de6ba196390b0fc6dda57c791e35ce2da40dc3b",
+  "loss_sha256": "a2d3b9576e9867c921bfe8e550b0e450972603f5e18e4b84bbaf5590f04de9d0",
+  "config": {
+    "dataset": "foldtree2/notebooks/structs_training_mk2.h5",
+    "manifest": "configs/production_models.yaml",
+    "seed": 42,
+    "device": "cuda:0",
+    "train_count": 512,
+    "val_count": 128,
+    "max_residues": 384,
+    "epochs": 20,
+    "early_stopping": true,
+    "cache": "runs/se3_validation/cache",
+    "output": "runs/se3_validation/pilot",
+    "early_stopping_min_delta": 0.0001
+  },
+  "checkpoints": {
+    "encoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt",
+    "decoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt"
+  },
+  "skipped": [
+    {
+      "id": "addH_F2ANL2",
+      "length": 619,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5B8U3L0",
+      "length": 457,
+      "reason": "length"
+    },
+    {
+      "id": "X6MLV4",
+      "length": 529,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7U4P760",
+      "length": 414,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1G2PZ97",
+      "length": 514,
+      "reason": "length"
+    },
+    {
+      "id": "A0A8B6HLN9",
+      "length": 186,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A7J8G6X6",
+      "length": 534,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1A8WAD6",
+      "length": 713,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0L0DF95",
+      "length": 553,
+      "reason": "length"
+    },
+    {
+      "id": "A0A178CKD4",
+      "length": 770,
+      "reason": "length"
+    },
+    {
+      "id": "A0A662QR95",
+      "length": 633,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2V1D9F9",
+      "length": 107,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A0C2TWA0",
+      "length": 724,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6V7TQG4",
+      "length": 793,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812IVK1",
+      "length": 560,
+      "reason": "length"
+    },
+    {
+      "id": "A0A139NH06",
+      "length": 644,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0C9SQ96",
+      "length": 263,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A2V6ZJC5",
+      "length": 849,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6H1ZVB2",
+      "length": 631,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7S4SX82",
+      "length": 487,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812UXL5",
+      "length": 968,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A2B7Y906",
+      "length": 128,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A7J7QMW3",
+      "length": 431,
+      "reason": "length"
+    },
+    {
+      "id": "A0A183IBK5",
+      "length": 415,
+      "reason": "length"
+    },
+    {
+      "id": "A0A139HG16",
+      "length": 177,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "addH_A0A5A9NEQ6",
+      "length": 746,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6G1LEL8",
+      "length": 745,
+      "reason": "length"
+    },
+    {
+      "id": "A0A498K3R8",
+      "length": 540,
+      "reason": "length"
+    },
+    {
+      "id": "H6BQM9",
+      "length": 745,
+      "reason": "length"
+    },
+    {
+      "id": "A0A815BRD5",
+      "length": 500,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7V7ZFM4",
+      "length": 715,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5E7H5G4",
+      "length": 502,
+      "reason": "length"
+    },
+    {
+      "id": "A0A316YFM0",
+      "length": 878,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A0F6W3Q6",
+      "length": 783,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6A6IKG2",
+      "length": 499,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6G1KDT0",
+      "length": 146,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "addH_A0A3R7M7H7",
+      "length": 308,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A7S2D7J5",
+      "length": 447,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0L0VAD1",
+      "length": 895,
+      "reason": "length"
+    },
+    {
+      "id": "R7D2Y6",
+      "length": 411,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6I9XLE2",
+      "length": 550,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1F0TFC0",
+      "length": 412,
+      "reason": "length"
+    },
+    {
+      "id": "A0A814PJ57",
+      "length": 513,
+      "reason": "length"
+    },
+    {
+      "id": "F2URZ6",
+      "length": 1032,
+      "reason": "length"
+    },
+    {
+      "id": "A0A836H3G1",
+      "length": 417,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6G0UF86",
+      "length": 433,
+      "reason": "length"
+    },
+    {
+      "id": "C3XQ70",
+      "length": 553,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1B9NFR0",
+      "length": 397,
+      "reason": "length"
+    },
+    {
+      "id": "C3ZTB9",
+      "length": 665,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6A2ZI11",
+      "length": 490,
+      "reason": "length"
+    },
+    {
+      "id": "U6G945",
+      "length": 566,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1Y2EC71",
+      "length": 538,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2G2ZRP5",
+      "length": 395,
+      "reason": "length"
+    },
+    {
+      "id": "addH_G3N7K7",
+      "length": 198,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A0L0SBY3",
+      "length": 691,
+      "reason": "length"
+    },
+    {
+      "id": "addH_H6LDG8",
+      "length": 68,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A6D2J8H9",
+      "length": 526,
+      "reason": "length"
+    },
+    {
+      "id": "A0A496V1Y0",
+      "length": 615,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A1RAJ5",
+      "length": 238,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A226DNT3",
+      "length": 709,
+      "reason": "length"
+    },
+    {
+      "id": "A0A150GT17",
+      "length": 731,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6G0WC04",
+      "length": 1141,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7R8V0L3",
+      "length": 491,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7T9IEY8",
+      "length": 396,
+      "reason": "length"
+    },
+    {
+      "id": "A0A428QNA1",
+      "length": 828,
+      "reason": "length"
+    },
+    {
+      "id": "A0A835Z4J5",
+      "length": 494,
+      "reason": "length"
+    },
+    {
+      "id": "D8T4D6",
+      "length": 830,
+      "reason": "length"
+    },
+    {
+      "id": "B0WT88",
+      "length": 491,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7S0Z8Z5",
+      "length": 587,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7C5HU49",
+      "length": 431,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1A0HB78",
+      "length": 386,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1Y3NLS8",
+      "length": 1085,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7W3XJ76",
+      "length": 1026,
+      "reason": "length"
+    },
+    {
+      "id": "A0A316UR41",
+      "length": 475,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3N4I9X2",
+      "length": 752,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A523CBL9",
+      "length": 129,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "R1B6N9",
+      "length": 434,
+      "reason": "length"
+    },
+    {
+      "id": "A0A444UFC9",
+      "length": 659,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7X9BXS6",
+      "length": 504,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A1F4SWD4",
+      "length": 189,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A0K9REH6",
+      "length": 577,
+      "reason": "length"
+    },
+    {
+      "id": "A0A534JQI6",
+      "length": 393,
+      "reason": "length"
+    },
+    {
+      "id": "G5EEE4",
+      "length": 1558,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0S4LS18",
+      "length": 496,
+      "reason": "length"
+    },
+    {
+      "id": "A0A197JUT0",
+      "length": 531,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6P4ZZ08",
+      "length": 638,
+      "reason": "length"
+    },
+    {
+      "id": "A0A251QTW5",
+      "length": 418,
+      "reason": "length"
+    },
+    {
+      "id": "addH_K0KI65",
+      "length": 994,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0C2J380",
+      "length": 581,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6L2JW12",
+      "length": 991,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812HYX7",
+      "length": 1033,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7C3N9P3",
+      "length": 445,
+      "reason": "length"
+    },
+    {
+      "id": "F2ANL2",
+      "length": 619,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A1I2B8S0",
+      "length": 433,
+      "reason": "length"
+    },
+    {
+      "id": "A0A058Z8E5",
+      "length": 386,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0A2VJZ1",
+      "length": 410,
+      "reason": "length"
+    },
+    {
+      "id": "A0A173RJW1",
+      "length": 398,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7C3ZXG2",
+      "length": 1173,
+      "reason": "length"
+    },
+    {
+      "id": "A0A448WVT1",
+      "length": 622,
+      "reason": "length"
+    },
+    {
+      "id": "V4Q666",
+      "length": 437,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3Q7TJI4",
+      "length": 424,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5P8M6Y6",
+      "length": 386,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1C1CX23",
+      "length": 473,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1G2ML42",
+      "length": 493,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6A6KZ56",
+      "length": 547,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2Z6RRI0",
+      "length": 726,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A6L2LGQ3",
+      "length": 579,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7K2UI39",
+      "length": 1111,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A0N0UZ46",
+      "length": 274,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A7R9GR60",
+      "length": 760,
+      "reason": "length"
+    },
+    {
+      "id": "A0A815DJF0",
+      "length": 398,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3N7E8I9",
+      "length": 451,
+      "reason": "length"
+    },
+    {
+      "id": "E4Q952",
+      "length": 443,
+      "reason": "length"
+    },
+    {
+      "id": "A0A4Y2F0S6",
+      "length": 579,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1B7MDZ1",
+      "length": 460,
+      "reason": "length"
+    },
+    {
+      "id": "R7HVL6",
+      "length": 471,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6P6RQJ7",
+      "length": 518,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2N9ERD0",
+      "length": 861,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7S3Q2P9",
+      "length": 805,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1I8AKK2",
+      "length": 407,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6P6XJZ1",
+      "length": 559,
+      "reason": "length"
+    },
+    {
+      "id": "A0A150FYL2",
+      "length": 1095,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0F7VJQ8",
+      "length": 1216,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812IA30",
+      "length": 763,
+      "reason": "length"
+    },
+    {
+      "id": "A0A183CFU4",
+      "length": 689,
+      "reason": "length"
+    },
+    {
+      "id": "A0A150H1C7",
+      "length": 1089,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3M0KTZ1",
+      "length": 437,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2D4C2G7",
+      "length": 604,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A1H8Z941",
+      "length": 116,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A6J0KMN1",
+      "length": 487,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7G8HIQ2",
+      "length": 395,
+      "reason": "length"
+    },
+    {
+      "id": "D7KMF9",
+      "length": 469,
+      "reason": "length"
+    },
+    {
+      "id": "L8H5Q2",
+      "length": 1270,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1S3YDB2",
+      "length": 497,
+      "reason": "length"
+    },
+    {
+      "id": "F4R8J1",
+      "length": 419,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2V3J4D7",
+      "length": 574,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1V9ZYG3",
+      "length": 512,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1Y1ZR58",
+      "length": 462,
+      "reason": "length"
+    },
+    {
+      "id": "A8XNN1",
+      "length": 787,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2B4SDJ0",
+      "length": 752,
+      "reason": "length"
+    },
+    {
+      "id": "A0A4R7PS28",
+      "length": 387,
+      "reason": "length"
+    },
+    {
+      "id": "A0A369RJJ2",
+      "length": 726,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6J5X6M4",
+      "length": 403,
+      "reason": "length"
+    },
+    {
+      "id": "M7Y691",
+      "length": 160,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A0G0YAX8",
+      "length": 485,
+      "reason": "length"
+    },
+    {
+      "id": "A0A327QMW3",
+      "length": 1256,
+      "reason": "length"
+    },
+    {
+      "id": "A0A354IPQ5",
+      "length": 441,
+      "reason": "length"
+    },
+    {
+      "id": "A0A060SP66",
+      "length": 891,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2N9M1I5",
+      "length": 963,
+      "reason": "length"
+    },
+    {
+      "id": "C3YFX9",
+      "length": 741,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2J6RTH4",
+      "length": 993,
+      "reason": "length"
+    },
+    {
+      "id": "C3XUZ2",
+      "length": 531,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6J0BV31",
+      "length": 392,
+      "reason": "length"
+    },
+    {
+      "id": "A0A814EBG7",
+      "length": 550,
+      "reason": "length"
+    },
+    {
+      "id": "T5A8J2",
+      "length": 464,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812EGD7",
+      "length": 640,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6P4ZQA0",
+      "length": 427,
+      "reason": "length"
+    },
+    {
+      "id": "Q9JPS4",
+      "length": 526,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812SIK1",
+      "length": 600,
+      "reason": "length"
+    },
+    {
+      "id": "A0A653C754",
+      "length": 771,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3Q0KNL2",
+      "length": 1110,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0M2JUI2",
+      "length": 516,
+      "reason": "length"
+    },
+    {
+      "id": "A0A158QJ61",
+      "length": 588,
+      "reason": "length"
+    },
+    {
+      "id": "A0A4R1J4H7",
+      "length": 243,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A1Y2VMH3",
+      "length": 521,
+      "reason": "length"
+    },
+    {
+      "id": "A0A3S5FDY4",
+      "length": 241,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A2P6NMV8",
+      "length": 864,
+      "reason": "length"
+    },
+    {
+      "id": "A0A813G3J4",
+      "length": 755,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A369HIP2",
+      "length": 112,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A3L7QNZ8",
+      "length": 690,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2P8YQQ9",
+      "length": 390,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812AN22",
+      "length": 439,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2E1RFV8",
+      "length": 926,
+      "reason": "length"
+    },
+    {
+      "id": "A0A085ZPR2",
+      "length": 785,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1W5CV80",
+      "length": 504,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7S4DRJ5",
+      "length": 402,
+      "reason": "length"
+    },
+    {
+      "id": "F0ZPH3",
+      "length": 891,
+      "reason": "length"
+    },
+    {
+      "id": "C5NV49",
+      "length": 133,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A665VW00",
+      "length": 533,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2K6F240",
+      "length": 618,
+      "reason": "length"
+    },
+    {
+      "id": "F5W038",
+      "length": 1014,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1Q9EWD6",
+      "length": 709,
+      "reason": "length"
+    },
+    {
+      "id": "A2WQA3",
+      "length": 464,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A6V8PJK3",
+      "length": 127,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "R1D3D1",
+      "length": 401,
+      "reason": "length"
+    },
+    {
+      "id": "B7G7X5",
+      "length": 666,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5C2T1E4",
+      "length": 206,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A2J6TAL1",
+      "length": 381,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A374X567",
+      "length": 858,
+      "reason": "length"
+    },
+    {
+      "id": "X5ZHI1",
+      "length": 710,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1V6P0R1",
+      "length": 470,
+      "reason": "length"
+    },
+    {
+      "id": "A0A816F1T7",
+      "length": 671,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1X7TDH9",
+      "length": 556,
+      "reason": "length"
+    },
+    {
+      "id": "A9TSV8",
+      "length": 243,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A7J8GA28",
+      "length": 534,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7M3JRS8",
+      "length": 699,
+      "reason": "length"
+    },
+    {
+      "id": "addH_A0A381GQZ2",
+      "length": 110,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A813BTG0",
+      "length": 646,
+      "reason": "length"
+    },
+    {
+      "id": "A0A150GBQ2",
+      "length": 1134,
+      "reason": "length"
+    },
+    {
+      "id": "A0A024VSQ6",
+      "length": 279,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A425WFS0",
+      "length": 446,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5J9TZX9",
+      "length": 1207,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7Y5N347",
+      "length": 779,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7W0LX80",
+      "length": 431,
+      "reason": "length"
+    },
+    {
+      "id": "A0A817PNF8",
+      "length": 1242,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0B2VPZ5",
+      "length": 508,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2G8LK69",
+      "length": 475,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7S3V5R4",
+      "length": 531,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2P4Z9Y4",
+      "length": 637,
+      "reason": "length"
+    }
+  ],
+  "versions": {
+    "python": "3.9.23",
+    "torch": "2.8.0+cu128",
+    "cuda": "12.8",
+    "lightning": "2.6.0"
+  }
+}

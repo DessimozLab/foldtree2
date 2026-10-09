@@ -1,0 +1,8 @@
+{
+  "physical_gpu": 1,
+  "cuda_visible_devices": "1",
+  "torch_device": "cuda:0",
+  "name": "NVIDIA RTX PRO 4000 Blackwell",
+  "total_memory_bytes": 25151143936,
+  "uuid": "7ba25839-5a5d-d40e-a0dd-73679364bf15"
+}

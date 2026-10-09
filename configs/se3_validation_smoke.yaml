@@ -1,0 +1,11 @@
+dataset: foldtree2/notebooks/structs_training_mk2.h5
+manifest: configs/production_models.yaml
+seed: 42
+device: cuda:0
+train_count: 1
+val_count: 1
+max_residues: 256
+epochs: 1
+early_stopping: false
+cache: runs/se3_validation/cache
+output: runs/se3_validation/smoke

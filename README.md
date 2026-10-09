@@ -58,6 +58,8 @@ and reconstruction, and rerun limitations.
 - [Updating documentation as experiments are added or completed](docs/documentation_maintenance.md)
 - [Representation conversion details](docs/representation_conversion_guide.md)
 - [Staged geometry training](docs/staged_geometry_training.md)
+- [SE(3) residue refiner validation and training](docs/se3_validation.md)
+- [SE(3) validation results and learning gates](docs/se3_validation_report.md)
 - [Manuscript methods framework](docs/manuscript_methods_framework.md)
 
 ## Command-line tools

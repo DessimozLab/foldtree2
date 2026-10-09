@@ -4,7 +4,7 @@ dataset: foldtree2/notebooks/structs_training_mk2.h5
 epochs: 1
 batch_size: 1
 val_batch_size: 1
-target_effective_batch_size: 1
+target_effective_batch_size: 8
 num_workers: 0
 allow_hdf5_multiprocessing: false
 val_count: 1
@@ -21,9 +21,6 @@ log_every_n_steps: 1
 checkpoint_dir: /tmp/foldtree2_prod_se3_smoke
 save_top_k: 0
 
-pretrained_encoder_path: models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt
-pretrained_encoder_full_path: models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt
-pretrained_geometry_decoder_path: models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt
 production_coordinate_source: bottleneck
 production_coordinate_scale: 1.0
 
@@ -32,15 +29,15 @@ transformer_width: 1
 transformer_layers: 1
 transformer_nheads: 1
 transformer_dropout: 0.0
-se3_hidden: 1
+se3_hidden: 32
 se3_out_channels: 3
-se3_depth: 1
-se3_heads: 1
-se3_dim_head: 4
-se3_residue_hidden: 1
-se3_residue_depth: 1
-se3_residue_heads: 1
-se3_residue_dim_head: 4
+se3_depth: 2
+se3_heads: 2
+se3_dim_head: 16
+se3_residue_hidden: 32
+se3_residue_depth: 2
+se3_residue_heads: 2
+se3_residue_dim_head: 16
 se3_atom_hidden: 1
 se3_atom_depth: 1
 se3_atom_heads: 1
@@ -60,8 +57,7 @@ se3_use_codebook_vectors: true
 se3_use_distance_contacts: true
 se3_distance_contact_cutoff: 8.0
 
-# Keep the same loss stack, including final atom coordinates. The atom axis
-# must be at least as wide as the 40-token FoldTree2 vocabulary.
+# Residue-level losses; atom refinement is deferred.
 use_frame_fape_loss: false
 use_quat_geodesic_loss: false
 use_decoder_angle_loss: false
@@ -82,11 +78,14 @@ se3_atom_weight: 0.05
 se3_atom_fape_weight: 0.25
 use_uncertainty_weighting: false
 nan_guard: true
-sanitize_nonfinite_grads: true
-skip_empty_loss_batches: true
+sanitize_nonfinite_grads: false
+skip_empty_loss_batches: false
 
 # Avoid CPU oversubscription on a workstation.
 clip_grad: 1.0
 cache_flush_interval: 0
 gc_collect_interval: 1
 use_cuda_ipc_collect: false
+production_manifest: configs/production_models.yaml
+learning_rate: 0.0005
+seed: 42

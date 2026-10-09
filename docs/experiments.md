@@ -365,6 +365,15 @@ comparisons only with established homologous-column correspondence.
 
 ## External machines
 
+The separate [SE(3) residue refiner workflow](se3_validation.md) uses the frozen
+manifest-selected 40-character epoch-40 production pair and the existing mk2
+HDF5 dataset. Its completed workstation smoke, overfit and held-out pilot are
+documented in the [validation report](se3_validation_report.md) and
+[dated results record](results/2026-10-09-se3-residue-validation-v2.md).
+The overfit learning gate failed; larger training and atom refinement remain
+deferred. These experiments do not change the staged transformer or alphabet
+benchmarks.
+
 Transfer validated bundles, hashes, dataset versions, and configurations.
 Alignment/tree-quality, scaling, and reconstruction experiments are not covered
 automatically by the local sweep. Existing research entrypoints include

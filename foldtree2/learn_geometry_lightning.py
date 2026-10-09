@@ -60,8 +60,6 @@ except Exception as exc:  # pragma: no cover - import availability is environmen
     SE3_AVAILABLE = False
     warnings.warn(f"SE3 decoder import failed: {exc}")
 
-# se3_struct_decoder sets default float64 at import time; restore float32 for this training path.
-torch.set_default_dtype(torch.float32)
 
 
 def ensure_float32_inplace(data):
@@ -1765,6 +1763,8 @@ def parse_args():
         help="Path to a YAML or JSON config file. Command-line args override config-file values.",
     )
     parser.add_argument("--dataset", type=str, default="structs_training_mk2.h5", help="Path to HDF5 StructureDataset")
+    parser.add_argument("--resume-from", default=None, help="Lightning checkpoint to resume optimizer, scheduler, epoch and global step")
+    parser.add_argument("--production-manifest", default="configs/production_models.yaml")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument(
         "--limit-train-batches",

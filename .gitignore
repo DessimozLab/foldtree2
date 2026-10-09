@@ -155,3 +155,8 @@ models/
 !configs/oma_benchmark_cohort.json
 !configs/oma_fixed_species_tree.nwk
 !foldtree2/config/3diphy_submats/Q.3Di.AF.provenance.json
+
+# Compact SE(3) validation evidence; datasets, caches and checkpoints stay local.
+!docs/se3_validation_evidence/**/*.json
+!docs/se3_validation_evidence/**/*.jsonl
+!docs/se3_validation_evidence/**/*.png

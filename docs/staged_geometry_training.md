@@ -1,5 +1,7 @@
 # Staged Geometry Training
 
+The GotenNet SE(3) residue refiner has a separate [validation and training workflow](se3_validation.md). Its correctness gates, bounded experiments and frozen-output cache do not change this staged transformer.
+
 ## Training path
 
 `foldtree2/learn_production_staged_transformer_geometry.py` trains a

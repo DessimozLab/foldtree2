@@ -1,0 +1,23 @@
+{"event": "hashing_dataset", "time": 1791467005.837589, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+{"event": "cache_verified", "time": 1791467015.3082159, "id": "A0A1S2MTV8"}
+{"event": "cache_progress", "time": 1791467015.3085093, "count": 1, "total": 640}
+{"event": "cache_progress", "time": 1791467016.8894267, "count": 33, "total": 640}
+{"event": "cache_progress", "time": 1791467018.290087, "count": 65, "total": 640}
+{"event": "cache_progress", "time": 1791467019.9332347, "count": 97, "total": 640}
+{"event": "cache_progress", "time": 1791467021.6450257, "count": 129, "total": 640}
+{"event": "cache_progress", "time": 1791467023.1541078, "count": 161, "total": 640}
+{"event": "cache_progress", "time": 1791467024.51696, "count": 193, "total": 640}
+{"event": "cache_progress", "time": 1791467026.6846356, "count": 225, "total": 640}
+{"event": "cache_progress", "time": 1791467031.5133884, "count": 257, "total": 640}
+{"event": "cache_progress", "time": 1791467039.2972634, "count": 289, "total": 640}
+{"event": "cache_progress", "time": 1791467043.655862, "count": 321, "total": 640}
+{"event": "cache_progress", "time": 1791467048.3018725, "count": 353, "total": 640}
+{"event": "cache_progress", "time": 1791467054.3046155, "count": 385, "total": 640}
+{"event": "cache_progress", "time": 1791467059.68707, "count": 417, "total": 640}
+{"event": "cache_progress", "time": 1791467064.2590268, "count": 449, "total": 640}
+{"event": "cache_progress", "time": 1791467067.061171, "count": 481, "total": 640}
+{"event": "cache_progress", "time": 1791467070.536927, "count": 513, "total": 640}
+{"event": "cache_progress", "time": 1791467073.8023276, "count": 545, "total": 640}
+{"event": "cache_progress", "time": 1791467077.6651082, "count": 577, "total": 640}
+{"event": "cache_progress", "time": 1791467080.6203332, "count": 609, "total": 640}
+{"event": "cache_forward_verified", "time": 1791467083.2329578}
