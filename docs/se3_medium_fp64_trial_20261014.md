@@ -66,4 +66,31 @@ normalization and accumulation, so this trial is not a matched capacity gate.
 Require held-out FAPE improvement and no material structural regression before
 larger training; diagnose failure rather than automatically increasing scale.
 
-Submission and observed launch state will be recorded below once available.
+Actual submission: job **3657774**, pinned code revision
+`1afdd56ad16f23327e1e93cf60293b2240cbf5a4`. Archive SHA-256:
+`01c5f9e778c787bf7293ba1a68e94769e320a95ff6f31567255c19a5569a8180`.
+The archive completeness check passed for all 20 required dependencies, and
+all 12 training source files matched the validated `8f300d6` revision byte for
+byte. Configuration checks confirmed 4,096 updates, two microsteps per rank,
+both stabilization flags, absence of the debug stop limit, and exact agreement
+between launch resources and the 16 GPUh budget. Batch-shell syntax and Python
+compilation passed. The Slurm test-only ID `3657773` is not the submitted job.
+
+Initial observed state: **PENDING**, reason **QOSGrpNodeLimit**, no allocated
+nodes and no training output yet. Submission is not evidence of successful
+training. The durable ledger confirmed 52 prior GPUh and 68 after reservation.
+The job is left queued without changing its partition, resources or other jobs.
+
+Log:
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/logs/medium_fp64_trial-3657774.out`.
+Submission receipt:
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/artifacts/medium_fp64_trial-submission.json`.
+
+```bash
+squeue -j 3657774
+sacct -j 3657774 --format=JobID,State,Elapsed,AllocTRES,MaxRSS,ExitCode
+tail -n 20 /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/medium_fp64_trial/events.jsonl
+```
+
+The event file appears after initialization. Launch evidence is retained in
+`docs/se3_clariden_evidence/medium_fp64_trial/submission.json`.

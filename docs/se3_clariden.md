@@ -14,7 +14,10 @@ passed exact one-node resume but failed cross-topology agreement. The subsequent
 four and eight GPUs now produce bitwise identical model/optimizer state and
 validation results after 32 updates. Use both explicit normalization and
 `gradient_accumulation_dtype: float64` for the next bounded learning trial.
-Longer learning and four-node gates remain outstanding.
+The [longer normalized medium learning trial](se3_medium_fp64_trial_20261014.md)
+has been submitted as job **3657774**: two nodes/eight GPUs, 16 epochs, a two-hour
+wall limit and a 16 GPUh reservation. Its initial state is pending behind the
+shared node limit; learning results and the four-node gate remain outstanding.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
