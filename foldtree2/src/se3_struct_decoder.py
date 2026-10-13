@@ -52,6 +52,21 @@ class StableHighDegreeNorm(_gotennet_backend.HighDegreeNorm):
         return scaled / denominator.clamp_min(self.eps / scale) * self.gamma
 
 
+def enable_tensor_ff_input_norm(model):
+    """Experimental architecture ablation; normalize equivariant MLP inputs.
+
+    Explicit opt-in only. This changes the model function and must use a fresh
+    run/provenance; it is not a checkpoint-compatible numerical repair.
+    """
+    for module in model.modules():
+        if isinstance(module, _gotennet_backend.EquivariantFeedForward):
+            for mlp in module.mlps:
+                if isinstance(mlp[0], nn.Identity):
+                    mlp[0] = nn.LayerNorm(mlp[1].in_features, elementwise_affine=False).to(
+                        device=mlp[1].weight.device, dtype=mlp[1].weight.dtype)
+    return model
+
+
 def enable_stable_tensor_norm(model):
     # Change only these instances, preserving checkpoint names and parameters.
     for module in model.modules():

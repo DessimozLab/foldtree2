@@ -1,0 +1,36 @@
+{
+  "context": {
+    "update": 6,
+    "position": 8,
+    "id": "I3TCI4",
+    "length": 226
+  },
+  "queries": [
+    {
+      "shape": [
+        1,
+        225,
+        256,
+        3
+      ],
+      "finite": true,
+      "max_abs": 3.005761325130318e+19
+    }
+  ],
+  "keys": [
+    {
+      "shape": [
+        1,
+        225,
+        256,
+        3
+      ],
+      "finite": true,
+      "max_abs": 2.4945915524051632e+19
+    }
+  ],
+  "float32_product_finite": false,
+  "float64_product_finite": true,
+  "float64_product_max_abs": 5.7012462420852676e+38,
+  "float32_max": 3.4028234663852886e+38
+}

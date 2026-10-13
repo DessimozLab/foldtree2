@@ -94,6 +94,47 @@ def test_safe_tensor_norm_matches_double_reference_and_gradients():
         torch.testing.assert_close(x.grad.double(),y.grad,atol=1e-6,rtol=1e-4)
 
 
+def test_tensor_ff_normalization_is_local_and_limits_quadratic_growth():
+    from gotennet_pytorch.gotennet import EquivariantFeedForward
+    from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+    torch.manual_seed(42)
+    original = EquivariantFeedForward(8, 2)
+    normalized = copy.deepcopy(original)
+    enable_tensor_ff_input_norm(normalized)
+    assert isinstance(original.mlps[0][0], torch.nn.Identity)
+    assert isinstance(normalized.mlps[0][0], torch.nn.LayerNorm)
+    # Parameter-free input normalization preserves the initial parameter draw.
+    assert set(original.state_dict()) == set(normalized.state_dict())
+    h = torch.randn(1, 5, 8)
+    x = [torch.randn(1, 5, 8, m) for m in (3, 5)]
+    large_x = [(v * 1e8).requires_grad_() for v in x]
+    _, large = normalized(h, large_x)
+    _, exploding = original(h, large_x)
+    assert max(float(v.detach().abs().max()) for v in large) < 1e10
+    assert max(float(v.detach().abs().max()) for v in exploding) > 1e14
+    sum(v.square().mean() / 1e16 for v in large).backward()
+    assert all(torch.isfinite(v.grad).all() for v in large_x)
+
+
+def test_normalized_medium_remains_equivariant_with_finite_gradients():
+    from foldtree2.train_se3_lightning import build_model
+    from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+    from foldtree2.se3_validation import forward
+    torch.manual_seed(42)
+    model = enable_tensor_ff_input_norm(build_model(8, {'hidden':64,'depth':4,'heads':4})).eval()
+    entry = {'features':torch.randn(8,8), 'coords':torch.randn(8,3),
+             'tokens':torch.arange(8), 'dot':torch.eye(8), 'mask':torch.ones(8,dtype=torch.bool)}
+    q, _ = torch.linalg.qr(torch.randn(3,3)); q[:,0] *= torch.linalg.det(q)
+    shift = torch.tensor([1.,2.,3.])
+    p, a = forward(model, entry)
+    rp, ra = forward(model, dict(entry, coords=entry['coords'] @ q + shift))
+    torch.testing.assert_close(rp, p @ q + shift, atol=1e-4, rtol=1e-4)
+    torch.testing.assert_close(ra, a, atol=1e-4, rtol=1e-4)
+    (p.square().mean() + a.square().mean()).backward()
+    grads = [v.grad for v in model.parameters() if v.grad is not None]
+    assert grads and all(torch.isfinite(g).all() for g in grads)
+
+
 def test_budget_reservation_is_bounded(tmp_path):
     from scripts.se3_budget import reserve
     schedule=tmp_path/'budget.json';ledger=tmp_path/'ledger.jsonl'

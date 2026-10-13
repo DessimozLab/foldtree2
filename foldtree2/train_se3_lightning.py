@@ -117,6 +117,7 @@ class Refiner(pl.LightningModule):
         self.last_end = time.perf_counter()
         self.stop_epoch = None
         self.stop_updates = None
+        self.active_batch = None
         if resume:
             self.load_state_dict(resume['state_dict'])
             self.stream.update(resume['se3']['stream'])
@@ -161,6 +162,8 @@ class Refiner(pl.LightningModule):
                    frozen_production_calls=0, initialization=self.provenance['initialization'], parameters=sum(p.numel() for p in self.model.parameters()))
 
     def training_step(self, batch, batch_idx):
+        self.active_batch = {'phase':'train', 'id':batch['id'], 'length':len(batch['coords']),
+                             'batch_idx':batch_idx}
         started = time.perf_counter()
         data_wait = started - self.last_end
         e = calibrated(batch, self.manifest['scale'])
@@ -232,6 +235,8 @@ class Refiner(pl.LightningModule):
         self.validation_rows = []
 
     def validation_step(self, batch, batch_idx):
+        self.active_batch = {'phase':'validation', 'id':batch['id'],
+                             'length':len(batch['coords']), 'batch_idx':batch_idx}
         e = calibrated(batch, self.manifest['scale'])
         p, a = forward(self.model, e)
         values = self.loss_fn(p, a, e)
@@ -413,7 +418,18 @@ def main():
         trainer.fit(module, datamodule=CacheData(config['cache'], manifest, module.stream))
     except Exception as exc:
         failure = {'time':time.time(), 'rank':int(os.environ.get('RANK', 0)),
-                   'event':'failure', 'error':repr(exc), 'stream':dict(module.stream)}
+                   'event':'failure', 'error':repr(exc), 'stream':dict(module.stream),
+                   'active_batch':module.active_batch}
+        # Diagnostic only: an interrupted accumulation is not a resumable update.
+        # No collectives here: another rank may already be blocked or have failed.
+        try:
+            snapshot = root / ('failure-state-rank-' + str(failure['rank']) + '.pt')
+            torch.save({'state_dict':module.state_dict(), 'stream':dict(module.stream),
+                        'active_batch':module.active_batch, 'provenance':module.provenance,
+                        'resumable':False}, snapshot)
+            failure['diagnostic_state'] = snapshot.name
+        except Exception as capture_error:
+            failure['diagnostic_capture_error'] = repr(capture_error)
         (root / ('failure-rank-' + str(failure['rank']) + '.json')).write_text(json.dumps(failure, indent=2))
         raise
 

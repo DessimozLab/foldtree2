@@ -1,0 +1,785 @@
+{
+  "context": {
+    "update": 6,
+    "position": 8,
+    "id": "I3TCI4",
+    "length": 226
+  },
+  "recent": [
+    {
+      "module": "gotennet.layers.3.2.split_heads",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1.8711992502212524
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            225,
+            5,
+            16
+          ],
+          "finite": true,
+          "max_abs": 1.8711992502212524
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_value_residual_mix.0",
+      "type": "Linear",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.7049167156219482
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            4
+          ],
+          "finite": true,
+          "max_abs": 1.2610235214233398
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_value_residual_mix.1",
+      "type": "Sigmoid",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            4
+          ],
+          "finite": true,
+          "max_abs": 1.2610235214233398
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            4
+          ],
+          "finite": true,
+          "max_abs": 0.7792022824287415
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_value_residual_mix.2",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            4
+          ],
+          "finite": true,
+          "max_abs": 0.7792022824287415
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            1,
+            1
+          ],
+          "finite": true,
+          "max_abs": 0.7792022824287415
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_value_residual_mix",
+      "type": "Sequential",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.7049167156219482
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            1,
+            1
+          ],
+          "finite": true,
+          "max_abs": 0.7792022824287415
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_gates.0",
+      "type": "Linear",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.7049167156219482
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            20
+          ],
+          "finite": true,
+          "max_abs": 1.1987823247909546
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_gates.1",
+      "type": "Sigmoid",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            20
+          ],
+          "finite": true,
+          "max_abs": 1.1987823247909546
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            20
+          ],
+          "finite": true,
+          "max_abs": 0.768308162689209
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_gates.2",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            20
+          ],
+          "finite": true,
+          "max_abs": 0.768308162689209
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            1,
+            5,
+            1
+          ],
+          "finite": true,
+          "max_abs": 0.768308162689209
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.to_gates",
+      "type": "Sequential",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.7049167156219482
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            1,
+            5,
+            1
+          ],
+          "finite": true,
+          "max_abs": 0.768308162689209
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.merge_heads",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            225,
+            5,
+            16
+          ],
+          "finite": true,
+          "max_abs": 0.25838518142700195
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 0.25838518142700195
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.combine_heads.0",
+      "type": "Linear",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 0.25838518142700195
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 0.06848591566085815
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2.combine_heads",
+      "type": "Sequential",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 0.25838518142700195
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5,
+            64
+          ],
+          "finite": true,
+          "max_abs": 0.06848591566085815
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.2",
+      "type": "GeometryAwareTensorAttention",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1034583488.0
+        },
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.9014928340911865
+        },
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            3
+          ],
+          "finite": true,
+          "max_abs": 0.9999958276748657
+        },
+        {
+          "shape": [
+            1,
+            225,
+            225,
+            5
+          ],
+          "finite": true,
+          "max_abs": 0.994861364364624
+        },
+        {
+          "shape": [
+            1,
+            225,
+            64,
+            3
+          ],
+          "finite": true,
+          "max_abs": 4.218196920247517e+18
+        },
+        {
+          "shape": [
+            1,
+            225,
+            64,
+            5
+          ],
+          "finite": true,
+          "max_abs": 748678365052928.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 8.618677139282227
+        },
+        {
+          "shape": [
+            1,
+            225,
+            64,
+            3
+          ],
+          "finite": true,
+          "max_abs": 8.110376548231545e+18
+        },
+        {
+          "shape": [
+            1,
+            225,
+            64,
+            5
+          ],
+          "finite": true,
+          "max_abs": 2604952425857024.0
+        },
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            5,
+            16
+          ],
+          "finite": true,
+          "max_abs": 0.6320464611053467
+        },
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            5,
+            16
+          ],
+          "finite": true,
+          "max_abs": 0.6348512172698975
+        },
+        {
+          "shape": [
+            1,
+            4,
+            225,
+            225,
+            5,
+            16
+          ],
+          "finite": true,
+          "max_abs": 1.8711992502212524
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.1.split_fracs",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 8.618677139282227
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            64
+          ],
+          "finite": true,
+          "max_abs": 8.618677139282227
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.1.merge_fracs",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            4,
+            225,
+            1,
+            64
+          ],
+          "finite": true,
+          "max_abs": 8.61841869354248
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            4,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 8.61841869354248
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.1.dropout",
+      "type": "Dropout",
+      "input": [
+        {
+          "shape": [
+            4,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            4,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.split_fracs",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            4,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            4,
+            225,
+            1,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.norm",
+      "type": "RMSNorm",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            64
+          ],
+          "finite": true,
+          "max_abs": 2.691311836242676
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.act",
+      "type": "Tanh",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            5
+          ],
+          "finite": true,
+          "max_abs": 0.00041573590715415776
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            5
+          ],
+          "finite": true,
+          "max_abs": 0.0004157358780503273
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.split_fracs",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            5
+          ],
+          "finite": true,
+          "max_abs": 1.0007250308990479
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4,
+            1,
+            5
+          ],
+          "finite": true,
+          "max_abs": 1.0007250308990479
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.act",
+      "type": "Tanh",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4
+          ],
+          "finite": true,
+          "max_abs": 7.258197001647204e-05
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            4
+          ],
+          "finite": true,
+          "max_abs": 7.258197001647204e-05
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2.merge_fracs",
+      "type": "Rearrange",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            1,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1038673984.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1038673984.0
+        }
+      ]
+    },
+    {
+      "module": "gotennet.residual_fns.3.2",
+      "type": "HyperConnections",
+      "input": [
+        {
+          "shape": [
+            4,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1035603776.0
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            64
+          ],
+          "finite": true,
+          "max_abs": 1038673984.0
+        }
+      ]
+    },
+    {
+      "module": "gotennet.layers.3.3.mlps.0.0",
+      "type": "Identity",
+      "input": [
+        {
+          "shape": [
+            1,
+            225,
+            128
+          ],
+          "finite": false,
+          "max_abs": "inf"
+        }
+      ],
+      "output": [
+        {
+          "shape": [
+            1,
+            225,
+            128
+          ],
+          "finite": false,
+          "max_abs": "inf"
+        }
+      ]
+    }
+  ]
+}

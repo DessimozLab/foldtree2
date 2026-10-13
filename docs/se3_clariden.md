@@ -2,7 +2,10 @@
 
 The cache-only Lightning trainer and bounded launch bundle are implemented.
 One- and two-node Clariden checks passed, including checkpoint resume.
-The small capacity trial is running; the medium trial is queued behind it.
+The small capacity trial completed all 16 epochs; the medium trial failed after
+six updates with nonfinite GotenNet invariant features. The capacity gate is
+incomplete. See the [medium failure investigation](se3_medium_failure_20261013.md)
+for the reproduced tensor overflow and a bounded normalization ablation.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
