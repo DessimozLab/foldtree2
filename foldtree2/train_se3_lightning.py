@@ -74,6 +74,11 @@ def check_resume(saved, current, topology, allow_change=False):
             raise ValueError('Topology change requires explicit opt-in and an epoch boundary')
 
 
+def check_warm_start_normalization(previous, current):
+    if previous.get('tensor_ff_input_norm', False) != current.get('tensor_ff_input_norm', False):
+        raise ValueError('Warm-start tensor feed-forward normalization mismatch')
+
+
 class CacheData(pl.LightningDataModule):
     def __init__(self, directory, manifest, state, global_batch=16, seed=42):
         super().__init__()
@@ -381,10 +386,12 @@ def main():
         warm = torch.load(args.warm_start, map_location='cpu', weights_only=False)
         if 'se3' in warm:
             prior = warm['se3']['provenance']
+            check_warm_start_normalization(prior['training'], config)
             if prior['training']['model'] != config['model'] or prior['sources'] != module.provenance['sources'] or prior['input_identity'] != manifest['input_identity'] or prior['preprocessing'] != module.provenance['preprocessing']:
                 raise ValueError('Warm-start architecture or implementation mismatch')
             module.load_state_dict(warm['state_dict'])
         else:
+            check_warm_start_normalization({}, config)
             spec = warm['provenance']['spec']
             if any(spec[k] != config['model'][k] for k in ('hidden', 'depth', 'heads')):
                 raise ValueError('Legacy warm-start architecture mismatch')

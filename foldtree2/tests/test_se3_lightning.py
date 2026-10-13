@@ -136,7 +136,7 @@ def test_normalized_medium_remains_equivariant_with_finite_gradients():
 
 
 def test_normalization_ablation_is_explicit_in_resume_provenance():
-    from foldtree2.train_se3_lightning import Refiner, check_resume
+    from foldtree2.train_se3_lightning import Refiner, check_resume, check_warm_start_normalization
     from gotennet_pytorch.gotennet import EquivariantFeedForward
     manifest = {'feature_dim':8, 'bundle_sha256':'bundle', 'input_identity':{}, 'scale':1.}
     config = {'model':{'hidden':64,'depth':4,'heads':4}}
@@ -151,6 +151,12 @@ def test_normalization_ablation_is_explicit_in_resume_provenance():
         check_resume(saved, candidate.provenance, saved['topology'])
     with pytest.raises(ValueError, match='boolean'):
         Refiner(dict(config, tensor_ff_input_norm='true'), manifest)
+    check_warm_start_normalization({}, {})
+    check_warm_start_normalization({'tensor_ff_input_norm':True}, {'tensor_ff_input_norm':True})
+    with pytest.raises(ValueError, match='normalization mismatch'):
+        check_warm_start_normalization({}, {'tensor_ff_input_norm':True})
+    with pytest.raises(ValueError, match='normalization mismatch'):
+        check_warm_start_normalization({'tensor_ff_input_norm':True}, {})
 
 
 def test_budget_reservation_is_bounded(tmp_path):

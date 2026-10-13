@@ -6,6 +6,9 @@ The small capacity trial completed all 16 epochs; the medium trial failed after
 six updates with nonfinite GotenNet invariant features. The capacity gate is
 incomplete. See the [medium failure investigation](se3_medium_failure_20261013.md)
 for the reproduced tensor overflow and a bounded normalization ablation.
+The explicit normalized medium variant has since passed a complete local
+4,096-training / 512-validation one-epoch [stability gate](se3_medium_stability_20261013.md).
+Its distributed and longer-run gates remain outstanding.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
