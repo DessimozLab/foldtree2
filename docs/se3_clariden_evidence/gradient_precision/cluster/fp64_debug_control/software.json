@@ -1,0 +1,13 @@
+{
+  "python": "3.12.3",
+  "torch": "2.11.0a0+eb65b36914.nv26.02",
+  "cuda": "13.1",
+  "packages": {
+    "pytorch-lightning": "2.6.0",
+    "gotennet-pytorch": "0.3.1",
+    "e3nn": "0.5.9",
+    "torch-geometric": "2.6.1",
+    "einops": "0.8.1",
+    "numpy": "1.26.4"
+  }
+}

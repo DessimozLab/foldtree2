@@ -8,9 +8,13 @@ incomplete. See the [medium failure investigation](se3_medium_failure_20261013.m
 for the reproduced tensor overflow and a bounded normalization ablation.
 The explicit normalized medium variant has since passed a complete local
 4,096-training / 512-validation one-epoch [stability gate](se3_medium_stability_20261013.md).
-Its [normalized Clariden check](se3_normalized_clariden_check_20261013.md) passed
-exact one-node resume. Two-node training stayed finite, but the strict
-cross-topology agreement gate failed; larger distributed training remains gated.
+Its initial [normalized Clariden check](se3_normalized_clariden_check_20261013.md)
+passed exact one-node resume but failed cross-topology agreement. The subsequent
+[gradient-precision fix](se3_gradient_precision_20261014.md) cleared that failure:
+four and eight GPUs now produce bitwise identical model/optimizer state and
+validation results after 32 updates. Use both explicit normalization and
+`gradient_accumulation_dtype: float64` for the next bounded learning trial.
+Longer learning and four-node gates remain outstanding.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.

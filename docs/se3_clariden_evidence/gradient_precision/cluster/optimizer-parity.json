@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "model_state_exact": true,
+  "optimizer_state_exact": true,
+  "updates": 32,
+  "topologies": [
+    {
+      "world_size": 4,
+      "nodes": 1
+    },
+    {
+      "world_size": 8,
+      "nodes": 2
+    }
+  ]
+}

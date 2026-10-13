@@ -1,0 +1,46 @@
+{
+  "one_job": "3657662",
+  "two_job": "3657694",
+  "one_seconds": 291,
+  "two_seconds": 209,
+  "actual_gpuh": 0.7877777777777778,
+  "reserved_rollout_gpuh": 52,
+  "maximum_additional_gpuh": 4,
+  "passed": true,
+  "fp64_debug_control": {
+    "median_global_structures_per_second": 13.269871960707214,
+    "peak_rank0_gpu_memory_bytes": 3954571264,
+    "validation": {
+      "geometry": 4.657214693259448,
+      "evaluation_fape": 0.9395408690324984,
+      "refined.angle_mae_radians": 1.0644096989417449,
+      "refined.ca_bend_mae_radians": 0.8472655966179445,
+      "refined.ca_bond_deviation_3_8": 1.7458912315778434,
+      "refined.ca_bond_mae": 1.7595854145474732,
+      "refined.ca_rmsd": 16.54182182624936,
+      "refined.ca_torsion_mae_radians": 1.5683784403213084,
+      "refined.fape": 0.9395408690324984,
+      "refined.lddt": 0.2052875004010275,
+      "refined.tm_score": 0.2016660143342704,
+      "refined.valid_residues": 114.6171875
+    }
+  },
+  "fp64_debug_two": {
+    "median_global_structures_per_second": 24.169791100684993,
+    "peak_rank0_gpu_memory_bytes": 3693957120,
+    "validation": {
+      "geometry": 4.657214693259448,
+      "evaluation_fape": 0.9395408690324984,
+      "refined.angle_mae_radians": 1.0644096989417449,
+      "refined.ca_bend_mae_radians": 0.8472655966179445,
+      "refined.ca_bond_deviation_3_8": 1.7458912315778434,
+      "refined.ca_bond_mae": 1.7595854145474732,
+      "refined.ca_rmsd": 16.54182182624936,
+      "refined.ca_torsion_mae_radians": 1.5683784403213084,
+      "refined.fape": 0.9395408690324984,
+      "refined.lddt": 0.2052875004010275,
+      "refined.tm_score": 0.2016660143342704,
+      "refined.valid_residues": 114.6171875
+    }
+  }
+}

@@ -6,6 +6,13 @@ metrics, but the strict cross-topology agreement gate **failed**. This is not a
 repeat of the original nonfinite tensor overflow. Larger distributed training
 has not been launched; the agreement failure needs diagnosis first.
 
+**Subsequent result, 2026-10-14:** the
+[gradient-precision investigation](se3_gradient_precision_20261014.md) reproduced
+the divergence using only float32 summation order, then eliminated it with
+high-precision gradient sums. The new four-/eight-GPU checks matched model and
+optimizer state and validation results bitwise after 32 updates. The failed
+checks documented here remain preserved as the original evidence.
+
 ## Execution and provenance
 
 The training release was `4313ca60cb0de03f5ca4baa84c7a7b6a74fb1988` on

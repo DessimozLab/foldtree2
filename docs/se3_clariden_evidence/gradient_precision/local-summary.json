@@ -1,0 +1,7 @@
+{
+  "float32_parameter_difference_update16": 0.0026900507509708405,
+  "float64_parameter_difference_update16": 0.0,
+  "fape_max_directional_error": 4.722775070326035e-10,
+  "local_serial_vs_two_rank_max_difference": 0.0,
+  "local_resume_max_difference": 0.0
+}
