@@ -28,7 +28,7 @@ srun --environment="$EDF_PATH" --network=disable_rdzv_get --mpi=none --cpu-bind=
     python -c "import importlib.metadata as m; print(\"torch==\"+m.version(\"torch\"))" > "$TRAIN_VENV/torch-constraint.txt"
     python -m pip install -c "$TRAIN_VENV/torch-constraint.txt" -r alps/se3/requirements.txt
     python -m pip freeze > "$TRAIN_VENV/resolved-requirements.txt"
-    python alps/se3/inspect_environment.py
+    python -m alps.se3.inspect_environment
     python -c "import os; from foldtree2.se3_cache import open_bundle; print(open_bundle(os.environ[\"TARGET_CACHE\"])[\"bundle_sha256\"])"
     python -c "import torch; print(torch.__version__, torch.version.cuda)"
 ' > "logs/environment-${SLURM_JOB_ID}.jsonl" 2>&1
