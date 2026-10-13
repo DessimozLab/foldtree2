@@ -3,7 +3,8 @@
 The cache-only Lightning trainer and bounded launch bundle are implemented. Local
 verification passes for the 32-wide refiner and the corrected 64-wide refiner.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
-GotenNet 0.3.1. No Clariden job has been submitted: remaining project credit must
+GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. No job has been
+submitted: remaining project credit must
 be checked first. Slurm fair-share is not a credit balance.
 
 This trains the residue SE(3) refiner. The staged transformer, production
@@ -91,9 +92,13 @@ Use a revision-specific code directory and venv, never the old
 
 The reviewed extended image is
 `jfrog.svc.cscs.ch/docker-group-csstaff/alps-images/ngc-pytorch:26.02-py3-alps6`.
-Resolve its registry digest with `scripts/pin_se3_image.py` before allocation;
-use the generated `extended-pinned.toml`. Record the digest and resolved Python
-packages. `alps/se3/requirements.txt` pins the locally validated refiner libraries.
+The unauthenticated mirror metadata request returned HTTP 401. The documented
+public GHCR copy was resolved and its config verified as ARM64, with digest
+`sha256:3dd0d01a02e58d3c78e4222ce252bd8d177c14392b3d1a05a1f4c9a92454ae40`.
+The committed `extended-pinned.toml` uses that public image by digest.
+`pin_se3_image.py` defaults to this public registry, keeps its anonymous pull
+token in memory, and verifies ARM64 without downloading image layers. Record
+resolved Python packages during allocated-node preparation. `alps/se3/requirements.txt` pins the locally validated refiner libraries.
 Preparation creates an ARM venv with the base image's packages visible and pins
 its existing torch version as a constraint, preventing an accidental CUDA/PyTorch
 replacement. Base PyTorch differs from workstation 2.8.0+cu128 and must pass
@@ -205,7 +210,9 @@ with 20 warmup and 100 measured updates (`--stop-after-updates 120` in a separat
 output). `report_se3_scaling.py` requires the complete window. Four-node efficiency
 must reach 60% relative to two nodes. `--profile` writes per-rank PyTorch traces;
 update/checkpoint events record walltime, data wait, lengths, gradients, host and
-GPU memory. GPU utilization and NCCL transport still require allocated-node
+GPU memory. Epoch events report globally reduced training geometry and consumed
+structure counts; partial-epoch statistics survive resume. Failures create
+per-rank JSON records and propagate to the launcher. GPU utilization and NCCL transport still require allocated-node
 monitoring. Small local smoke measurements are not scaling evidence.
 
 ## Recovery

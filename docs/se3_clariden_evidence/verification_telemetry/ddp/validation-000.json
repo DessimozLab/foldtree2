@@ -1,0 +1,89 @@
+[
+  {
+    "id": "A0A4V3D712",
+    "geometry": 4.345126628875732,
+    "evaluation_fape": 0.8664255142211914,
+    "raw": {
+      "ca_bend_mae_radians": 1.4910430908203125,
+      "ca_torsion_mae_radians": 1.7235360145568848,
+      "fape": 0.8511719703674316,
+      "ca_rmsd": 9.783835411071777,
+      "tm_score": 0.06909998502748495,
+      "lddt": 0.031165311112999916,
+      "ca_bond_mae": 3.3971049785614014,
+      "ca_bond_deviation_3_8": 3.3566815853118896,
+      "angle_mae_radians": null,
+      "valid_residues": 34
+    },
+    "refined": {
+      "ca_bend_mae_radians": 0.9981310367584229,
+      "ca_torsion_mae_radians": 1.7461817264556885,
+      "fape": 0.8664255142211914,
+      "ca_rmsd": 8.284886360168457,
+      "tm_score": 0.1671860466901792,
+      "lddt": 0.19512194395065308,
+      "ca_bond_mae": 3.281214475631714,
+      "ca_bond_deviation_3_8": 3.281614303588867,
+      "angle_mae_radians": 2.0099477767944336,
+      "valid_residues": 34
+    }
+  },
+  {
+    "id": "A0A661NUH4",
+    "geometry": 3.9010324478149414,
+    "evaluation_fape": 0.8902026414871216,
+    "raw": {
+      "ca_bend_mae_radians": 1.3650797605514526,
+      "ca_torsion_mae_radians": 1.5260734558105469,
+      "fape": 0.8600343465805054,
+      "ca_rmsd": 11.416587829589844,
+      "tm_score": 0.07381624707260018,
+      "lddt": 0.03333333507180214,
+      "ca_bond_mae": 3.456538200378418,
+      "ca_bond_deviation_3_8": 3.4029910564422607,
+      "angle_mae_radians": null,
+      "valid_residues": 36
+    },
+    "refined": {
+      "ca_bend_mae_radians": 0.9203610420227051,
+      "ca_torsion_mae_radians": 1.7403621673583984,
+      "fape": 0.8902026414871216,
+      "ca_rmsd": 8.834992408752441,
+      "tm_score": 0.17695682682708838,
+      "lddt": 0.21458333730697632,
+      "ca_bond_mae": 2.6221907138824463,
+      "ca_bond_deviation_3_8": 2.603227138519287,
+      "angle_mae_radians": 1.7769989967346191,
+      "valid_residues": 36
+    }
+  },
+  {
+    "id": "P15220",
+    "geometry": 5.184850692749023,
+    "evaluation_fape": 0.8717764616012573,
+    "raw": {
+      "ca_bend_mae_radians": 1.3155919313430786,
+      "ca_torsion_mae_radians": 1.5858315229415894,
+      "fape": 0.8355937004089355,
+      "ca_rmsd": 7.642986297607422,
+      "tm_score": 0.08646128059246991,
+      "lddt": 0.03009708784520626,
+      "ca_bond_mae": 3.3803586959838867,
+      "ca_bond_deviation_3_8": 3.345288038253784,
+      "angle_mae_radians": null,
+      "valid_residues": 36
+    },
+    "refined": {
+      "ca_bend_mae_radians": 0.7533552646636963,
+      "ca_torsion_mae_radians": 1.766581654548645,
+      "fape": 0.8717764616012573,
+      "ca_rmsd": 13.104958534240723,
+      "tm_score": 0.17382254412259732,
+      "lddt": 0.16165047883987427,
+      "ca_bond_mae": 3.429328680038452,
+      "ca_bond_deviation_3_8": 3.433072090148926,
+      "angle_mae_radians": 1.848589301109314,
+      "valid_residues": 36
+    }
+  }
+]

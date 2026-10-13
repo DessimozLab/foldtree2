@@ -1,5 +1,5 @@
 {
-  "foldtree2/train_se3_lightning.py": "09743e216de596d1f3f9e861fa480bb7aa23c52f14e14ba231574abb672789a7",
+  "foldtree2/train_se3_lightning.py": "7da7e52b452615dc9d017a38cf464dc58585c3d48ea6d6c1c60d82e59f96ee9b",
   "foldtree2/se3_cache.py": "31a486eada79950c0e31163cedae184d96c5ed6f01998e5cc2a441ff8f8c0a9e",
   "foldtree2/se3_validation.py": "762f3f71447bcd43969f996e3b4572e756c98f5a76e9a4f5533ca0334eabac10",
   "foldtree2/src/se3_struct_decoder.py": "582b0f607a25513d539f81253be1f020fef3a6dc79dfc953588cb442cd799497",

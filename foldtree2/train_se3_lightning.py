@@ -148,6 +148,7 @@ class Refiner(pl.LightningModule):
                 self.scheduler.load_state_dict(saved['scheduler'])
             if saved['topology'] == topology:
                 rng = saved['rng'][self.global_rank]
+                self.epoch_train = list(rng.get('epoch_train', []))
                 torch.set_rng_state(rng['torch'].cpu()); random.setstate(rng['python'])
                 np.random.set_state(rng['numpy'])
                 if self.device.type == 'cuda':
@@ -291,18 +292,24 @@ class Refiner(pl.LightningModule):
             self.trainer.should_stop = True
 
     def on_train_epoch_end(self):
+        totals = torch.tensor([sum(self.epoch_train), len(self.epoch_train)], dtype=torch.float64, device=self.device)
+        if dist.is_initialized():
+            dist.all_reduce(totals)
+        if totals[1] <= 0:
+            raise RuntimeError('No training structures consumed')
+        self.event('train_epoch', geometry=float(totals[0] / totals[1]), effective_structures=int(totals[1]))
         complete = self.stream['cursor'] == len(self.manifest['train_ids']) // self.config['global_batch']
         if complete:
             self.stream['epoch'] += 1; self.stream['cursor'] = 0
+            self.epoch_train = []
         self.save_atomic('last.ckpt')
         if complete and getattr(self, 'improved', False):
             self.save_atomic('best.ckpt')
-        self.epoch_train = []
         if self.stop_epoch and self.stream['epoch'] >= self.stop_epoch:
             self.trainer.should_stop = True
 
     def on_save_checkpoint(self, checkpoint):
-        rng = {'torch': torch.get_rng_state(), 'python': random.getstate(), 'numpy': np.random.get_state(),
+        rng = {'epoch_train':list(self.epoch_train), 'torch': torch.get_rng_state(), 'python': random.getstate(), 'numpy': np.random.get_state(),
                'cuda': torch.cuda.get_rng_state(self.device) if self.device.type == 'cuda' else None}
         states = [None] * self.trainer.world_size
         if dist.is_initialized():
@@ -402,7 +409,13 @@ def main():
         max_epochs=remaining, num_sanity_val_steps=0, use_distributed_sampler=False,
         reload_dataloaders_every_n_epochs=1, enable_checkpointing=False, logger=False,
         enable_progress_bar=False, deterministic=True)
-    trainer.fit(module, datamodule=CacheData(config['cache'], manifest, module.stream))
+    try:
+        trainer.fit(module, datamodule=CacheData(config['cache'], manifest, module.stream))
+    except Exception as exc:
+        failure = {'time':time.time(), 'rank':int(os.environ.get('RANK', 0)),
+                   'event':'failure', 'error':repr(exc), 'stream':dict(module.stream)}
+        (root / ('failure-rank-' + str(failure['rank']) + '.json')).write_text(json.dumps(failure, indent=2))
+        raise
 
 
 if __name__ == '__main__':
