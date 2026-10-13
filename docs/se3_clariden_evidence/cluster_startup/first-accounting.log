@@ -1,0 +1,9 @@
+3652348|FAILED|12:08:21|12:13:26|305|billing=1,cpu=288,energy=193020,gres/gpu=4,mem=450G,node=1|1:0
+3652348.batch|FAILED|12:08:21|12:13:26|305|cpu=288,gres/gpu=4,mem=450G,node=1|1:0
+3652348.extern|COMPLETED|12:08:21|12:13:26|305|billing=1,cpu=288,gres/gpu=4,mem=450G,node=1|0:0
+3652348.0|FAILED|12:10:30|12:13:26|176|cpu=288,gres/gpu=4,mem=450G,node=1|1:0
+3652401|CANCELLED|12:15:00|Unknown|10100||0:0
+3652402|CANCELLED|12:15:01|Unknown|10099||0:0
+3652424|CANCELLED|12:19:59|Unknown|9801||0:0
+3652426|CANCELLED|12:19:59|Unknown|9801||0:0
+Existing CSCS SSH certificate is ready; no login needed.

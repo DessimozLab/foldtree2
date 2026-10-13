@@ -1,7 +1,8 @@
 # SE(3) Lightning rollout on Clariden
 
-The cache-only Lightning trainer and bounded launch bundle are implemented. Local
-verification passes for the 32-wide refiner and the corrected 64-wide refiner.
+The cache-only Lightning trainer and bounded launch bundle are implemented.
+One- and two-node Clariden checks passed, including checkpoint resume.
+The small capacity trial is running; the medium trial is queued behind it.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
@@ -256,3 +257,34 @@ accounting remain preserved. One corrected one-hour preparation allocation
 uses 4 GPUh of the agreed reserve. Canceled-before-allocation reservations are
 released only after recording Slurm proof; this permits rebuilding the same
 bounded dependency chain without losing its audit history.
+
+## Successful cluster startup
+
+Deployment `f625bf1` reuses the fully installed ARM environment from `028cc75`.
+The inspector runs with `python -m alps.se3.inspect_environment`, keeping the
+repository in Python's module path. Environment verification and real CUDA DDP
+training succeeded in job `3653704` (one node/four GPUs, 159 seconds), including
+checkpoint resume from update 2 through update 4. Job `3653761` passed on two
+nodes/eight GPUs in 88 seconds. Both counted every one of the 512 holdouts once;
+their update-2 validation geometry differed by approximately `6e-9`.
+
+The initial two-node submission was rejected by Slurm's active-job submit limit;
+its reservation was released with no job allocated, then submission succeeded
+after the one-node check finished. Completion checks for the capacity trials run
+inside the container, where the prepared venv's interpreter and system packages
+are available.
+
+Small trial `3653793` is running and has passed 246 finite optimizer updates at
+the recorded observation. Medium trial `3653794` is pending its successful
+completion. Each trains the identical 4096/512 cohort for 16 epochs / 4096
+updates, with a four-hour ceiling. The medium job computes the paired capacity
+gate after training; no data expansion or six-layer trial is automatically queued.
+Logs live under the revision-specific `logs` directory on project store;
+checkpoints/events/paired validation are under `se3/runs/small` and
+`se3/runs/medium`. See the cluster startup evidence archive for exact observations.
+
+The ledger conservatively reserves 44 GPUh for the current sequence, including
+the full ceilings of both failed preparation jobs; canceled/unsubmitted jobs
+have auditable zero-allocation releases. The total rollout ceiling remains
+256 GPUh. The extra one-hour preparation correction uses 4 GPUh of the agreed
+17.33 GPUh reserve; actual failed preparation runtime totaled 357 seconds.

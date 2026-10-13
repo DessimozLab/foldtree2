@@ -2,7 +2,8 @@
 
 Local numerical and integration verification on 2026-10-13. This archive contains
 CPU/CUDA checks, actual training logs, per-structure validation pairs, source
-hashes and restart comparisons. No Clariden allocations have been submitted.
+hashes and restart comparisons. Allocated-node results are recorded in `cluster_startup`, including setup failures
+and the successful one- and two-node checks.
 The frozen input bundle is stored separately under runs and on project storage;
 production checkpoint files and frozen tensors are not committed here.
 
