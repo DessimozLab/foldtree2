@@ -1,0 +1,18 @@
+usage: investigate_se3_scale.py [-h] [--output OUTPUT]
+                                [--screen-count SCREEN_COUNT]
+                                [--screen-epochs SCREEN_EPOCHS]
+                                [--overfit-epochs OVERFIT_EPOCHS]
+                                [--screen-suite {basic,parameterization,spatial}]
+
+CPU-safe, frozen-cache controls for coordinate units and residual updates. No
+production model calls, GPU selection, data regeneration or larger training.
+Calibration uses only the original 32 overfit training structures. The 128
+pilot validation structures are reserved for final paired evaluation.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --output OUTPUT
+  --screen-count SCREEN_COUNT
+  --screen-epochs SCREEN_EPOCHS
+  --overfit-epochs OVERFIT_EPOCHS
+  --screen-suite {basic,parameterization,spatial}

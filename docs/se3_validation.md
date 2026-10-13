@@ -49,6 +49,15 @@ Caches store latent/codebook features, tokens, bottleneck coordinates, contact e
 
 ## Results and larger-run gate
 
+The follow-up [coordinate-scale and planarity investigation](se3_investigation_20261009.md)
+found that the three-channel contact bottleneck is essentially planar. The
+original validation report remains a historical protocol-v2 result; the
+investigation uses corrected distance metrics and separate experimental model
+modes. In particular, historical lDDT calculations could include numerical
+nonzero self-distances; the current implementation explicitly excludes them.
+Do not pool the two protocols' metrics. Exact original implementation/evidence
+is preserved by commit `e7954c3` and the original archive.
+
 See [the generated report](se3_validation_report.md). Each run retains `events.jsonl`, `provenance.json`, `baseline.json`, `paired_metrics.json`, `length_profile.json`, `last.pt` and `best.pt`. Events contain loss terms, effective structure counts, nonfinite failures, gradient norms, throughput and peak host/GPU memory. Paired metrics compare the same structures and masks. The best checkpoint is selected by validation FAPE.
 
 Require at least a 20% overfit training geometry reduction and improvement over decoder coordinates. Larger training requires lower held-out FAPE with no material structural regression. The report uses operational thresholds of 5% for error metrics and 0.01 absolute for TM-score/lDDT. Preserve failures and diagnose them before increasing capacity or duration.

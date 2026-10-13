@@ -1,6 +1,7 @@
 import torch
 import importlib
 import types
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -35,6 +36,28 @@ def _safe_gotennet_spherical_harmonics(degree, rel_pos, *args, **kwargs):
 		return torch.where(valid, out, torch.zeros_like(out))
 	out = _ORIGINAL_GOTENNET_SPHERICAL_HARMONICS(degree, rel_pos, *args, **kwargs)
 	return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+class StableHighDegreeNorm(_gotennet_backend.HighDegreeNorm):
+    """Same tensor normalization with float32-safe norm accumulation.
+
+    Rescaling before squaring avoids overflow for large finite tensor streams.
+    The detached scale cancels algebraically, including through the gradient;
+    the epsilon is scaled as well so the original clamp is preserved.
+    """
+    def forward(self, x):
+        scale = x.detach().abs().amax(dim=(-2, -1), keepdim=True).clamp_min(1.)
+        scaled = x / scale
+        denominator = scaled.norm(dim=-1, keepdim=True).norm(dim=-2, keepdim=True) * self.scale
+        return scaled / denominator.clamp_min(self.eps / scale) * self.gamma
+
+
+def enable_stable_tensor_norm(model):
+    # Change only these instances, preserving checkpoint names and parameters.
+    for module in model.modules():
+        if type(module) is _gotennet_backend.HighDegreeNorm:
+            module.__class__ = StableHighDegreeNorm
+    return model
 
 
 # Give only this subclass a private forward namespace. No backend globals are
@@ -774,7 +797,10 @@ class se3_denoiser(torch.nn.Module):
 	def __init__(self, in_channels, hidden_channels, out_channels, 
 	num_embeddings, commitment_cost, metadata={}, edge_dim=1,
 	encoder_hidden=100, dropout_p=0.05, max_degree=2, depth=1, heads=2, dim_head=32,
-	dim_edge_refinement=256, return_coors=True, num_atom_types=20):
+	dim_edge_refinement=256, return_coors=True, num_atom_types=20,
+	coordinate_update='absolute', zero_init_coordinate_update=False,
+	coordinate_normalization='bounded_radius', coordinate_residual_gain=1.0,
+	angle_output='bounded', device=None):
 		super().__init__()
 
 		#save all arguments to constructor
@@ -795,8 +821,24 @@ class se3_denoiser(torch.nn.Module):
 		self.hidden_channels = hidden_channels
 		self.return_coors = return_coors
 		self.num_atom_types = num_atom_types
+		if coordinate_update not in ('absolute', 'residual'):
+			raise ValueError('coordinate_update must be absolute or residual')
+		if zero_init_coordinate_update and (coordinate_update != 'residual' or not return_coors):
+			raise ValueError('Zero initialization requires residual coordinate output')
+		self.coordinate_update = coordinate_update
+		if coordinate_normalization not in ('bounded_radius', 'rms_radius'):
+			raise ValueError('Unknown coordinate_normalization')
+		self.coordinate_normalization = coordinate_normalization
+		if not math.isfinite(coordinate_residual_gain) or coordinate_residual_gain <= 0:
+			raise ValueError('coordinate_residual_gain must be finite and positive')
+		self.coordinate_residual_gain = float(coordinate_residual_gain)
+		if angle_output not in ('bounded', 'sincos'):
+			raise ValueError('angle_output must be bounded or sincos')
+		if angle_output == 'sincos' and out_channels != 3:
+			raise ValueError('Circular angle output requires three angle channels')
+		self.angle_output = angle_output
 		
-		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+		self.device = torch.device(device) if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 		# GotenNet for 3D structure processing
 		self.gotennet = StableGotenNet(
@@ -810,6 +852,10 @@ class se3_denoiser(torch.nn.Module):
 			dim_edge_refinement = dim_edge_refinement,
 			return_coors = return_coors
 		).to(self.device)
+		if zero_init_coordinate_update:
+			# Start from the seed exactly; the vector projection still receives
+			# geometry gradients on the first step and enables upstream learning.
+			torch.nn.init.zeros_(self.gotennet.proj_to_coors[1].weight)
 
 		self.token_embedding = torch.nn.Embedding(num_atom_types, hidden_channels[0])
 		self.bn = torch.nn.BatchNorm1d(in_channels)
@@ -839,6 +885,13 @@ class se3_denoiser(torch.nn.Module):
 			DynamicTanh(self.out_channels, channels_last=True),
 			torch.nn.Tanh()
 		)
+		if angle_output == 'sincos':
+			self.out_angles = nn.Sequential(nn.Linear(gotennet_out_dim, self.encoder_hidden),
+				nn.GELU(), nn.Linear(self.encoder_hidden, 6))
+			# Nonzero cosine anchors avoid undefined atan2 gradients at (0,0).
+			nn.init.zeros_(self.out_angles[-1].weight)
+			with torch.no_grad():
+				self.out_angles[-1].bias.copy_(torch.tensor([0.,1.,0.,1.,0.,1.]))
 
 
 	def _extract_atom_ids(self, data, x_dict, ft2_token_ids=None, aa_identity_ids=None):
@@ -1229,6 +1282,8 @@ class se3_denoiser(torch.nn.Module):
 		centered = (coords_for_gotennet - center).masked_fill(~valid, 0.0)
 		radius = centered.detach().norm(dim=-1).amax(dim=1, keepdim=True).unsqueeze(-1)
 		coord_scale = (radius / 64.0).clamp_min(1.0)
+		if getattr(self, 'coordinate_normalization', 'bounded_radius') == 'rms_radius':
+			coord_scale = (centered.detach().square().sum(-1, keepdim=True).sum(1, keepdim=True) / count).sqrt().clamp_min(1.0)
 		coords_for_gotennet = centered / coord_scale
 		with torch.autocast(device_type=autocast_device, enabled=False):
 			invariant, coors_out = self.gotennet(
@@ -1239,6 +1294,8 @@ class se3_denoiser(torch.nn.Module):
 			)
 		frame_coords_batch = None
 		if coors_out is not None:
+			if getattr(self, 'coordinate_update', 'absolute') == 'residual':
+				coors_out = coords_for_gotennet + coors_out * getattr(self, 'coordinate_residual_gain', 1.0)
 			frame_coords_batch = (coors_out * coord_scale).masked_fill(~valid, 0.0)
 			coors_out = (frame_coords_batch + center).masked_fill(~valid, 0.0)
 		if not torch.isfinite(invariant[atom_mask_batch]).all():
@@ -1279,6 +1336,10 @@ class se3_denoiser(torch.nn.Module):
 		angle_dtype = angle_param.dtype if angle_param is not None else z.dtype
 		with torch.autocast(device_type=autocast_device, enabled=False):
 			angles = self.out_angles(z.to(dtype=angle_dtype))
+			if getattr(self, 'angle_output', 'bounded') == 'sincos':
+				if not torch.isfinite(angles).all() or (angles.view(-1,3,2).norm(dim=-1) <= 1e-8).any():
+					raise RuntimeError('Circular angle head returned an undefined sin/cos pair')
+				angles = _sincos_logits_to_angles(angles)
 		if node_mask is not None:
 			angles = angles.masked_fill(~node_mask.unsqueeze(-1), 0.0)
 		if not torch.isfinite(angles).all():

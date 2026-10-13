@@ -1,0 +1,44 @@
+[
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 32,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 42.699479315429926
+  },
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 128,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 86.90228646248579
+  },
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 256,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 51.193489879369736
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 32,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 128,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 256,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  }
+]

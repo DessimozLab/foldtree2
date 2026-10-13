@@ -1,0 +1,13 @@
+# Inspection only until its installed versions/numerical checks pass.
+image = "/users/dmoi/pygmk3.sqsh"
+mounts = ["/capstor", "/iopsstor"]
+workdir = "${TRAIN_WORKDIR}"
+writable = true
+[annotations]
+com.hooks.aws_ofi_nccl.enabled = "true"
+com.hooks.aws_ofi_nccl.variant = "cuda12"
+[env]
+OMP_NUM_THREADS = "2"
+MKL_NUM_THREADS = "2"
+CUBLAS_WORKSPACE_CONFIG = ":4096:8"
+NCCL_DEBUG = "INFO"

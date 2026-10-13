@@ -1,0 +1,12 @@
+{
+  "versions": {
+    "torch": "2.8.0",
+    "torch-geometric": "2.6.1",
+    "lightning": "not packaged on default path",
+    "gotennet": "not packaged on default path",
+    "numpy": "1.26.4",
+    "tmtools": "0.3.0"
+  },
+  "base_revision": "e7954c38aff73ea0f2494f3b6d678719ff327d2f",
+  "unchanged_frame_builder_sha256": "897c07fb49413183983f4c7416c13e0859b5a54241f0d29d06ed02dd7d12e761"
+}

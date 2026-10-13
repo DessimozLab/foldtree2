@@ -60,6 +60,12 @@ and reconstruction, and rerun limitations.
 - [Staged geometry training](docs/staged_geometry_training.md)
 - [SE(3) residue refiner validation and training](docs/se3_validation.md)
 - [SE(3) validation results and learning gates](docs/se3_validation_report.md)
+- [SE(3) coordinate-scale and planarity investigation](docs/se3_investigation_20261009.md)
+- [Bounded SE(3) learning with a 3D seed](docs/se3_spatial_learning_20261009.md)
+- [SE(3) soft-FAPE and local-bond loss ablation](docs/se3_loss_ablation_20261009.md)
+- [Revised SE(3) 512/128 pilot](docs/se3_revised_pilot.md)
+- [Larger SE(3) workstation trial](docs/se3_larger_local.md)
+- [SE(3) Lightning rollout on Clariden](docs/se3_clariden.md)
 - [Manuscript methods framework](docs/manuscript_methods_framework.md)
 
 ## Command-line tools

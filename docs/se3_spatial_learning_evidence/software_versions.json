@@ -1,0 +1,11 @@
+{
+  "python": "3.9.23",
+  "platform": "Linux-5.15.0-177-generic-x86_64-with-glibc2.35",
+  "torch": "2.8.0+cu128",
+  "torch_cuda_build": "12.8",
+  "tmtools": "0.3.0",
+  "gotennet": "not packaged",
+  "torch-geometric": "2.6.1",
+  "lightning": "not packaged",
+  "numpy": "1.26.4"
+}

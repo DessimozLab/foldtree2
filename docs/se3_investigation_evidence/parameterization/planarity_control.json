@@ -1,0 +1,42 @@
+{
+  "decoder_residual": false,
+  "normalization_shape": [
+    3
+  ],
+  "gamma": [
+    1.0463968515396118,
+    1.0459398031234741,
+    1.036451816558838
+  ],
+  "beta": [
+    0.006104388274252415,
+    -0.013719308190047741,
+    0.0012105026980862021
+  ],
+  "predictions": [
+    {
+      "id": "A0A1J1CXQ6",
+      "checkpoint_epoch": 8,
+      "refined_smallest_largest_ratio": 2.4876765913738885e-07,
+      "max_distance_from_seed_plane": 6.425345240756997e-06
+    },
+    {
+      "id": "A0A388Q026",
+      "checkpoint_epoch": 8,
+      "refined_smallest_largest_ratio": 6.73288194673594e-06,
+      "max_distance_from_seed_plane": 0.000682515919973703
+    },
+    {
+      "id": "A0A6N7V3G6",
+      "checkpoint_epoch": 8,
+      "refined_smallest_largest_ratio": 1.2332339421575525e-07,
+      "max_distance_from_seed_plane": 8.364300843055616e-06
+    },
+    {
+      "id": "E4X664",
+      "checkpoint_epoch": 8,
+      "refined_smallest_largest_ratio": 3.355570692762199e-07,
+      "max_distance_from_seed_plane": 2.8029034885079795e-05
+    }
+  ]
+}

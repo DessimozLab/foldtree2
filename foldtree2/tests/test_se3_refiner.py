@@ -43,6 +43,64 @@ def test_import_has_no_global_side_effects():
     assert backend.spherical_harmonics is original_harmonics
 
 
+@pytest.mark.parametrize('normalization', ['bounded_radius', 'rms_radius'])
+@pytest.mark.parametrize('gain', [1., 32.])
+def test_zero_residual_preserves_seed_and_can_learn(normalization, gain):
+    m = se3_denoiser(8, [32], 3, 40, .25, dropout_p=0., depth=2,
+                    heads=2, dim_head=16, num_atom_types=40,
+                    coordinate_update='residual', zero_init_coordinate_update=True,
+                    coordinate_normalization=normalization, coordinate_residual_gain=gain).cpu().float().eval()
+    g = Batch.from_data_list([graph(7), graph(4)])
+    c = torch.randn(11, 3) * 20 + 100
+    mask = torch.ones(11, dtype=torch.bool); mask[2] = False
+    out = run(m, g, c, mask)
+    torch.testing.assert_close(out['coors_out_flat'][mask], c[mask], atol=1e-4, rtol=1e-4)
+    assert out['coors_out_flat'][~mask].eq(0).all()
+    target = c + torch.randn_like(c)
+    (out['coors_out_flat'][mask]-target[mask]).square().mean().backward()
+    projection = m.gotennet.proj_to_coors[1].weight
+    assert projection.grad.norm() > 0 and torch.isfinite(projection.grad).all()
+    with torch.no_grad(): projection -= .001 * projection.grad
+    changed = run(m, g, c, mask)
+    assert (changed['coors_out_flat'][mask]-out['coors_out_flat'][mask]).abs().max() > 1e-6
+    q, _ = torch.linalg.qr(torch.randn(3,3)); q[:,0] *= torch.linalg.det(q)
+    moved = run(m, g, c@q.T+torch.tensor([300.,-70.,40.]), mask)
+    torch.testing.assert_close(moved['coors_out_flat'][mask],
+        changed['coors_out_flat'][mask]@q.T+torch.tensor([300.,-70.,40.]), atol=1e-4,rtol=1e-4)
+    torch.testing.assert_close(moved['angles'][mask], changed['angles'][mask], atol=1e-4,rtol=1e-4)
+
+
+def test_circular_angle_head_covers_full_range_and_has_finite_gradients():
+    m=se3_denoiser(8,[32],3,40,.25,dropout_p=0.,depth=2,heads=2,dim_head=16,
+        num_atom_types=40,coordinate_update='residual',zero_init_coordinate_update=True,
+        angle_output='sincos').cpu().float().eval()
+    g=graph(7);c=torch.randn(7,3)
+    initial=run(m,g,c)
+    assert initial['angles'].eq(0).all()
+    (1-torch.cos(initial['angles']-2.5)).mean().backward()
+    assert m.out_angles[-1].weight.grad.norm()>0
+    assert all(torch.isfinite(p.grad).all() for p in m.parameters() if p.grad is not None)
+    theta=torch.tensor([2.5,-2.5,1.8])
+    with torch.no_grad():m.out_angles[-1].bias.copy_(torch.stack([theta.sin(),theta.cos()],-1).flatten())
+    changed=run(m,g,c)
+    torch.testing.assert_close(changed['angles'],theta.expand(7,-1))
+    with torch.no_grad():m.out_angles[-1].weight.normal_(0.,.005)
+    changed=run(m,g,c)
+    q,_=torch.linalg.qr(torch.randn(3,3));q[:,0]*=torch.linalg.det(q)
+    torch.testing.assert_close(run(m,g,c@q.T+100)['angles'],changed['angles'],atol=1e-4,rtol=1e-4)
+    with torch.no_grad():
+        m.out_angles[-1].bias.zero_();m.out_angles[-1].weight.zero_()
+    with pytest.raises(RuntimeError,match='undefined sin/cos'):
+        run(m,g,c)
+
+
+def test_explicit_cpu_construction_does_not_choose_available_cuda(monkeypatch):
+    monkeypatch.setattr(torch.cuda,'is_available',lambda:True)
+    m=se3_denoiser(8,[32],3,40,.25,depth=2,heads=2,dim_head=16,num_atom_types=40,device='cpu')
+    assert m.device.type=='cpu'
+    assert all(p.device.type=='cpu' for p in m.parameters())
+
+
 @pytest.mark.parametrize('lengths', [[9], [9, 4], [1], [2], [5, 1]])
 @pytest.mark.parametrize('kind', ['random', 'coincident', 'collinear'])
 def test_full_refiner_equivariance_and_gradients(lengths, kind):
