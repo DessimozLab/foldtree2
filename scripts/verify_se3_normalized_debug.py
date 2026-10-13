@@ -62,7 +62,8 @@ def compare(candidate, control, exact, output):
     largest = 0.
     for k, v in a['state_dict'].items():
         w = b['state_dict'][k]
-        torch.testing.assert_close(v, w, atol=atol, rtol=rtol)
+        torch.testing.assert_close(v, w, atol=atol, rtol=rtol,
+                                   msg=lambda message: f'{k}: {message}')
         if v.is_floating_point():
             largest = max(largest, float((v - w).abs().max()))
     if exact:
@@ -96,4 +97,10 @@ if __name__ == '__main__':
     p.add_argument('candidate'); p.add_argument('control'); p.add_argument('--exact', action='store_true')
     p.add_argument('--output', required=True)
     args = p.parse_args()
-    compare(args.candidate, args.control, args.exact, args.output)
+    try:
+        compare(args.candidate, args.control, args.exact, args.output)
+    except (ValueError, AssertionError) as exc:
+        Path(args.output).write_text(json.dumps({'passed':False, 'error':str(exc),
+            'candidate':args.candidate, 'control':args.control,
+            'exact_resume':args.exact}, indent=2)+'\n')
+        raise

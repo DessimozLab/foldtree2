@@ -1,0 +1,20 @@
+{
+  "job_id": "3657077",
+  "code_revision": "4313ca60cb0de03f5ca4baa84c7a7b6a74fb1988",
+  "stage": "normalized_debug_two",
+  "command": [
+    "sbatch",
+    "--account=a0117",
+    "--partition=debug",
+    "--nodes=2",
+    "--time=15",
+    "--ntasks-per-node=1",
+    "--gpus-per-task=4",
+    "--cpus-per-task=8",
+    "--parsable",
+    "--job-name=ft2-se3-normalized_debug_two",
+    "--output=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/4313ca60cb0de03f5ca4baa84c7a7b6a74fb1988/logs/normalized_debug_two-%j.out",
+    "--wrap",
+    "set -eu\nbash \"$TRAIN_WORKDIR/alps/se3/train.sbatch\" --config configs/clariden_se3/normalized_debug_two.yaml\ncp /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_two/last.ckpt /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_two/update-016.ckpt\nbash \"$TRAIN_WORKDIR/alps/se3/train.sbatch\" --config configs/clariden_se3/normalized_debug_two.yaml --resume-from /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_two/last.ckpt --stop-after-updates 32\nsrun --nodes=1 --ntasks=1 --environment=\"$EDF_PATH\" --network=disable_rdzv_get --mpi=none --cpu-bind=none --kill-on-bad-exit=1 bash -c 'set -eu\ncd \"$TRAIN_WORKDIR\"\nsource \"$TRAIN_VENV/bin/activate\"\npython -m scripts.verify_se3_normalized_debug /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_two /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_control --output /capstor/store/cscs/swissai/a0117/foldtree2/se3/artifacts/normalized_debug_two-gate.json\n'\n"
+  ]
+}

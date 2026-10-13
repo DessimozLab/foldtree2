@@ -1,0 +1,220 @@
+{
+  "update-016.ckpt": {
+    "stream": {
+      "epoch": 0,
+      "cursor": 16,
+      "updates": 16
+    },
+    "same_provenance": true,
+    "largest_differences": [
+      {
+        "key": "model.gotennet.layers.3.0.to_keys.0",
+        "max_abs": 0.0011601969599723816,
+        "rms": 0.0001688863121671602,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.2.combine_heads.0.weight",
+        "max_abs": 0.0011224150657653809,
+        "rms": 0.00013931833382230252,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.2.post_attn_h_values.2.weight",
+        "max_abs": 0.0010939128696918488,
+        "rms": 0.000140381496748887,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.1.0.edge_proj.weight",
+        "max_abs": 0.0010842476040124893,
+        "rms": 0.00012895485269837081,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.0.2.to_edge_keys.0.weight",
+        "max_abs": 0.0010824380442500114,
+        "rms": 0.0001202734129037708,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.0.edge_proj.weight",
+        "max_abs": 0.0010697385296225548,
+        "rms": 0.00014086422743275762,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.0.edge_proj.weight",
+        "max_abs": 0.0010591130703687668,
+        "rms": 0.00011968443141086027,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.2.to_edge_values.0.weight",
+        "max_abs": 0.0010452643036842346,
+        "rms": 0.00013581560051534325,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.3.projs.1",
+        "max_abs": 0.001025378704071045,
+        "rms": 0.000143639394082129,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.1.0.to_keys.0",
+        "max_abs": 0.0010068416595458984,
+        "rms": 0.00012762955157086253,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.0.to_queries",
+        "max_abs": 0.001004233956336975,
+        "rms": 0.00015428474580403417,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.high_degree_init.post_attn_h_values.2.weight",
+        "max_abs": 0.0010002218186855316,
+        "rms": 0.00012224868987686932,
+        "finite": true
+      }
+    ],
+    "bn": [
+      {
+        "key": "model.bn.weight",
+        "max_abs": 0.0004240274429321289,
+        "rms": 0.00013975777255836874,
+        "finite": true
+      },
+      {
+        "key": "model.bn.bias",
+        "max_abs": 0.00023137533571571112,
+        "rms": 0.00011397973139537498,
+        "finite": true
+      },
+      {
+        "key": "model.bn.running_mean",
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "finite": true
+      },
+      {
+        "key": "model.bn.running_var",
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "finite": true
+      }
+    ],
+    "all_model_state_finite": true
+  },
+  "last.ckpt": {
+    "stream": {
+      "epoch": 0,
+      "cursor": 32,
+      "updates": 32
+    },
+    "same_provenance": true,
+    "largest_differences": [
+      {
+        "key": "model.gotennet.layers.3.2.to_edge_values.0.weight",
+        "max_abs": 0.01129652839154005,
+        "rms": 0.0014024409465491772,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.3.mlps.0.3.weight",
+        "max_abs": 0.010546423494815826,
+        "rms": 0.0015279249055311084,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.3.mlps.1.3.weight",
+        "max_abs": 0.009703326970338821,
+        "rms": 0.0013238572282716632,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.2.post_attn_h_values.2.weight",
+        "max_abs": 0.00929189845919609,
+        "rms": 0.0012514820555225015,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.0.edge_proj.weight",
+        "max_abs": 0.009251577779650688,
+        "rms": 0.0015767136355862021,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.3.mlps.0.3.weight",
+        "max_abs": 0.008969437330961227,
+        "rms": 0.0014251117827370763,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.1.2.post_attn_h_values.2.weight",
+        "max_abs": 0.008891567587852478,
+        "rms": 0.001415719510987401,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.2.to_values.2.weight",
+        "max_abs": 0.008855883032083511,
+        "rms": 0.0010800176532939076,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.1.2.to_edge_values.0.weight",
+        "max_abs": 0.008813567459583282,
+        "rms": 0.0014351226855069399,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.1.0.edge_proj.weight",
+        "max_abs": 0.008718090131878853,
+        "rms": 0.0017504487186670303,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.2.3.mlps.1.3.weight",
+        "max_abs": 0.008607923984527588,
+        "rms": 0.0013569500297307968,
+        "finite": true
+      },
+      {
+        "key": "model.gotennet.layers.3.2.to_gates.0.weight",
+        "max_abs": 0.008482884615659714,
+        "rms": 0.0014055233914405107,
+        "finite": true
+      }
+    ],
+    "bn": [
+      {
+        "key": "model.bn.weight",
+        "max_abs": 0.0036299824714660645,
+        "rms": 0.0011987880570814013,
+        "finite": true
+      },
+      {
+        "key": "model.bn.bias",
+        "max_abs": 0.0018652876606211066,
+        "rms": 0.0008029768941923976,
+        "finite": true
+      },
+      {
+        "key": "model.bn.running_mean",
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "finite": true
+      },
+      {
+        "key": "model.bn.running_var",
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "finite": true
+      }
+    ],
+    "all_model_state_finite": true
+  }
+}

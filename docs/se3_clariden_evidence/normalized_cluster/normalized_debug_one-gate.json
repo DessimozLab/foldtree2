@@ -1,0 +1,32 @@
+{
+  "passed": true,
+  "exact_resume": true,
+  "maximum_parameter_buffer_difference": 0.0,
+  "updates": 32,
+  "validation_structures": 512,
+  "validation": {
+    "geometry": 4.619008158450015,
+    "evaluation_fape": 0.939516952552367,
+    "refined.angle_mae_radians": 1.0587271662661806,
+    "refined.ca_bend_mae_radians": 0.8479773555882275,
+    "refined.ca_bond_deviation_3_8": 1.7245683267246932,
+    "refined.ca_bond_mae": 1.7385432473383844,
+    "refined.ca_rmsd": 16.50047004595399,
+    "refined.ca_torsion_mae_radians": 1.5635257987360198,
+    "refined.fape": 0.939516952552367,
+    "refined.lddt": 0.20331145638192538,
+    "refined.tm_score": 0.2019800789328452,
+    "refined.valid_residues": 114.6171875
+  },
+  "topologies": [
+    {
+      "world_size": 4,
+      "nodes": 1
+    },
+    {
+      "world_size": 4,
+      "nodes": 1
+    }
+  ],
+  "peak_gpu_memory_bytes": 3946250752
+}

@@ -82,8 +82,11 @@ they are not a pure measurement of learning from this one epoch.
 
 This gate establishes local one-epoch stability only. It does not establish
 long-run or distributed stability, capacity scaling, or independence from
-production-model pretraining. The next gate is a bounded Clariden test of this
-exact variant, including checkpoint recovery, before a fresh learning trial.
+production-model pretraining. The subsequent
+[Clariden check](se3_normalized_clariden_check_20261013.md) passed exact one-node
+checkpoint recovery. Two-node execution stayed finite, but its strict
+cross-topology agreement gate failed; early-gradient divergence needs diagnosis
+before a larger distributed learning trial.
 The six-layer rollout remains blocked.
 
 The actual training source hashes match commit `cce64f9` on
