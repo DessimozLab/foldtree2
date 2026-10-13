@@ -1,0 +1,6 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {"name": "medium_fp64_trial", "nodes": 2, "hours": 2, "gpuh": 16}
+  ]
+}
