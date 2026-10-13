@@ -1,0 +1,11 @@
+pytorch-lightning==2.6.0
+gotennet-pytorch==0.3.1
+e3nn==0.5.9
+torch-geometric==2.6.1
+einops==0.8.1
+numpy==1.26.4
+tmtools==0.3.0
+PyYAML==6.0.2
+torchmetrics==1.8.2
+hyper-connections==0.4.5
+einx==0.3.0

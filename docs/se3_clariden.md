@@ -3,9 +3,8 @@
 The cache-only Lightning trainer and bounded launch bundle are implemented. Local
 verification passes for the 32-wide refiner and the corrected 64-wide refiner.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
-GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. No job has been
-submitted: remaining project credit must
-be checked first. Slurm fair-share is not a credit balance.
+GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
+is not a credit balance.
 
 This trains the residue SE(3) refiner. The staged transformer, production
 40-character epoch-40 encoder/decoder, alphabet benchmarks and atom refinement
@@ -238,3 +237,22 @@ fixed global batch; new rank RNG is seeded and the transition recorded. It does
 not claim bitwise equivalence across topologies. A mid-epoch topology change is
 rejected. `--warm-start` resets training state and requires compatible model
 weights; it is separate from full resume.
+
+## First cluster submission and packaging correction
+
+On 2026-10-13, preparation job `3652348` failed after 305 seconds because the
+release archive omitted `alps/se3/requirements.txt`: the repository's generic
+`*.txt` ignore rule excluded it from the commit. Cache staging and container
+startup succeeded; the base image reported torch `2.11.0a0+eb65b36914.nv26.2`.
+The dependent checks `3652401`, `3652402` and capacity jobs `3652424`, `3652426`
+were canceled with empty allocated TRES and never consumed GPU allocations.
+Training has not started in this attempt.
+
+The correction explicitly tracks the dependency file, checks for it before
+preparation, and adds an archive completeness verifier with a regression test
+that reproduces the missing-file failure. Use `verify_se3_release.py` on every
+new deployment archive before transfer/submission. The first attempt's logs and
+accounting remain preserved. One corrected one-hour preparation allocation
+uses 4 GPUh of the agreed reserve. Canceled-before-allocation reservations are
+released only after recording Slurm proof; this permits rebuilding the same
+bounded dependency chain without losing its audit history.

@@ -11,6 +11,7 @@ set -euo pipefail
 : "${EDF_PATH:?absolute EDF}"
 : "${TRAIN_VENV:?persistent ARM container-specific environment}"
 cd "$TRAIN_WORKDIR"
+test -s alps/se3/requirements.txt || { echo "Missing release dependency file" >&2; exit 2; }
 : "${SOURCE_CACHE:?durable verified frozen bundle}"
 : "${TARGET_CACHE:?scratch frozen bundle}"
 [[ "$TARGET_CACHE" == /iopsstor/scratch/cscs/dmoi/se3/* ]] || exit 2

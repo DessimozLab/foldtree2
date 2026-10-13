@@ -185,3 +185,4 @@ models/
 !docs/se3_clariden_evidence/**/*.json
 !docs/se3_clariden_evidence/**/*.jsonl
 !configs/clariden_se3/budget.json
+!alps/se3/requirements.txt
