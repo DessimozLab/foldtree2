@@ -9,7 +9,7 @@ REQUIRED = {
     'configs/clariden_se3/budget.json', 'configs/clariden_se3/debug_1nodes.yaml',
     'configs/clariden_se3/debug_2nodes.yaml', 'configs/clariden_se3/small.yaml',
     'configs/clariden_se3/medium.yaml', 'foldtree2/train_se3_lightning.py',
-    'foldtree2/se3_cache.py', 'foldtree2/se3_validation.py',
+    'foldtree2/se3_cache.py', 'foldtree2/se3_validation.py', 'foldtree2/se3_gradient_accumulation.py',
     'foldtree2/src/se3_struct_decoder.py', 'foldtree2/src/geometry_seeds.py',
     'foldtree2/src/losses/se3_ablation.py', 'foldtree2/src/losses/fape.py',
     'scripts/se3_budget.py', 'scripts/se3_capacity_gate.py',

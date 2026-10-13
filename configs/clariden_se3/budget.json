@@ -1,6 +1,6 @@
 {
   "ceiling_gpuh": 256,
-  "reserve_gpuh": 13.3333333333333,
+  "reserve_gpuh": 9.3333333333333,
   "stages": [
     {
       "name": "prepare_initial",
@@ -70,6 +70,18 @@
     },
     {
       "name": "normalized_debug_two",
+      "nodes": 2,
+      "hours": 0.25,
+      "gpuh": 2.0
+    },
+    {
+      "name": "fp64_debug_one",
+      "nodes": 1,
+      "hours": 0.5,
+      "gpuh": 2.0
+    },
+    {
+      "name": "fp64_debug_two",
       "nodes": 2,
       "hours": 0.25,
       "gpuh": 2.0

@@ -22,3 +22,9 @@ def test_release_rejects_missing_ignored_requirements(tmp_path):
     path = tmp_path/'incomplete.tar.gz'; archive(path, 'alps/se3/requirements.txt')
     with pytest.raises(ValueError, match='requirements.txt'):
         verify(path)
+
+
+def test_release_rejects_missing_accumulation_dependency(tmp_path):
+    path=tmp_path/'incomplete.tar.gz'; archive(path, 'foldtree2/se3_gradient_accumulation.py')
+    with pytest.raises(ValueError,match='se3_gradient_accumulation'):
+        verify(path)

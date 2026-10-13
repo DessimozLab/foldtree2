@@ -17,13 +17,14 @@ def command(code, stage):
     body = f'set -eu\n{train} --config {config}\n'
     body += f'cp {checkpoint} {run}/update-016.ckpt\n'
     body += f'{train} --config {config} --resume-from {checkpoint} --stop-after-updates 32\n'
-    if stage == 'normalized_debug_one':
-        body += f'{train} --config configs/clariden_se3/normalized_debug_control.yaml --stop-after-updates 32\n'
-        control = root / 'runs/normalized_debug_control'
+    control_name = stage.rsplit('_', 1)[0] + '_control'
+    if stage.endswith('_one'):
+        body += f'{train} --config configs/clariden_se3/{control_name}.yaml --stop-after-updates 32\n'
+        control = root / 'runs' / control_name
         exact = ' --exact'
         nodes, minutes = 1, 30
     else:
-        control = root / 'runs/normalized_debug_control'
+        control = root / 'runs' / control_name
         exact = ''
         nodes, minutes = 2, 15
     # Postchecks run inside the image; the ARM venv cannot run in the host shell.
@@ -41,13 +42,14 @@ python -m scripts.verify_se3_normalized_debug {run} {control}{exact} --output {r
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('stage', choices=['normalized_debug_one','normalized_debug_two'])
+    p.add_argument('stage', choices=['normalized_debug_one','normalized_debug_two','fp64_debug_one','fp64_debug_two'])
     p.add_argument('--submit', action='store_true')
     args = p.parse_args()
     code = Path(__file__).resolve().parents[1]
     root = Path('/capstor/store/cscs/swissai/a0117/foldtree2/se3')
-    if args.stage == 'normalized_debug_two':
-        gate = json.loads((root / 'artifacts/normalized_debug_one-gate.json').read_text())
+    if args.stage.endswith('_two'):
+        first = args.stage.rsplit('_',1)[0] + '_one'
+        gate = json.loads((root / 'artifacts' / (first+'-gate.json')).read_text())
         if not gate['passed'] or not gate['exact_resume']:
             raise ValueError('One-node normalized resume gate has not passed')
     os.chdir(code)

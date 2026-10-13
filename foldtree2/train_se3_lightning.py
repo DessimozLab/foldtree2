@@ -27,6 +27,7 @@ from foldtree2.se3_cache import (FrozenDataset, GlobalBatchSampler, digest,
                                identity_hash, open_bundle, single_entry)
 from foldtree2.se3_validation import forward, metrics
 from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+from foldtree2.se3_gradient_accumulation import GradientAccumulator
 from foldtree2.src.losses.se3_ablation import AblationLoss
 from foldtree2.src.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
                                             enable_tensor_ff_input_norm)
@@ -52,7 +53,7 @@ def build_model(feature_dim, architecture):
 
 
 def source_identity():
-    files = ['train_se3_lightning.py', 'se3_cache.py', 'se3_validation.py',
+    files = ['train_se3_lightning.py', 'se3_cache.py', 'se3_validation.py', 'se3_gradient_accumulation.py',
              'src/se3_struct_decoder.py', 'src/geometry_seeds.py',
              'src/losses/se3_ablation.py', 'src/losses/fape.py', 'src/dynamictan.py',
              'src/quantizers.py', 'src/folding_refiner.py', 'src/manifold_hyper_connections.py']
@@ -129,6 +130,9 @@ class Refiner(pl.LightningModule):
         self.stop_epoch = None
         self.stop_updates = None
         self.active_batch = None
+        self.gradient_accumulator = None
+        if config.get('gradient_accumulation_dtype', 'float32') not in ('float32','float64'):
+            raise ValueError('gradient_accumulation_dtype must be float32 or float64')
         if resume:
             self.load_state_dict(resume['state_dict'])
             self.stream.update(resume['se3']['stream'])
@@ -187,14 +191,21 @@ class Refiner(pl.LightningModule):
         optimizer = self.optimizers()
         accumulation = self.config['global_batch'] // self.trainer.world_size
         boundary = (batch_idx + 1) % accumulation == 0
-        with optimizer.toggle_model(sync_grad=boundary):
+        high_precision = self.config.get('gradient_accumulation_dtype') == 'float64'
+        with optimizer.toggle_model(sync_grad=boundary and not high_precision):
             pred, angle = forward(self.model, e)
             values = self.loss_fn(pred, angle, e)
             if not all(torch.isfinite(v) for v in values):
                 raise FloatingPointError(f'Nonfinite loss: {batch["id"]}')
-            self.manual_backward(values[0] / accumulation)
+            self.manual_backward(values[0] if high_precision else values[0] / accumulation)
+            if high_precision:
+                if self.gradient_accumulator is None:
+                    self.gradient_accumulator = GradientAccumulator(self.model.parameters())
+                self.gradient_accumulator.collect()
         self.epoch_train.append(float(values[1].detach()))
         if boundary:
+            if high_precision:
+                self.gradient_accumulator.finish(self.config['global_batch'])
             grads = [p.grad for p in self.model.parameters() if p.grad is not None]
             if not grads or not all(torch.isfinite(g).all() for g in grads):
                 raise FloatingPointError('Nonfinite or missing gradients')
