@@ -135,6 +135,24 @@ def test_normalized_medium_remains_equivariant_with_finite_gradients():
     assert grads and all(torch.isfinite(g).all() for g in grads)
 
 
+def test_normalization_ablation_is_explicit_in_resume_provenance():
+    from foldtree2.train_se3_lightning import Refiner, check_resume
+    from gotennet_pytorch.gotennet import EquivariantFeedForward
+    manifest = {'feature_dim':8, 'bundle_sha256':'bundle', 'input_identity':{}, 'scale':1.}
+    config = {'model':{'hidden':64,'depth':4,'heads':4}}
+    original = Refiner(config, manifest)
+    candidate = Refiner(dict(config, tensor_ff_input_norm=True), manifest)
+    ff = lambda m: next(x for x in m.model.modules() if isinstance(x, EquivariantFeedForward))
+    assert isinstance(ff(original).mlps[0][0], torch.nn.Identity)
+    assert isinstance(ff(candidate).mlps[0][0], torch.nn.LayerNorm)
+    saved = {'provenance':original.provenance, 'topology':{'world_size':1,'nodes':1},
+             'stream':{'cursor':0}}
+    with pytest.raises(ValueError, match='configuration'):
+        check_resume(saved, candidate.provenance, saved['topology'])
+    with pytest.raises(ValueError, match='boolean'):
+        Refiner(dict(config, tensor_ff_input_norm='true'), manifest)
+
+
 def test_budget_reservation_is_bounded(tmp_path):
     from scripts.se3_budget import reserve
     schedule=tmp_path/'budget.json';ledger=tmp_path/'ledger.jsonl'

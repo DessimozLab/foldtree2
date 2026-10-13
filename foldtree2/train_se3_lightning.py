@@ -27,7 +27,8 @@ from foldtree2.se3_cache import (FrozenDataset, GlobalBatchSampler, digest,
 from foldtree2.se3_validation import forward, metrics
 from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
 from foldtree2.src.losses.se3_ablation import AblationLoss
-from foldtree2.src.se3_struct_decoder import se3_denoiser, enable_stable_tensor_norm
+from foldtree2.src.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
+                                            enable_tensor_ff_input_norm)
 
 
 def calibrated(entry, scale):
@@ -100,6 +101,10 @@ class Refiner(pl.LightningModule):
         self.automatic_optimization = False
         self.config, self.manifest = config, manifest
         self.model = build_model(manifest['feature_dim'], config['model'])
+        if not isinstance(config.get('tensor_ff_input_norm', False), bool):
+            raise ValueError('tensor_ff_input_norm must be an explicit boolean')
+        if config.get('tensor_ff_input_norm', False):
+            enable_tensor_ff_input_norm(self.model)
         self.loss_fn = AblationLoss(True, True)
         self.stream = {'epoch': 0, 'cursor': 0, 'updates': 0}
         self.provenance = provenance(config, manifest)
