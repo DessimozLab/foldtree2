@@ -1,0 +1,23 @@
+seed: 42
+global_batch: 16
+learning_rate: 0.0005
+max_residues: 256
+train_count: 4096
+val_count: 512
+epochs: 16
+nodes: 1
+devices: 4
+accelerator: cuda
+checkpoint_every: 8
+scheduler: false
+structural_metrics: true
+min_delta: 0.0
+cache: /iopsstor/scratch/cscs/dmoi/se3/bundle_4096
+output: /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/normalized_debug_one
+model:
+  hidden: 64
+  depth: 4
+  heads: 4
+stop_after_updates: 16
+tensor_ff_input_norm: true
+distributed_timeout_seconds: 180

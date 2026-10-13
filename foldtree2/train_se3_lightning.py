@@ -5,6 +5,7 @@ is deliberately not replayed: loading restores optimizer/RNG explicitly, and a
 fresh Trainer loop processes exactly the remaining stream.
 """
 import argparse
+from datetime import timedelta
 import json
 import math
 import os
@@ -410,7 +411,11 @@ def main():
             'packages': {p: metadata.version(p) for p in ['pytorch-lightning', 'gotennet-pytorch',
                         'e3nn', 'torch-geometric', 'einops', 'numpy']}}, indent=2))
     world = config['devices'] * config['nodes']
-    strategy = DDPStrategy(find_unused_parameters=True, broadcast_buffers=False) if world > 1 else 'auto'
+    timeout = config.get('distributed_timeout_seconds', 1800)
+    if type(timeout) is not int or timeout <= 0:
+        raise ValueError('distributed_timeout_seconds must be a positive integer')
+    strategy = DDPStrategy(find_unused_parameters=True, broadcast_buffers=False,
+                          timeout=timedelta(seconds=timeout)) if world > 1 else 'auto'
     plugins = [TorchElasticEnvironment()] if 'LOCAL_RANK' in os.environ else []
     remaining = config['epochs'] - module.stream['epoch']
     if remaining <= 0:
