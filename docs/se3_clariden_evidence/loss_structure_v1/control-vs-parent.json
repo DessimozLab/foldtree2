@@ -1,0 +1,12 @@
+{
+  "structures": 512,
+  "fape_mean_delta_control_minus_parent": 4.601513501256704e-05,
+  "fape_improved_structures": 279,
+  "paired_bootstrap_mean_delta_95_percent_interval": [
+    -0.0003748841118067503,
+    0.0005422754911705852
+  ],
+  "replicates": 2000,
+  "seed": 42,
+  "interpretation": "Repeatedly monitored development holdout; interval is descriptive and not independent confirmation."
+}

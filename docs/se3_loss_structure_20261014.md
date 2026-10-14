@@ -202,3 +202,15 @@ waiting backbone job 3663706 to this recovery; combined job 3663707 already
 depends on the backbone job. A second failure stops this correction path for
 further diagnosis. No architecture-branch code or mathematical loss change is
 part of this recovery.
+
+Correction **3663975** was accepted with a 40-minute ceiling and unchanged
+training source revision. Backbone job **3663706** now depends on
+`afterok:3663975`; combined **3663707** remains dependent on the backbone job.
+The failed attempt used 0.3378 GPUh; the failure-plus-correction ceiling is
+5.6712 GPUh against its existing 6-GPUh reservation. The recovery row records
+zero additional reserved GPUh and links to that parent reservation, preventing
+double allocation. Actual queue/finite-update progress must still be monitored.
+Passed check records, completed control events/paired metrics/checkpoint hash,
+recovery receipt and paired control-versus-parent FAPE deltas are retained in
+the evidence directory. The control-vs-parent descriptive bootstrap interval
+uses the repeatedly monitored development holdout, not an independent test.

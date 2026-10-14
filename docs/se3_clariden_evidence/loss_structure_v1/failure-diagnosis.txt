@@ -1,29 +1,29 @@
-NodeName=nid007494 Arch=aarch64 CoresPerSocket=72 
+NodeName=nid007494 Arch=aarch64 CoresPerSocket=72
    CPUAlloc=0 CPUEfctv=288 CPUTot=288 CPULoad=0.21
    AvailableFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
    ActiveFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
    Gres=gpu:4
    NodeAddr=172.28.44.120 NodeHostName=nid007494 Version=25.05.9
-   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb) 
+   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb)
    RealMemory=870000 AllocMem=0 FreeMem=810663 Sockets=4 Boards=1
    State=IDLE+DRAIN ThreadsPerCore=1 TmpDisk=0 Weight=1 Owner=N/A MCS_label=N/A
-   Partitions=highprio,preemptable,normal,debug,low 
+   Partitions=highprio,preemptable,normal,debug,low
    BootTime=20:08:52 SlurmdStartTime=20:52:16
    LastBusyTime=21:33:42 ResumeAfterTime=None
    CfgTRES=cpu=288,mem=870000M,billing=1,gres/gpu=4
    AllocTRES=
    CurrentWatts=573 AveWatts=0
    Reason=Failed to allocate 90% of the GPU memory after job 3663705 [root@21:33:42]
-NodeName=nid007543 Arch=aarch64 CoresPerSocket=72 
+NodeName=nid007543 Arch=aarch64 CoresPerSocket=72
    CPUAlloc=0 CPUEfctv=288 CPUTot=288 CPULoad=2.09
    AvailableFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
    ActiveFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
    Gres=gpu:4
    NodeAddr=172.28.45.36 NodeHostName=nid007543 Version=25.05.9
-   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb) 
+   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb)
    RealMemory=870000 AllocMem=0 FreeMem=677415 Sockets=4 Boards=1
    State=IDLE+PLANNED ThreadsPerCore=1 TmpDisk=0 Weight=1 Owner=N/A MCS_label=N/A
-   Partitions=highprio,preemptable,normal,debug,low 
+   Partitions=highprio,preemptable,normal,debug,low
    BootTime=20:08:54 SlurmdStartTime=20:40:07
    LastBusyTime=21:51:56 ResumeAfterTime=None
    CfgTRES=cpu=288,mem=870000M,billing=1,gres/gpu=4
