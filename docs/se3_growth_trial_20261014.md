@@ -372,3 +372,54 @@ these remain visible and below the previously used material-regression bounds.
 All three epochs consumed 8,192 training and 512 unique validation structures
 and saved trained checkpoints. The run passed 1,887 updates without logged
 nonfinite events and continues toward 16 epochs; these remain interim results.
+
+## Completed 8,192-structure trial
+
+Job **3659891 completed successfully**, exit 0, in **49m44s** on two
+nodes/eight GPUs (**6.631 actual GPUh**, within its 16-GPUh reservation).
+All **16 epochs / 8,192 optimizer updates** completed; each epoch consumed
+8,192 training and evaluated all 512 unique validation structures. There were
+**zero logged failure events**. Epoch 16 had the lowest complete-epoch
+validation geometry and is the saved `best.ckpt` and `last.ckpt`.
+
+![Completed learning curves](se3_clariden_evidence/growth_8192/final/learning-curves.png)
+
+Training geometry fell **4.220507 → 3.623650 (14.14%)**; validation geometry
+fell **3.982758 → 3.630099 (8.85%)**.
+
+| Held-out metric | Epoch 1 | Epoch 16 | Frozen decoder |
+|---|---:|---:|---:|
+| FAPE ↓ | 0.933002 | 0.929814 | 0.942045 |
+| Aligned CA RMSD, Å ↓ | 16.0463 | 15.6886 | 19.1519 |
+| TM-score ↑ | 0.211868 | 0.214902 | 0.079161 |
+| lDDT ↑ | 0.247964 | 0.254775 | 0.020720 |
+| CA bond MAE, Å ↓ | 1.275381 | 0.923609 | 3.638404 |
+| CA bend MAE, radians ↓ | 0.741393 | 0.708719 | 1.443429 |
+| CA torsion MAE, radians ↓ | 1.533527 | 1.520316 | 1.548562 |
+| Predicted angle MAE, radians ↓ | 0.576613 | 0.514091 | unavailable |
+
+Metrics are per-structure means with identical structure IDs/masks; torsion has
+511 defined structures. The full paired records, mean/median deltas and
+improved-structure counts are preserved in
+[final evidence](se3_clariden_evidence/growth_8192/final/summary.json).
+All listed mean structural metrics improved from epoch one to the selected
+final checkpoint. Relative to the previous 4,096-structure medium trial,
+validation geometry improved from 3.842814 to 3.630099 (5.53%); FAPE, RMSD,
+TM-score, lDDT, bond and predicted-angle means also improved. This comparison
+changes both unique training data and optimizer-step count, so it cannot isolate
+the effect of more data.
+
+The best checkpoint was downloaded to
+`runs/se3_clariden/growth-fp64-8192-best.ckpt` and its SHA-256 verified:
+`93ff91d18ff9b4b0df5396889f9cd6c4fc0c91f65f88775caf71d2c90487bb04`.
+CPU loading verified **253 model tensors and 729 optimizer tensors are finite**,
+with stream epoch 16, cursor 0, updates 8,192 and topology two nodes/eight ranks.
+The durable checkpoint remains in
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/growth_fp64_8192/best.ckpt`.
+No production checkpoint was replaced.
+
+This establishes a trained refiner and stable learning on Clariden. Absolute
+FAPE/RMSD/TM-score still indicate limited structural accuracy; decoder-to-refiner
+gains include calibration and seed lift. The repeatedly monitored 512 holdouts
+are not a new independent test, and pretraining independence is not claimed.
+No additional training, model-size expansion or duration extension was submitted.

@@ -1,5 +1,12 @@
 # SE(3) Lightning rollout on Clariden
 
+Latest result: the [8,192-structure growth trial](se3_growth_trial_20261014.md#completed-8192-structure-trial)
+**completed** as job **3659891**: 16 epochs / 8,192 updates in 49m44s,
+zero logged failures, training geometry down **14.14%** and validation geometry
+down **8.85%**. The final/best trained checkpoint has been downloaded, hashed
+and verified to contain finite model and optimizer tensors. Earlier queue and
+running observations below are historical.
+
 The cache-only Lightning trainer and bounded launch bundle are implemented.
 One- and two-node Clariden checks passed, including checkpoint resume.
 The small capacity trial completed all 16 epochs; the medium trial failed after

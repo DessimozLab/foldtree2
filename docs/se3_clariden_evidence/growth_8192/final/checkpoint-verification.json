@@ -1,0 +1,16 @@
+{
+  "model_tensors": 253,
+  "optimizer_tensors": 729,
+  "all_finite": true,
+  "global_step": 8192,
+  "stream": {
+    "epoch": 16,
+    "cursor": 0,
+    "updates": 8192
+  },
+  "best_validation_geometry": 3.6300992005271837,
+  "topology": {
+    "world_size": 8,
+    "nodes": 2
+  }
+}
