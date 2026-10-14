@@ -1,0 +1,27 @@
+{
+  "parent_sha256": "93ff91d18ff9b4b0df5396889f9cd6c4fc0c91f65f88775caf71d2c90487bb04",
+  "branch_sha256": "8554829374f4c7a5f072780df431e497a35541b21ebf8c8ddacc8b8f8616911d",
+  "stream": {
+    "epoch": 16,
+    "cursor": 0,
+    "updates": 8192
+  },
+  "initialization": {
+    "kind": "continuation_branch",
+    "parent_sha256": "93ff91d18ff9b4b0df5396889f9cd6c4fc0c91f65f88775caf71d2c90487bb04",
+    "parent_initialization": {
+      "kind": "fresh"
+    },
+    "changes": {
+      "epochs": [
+        16,
+        32
+      ],
+      "learning_rate": [
+        0.0005,
+        0.0005
+      ]
+    }
+  },
+  "preserved": "model, optimizer moments, RNG, sampler cursor, validation best; only param-group lr and declared provenance changed"
+}

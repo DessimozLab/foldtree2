@@ -45,3 +45,16 @@ and predicted-angle errors. Preserve composite-loss-selected checkpoint metrics
 and the full epoch trajectory. A successful candidate should improve FAPE without
 >5% error regression or >0.01 TM-score/lDDT regression. The holdout has been
 repeatedly monitored and does not establish independent generalization.
+
+## Submitted jobs
+
+The actual jobs are **3661398** (`5e-4`) and **3661399** (`1e-4`), with
+`afterok:3661398` on the second. Both Slurm preflights passed. Pinned code
+revision: `4bdaab896b9a59f2c18720d3abdb126340d7e1ad`.
+Staged archive and both derived checkpoint SHA-256 values were verified on
+Clariden before submission. The locked ledger now reserves **124 of 256 GPUh**.
+Submission receipts and branch provenance are preserved in
+[continuation evidence](se3_clariden_evidence/continuation/submissions.json).
+Queue acceptance does not establish completed learning; final comparisons remain
+pending execution. Real parent-versus-branch tensor checks confirmed identical
+model tensors and all AdamW state tensors, with respective rates 5e-4 and 1e-4.
