@@ -1,0 +1,166 @@
+NodeName=nid007494 Arch=aarch64 CoresPerSocket=72 
+   CPUAlloc=0 CPUEfctv=288 CPUTot=288 CPULoad=0.21
+   AvailableFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
+   ActiveFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
+   Gres=gpu:4
+   NodeAddr=172.28.44.120 NodeHostName=nid007494 Version=25.05.9
+   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb) 
+   RealMemory=870000 AllocMem=0 FreeMem=810663 Sockets=4 Boards=1
+   State=IDLE+DRAIN ThreadsPerCore=1 TmpDisk=0 Weight=1 Owner=N/A MCS_label=N/A
+   Partitions=highprio,preemptable,normal,debug,low 
+   BootTime=20:08:52 SlurmdStartTime=20:52:16
+   LastBusyTime=21:33:42 ResumeAfterTime=None
+   CfgTRES=cpu=288,mem=870000M,billing=1,gres/gpu=4
+   AllocTRES=
+   CurrentWatts=573 AveWatts=0
+   Reason=Failed to allocate 90% of the GPU memory after job 3663705 [root@21:33:42]
+NodeName=nid007543 Arch=aarch64 CoresPerSocket=72 
+   CPUAlloc=0 CPUEfctv=288 CPUTot=288 CPULoad=2.09
+   AvailableFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
+   ActiveFeatures=gh,gpu,thp_never,thp_always,thp_madvise,nvidia_vboost_enabled
+   Gres=gpu:4
+   NodeAddr=172.28.45.36 NodeHostName=nid007543 Version=25.05.9
+   OS=Linux 6.4.0-150600.23.125-64kb #1 SMP PREEMPT_DYNAMIC Tue Jul 14 08:35:02 UTC 2026 (1f4f2bb) 
+   RealMemory=870000 AllocMem=0 FreeMem=677415 Sockets=4 Boards=1
+   State=IDLE+PLANNED ThreadsPerCore=1 TmpDisk=0 Weight=1 Owner=N/A MCS_label=N/A
+   Partitions=highprio,preemptable,normal,debug,low 
+   BootTime=20:08:54 SlurmdStartTime=20:40:07
+   LastBusyTime=21:51:56 ResumeAfterTime=None
+   CfgTRES=cpu=288,mem=870000M,billing=1,gres/gpu=4
+   AllocTRES=
+   CurrentWatts=674 AveWatts=0
+
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+[rank2]:     return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+[rank2]:     return function(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 630, in _fit_impl
+[rank2]:     self._run(model, ckpt_path=ckpt_path, weights_only=weights_only)
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1079, in _run
+[rank2]:     results = self._run_stage()
+[rank2]:               ^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1123, in _run_stage
+[rank2]:     self.fit_loop.run()
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 217, in run
+[rank2]:     self.advance()
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 465, in advance
+[rank2]:     self.epoch_loop.run(self._data_fetcher)
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 153, in run
+[rank2]:     self.advance(data_fetcher)
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 354, in advance
+[rank2]:     batch_output = self.manual_optimization.run(kwargs)
+[rank2]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/manual.py", line 95, in run
+[rank2]:     self.advance(kwargs)
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/manual.py", line 115, in advance
+[rank2]:     training_step_output = call._call_strategy_hook(trainer, "training_step", *kwargs.values())
+[rank2]:                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 329, in _call_strategy_hook
+[rank2]:     output = fn(*args, **kwargs)
+[rank2]:              ^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 390, in training_step
+[rank2]:     return self._forward_redirection(self.model, self.lightning_module, "training_step", *args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+[rank2]:     wrapper_output = wrapper_module(*args, **kwargs)
+[rank2]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/parallel/distributed.py", line 1672, in forward
+[rank2]:     else self._run_ddp_forward(*inputs, **kwargs)
+[rank2]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/parallel/distributed.py", line 1497, in _run_ddp_forward
+[rank2]:     return self.module(*inputs, **kwargs)  # type: ignore[index]
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+[rank2]:     out = method(*_args, **_kwargs)
+[rank2]:           ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48/foldtree2/train_se3_lightning.py", line 218, in training_step
+[rank2]:     pred, angle = forward(self.model, e)
+[rank2]:                   ^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48/foldtree2/se3_validation.py", line 226, in forward
+[rank2]:     out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
+[rank2]:           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48/foldtree2/src/se3_struct_decoder.py", line 1304, in forward
+[rank2]:     invariant, coors_out = self.gotennet(
+[rank2]:                            ^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48/foldtree2/src/se3_struct_decoder.py", line 101, in forward
+[rank2]:     h, c = self._safe_forward(atoms[i, idx].unsqueeze(0), coors[i, idx].unsqueeze(0), adj_mat=adj)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/gotennet_pytorch/gotennet.py", line 837, in forward
+[rank2]:     (h_residual, x_residuals), next_value_residuals = attn(h, t_ij, r_ij, x, mask = mask, neighbor_indices = neighbor_indices, neighbor_mask = neighbor_mask, value_residuals = value_residuals, return_value_residual = True)
+[rank2]:                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank2]:     return self._call_impl(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank2]:     return forward_call(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/gotennet_pytorch/gotennet.py", line 586, in forward
+[rank2]:     h_residual = reduce(h_scales, 'b i j 1 d -> b i d', 'sum')
+[rank2]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/einops/einops.py", line 532, in reduce
+[rank2]:     return _apply_recipe(
+[rank2]:            ^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/einops/einops.py", line 247, in _apply_recipe
+[rank2]:     tensor = _reduce_axes(tensor, reduction_type=reduction_type, reduced_axes=reduced_axes, backend=backend)
+[rank2]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/einops/einops.py", line 47, in _reduce_axes
+[rank2]:     return backend.reduce(tensor, reduction_type, tuple(reduced_axes))
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/einops/_backends.py", line 246, in reduce
+[rank2]:     return x.sum(dim=reduced_axes)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]: torch.AcceleratorError: CUDA error: unspecified launch failure
+[rank2]: Search for `cudaErrorLaunchFailure' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+[rank2]: CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+[rank2]: For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+[rank2]: Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+
+ARTIFACTS [('events.jsonl', 434), ('failure-state-rank-2.pt', 60667), ('software.json', 270), ('provenance.json', 3033), ('failure-rank-2.json', 1186)]
+failure-rank-2.json {
+  "time": 1792006345.8733666,
+  "rank": 2,
+  "event": "failure",
+  "error": "AcceleratorError(\"CUDA error: unspecified launch failure\\nSearch for `cudaErrorLaunchFailure' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\\n\")",
+  "stream": {
+    "epoch": 0,
+    "cursor": 0,
+    "updates": 0
+  },
+  "active_batch": {
+    "phase": "train",
+    "id": "A0A6V8PJK3",
+    "length": 127,
+    "batch_idx": 0
+  },
+  "diagnostic_capture_error": "AcceleratorError(\"CUDA error: unspecified launch failure\\nSearch for `cudaErrorLaunchFailure' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\\n\")"
+}
+FIRST_BATCH [('X1G1W2', 127), ('A0A849T0A0', 127), ('A0A6V8PJK3', 127), ('A0A351CHG4', 127), ('Q0BI01', 127), ('A0A7V6SRQ3', 127), ('A0A1V4WJY3', 127), ('A0A2G3PU69', 127), ('A0A3P7EA14', 127), ('K6DH22', 127), ('A0A527HXN0', 127), ('A0A1B4FC80', 127), ('A0A5K4EQL9', 127), ('A0A2X2JX32', 127), ('A0A4Q5PQ19', 127), ('A0A2D4CH08', 127)]
+Existing CSCS SSH certificate is ready; no login needed.

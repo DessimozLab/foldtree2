@@ -164,3 +164,41 @@ preceding job with `afterok`; the first check is eligible immediately. Queue
 acceptance does not establish passed gates or trained quality.
 [Submission receipts and observed queue state](se3_clariden_evidence/loss_structure_v1/submissions.json)
 are retained. Fifteen focused loss/launcher tests passed before submission.
+
+## Failed-node investigation and bounded recovery
+
+One-node exact resume and two-node agreement **passed**; model state difference
+was zero in both comparisons. Control job **3663704** completed all four epochs
+/ 2,048 updates in 14m36s. Its FAPE-selected checkpoint was epoch 3, FAPE
+**0.9298599067**, versus the epoch-16 parent's **0.9298138915**. Lower is better:
+this control does **not** improve FAPE over its parent. It does remain better
+than the raw frozen decoder's FAPE **0.9420447623**. The control's best-checkpoint
+CA RMSD was 15.8498 Å, TM-score 0.212973, lDDT 0.260636 and bond MAE 0.902921 Å.
+These do not establish a benefit from any new loss, since it is the control.
+
+Nearby-distance job **3663705 failed before a complete optimizer update** after
+2m32s. Rank 2 reported `CUDA error: unspecified launch failure` while executing
+the model forward. CUDA errors may surface asynchronously, so this location
+does not establish the originating operation. The node **nid007494** was then
+put into **IDLE+DRAIN** with site health reason **"Failed to allocate 90% of the
+GPU memory after job 3663705"** at 21:33:42. This supports a node/runtime fault
+as the leading explanation; it is not proof that the loss implementation is
+fault-free. Secondary TCPStore/broken-pipe warnings followed rank termination.
+No application failure snapshot was captured because Lightning teardown also
+failed on the unusable CUDA context. The source, failed log and partial output
+are preserved. The deterministic first global batch is retained in the
+[failure evidence](se3_clariden_evidence/loss_structure_v1/failure-diagnosis.txt).
+
+A single correction uses identical pinned training code, cache, parent weights
+and loss, with a fresh output `loss_v1_local_distances_recovery1` and explicit
+exclusion of nid007494. Its **40-minute/two-node** ceiling plus the failed
+152-second allocation is at most **5.6712 GPUh**, below the original trial's
+**6 GPUh / 45-minute** reservation. The controller records a zero-additional-
+reservation child of the existing trial reservation under the durable ledger
+lock, refuses a second correction, verifies the failed allocation/health state
+and parent checkpoint, and tests Slurm arguments before submission. Total
+reserved budget remains **150 of 256 GPUh**. On acceptance it rewires only the
+waiting backbone job 3663706 to this recovery; combined job 3663707 already
+depends on the backbone job. A second failure stops this correction path for
+further diagnosis. No architecture-branch code or mathematical loss change is
+part of this recovery.
