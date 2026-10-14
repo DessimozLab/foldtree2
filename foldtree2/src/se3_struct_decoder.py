@@ -815,7 +815,7 @@ class se3_denoiser(torch.nn.Module):
 	dim_edge_refinement=256, return_coors=True, num_atom_types=20,
 	coordinate_update='absolute', zero_init_coordinate_update=False,
 	coordinate_normalization='bounded_radius', coordinate_residual_gain=1.0,
-	angle_output='bounded', device=None):
+	angle_output='bounded', device=None, pair_information=None):
 		super().__init__()
 
 		#save all arguments to constructor
@@ -856,7 +856,14 @@ class se3_denoiser(torch.nn.Module):
 		self.device = torch.device(device) if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 		# GotenNet for 3D structure processing
-		self.gotennet = StableGotenNet(
+		from .pair_features import validate_pair_config
+		validate_pair_config(pair_information)
+		self.pair_information = pair_information
+		gotennet_class = StableGotenNet
+		if pair_information is not None:
+			from .pair_gotennet import PairGotenNet
+			gotennet_class = PairGotenNet
+		self.gotennet = gotennet_class(
 			dim = hidden_channels[0] if isinstance(hidden_channels, list) else hidden_channels,
 			num_atoms = num_atom_types,
 			accept_embed = True,
@@ -1038,12 +1045,18 @@ class se3_denoiser(torch.nn.Module):
 		return self.dropout(torch.zeros_like(features).index_copy(0, torch.where(mask)[0], normalized))
 
 
+	def prepare_initial_coordinates(self, coords, features, mask, batch=None):
+		if hasattr(self, 'seed_initializer'):
+			return self.seed_initializer(coords, features, mask, batch)
+		return coords
+
 	def forward(self, data, edge_attr_dict=None, **kwargs):
 		if isinstance(data, dict):
 			x_dict, edge_index_dict = data, kwargs.get('edge_index_dict', {})
 		else:
 			x_dict, edge_index_dict = data.x_dict, data.collect('edge_index', allow_empty=True)
 		
+		seed_features = x_dict['res']
 		feature_mask = edge_attr_dict.get('node_mask') if edge_attr_dict is not None else None
 		if feature_mask is None:
 			feature_mask = torch.ones(x_dict['res'].shape[0], device=x_dict['res'].device, dtype=torch.bool)
@@ -1159,6 +1172,11 @@ class se3_denoiser(torch.nn.Module):
 		if batch is not None and batch.device != runtime_device:
 			batch = batch.to(device=runtime_device)
 		
+		if atom_level and (self.pair_information is not None or hasattr(self, 'seed_initializer')):
+			raise ValueError('Pair information and learned geometry are residue-only')
+		if not kwargs.get('_initial_geometry_prepared', False):
+			coords = self.prepare_initial_coordinates(coords, seed_features, feature_mask, batch)
+
 		num_graphs = 1
 		if batch is not None:
 			# Handle batched data
@@ -1291,6 +1309,21 @@ class se3_denoiser(torch.nn.Module):
 			coords_batch = coords.unsqueeze(0)      # (1, num_nodes, 3)
 			adj_mat_batch = adj_mat.unsqueeze(0)    # (1, num_nodes, num_nodes)
 		
+		pair_kwargs = {}
+		if self.pair_information is not None:
+			from .pair_features import decoder_pair_features
+			z = (edge_attr_dict or {}).get('contact_z')
+			if z is None or z.ndim != 2 or len(z) != len(coords):
+				raise ValueError('Pair refiner requires cached contact_z embeddings')
+			groups = batch if batch is not None else torch.zeros(len(coords), device=coords.device, dtype=torch.long)
+			pairs = []
+			for i in range(num_graphs):
+				idx = torch.where(groups == i)[0]
+				p = decoder_pair_features(z[idx], coords[idx], feature_mask[idx], self.pair_information)
+				pad = coords_batch.shape[1] - len(idx)
+				pairs.append(torch.nn.functional.pad(p, (0, 0, 0, pad, 0, pad)))
+			pair_kwargs['pair_features'] = torch.stack(pairs)
+
 		# GotenNet coordinate refinement is numerically sensitive under CUDA
 		# bf16 autocast; run this block in fp32 while leaving the outer trainer
 		# in mixed precision.
@@ -1316,6 +1349,7 @@ class se3_denoiser(torch.nn.Module):
 				adj_mat=adj_mat_batch,
 				coors=coords_for_gotennet,
 				mask=atom_mask_batch,
+				**pair_kwargs,
 			)
 		frame_coords_batch = None
 		if coors_out is not None:

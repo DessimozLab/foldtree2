@@ -7,6 +7,11 @@ remain pinned to `d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48`; no files in that
 checkout or its configurations were changed. **No merge has been performed and no architecture job has
 been submitted.**
 
+The branch now also includes independently switchable [continuous decoder pairs
+and learned initial geometry](se3_pairs_seed_architecture.md), with a separate
+comparison family and verification evidence. Parameter counts below describe
+the recycling-only variants.
+
 ## Implemented change
 
 `RecycledSE3Denoiser` shares the complete existing refiner across two coordinate

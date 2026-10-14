@@ -225,6 +225,7 @@ def forward(model, entry, return_steps=False):
     g['res'].x = entry['features']
     out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
                 edge_attr_dict={'dot_prod': entry['dot'][None], 'node_mask': entry['mask'],
+                                'contact_z': entry.get('contact_z'),
                                 'use_distance_contacts': True, 'distance_contact_cutoff': 8.})
     if return_steps:
         return [(step['coors_out_flat'], step['angles']) for step in out.get('refinement_outputs', [out])]

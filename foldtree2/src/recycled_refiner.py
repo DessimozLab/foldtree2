@@ -40,10 +40,12 @@ class RecycledSE3Denoiser(se3_denoiser):
         mask=(edge_attr_dict or {}).get('node_mask')
         if mask is None:
             mask=torch.ones(len(features),device=features.device,dtype=torch.bool)
+        batch=None if isinstance(data,dict) else getattr(data['res'],'batch',None)
+        coords=self.prepare_initial_coordinates(coords,features,mask,batch)
         prepared=self.normalize_residue_features(features,mask)
         outputs=[]
         for _ in range(self.refinement_steps):
-            step_kwargs={**kwargs,'coords_pred':coords,'_normalized_features':prepared}
+            step_kwargs={**kwargs,'coords_pred':coords,'_normalized_features':prepared,'_initial_geometry_prepared':True}
             # The base implementation adds temporary keys to dictionary inputs.
             step_data=dict(data) if isinstance(data,dict) else data
             out=super().forward(step_data,edge_attr_dict=edge_attr_dict,**step_kwargs)

@@ -126,7 +126,7 @@ def test_weights_only_migration_rejects_loss_data_and_unreviewed_source_changes(
     from pathlib import Path
     from foldtree2.train_se3_lightning import check_refinement_warm_start,source_identity
     approved=json.loads(Path('foldtree2/src/recycling_parent_sources.json').read_text())['approved_parent_sources'][0]
-    prior={'bundle':'b','input_identity':'i','preprocessing':{'scale':1},'feature_dim':8,
+    prior={'bundle':'b','input_identity':'i','preprocessing':{'scale':1,'lift_fraction':.1,'gain':32.},'feature_dim':8,
            'training':{'model':ARCH,'learning_rate':5e-4,'epochs':16},'sources':approved}
     now=copy.deepcopy(prior);now['training'].update(refinement_steps=2,refinement_loss_weights=[0,1],epochs=4);now['sources']=source_identity()
     check_refinement_warm_start(prior,now)

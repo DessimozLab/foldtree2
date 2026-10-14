@@ -1,0 +1,36 @@
+{
+  "test_result": {
+    "passed": 105,
+    "skipped": 1,
+    "expected_failure": 1,
+    "skip_reason": "GPU-only test skipped in restricted sandbox",
+    "expected_failure_reason": "Existing depth-six instability"
+  },
+  "test_command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLCONFIGDIR=/tmp/mpl-se3 python -m pytest foldtree2/tests/test_se3_pairs_seed.py foldtree2/tests/test_se3_recycling.py foldtree2/tests/test_se3_balanced_loss.py foldtree2/tests/test_se3_refiner.py foldtree2/tests/test_se3_validation.py foldtree2/tests/test_se3_lightning.py foldtree2/tests/test_se3_loss_ablation.py foldtree2/tests/test_se3_release.py -q",
+  "cuda_check_outside_sandbox": {
+    "available": true,
+    "device_count": 2,
+    "gpu_0_memory_used_mib": 11054,
+    "gpu_0_utilization_percent": 86,
+    "gpu_1_memory_used_mib": 21493,
+    "decision": "No architecture CUDA execution while existing allocations occupy both devices"
+  },
+  "architecture_training_submitted": false,
+  "merge_performed": false,
+  "software": {
+    "torch": "2.8.0",
+    "pytorch-lightning": "2.6.0",
+    "gotennet-pytorch": "0.3.1",
+    "torch-geometric": "2.6.1",
+    "e3nn": "0.5.9"
+  },
+  "artifacts_sha256": {
+    "configs/clariden_se3/pairs_seed_v1_pairs_seed_two.yaml": "8d1586f15c02c73f483738a3a7c97075f3ef522b613775ff7315c3ea098f2d7a",
+    "configs/clariden_se3/pairs_seed_v1_seed.yaml": "5dd73ae0ed1ef08594c7ef4530dbe2aa3646349fb548df2f8e01ada795963ed1",
+    "configs/clariden_se3/pairs_seed_v1_control.yaml": "0150c7709983e6aa4deb946fa3b089960b4d37d7b2ae52fd70889e5081de9240",
+    "configs/clariden_se3/pairs_seed_v1_pairs_seed.yaml": "731437c32d0dbf9190a115e504590334a788f28a9ed8771bd6533d9efe28ace8",
+    "configs/clariden_se3/pairs_seed_v1_pairs.yaml": "6a07f3d38789977eb1e1f13a68eb45a9c24bd0149acdb99e6731cb455e9d78b3",
+    "foldtree2/tests/test_se3_pairs_seed.py": "49873165d98d4510623a3feff3992ca976c1832807aeee8880aca64e8150e84c",
+    "scripts/verify_se3_release.py": "e3d243a91ebf35719fdf6e85e42f1644fd7b63382a81a94fab6aeae9a3c9a31b"
+  }
+}

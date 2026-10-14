@@ -1,0 +1,30 @@
+seed: 42
+global_batch: 16
+learning_rate: 0.0005
+max_residues: 256
+train_count: 8192
+val_count: 512
+epochs: 4
+nodes: 2
+devices: 4
+accelerator: cuda
+checkpoint_every: 64
+scheduler: false
+structural_metrics: true
+min_delta: 0.0
+cache: /iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192
+output: /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/pairs_seed_v1_seed
+model:
+  hidden: 64
+  depth: 4
+  heads: 4
+tensor_ff_input_norm: true
+distributed_timeout_seconds: 180
+gradient_accumulation_dtype: float64
+refinement_steps: 1
+refinement_loss_weights:
+- 1.0
+checkpoint_metric: evaluation_fape
+initial_geometry:
+  protocol: learned_local_seed_v1
+  max_offset_fraction: 0.25

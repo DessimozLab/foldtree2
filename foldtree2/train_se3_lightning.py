@@ -34,22 +34,26 @@ from foldtree2.src.se3_struct_decoder import (se3_denoiser, enable_stable_tensor
                                             enable_tensor_ff_input_norm)
 
 
-def calibrated(entry, scale):
+def calibrated(entry, scale, lift_fraction=.1):
     result = dict(entry)
     center = entry['coords'][entry['mask']].mean(0)
     coords = ((entry['coords'] - center) * scale + center).masked_fill(~entry['mask'][:, None], 0.)
-    result['coords'] = lift_seed_with_local_normals(coords, entry['features'], entry['mask'], .1)
+    result['coords'] = lift_seed_with_local_normals(coords, entry['features'], entry['mask'], lift_fraction)
     return result
 
 
-def build_model(feature_dim, architecture, refinement_steps=1):
+def build_model(feature_dim, architecture, refinement_steps=1, pair_information=None, initial_geometry=None):
+    from foldtree2.src.learned_geometry_seed import validate_seed_config, LearnedGeometrySeed
+    validate_seed_config(initial_geometry)
     refinement_weights(refinement_steps)
     cls=se3_denoiser if refinement_steps==1 else RecycledSE3Denoiser
     model = cls(feature_dim, [architecture['hidden']], 3, 40, .25,
         dropout_p=0., depth=architecture['depth'], heads=architecture['heads'], dim_head=16,
         num_atom_types=40, coordinate_update='residual', zero_init_coordinate_update=True,
         coordinate_normalization='rms_radius', coordinate_residual_gain=32.,
-        angle_output='sincos', device='cpu').float()
+        angle_output='sincos', device='cpu', pair_information=pair_information).float()
+    if initial_geometry is not None:
+        model.seed_initializer = LearnedGeometrySeed(feature_dim, initial_geometry['max_offset_fraction']).float()
     if architecture['hidden'] > 32:
         enable_stable_tensor_norm(model)
     return model
@@ -57,6 +61,7 @@ def build_model(feature_dim, architecture, refinement_steps=1):
 
 def source_identity():
     files = ['train_se3_lightning.py', 'se3_cache.py', 'se3_validation.py', 'se3_gradient_accumulation.py',
+             'src/pair_features.py', 'src/pair_gotennet.py', 'src/learned_geometry_seed.py',
              'src/se3_struct_decoder.py', 'src/geometry_seeds.py', 'src/recycled_refiner.py', 'src/recycling_parent_sources.json',
              'src/losses/se3_ablation.py', 'src/losses/se3_balanced.py', 'src/losses/fape.py', 'src/dynamictan.py',
              'src/quantizers.py', 'src/folding_refiner.py', 'src/manifold_hyper_connections.py']
@@ -68,7 +73,7 @@ def provenance(config, manifest):
     return {'protocol': 'se3-lightning-v1', 'bundle': manifest['bundle_sha256'],
             'training': training, 'sources': source_identity(),
             'feature_dim': manifest['feature_dim'], 'input_identity':manifest['input_identity'],
-            'preprocessing':{'scale':manifest['scale'],'lift_fraction':.1,'gain':32.}}
+            'preprocessing':{'scale':manifest['scale'],'lift_fraction':0. if config.get('initial_geometry') is not None else .1,'gain':32.}}
 
 
 def check_resume(saved, current, topology, allow_change=False):
@@ -106,10 +111,16 @@ def check_loss_warm_start(previous, current):
 
 def check_refinement_warm_start(previous,current):
     """Explicit weights-only migration across the reviewed recycling refactor."""
-    for key in ('bundle','input_identity','preprocessing','feature_dim'):
+    for key in ('bundle','input_identity','feature_dim'):
         if previous[key]!=current[key]:
             raise ValueError('Refinement ablation changed '+key)
-    ignored={'refinement_steps','refinement_loss_weights','epochs','checkpoint_metric','checkpoint_every'}
+    for item in (previous,current):
+        expected=0. if item['training'].get('initial_geometry') is not None else .1
+        if item['preprocessing']['lift_fraction'] != expected:
+            raise ValueError('Inconsistent seed preprocessing')
+    if {k:v for k,v in previous['preprocessing'].items() if k!='lift_fraction'} != {k:v for k,v in current['preprocessing'].items() if k!='lift_fraction'}:
+        raise ValueError('Refinement ablation changed preprocessing')
+    ignored={'pair_information','initial_geometry','refinement_steps','refinement_loss_weights','epochs','checkpoint_metric','checkpoint_every'}
     if {k:v for k,v in previous['training'].items() if k not in ignored}!={k:v for k,v in current['training'].items() if k not in ignored}:
         raise ValueError('Refinement ablation changed loss, model or training protocol')
     approved=json.loads((Path(__file__).parent/'src/recycling_parent_sources.json').read_text())['approved_parent_sources']
@@ -119,6 +130,22 @@ def check_refinement_warm_start(previous,current):
     for name in previous['sources'].keys() & current['sources'].keys():
         if name not in changed and previous['sources'][name]!=current['sources'][name]:
             raise ValueError('Unreviewed source change for refinement ablation: '+name)
+
+
+def load_architecture_weights(module, state, previous, current, allow_change=False):
+    if not allow_change:
+        module.load_state_dict(state)
+        return
+    allowed=[]
+    for option,prefix in (('pair_information','model.gotennet.pair_projection.'),
+                          ('initial_geometry','model.seed_initializer.')):
+        if previous.get(option) is None and current.get(option) is not None:
+            allowed.append(prefix)
+    expected=set(module.state_dict()); provided=set(state)
+    missing=expected-provided
+    if provided-expected or any(not any(k.startswith(p) for p in allowed) for k in missing):
+        raise ValueError('Architecture migration changed base weights or removed an extension')
+    module.load_state_dict(state, strict=False)
 
 
 class CacheData(pl.LightningDataModule):
@@ -149,7 +176,12 @@ class Refiner(pl.LightningModule):
         self.config, self.manifest = config, manifest
         self.refinement_steps=config.get('refinement_steps',1)
         self.refinement_loss_weights=refinement_weights(self.refinement_steps,config.get('refinement_loss_weights'))
-        self.model = build_model(manifest['feature_dim'], config['model'],self.refinement_steps)
+        from foldtree2.src.pair_features import validate_pair_config
+        pair_config=config.get('pair_information')
+        validate_pair_config(pair_config)
+        if pair_config is not None and pair_config.get('decoder_sha256') != manifest['input_identity'].get('decoder_sha256'):
+            raise ValueError('Pair calibration decoder hash mismatch')
+        self.model = build_model(manifest['feature_dim'], config['model'],self.refinement_steps, pair_config, config.get('initial_geometry'))
         if not isinstance(config.get('tensor_ff_input_norm', False), bool):
             raise ValueError('tensor_ff_input_norm must be an explicit boolean')
         if config.get('tensor_ff_input_norm', False):
@@ -225,7 +257,7 @@ class Refiner(pl.LightningModule):
                              'batch_idx':batch_idx}
         started = time.perf_counter()
         data_wait = started - self.last_end
-        e = calibrated(batch, self.manifest['scale'])
+        e = calibrated(batch, self.manifest['scale'], self.provenance['preprocessing']['lift_fraction'])
         if not self.bn_stats:
             self.update_began = started
             bn = self.model.bn
@@ -306,7 +338,7 @@ class Refiner(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         self.active_batch = {'phase':'validation', 'id':batch['id'],
                              'length':len(batch['coords']), 'batch_idx':batch_idx}
-        e = calibrated(batch, self.manifest['scale'])
+        e = calibrated(batch, self.manifest['scale'], self.provenance['preprocessing']['lift_fraction'])
         p, a = forward(self.model, e)
         values = self.loss_fn(p, a, e)
         if not all(torch.isfinite(v) for v in values):
@@ -464,9 +496,9 @@ def main():
                 check_refinement_warm_start(prior,module.provenance)
             elif args.allow_loss_change:
                 check_loss_warm_start(prior, module.provenance)
-            elif prior['training']['model'] != config['model'] or prior['training'].get('refinement_steps',1)!=config.get('refinement_steps',1) or prior['sources'] != module.provenance['sources'] or prior['input_identity'] != manifest['input_identity'] or prior['preprocessing'] != module.provenance['preprocessing']:
+            elif prior['training']['model'] != config['model'] or prior['training'].get('refinement_steps',1)!=config.get('refinement_steps',1) or any(prior['training'].get(k)!=config.get(k) for k in ('pair_information','initial_geometry')) or prior['sources'] != module.provenance['sources'] or prior['input_identity'] != manifest['input_identity'] or prior['preprocessing'] != module.provenance['preprocessing']:
                 raise ValueError('Warm-start architecture or implementation mismatch')
-            module.load_state_dict(warm['state_dict'])
+            load_architecture_weights(module, warm['state_dict'], prior['training'], config, args.allow_refinement_change)
         else:
             if args.allow_loss_change or args.allow_refinement_change:
                 raise ValueError('Ablation requires a provenance-complete Lightning checkpoint')
