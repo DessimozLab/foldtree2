@@ -4,7 +4,8 @@ Implemented on `se3-recycled-refiner`, independently switchable alongside
 [shared recycling](se3_recycling_architecture.md). This is residue-level SE(3)
 refinement. Production epoch-40 encoder/decoder weights stay frozen; the separate
 staged transformer is unchanged. Architecture training and merging remain
-conditional on a matched quality comparison. No architecture job was submitted.
+conditional on a matched quality comparison. The matched variants are now [queued on Clariden](se3_pairs_seed_clariden.md)
+behind CUDA recovery and two-node agreement gates; training quality is pending.
 
 ## Continuous pair conditioning
 

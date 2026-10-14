@@ -4,8 +4,8 @@ Branch **`se3-recycled-refiner`**, based on `c5079e1` of
 `se3-clariden-lightning`. The user authorized isolated architecture development,
 with merging conditional on demonstrated improvement. The queued loss trials
 remain pinned to `d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48`; no files in that
-checkout or its configurations were changed. **No merge has been performed and no architecture job has
-been submitted.**
+checkout or its configurations were changed. **No merge has been performed.** The matched pair/seed/recycling variants are
+now [queued on Clariden](se3_pairs_seed_clariden.md) behind per-variant CUDA gates.
 
 The branch now also includes independently switchable [continuous decoder pairs
 and learned initial geometry](se3_pairs_seed_architecture.md), with a separate
@@ -48,7 +48,8 @@ are covered. No ground-truth coordinates enter the forward graph.
 
 ## Matched experiment configurations
 
-Three configurations are prepared, without submitting them:
+Three recycling-only configurations are prepared; the submitted comparison
+uses the separate pair/seed family linked above:
 
 | Configuration | Passes | Training loss weights by pass |
 |---|---:|---|

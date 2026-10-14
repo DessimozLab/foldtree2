@@ -1,6 +1,7 @@
 # Clariden architecture comparison
 
-The authorized comparison queues five four-epoch trials: control, continuous
+The authorized comparison was submitted as seven sequential jobs, pinned to
+`7503bfbf4bfff9c6c040616f4971d803e1762e03`. The five four-epoch trials are: control, continuous
 pairs, learned seed, pairs plus seed, and pairs plus seed with two shared passes.
 All start from the same original growth epoch-16 checkpoint and retain the same
 original loss, 8,192/512 split, seed/order, LR, global batch, width/depth, precision
@@ -63,3 +64,25 @@ Cluster policy was rechecked against the live normal partition (12-hour maximum,
 exclusive nodes) and [current Clariden documentation](https://docs.cscs.ch/clusters/clariden/).
 GH200 cost uses four GPUh per node-hour under [MLP accounting](https://docs.cscs.ch/platforms/mlp/policies/).
 Access and submission follow the local [Clariden skill](/home/dmoi/.codex/skills/clariden/SKILL.md).
+
+## Submitted jobs
+
+| Stage | Job ID |
+|---|---:|
+| One-node save/resume checks, all variants | 3664373 |
+| Two-node agreement checks, all variants | 3664374 |
+| Single-pass control | 3664375 |
+| Continuous pairs | 3664376 |
+| Learned initial geometry | 3664377 |
+| Pairs plus learned geometry | 3664378 |
+| Pairs plus learned geometry, two passes | 3664379 |
+
+At submission, the first check was pending on priority. The subsequent receipt
+collection observed it RUNNING on `nid006249` (32 seconds elapsed); all other
+jobs waited on successful dependencies. No completed CUDA gate or training
+result was claimed.
+The ledger confirms **184.666667 / 256 GPUh** reserved. Receipts, exact commands,
+dependencies, config hashes and observed state are retained in
+[submission evidence](se3_clariden_evidence/pairs_seed_v1/submission.json).
+The transferred release SHA256 is
+`a84c92d3e1b99ab08a2c8497e074f96e710355bac7cd6155ea90abcfdf5fc88a`.
