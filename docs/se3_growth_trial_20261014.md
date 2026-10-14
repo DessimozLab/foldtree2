@@ -250,3 +250,12 @@ One bounded `growth_extract_runtime_audit` stage is authorized: one node,
 reservations become 74 GPUh for preparation, or **90 GPUh** after training is
 submitted, within the 256 GPUh ceiling. This is a diagnosed policy/precision
 change, not an unchanged retry or an automatic retry loop.
+
+Actual audit/preparation submission: **3659735**, pinned revision
+`61001d42071b26e494fd1b01484916f094af8121`, archive SHA-256
+`cfe949582322df8dc853daf801c4125fad54ea01c05b61e97227242c2127bdc1`.
+The test-only ID 3659734 is not the submitted job. The archive dependency check
+passed. Initial observed state is **PENDING / Priority**, with no audit events
+yet and conservative reservations confirmed at 74 GPUh. No training job is
+submitted until its guarded preparation passes. Evidence is retained in
+`docs/se3_clariden_evidence/growth_8192/runtime-audit-submission.json`.

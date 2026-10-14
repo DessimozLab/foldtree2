@@ -29,6 +29,12 @@ loaded both production models but failed frozen-feature parity against the
 workstation cache (maximum difference 0.000244). No larger training job was
 submitted. Precision/runtime parity needs diagnosis before another allocation;
 the tolerance remains unchanged. Neither stage needs a workstation GPU.
+The user subsequently authorized accepting bounded runtime differences to
+prioritize a trained model. Audit/preparation job **3659735** is queued: it logs
+default-versus-explicit full matrix precision, retains strict same-runtime
+repeatability, and permits explicitly bounded cross-runtime differences with
+hashed producer provenance. It will submit the 8,192-structure training trial
+only after its new audit and cache checks pass.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
