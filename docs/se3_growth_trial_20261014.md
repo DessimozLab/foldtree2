@@ -136,3 +136,18 @@ use the shared budget ledger: 68 prior conservative GPUh + 2 preparation + 16
 training = **86 GPUh**, within the user's 256 GPUh ceiling. This supersedes the
 earlier workstation-device dependency. Training mathematics and the retained
 validation protocol remain unchanged.
+
+Graph export completed with **4,097 graphs** and content identity
+`387d0bd1e5f59053bae86d7475de432841f72c2a3ddae42f6e74e18d1b809ca2`.
+An actual source/export round trip reproduced all 41 tensor fields of the
+retained probe exactly, including dtype and shape. Targeted split tests passed
+again (eight tests), and extraction/submission Python and batch-shell syntax
+checks passed. Raw graph inputs occupy about 3.9 GiB; the transfer archive is
+about 2.1 GiB, SHA-256
+`8632362c5cb93503c4b07bd60565420b683e6a91198bea3e283c1b1fd1d881b8`.
+
+The Clariden pipeline is pinned to `5b3946394aef1dae0756f617b186e81a9232520e`.
+Its code archive passed the 20-dependency release check, SHA-256
+`3d756da06409e129f63cd2604e53ef1311ab6f935c93dc3883baeac1613d31b7`.
+The data archive is verified before extraction submission. Export manifest and
+progress evidence are preserved under `docs/se3_clariden_evidence/growth_8192`.
