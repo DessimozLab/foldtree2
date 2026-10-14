@@ -11,9 +11,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--submit', action='store_true')
     parser.add_argument('--available-credit', required=True, type=float)
+    parser.add_argument('--stage', choices=['growth_extract_clariden', 'growth_extract_h5pyfix'],
+                        default='growth_extract_clariden')
     args = parser.parse_args()
     root = Path('/capstor/store/cscs/swissai/a0117/foldtree2/se3')
     code = Path(__file__).resolve().parents[1]
+    if args.stage == 'growth_extract_h5pyfix':
+        previous = json.loads((root / 'artifacts/growth-extraction-submission.json').read_text())
+        state = subprocess.check_output(['sacct', '-X', '-j', previous['job_id'],
+            '--format=State', '-n', '-P'], text=True).strip()
+        if state != 'FAILED':
+            raise ValueError('Dependency correction requires the preceding failed preparation')
     if not (root / 'inputs/growth_graph_inputs/manifest.json').exists():
         raise ValueError('Graph export has not been transferred')
     if (root / 'cache/bundle_growth_8192').exists():
@@ -29,13 +37,14 @@ def main():
         raise RuntimeError('Slurm preflight failed: ' + preflight.stderr.strip())
     print(preflight.stderr, flush=True)
     reserve(code / 'configs/clariden_se3/growth_budget.json', root / 'budget.jsonl',
-            'growth_extract_clariden', args.available_credit, command, args.submit)
+            args.stage, args.available_credit, command, args.submit)
     if args.submit:
-        receipt = json.loads((root / 'budget.jsonl.growth_extract_clariden.receipt.json').read_text())
+        receipt = json.loads((root / ('budget.jsonl.' + args.stage + '.receipt.json')).read_text())
         job = receipt['stdout'].strip().split(';')[0]
         if not job.isdigit():
             raise ValueError('Unexpected Slurm receipt')
-        (root / 'artifacts/growth-extraction-submission.json').write_text(json.dumps({
+        artifact = 'growth-extraction-submission.json' if args.stage == 'growth_extract_clariden' else args.stage + '-submission.json'
+        (root / 'artifacts' / artifact).write_text(json.dumps({
             'job_id': job, 'code_revision': code.name, 'command': command,
             'credit_basis': 'User-confirmed sufficient credit; authorized 256 GPUh ceiling',
         }, indent=2) + '\n')

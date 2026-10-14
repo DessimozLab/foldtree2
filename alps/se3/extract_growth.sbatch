@@ -19,12 +19,14 @@ cd "$TRAIN_WORKDIR"
 source "$TRAIN_VENV/bin/activate"
 export MPLCONFIGDIR=/tmp/se3-extract-matplotlib
 # Isolate extraction-only dependencies from the verified training environment.
-prep_deps=/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/growth-extraction-deps
-python -m pip install --no-deps --target "$prep_deps" gemmi==0.7.3
+prep_deps=/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/growth-extraction-deps-v2
+python -m pip install --no-deps --target "$prep_deps" gemmi==0.7.3 h5py==3.14.0
 export PYTHONPATH="$prep_deps:${PYTHONPATH:-}"
+# Catch production-loader dependencies before costly cache inventory validation.
+python -c "import gemmi, h5py; from foldtree2 import learn_geometry_lightning; from foldtree2.learn_production_geometry_se3_lightning import load_production_decoder; print(\"Production extraction imports verified\")"
 python -m scripts.extract_se3_growth_clariden \
     --inputs /capstor/store/cscs/swissai/a0117/foldtree2/se3/inputs/growth_graph_inputs \
-    --previous-bundle /capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_4096 \
+    --previous-bundle /iopsstor/scratch/cscs/dmoi/se3/bundle_4096 \
     --output /capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_growth_8192 \
     --report /capstor/store/cscs/swissai/a0117/foldtree2/se3/artifacts/growth-extraction.json
 rsync -a /capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_growth_8192/ /iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192/
