@@ -214,3 +214,18 @@ Passed check records, completed control events/paired metrics/checkpoint hash,
 recovery receipt and paired control-versus-parent FAPE deltas are retained in
 the evidence directory. The control-vs-parent descriptive bootstrap interval
 uses the repeatedly monitored development holdout, not an independent test.
+
+The preserved failure JSON identifies **A0A6V8PJK3**, 127 residues, rank 2,
+`batch_idx: 0`: the very first model forward failed before this rank evaluated
+the new loss. A partial 60-KB diagnostic tensor file was left by failed capture;
+it is **not a valid checkpoint** and is not used for recovery. The healthy-node
+correction subsequently passed **87 finite optimizer updates**, latest observed
+gradient norm 2.406455 and loss 5.893730, without mathematical code changes.
+This strengthens the node/runtime-fault explanation. These per-update losses
+are individual microbatch observations, not a validation learning curve.
+
+The paired control-minus-parent FAPE delta on 512 development structures is
+**+0.0000460151**, with a descriptive 2,000-resample paired-bootstrap 95%
+interval **[-0.000374884, +0.000542275]** (seed 42); 279 structures improved.
+There is no clear mean FAPE improvement over the trained parent. Full new-loss
+comparisons remain pending completion of all candidate trials.

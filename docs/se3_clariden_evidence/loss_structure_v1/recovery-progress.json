@@ -1,0 +1,10 @@
+{
+  "job_id": "3663975",
+  "observed_global_step": 87,
+  "observed_time_unix": 1792008102.453885,
+  "observed_gradient_norm": 2.4064552783966064,
+  "observed_loss": 5.8937296867370605,
+  "observed_peak_gpu_memory_bytes": 4476581888,
+  "training_code_revision": "d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48",
+  "interpretation": "Same code/loss passed the originally failing first batch and at least 87 optimizer updates on other nodes; final held-out quality remains pending."
+}
