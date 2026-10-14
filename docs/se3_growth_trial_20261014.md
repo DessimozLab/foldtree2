@@ -96,7 +96,43 @@ was involved.
 
 Both workstation GPUs were occupied: GPU 0 by an ESM workload and GPU 1 by a
 resident llama-server. No workload was stopped. GPU extraction is pending a
-user-selected available device. **The growth training job has not been submitted,
+user-selected available device in the original local preparation attempt. **The growth training job has not been submitted,
 and its 16 GPUh reservation has not been made.** The shared ledger remains at
 68 GPUh. The frozen parity failure is a preparation issue, not a recurrence of
 the refiner's earlier training instability.
+
+## Clariden preparation replaces local extraction
+
+The user clarified that the work should run on Clariden and requested
+continuation. Frozen-output preparation is therefore moved to a bounded
+Clariden GPU allocation too; no workstation GPU needs to be freed. The earlier
+CPU failure remains preserved. A certificate-status check was briefly blocked
+by the automatic approval service's usage limit; the later user-directed
+continuation succeeded without changing credentials or bypassing review.
+
+`scripts/export_se3_graph_inputs.py` reads the existing HDF5 and serializes the
+unaltered graph tensors for the 4,096 additions and one retained parity probe.
+It verifies the original dataset/checkpoint/extractor hashes and records each
+graph file hash in a content-addressed export manifest. The full 39 GB HDF5
+stays on the workstation; only the selected existing graphs and the frozen
+11 MB encoder/decoder pair are transferred. This is a serialization of existing
+graphs, not regeneration. The transfer archive and every graph/checkpoint are
+hash-verified on Clariden.
+
+`alps/se3/extract_growth.sbatch` allocates one GH200 node on `normal` for at most
+30 minutes (**2 GPUh**). It runs the pinned image/verified venv with extraction-only
+Gemmi 0.7.3 isolated in a separate dependency directory. It requires the retained
+GPU cache parity check at the existing `atol=rtol=1e-6`, checks repeat extraction
+of the first new structure, and verifies production parameters remain unchanged
+with no gradients. It publishes a fresh durable 8,704-entry frozen bundle,
+copies it to scratch and verifies both inventories/hashes. Retained entries
+are copied byte for byte. New entries' ARM/PyTorch/CUDA producer details and
+the source graph export identity are bound into the bundle manifest.
+
+Only after all preparation checks pass, the host batch shell submits the exact
+authorized `growth_fp64_8192` training trial once. A preparation failure stops
+the chain; there is no silent parity relaxation or automatic retry. Both stages
+use the shared budget ledger: 68 prior conservative GPUh + 2 preparation + 16
+training = **86 GPUh**, within the user's 256 GPUh ceiling. This supersedes the
+earlier workstation-device dependency. Training mathematics and the retained
+validation protocol remain unchanged.
