@@ -1,0 +1,41 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {
+      "name": "loss_v1_debug_one",
+      "nodes": 1,
+      "hours": 0.16666666666666666,
+      "gpuh": 0.6666666666666666
+    },
+    {
+      "name": "loss_v1_debug_two",
+      "nodes": 2,
+      "hours": 0.16666666666666666,
+      "gpuh": 1.3333333333333333
+    },
+    {
+      "name": "loss_v1_control",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6
+    },
+    {
+      "name": "loss_v1_local_distances",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6
+    },
+    {
+      "name": "loss_v1_backbone",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6
+    },
+    {
+      "name": "loss_v1_combined",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6
+    }
+  ]
+}

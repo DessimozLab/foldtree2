@@ -114,3 +114,31 @@ pre-existing depth-six numerical failure remains explicitly expected. The CPU
 audit uses float32 model forward/backward and float64 coordinate diagnostics.
 
 No new Clariden training job has been submitted for this loss experiment.
+
+## Authorized Clariden submission
+
+The user authorized queuing the matched loss experiment. Submission uses
+`scripts.submit_se3_loss_trials`: a one-node save/reload check, a two-node
+comparison, then control, nearby-distance, backbone and combined trials.
+Every job depends on successful completion of the preceding job. The one-node
+check compares one-update + resumed second update against an uninterrupted
+two-update control, including exact model/optimizer state and validation. The
+two-node check compares two updates against that one-node control at 1e-4
+absolute/relative tolerances. Both use the combined loss and the full original
+cache/split. Checks run in the pinned container/venv on allocated compute nodes.
+
+Resources: normal partition; one node/four GPUs for ten minutes (2/3 GPUh),
+two nodes/eight GPUs for ten minutes (4/3 GPUh), then two nodes/eight GPUs for
+45 minutes per four-epoch trial (6 GPUh each). Total ceiling **26 GPUh**; the
+shared ledger would rise from 124 to **150 of 256 GPUh**. Based on prior runs,
+each four-epoch trial is expected to take roughly 13–20 minutes; the new loss
+overhead remains unmeasured. Credit availability uses the user's existing
+sufficient-credit confirmation, not an independently retrieved portal balance.
+No architecture expansion, new cache extraction, automatic retries or extra
+epochs are included. Parent checkpoint and frozen bundle hashes are checked
+before submission; the trainer verifies compatible weights-only initialization.
+The control restarts optimizer/sample stream exactly as all three candidates do.
+
+```bash
+python3 -m scripts.submit_se3_loss_trials --available-credit 26 --submit
+```
