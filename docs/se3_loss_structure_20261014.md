@@ -113,7 +113,7 @@ validation. The GPU-only check was skipped in the restricted sandbox; the
 pre-existing depth-six numerical failure remains explicitly expected. The CPU
 audit uses float32 model forward/backward and float64 coordinate diagnostics.
 
-No new Clariden training job has been submitted for this loss experiment.
+At the implementation checkpoint, no Clariden loss-experiment jobs had yet been submitted.
 
 ## Authorized Clariden submission
 
@@ -142,3 +142,25 @@ The control restarts optimizer/sample stream exactly as all three candidates do.
 ```bash
 python3 -m scripts.submit_se3_loss_trials --available-credit 26 --submit
 ```
+
+## Accepted jobs
+
+All six Slurm preflights and actual submissions succeeded. Code revision
+`d7108d96e95e2fa7cf1ce07abdda5fc61abbfb48`, archive SHA-256
+`7be890468ea3f459d7c19d13b0bd509c47d4dcd45d99ccc8ed2d8b295406eb7b`,
+verified on Clariden before extraction/submission.
+
+| Stage | Job |
+|---|---|
+| loss_v1_debug_one | 3663702 |
+| loss_v1_debug_two | 3663703 |
+| loss_v1_control | 3663704 |
+| loss_v1_local_distances | 3663705 |
+| loss_v1_backbone | 3663706 |
+| loss_v1_combined | 3663707 |
+
+The ledger now reserves **150 of 256 GPUh**. All jobs are queued behind the
+preceding job with `afterok`; the first check is eligible immediately. Queue
+acceptance does not establish passed gates or trained quality.
+[Submission receipts and observed queue state](se3_clariden_evidence/loss_structure_v1/submissions.json)
+are retained. Fifteen focused loss/launcher tests passed before submission.

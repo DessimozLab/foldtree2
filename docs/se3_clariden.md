@@ -4,7 +4,8 @@ An opt-in [coordinate-loss experiment](se3_loss_structure_20261014.md) now adds
 nearby nonlocal distances and coordinate bend/signed-torsion supervision, with
 a legacy-equivalent control and common FAPE checkpoint selection. CPU tests and
 an eight-training-structure gradient audit passed; its four matched training
-configurations are prepared but have not been submitted.
+trials are now queued as jobs 3663704–3663707, behind recovery/topology checks
+3663702–3663703. No architecture change is included.
 
 Latest result: the [8,192-structure growth trial](se3_growth_trial_20261014.md#completed-8192-structure-trial)
 **completed** as job **3659891**: 16 epochs / 8,192 updates in 49m44s,
