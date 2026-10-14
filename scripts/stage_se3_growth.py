@@ -17,19 +17,21 @@ def main():
     expected = identity.pop('bundle_sha256')
     if hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest() != expected:
         raise ValueError('Source manifest identity differs')
-    shutil.copytree(source, target, dirs_exist_ok=True)
-    if (source / 'manifest.json').read_bytes() != (target / 'manifest.json').read_bytes():
-        raise ValueError('Copied manifest differs')
+    # Transfer nodes use native Python 3.6, independent of the ARM user venv.
+    (target / 'entries').mkdir(parents=True, exist_ok=True)
     for record in manifest['files'].values():
         path = target / 'entries' / record['name']
         if path.parent != target / 'entries':
             raise ValueError('Invalid cache entry path')
+        shutil.copyfile(str(source / 'entries' / record['name']), str(path))
         h = hashlib.sha256()
         with path.open('rb') as f:
             for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
                 h.update(chunk)
         if h.hexdigest() != record['sha256']:
             raise ValueError('Copied entry differs: ' + record['name'])
+    # Publish the copied manifest only after every payload has been verified.
+    shutil.copyfile(str(source / 'manifest.json'), str(target / 'manifest.json'))
     result = {'passed': True, 'bundle_sha256': expected, 'entries': len(manifest['files']),
               'source': str(source), 'target': str(target)}
     (root / 'artifacts/growth-stage-in.json').write_text(json.dumps(result, indent=2) + '\n')
