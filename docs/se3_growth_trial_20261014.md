@@ -166,3 +166,32 @@ Preparation receipt: `.../se3/artifacts/growth-extraction-submission.json`.
 Extraction verification: `.../se3/artifacts/growth-extraction.json` and `.jsonl`.
 The automatically submitted training ID will be recorded in
 `.../se3/artifacts/growth_fp64_8192-submission.json`.
+
+## Extraction dependency correction
+
+Preparation **3658044 ran and failed**, exit 1, after 3m52s. Gemmi installed
+successfully, but importing the production encoder's dataset module raised
+`ModuleNotFoundError: No module named 'h5py'`. No production extraction or
+training followed, and no growth cache was published. Actual walltime-based
+allocation was approximately 0.258 GPUh; its two-GPUh reservation remains in
+the conservative ledger.
+
+Pin **h5py 3.14.0** beside Gemmi 0.7.3 in a fresh isolated extraction dependency
+directory; leave the tested training venv unchanged. Check all production-loader
+imports before expensive inventory validation, and read the unchanged retained
+bundle from existing Iopsstor scratch instead of Capstor for random reads.
+The exact training mathematics, dataset selection, frozen checkpoints and
+parity tolerance are unchanged. Python compilation, batch syntax and release
+completeness checks passed.
+
+One diagnosed, bounded retry was submitted as job **3659682**, pinned revision
+`7aad695af64d27597784581ed021021076eaf3b4`, archive SHA-256
+`cc1d5b6c227389a37dc7f456fd02f447d7d42019a2b64dcb522036aa275e773e`.
+The launcher requires the preceding preparation to be FAILED and uses a
+distinct ledger stage, `growth_extract_h5pyfix`, preserving the first receipt.
+This adds at most two GPUh: conservative reservations are now 72 GPUh, or 88
+if the verification-gated 16 GPUh training stage is later submitted. No training
+job has been submitted as of this correction. There is no automatic retry loop.
+The corrected job's observed state is **PENDING / QOSGrpNodeLimit**; it has
+not allocated GPUs yet. Failure and retry evidence is retained in
+`docs/se3_clariden_evidence/growth_8192/h5py-correction.json`.
