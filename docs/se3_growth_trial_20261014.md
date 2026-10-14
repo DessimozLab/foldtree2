@@ -72,3 +72,31 @@ against both raw decoder and the previous medium trial on identical holdout
 IDs. The repeatedly monitored holdout is not a new independent confirmation set;
 production pretraining independence is not claimed. A material regression or
 failure requires diagnosis rather than automatic resubmission or larger scale.
+
+## Preparation status
+
+The complete 8,192/512 cohort has been selected and audited: all original
+training IDs remain as the prefix, all 512 validation IDs remain identical,
+all 8,704 IDs are unique, and additions exclude prior diagnostic IDs. Selection
+recorded 4,970 skipped candidates. Eight targeted growth/exclusion tests passed;
+all twelve training source files match the completed medium trial byte for byte.
+Training settings differ only in training count and cache/output paths. The
+growth release passed all 20 archive dependency checks and is staged under
+revision `1d29587ba0a2a7b7a320e84461131476978210e9`, archive SHA-256
+`62470025a44c346c9ff937bdc99119707e9e9a5d3d0af9106dfee1185b74c7cc`.
+
+CPU preparation failed the existing cached-versus-uncached parity check on the
+first retained structure: coordinate maximum difference 0.000775367, exceeding
+`atol=rtol=1e-6`. No new frozen entries were published. The tolerance was not
+relaxed and the old cache was not overwritten. Preserve the selected cohort and
+failure log in `runs/se3_growth_cache_20261014` and
+`runs/se3_clariden/prepare-growth-20261014.log`. An earlier selection-only CPU
+attempt was interrupted to limit PyTorch threads to two; no cluster allocation
+was involved.
+
+Both workstation GPUs were occupied: GPU 0 by an ESM workload and GPU 1 by a
+resident llama-server. No workload was stopped. GPU extraction is pending a
+user-selected available device. **The growth training job has not been submitted,
+and its 16 GPUh reservation has not been made.** The shared ledger remains at
+68 GPUh. The frozen parity failure is a preparation issue, not a recurrence of
+the refiner's earlier training instability.

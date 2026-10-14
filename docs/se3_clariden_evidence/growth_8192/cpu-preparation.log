@@ -1,0 +1,22 @@
+Loaded pretrained encoder via torch.load(module) from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt epoch=None
+latent_dim: 20 vq_probe: 0.2027195692062378
+Loaded frozen production geometry decoder from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt
+{"event": "failure", "time": 1791936878.6214092, "error": "AssertionError('Tensor-likes are not close!\\n\\nMismatched elements: 283 / 294 (96.3%)\\nGreatest absolute difference: 0.0007753670215606689 at index (8, 0) (up to 1e-06 allowed)\\nGreatest relative difference: 0.03336550295352936 at index (28, 0) (up to 1e-06 allowed)')"}
+Traceback (most recent call last):
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/dmoi/projects/foldtree2/scripts/prepare_se3_growth_cohort.py", line 58, in <module>
+    main()
+  File "/home/dmoi/projects/foldtree2/scripts/prepare_se3_growth_cohort.py", line 54, in main
+    populate_cache()
+  File "/home/dmoi/projects/foldtree2/scripts/prepare_se3_larger_cohort.py", line 75, in main
+    if isinstance(v,torch.Tensor):torch.testing.assert_close(v,fresh[k],atol=1e-6,rtol=1e-6,equal_nan=True)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/testing/_comparison.py", line 1587, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 283 / 294 (96.3%)
+Greatest absolute difference: 0.0007753670215606689 at index (8, 0) (up to 1e-06 allowed)
+Greatest relative difference: 0.03336550295352936 at index (28, 0) (up to 1e-06 allowed)
