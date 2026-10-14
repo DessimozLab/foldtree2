@@ -1,0 +1,6 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {"name": "growth_fp64_8192", "nodes": 2, "hours": 2, "gpuh": 16}
+  ]
+}
