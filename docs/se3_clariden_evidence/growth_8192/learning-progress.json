@@ -1,0 +1,185 @@
+{
+  "observed_utc": "2026-10-14T10:16:53.916325+00:00",
+  "job_id": "3659891",
+  "queue": "   JOBID USER     ACCOUNT           NAME EXEC_HOST ST     REASON   START_TIME     END_TIME  TIME_LEFT NODES   PRIORITY\n 3659891 dmoi     a0117   ft2-se3-growth nid006029  R       None     12:01:57     14:01:57    1:45:04     2     554444\n",
+  "latest_update": 2123,
+  "epoch_events": [
+    {
+      "event": "validation",
+      "time": 1791972461.494692,
+      "epoch": 0,
+      "global_step": 512,
+      "complete_epoch": true,
+      "metrics": {
+        "geometry": 3.9827579287812114,
+        "evaluation_fape": 0.9330016806488857,
+        "refined.angle_mae_radians": 0.5766128798131831,
+        "refined.ca_bend_mae_radians": 0.7413927460438572,
+        "refined.ca_bond_deviation_3_8": 1.2722841337090358,
+        "refined.ca_bond_mae": 1.2753808394772932,
+        "refined.ca_rmsd": 16.046307892538607,
+        "refined.ca_torsion_mae_radians": 1.5335266072222864,
+        "refined.fape": 0.9330016806488857,
+        "refined.lddt": 0.2479638702934608,
+        "refined.tm_score": 0.21186839167447363,
+        "refined.valid_residues": 114.6171875
+      },
+      "counts": {
+        "geometry": 512,
+        "evaluation_fape": 512,
+        "refined.angle_mae_radians": 512,
+        "refined.ca_bend_mae_radians": 512,
+        "refined.ca_bond_deviation_3_8": 512,
+        "refined.ca_bond_mae": 512,
+        "refined.ca_rmsd": 512,
+        "refined.ca_torsion_mae_radians": 511,
+        "refined.fape": 512,
+        "refined.lddt": 512,
+        "refined.tm_score": 512,
+        "refined.valid_residues": 512
+      }
+    },
+    {
+      "event": "train_epoch",
+      "time": 1791972461.5111508,
+      "epoch": 0,
+      "global_step": 512,
+      "geometry": 4.220506678320817,
+      "effective_structures": 8192
+    },
+    {
+      "event": "validation",
+      "time": 1791972636.2981603,
+      "epoch": 1,
+      "global_step": 1024,
+      "complete_epoch": true,
+      "metrics": {
+        "geometry": 3.8972867249976844,
+        "evaluation_fape": 0.9317388567142189,
+        "refined.angle_mae_radians": 0.5654757982701994,
+        "refined.ca_bend_mae_radians": 0.7343849280150607,
+        "refined.ca_bond_deviation_3_8": 1.1672673425637186,
+        "refined.ca_bond_mae": 1.1723147497978061,
+        "refined.ca_rmsd": 16.146326975896955,
+        "refined.ca_torsion_mae_radians": 1.52646296458235,
+        "refined.fape": 0.9317388567142189,
+        "refined.lddt": 0.2559568896831479,
+        "refined.tm_score": 0.21001462067315396,
+        "refined.valid_residues": 114.6171875
+      },
+      "counts": {
+        "geometry": 512,
+        "evaluation_fape": 512,
+        "refined.angle_mae_radians": 512,
+        "refined.ca_bend_mae_radians": 512,
+        "refined.ca_bond_deviation_3_8": 512,
+        "refined.ca_bond_mae": 512,
+        "refined.ca_rmsd": 512,
+        "refined.ca_torsion_mae_radians": 511,
+        "refined.fape": 512,
+        "refined.lddt": 512,
+        "refined.tm_score": 512,
+        "refined.valid_residues": 512
+      }
+    },
+    {
+      "event": "train_epoch",
+      "time": 1791972636.314477,
+      "epoch": 1,
+      "global_step": 1024,
+      "geometry": 3.9378760291583603,
+      "effective_structures": 8192
+    },
+    {
+      "event": "validation",
+      "time": 1791972814.5232887,
+      "epoch": 2,
+      "global_step": 1536,
+      "complete_epoch": true,
+      "metrics": {
+        "geometry": 3.862819882808253,
+        "evaluation_fape": 0.9310632825363427,
+        "refined.angle_mae_radians": 0.5429131109267473,
+        "refined.ca_bend_mae_radians": 0.7294815244385973,
+        "refined.ca_bond_deviation_3_8": 1.1182151079410687,
+        "refined.ca_bond_mae": 1.1260099810315296,
+        "refined.ca_rmsd": 16.115702792536467,
+        "refined.ca_torsion_mae_radians": 1.527407519738035,
+        "refined.fape": 0.9310632825363427,
+        "refined.lddt": 0.26173178674071096,
+        "refined.tm_score": 0.20985589470369853,
+        "refined.valid_residues": 114.6171875
+      },
+      "counts": {
+        "geometry": 512,
+        "evaluation_fape": 512,
+        "refined.angle_mae_radians": 512,
+        "refined.ca_bend_mae_radians": 512,
+        "refined.ca_bond_deviation_3_8": 512,
+        "refined.ca_bond_mae": 512,
+        "refined.ca_rmsd": 512,
+        "refined.ca_torsion_mae_radians": 511,
+        "refined.fape": 512,
+        "refined.lddt": 512,
+        "refined.tm_score": 512,
+        "refined.valid_residues": 512
+      }
+    },
+    {
+      "event": "train_epoch",
+      "time": 1791972814.5405624,
+      "epoch": 2,
+      "global_step": 1536,
+      "geometry": 3.8835156003806333,
+      "effective_structures": 8192
+    },
+    {
+      "event": "validation",
+      "time": 1791972989.2687337,
+      "epoch": 3,
+      "global_step": 2048,
+      "complete_epoch": true,
+      "metrics": {
+        "geometry": 3.8078467834275216,
+        "evaluation_fape": 0.9304089996730909,
+        "refined.angle_mae_radians": 0.5667250869155396,
+        "refined.ca_bend_mae_radians": 0.7181615335575771,
+        "refined.ca_bond_deviation_3_8": 1.0850492322351784,
+        "refined.ca_bond_mae": 1.0930076969088987,
+        "refined.ca_rmsd": 15.969661238137633,
+        "refined.ca_torsion_mae_radians": 1.5259368932877035,
+        "refined.fape": 0.9304089996730909,
+        "refined.lddt": 0.25942502764519304,
+        "refined.tm_score": 0.21147115276036466,
+        "refined.valid_residues": 114.6171875
+      },
+      "counts": {
+        "geometry": 512,
+        "evaluation_fape": 512,
+        "refined.angle_mae_radians": 512,
+        "refined.ca_bend_mae_radians": 512,
+        "refined.ca_bond_deviation_3_8": 512,
+        "refined.ca_bond_mae": 512,
+        "refined.ca_rmsd": 512,
+        "refined.ca_torsion_mae_radians": 511,
+        "refined.fape": 512,
+        "refined.lddt": 512,
+        "refined.tm_score": 512,
+        "refined.valid_residues": 512
+      }
+    },
+    {
+      "event": "train_epoch",
+      "time": 1791972989.2847862,
+      "epoch": 3,
+      "global_step": 2048,
+      "geometry": 3.842914025630307,
+      "effective_structures": 8192
+    }
+  ],
+  "failure_count": 0,
+  "checkpoint_files": {
+    "best.ckpt": 20503219,
+    "last.ckpt": 20512435
+  }
+}

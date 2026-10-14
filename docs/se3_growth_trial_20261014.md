@@ -322,3 +322,53 @@ The corrected stage and upcoming training are pinned to
 `0f60572ea175607814af6f104f0fcdc04187ee58`, code archive SHA-256
 `cad4eb432d4b9baa77e11a5897419b19a78f43c1c1b1885c1042c3479d68c06f`.
 All training mathematics remain identical to the validated medium trial.
+
+Transfer job **3659864 completed**, exit 0, in **6m21s**. All **8,704 payloads**
+passed SHA-256 verification on scratch, with identical bundle identity to the
+durable source. Stage-in verification is recorded in
+`.../se3/artifacts/growth-stage-in.json`; the two targeted stage-publication tests
+passed, including rejecting a corrupted payload without publishing a manifest.
+
+The actual training job is **3659891**, submitted from the login node after
+successful transfer (test-only ID 3659890 is not the job). It is **RUNNING** on
+two nodes/eight GPUs, with all eight workers reporting seed 42. The run is
+fresh initialization, 8,192 training/512 retained validation structures,
+16 epochs/8,192 updates, global batch 16, original learning rate/losses/model
+and both stability fixes. The two-hour/16-GPUh bound remains enforced, and
+the shared ledger now conservatively reserves **92 of 256 GPUh**. Training
+success and learning must still be judged from its updates, checkpoints and
+held-out epoch metrics, not the scheduler's RUNNING state.
+
+Log: `.../se3/code/0f60572ea175607814af6f104f0fcdc04187ee58/logs/growth_fp64_8192-3659891.out`.
+Output/checkpoints: `.../se3/runs/growth_fp64_8192`.
+Receipt: `.../se3/artifacts/growth_fp64_8192-submission.json`.
+
+Startup verification: the run passed **338 completed optimizer updates** with
+finite logged losses, nonzero finite gradient norms and periodic atomic
+checkpoints. Recent global update throughput was approximately 27–49
+structures/s, with rank-zero peak GPU allocation 4,476,560,896 bytes (4.17 GiB).
+Per-update losses are the last microbatch's value, so they must not be treated
+as an epoch learning curve; complete-epoch geometry and held-out metrics remain
+the quality assessment. No production model is loaded or called during this
+cache-only refiner training.
+
+The **first complete epoch passed**: all 8,192 training structures consumed,
+all 512 unique held-out structures evaluated, and both `last.ckpt` and
+`best.ckpt` saved (about 20 MB each). First-epoch training geometry is 4.220507,
+held-out geometry **3.982758**, FAPE **0.933002**, aligned CA RMSD **16.0463 Å**,
+TM-score **0.211868**, lDDT **0.247964**, bond MAE **1.27538 Å**, and predicted
+angle MAE **0.576613 radians**. The run continued into epoch two, beyond 576
+completed optimizer updates, with finite losses and gradients. These are interim
+results, not completion of the requested 16 epochs. The trained first-epoch
+checkpoint is available now; the full trial will continue within its bound.
+
+After **three complete epochs / 1,536 updates**, the run demonstrates learning:
+training geometry fell **4.220507 → 3.883516 (7.99%)**, held-out geometry
+**3.982758 → 3.862820 (3.01%)**, and FAPE **0.933002 → 0.931063**.
+lDDT improved **0.247964 → 0.261732**, bond MAE **1.275381 → 1.126010 Å**,
+and predicted angle MAE **0.576613 → 0.542913 radians**. Aligned CA RMSD rose
+slightly **16.0463 → 16.1157 Å** and TM-score fell **0.211868 → 0.209856**;
+these remain visible and below the previously used material-regression bounds.
+All three epochs consumed 8,192 training and 512 unique validation structures
+and saved trained checkpoints. The run passed 1,887 updates without logged
+nonfinite events and continues toward 16 epochs; these remain interim results.

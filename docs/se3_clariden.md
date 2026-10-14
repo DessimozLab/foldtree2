@@ -35,6 +35,15 @@ default-versus-explicit full matrix precision, retains strict same-runtime
 repeatability, and permits explicitly bounded cross-runtime differences with
 hashed producer provenance. It will submit the 8,192-structure training trial
 only after its new audit and cache checks pass.
+The audit established that the container's TF32 matrix default caused the
+encoder-feature discrepancy; full matrix precision reduced it to 1.19e-7.
+Corrected extraction completed, frozen weights remained unchanged, and all
+8,704 cache entries were copied and checksum-verified. The actual larger
+training job **3659891** is now running on eight GPUs. Learning results remain
+interim: after three epochs, training geometry fell 7.99%, held-out geometry
+3.01%, and FAPE 0.9330 to 0.9311, with trained checkpoints saved and finite
+updates beyond 1,887. The full 16 epochs remain in progress. Production
+checkpoints and the staged transformer remain unchanged.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
