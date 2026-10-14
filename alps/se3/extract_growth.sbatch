@@ -28,7 +28,8 @@ python -m scripts.extract_se3_growth_clariden \
     --inputs /capstor/store/cscs/swissai/a0117/foldtree2/se3/inputs/growth_graph_inputs \
     --previous-bundle /iopsstor/scratch/cscs/dmoi/se3/bundle_4096 \
     --output /capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_growth_8192 \
-    --report /capstor/store/cscs/swissai/a0117/foldtree2/se3/artifacts/growth-extraction.json
+    --report /capstor/store/cscs/swissai/a0117/foldtree2/se3/artifacts/growth-extraction.json \
+    --accept-runtime-drift
 rsync -a /capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_growth_8192/ /iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192/
 python -c "from foldtree2.se3_cache import open_bundle; print(open_bundle(\"/iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192\")[\"bundle_sha256\"])"
 '

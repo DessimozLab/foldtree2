@@ -13,6 +13,7 @@ from torch_geometric.data import HeteroData
 from foldtree2.se3_cache import digest, identity_hash, open_bundle
 from foldtree2.se3_validation import base, frozen_entry, load_production_decoder, tensor_digest
 from scripts.submit_se3_growth_trial import check_growth
+from scripts.se3_extraction_parity import compare_entries
 
 
 def main():
@@ -21,6 +22,8 @@ def main():
     parser.add_argument('--previous-bundle', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--report', required=True)
+    parser.add_argument('--accept-runtime-drift', action='store_true',
+                        help='User-authorized bounded cross-runtime audit; repeatability remains strict')
     args = parser.parse_args()
     report = Path(args.report)
     def event(kind, **values):
@@ -67,17 +70,34 @@ def main():
     for model in (encoder, decoder):
         model.requires_grad_(False)
     before = [tensor_digest(m) for m in (encoder, decoder)]
-    fresh = frozen_entry(graph(parity_id), encoder, decoder, device)
     cached = torch.load(previous_root / 'entries' / previous['files'][parity_id]['name'],
                         map_location='cpu', weights_only=False)['entry']
-    differences = {}
+    defaults = {'matmul_precision': torch.get_float32_matmul_precision(),
+                'matmul_allow_tf32': torch.backends.cuda.matmul.allow_tf32,
+                'cudnn_allow_tf32': torch.backends.cudnn.allow_tf32}
+    default_entry = frozen_entry(graph(parity_id), encoder, decoder, device)
+    # Record all fields in the diagnosis even if the strict audit fails.
+    default_differences = {}
     for key, value in cached.items():
         if isinstance(value, torch.Tensor):
-            delta = (value.float() - fresh[key].float()).abs()
+            delta = (value.double() - default_entry[key].double()).abs()
             finite = delta[torch.isfinite(delta)]
-            differences[key] = float(finite.max()) if finite.numel() else 0.0
-            torch.testing.assert_close(value, fresh[key], atol=1e-6, rtol=1e-6, equal_nan=True)
-    event('parity_verified', id=parity_id, differences=differences)
+            default_differences[key] = float(finite.max()) if finite.numel() else 0.
+    event('runtime_default_audit', settings=defaults, differences=default_differences)
+    # Match the verified workstation defaults explicitly, rather than inheriting
+    # the NVIDIA image's matrix precision policy. Keep cuDNN's original setting.
+    torch.set_float32_matmul_precision('highest')
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = True
+    fresh = frozen_entry(graph(parity_id), encoder, decoder, device)
+    settings = {'matmul_precision': torch.get_float32_matmul_precision(),
+                'matmul_allow_tf32': torch.backends.cuda.matmul.allow_tf32,
+                'cudnn_allow_tf32': torch.backends.cudnn.allow_tf32}
+    differences = compare_entries(cached, fresh, args.accept_runtime_drift)
+    again = frozen_entry(graph(parity_id), encoder, decoder, device)
+    compare_entries(fresh, again)
+    event('parity_verified', id=parity_id, differences=differences, settings=settings,
+          accepted_runtime_drift=args.accept_runtime_drift, same_runtime_repeatability='atol=rtol=1e-6')
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=False)
     shutil.copytree(previous_root / 'entries', root / 'entries')
@@ -85,7 +105,7 @@ def main():
     identifiers = source['bundle_template']['train_ids'][4096:]
     for index, identifier in enumerate(identifiers):
         entry = frozen_entry(graph(identifier), encoder, decoder, device)
-        if index == 0:
+        if index < 8:
             again = frozen_entry(graph(identifier), encoder, decoder, device)
             for key, value in entry.items():
                 if isinstance(value, torch.Tensor):
@@ -102,6 +122,10 @@ def main():
     manifest['extraction_producer'] = {'export_sha256': source['export_sha256'], 'torch': torch.__version__,
         'python': platform.python_version(), 'cuda': torch.version.cuda, 'gpu': torch.cuda.get_device_name(device),
         'script_sha256': digest(__file__), 'retained_bundle': previous['bundle_sha256']}
+    manifest['extraction_producer'].update(precision=settings, runtime_default_audit=default_differences,
+        parity=differences, accepted_runtime_drift=args.accept_runtime_drift,
+        cross_runtime_float_tolerance=1e-3 if args.accept_runtime_drift else 1e-6,
+        same_runtime_tolerance=1e-6, parity_policy_sha256=digest(Path(__file__).with_name('se3_extraction_parity.py')))
     manifest['bundle_sha256'] = identity_hash(manifest)
     check_growth(previous, manifest)
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

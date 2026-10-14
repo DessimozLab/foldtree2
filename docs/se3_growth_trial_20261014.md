@@ -216,3 +216,37 @@ cache-only trainer explicitly disables TF32. Cross-runtime precision defaults
 are therefore a hypothesis to test, not a proven cause. Full per-field parity
 and actual Clariden precision settings are needed before spending another
 training allocation; the failed assertion stopped on the first feature field.
+
+## User-authorized runtime audit and training
+
+The user explicitly accepted small runtime differences and prioritized a
+trained Clariden model. The next preparation records the image's actual matrix
+precision defaults and all per-field differences, then explicitly selects
+`highest` matrix precision/TF32 disabled, matching the workstation producer.
+cuDNN TF32 remains enabled as it was in the original extractor. This isolates
+matrix precision effects; it does not assume that they explain every difference.
+
+The explicit `--accept-runtime-drift` option allows cross-runtime floating
+differences at `atol=rtol=1e-3` and reports their maximum absolute error/RMSE.
+Targets, raw angles, masks, tokens and codebook values still require exact
+agreement. At most 1% of the union of directed contact edges may differ, with
+the changed fraction reported. Shape, dtype and matching nonfinite masks remain
+checked. The default comparison without the option remains strict. These bounds
+are an experiment policy authorized by the user's direction, not a claim that
+different hardware must produce identical values.
+
+Same-runtime repeat extraction of the retained probe and the first eight new
+structures still requires `atol=rtol=1e-6`. Production weights must remain
+unchanged with no gradients. All selected precision settings, comparisons,
+policy source hash and producer versions are included in the content-hashed
+bundle manifest. Retained entries and validation inputs remain byte-identical.
+No training architecture or loss is changed. Fourteen targeted split/parity
+tests passed, including excessive drift, changed targets/tokens, nonfinite
+values, contact drift and strict default comparison.
+
+One bounded `growth_extract_runtime_audit` stage is authorized: one node,
+30 minutes, at most two GPUh. It submits the existing 8,192/512, eight-GPU,
+16-epoch trial only after the audit and inventory checks pass. Conservative
+reservations become 74 GPUh for preparation, or **90 GPUh** after training is
+submitted, within the 256 GPUh ceiling. This is a diagnosed policy/precision
+change, not an unchanged retry or an automatic retry loop.

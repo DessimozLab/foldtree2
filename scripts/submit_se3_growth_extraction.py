@@ -11,13 +11,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--submit', action='store_true')
     parser.add_argument('--available-credit', required=True, type=float)
-    parser.add_argument('--stage', choices=['growth_extract_clariden', 'growth_extract_h5pyfix'],
+    parser.add_argument('--stage', choices=['growth_extract_clariden', 'growth_extract_h5pyfix', 'growth_extract_runtime_audit'],
                         default='growth_extract_clariden')
     args = parser.parse_args()
     root = Path('/capstor/store/cscs/swissai/a0117/foldtree2/se3')
     code = Path(__file__).resolve().parents[1]
-    if args.stage == 'growth_extract_h5pyfix':
-        previous = json.loads((root / 'artifacts/growth-extraction-submission.json').read_text())
+    if args.stage != 'growth_extract_clariden':
+        prior_artifact = ('growth-extraction-submission.json' if args.stage == 'growth_extract_h5pyfix'
+                          else 'growth_extract_h5pyfix-submission.json')
+        previous = json.loads((root / 'artifacts' / prior_artifact).read_text())
         state = subprocess.check_output(['sacct', '-X', '-j', previous['job_id'],
             '--format=State', '-n', '-P'], text=True).strip()
         if state != 'FAILED':
