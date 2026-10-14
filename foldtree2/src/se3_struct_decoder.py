@@ -1024,6 +1024,20 @@ class se3_denoiser(torch.nn.Module):
 		return adj
 
 
+
+	def normalize_residue_features(self, features, mask):
+		"""Normalize once per outer call, including when coordinates are recycled."""
+		if not torch.isfinite(features[mask]).all():
+			raise ValueError('SE3 received nonfinite valid features')
+		features = features.masked_fill(~mask.unsqueeze(-1), 0.0)
+		valid_features = features[mask]
+		if valid_features.shape[0] == 0:
+			raise ValueError('SE3 received no valid features')
+		normalized = (F.batch_norm(valid_features, self.bn.running_mean, self.bn.running_var,
+			self.bn.weight, self.bn.bias, training=False) if valid_features.shape[0] == 1 else self.bn(valid_features))
+		return self.dropout(torch.zeros_like(features).index_copy(0, torch.where(mask)[0], normalized))
+
+
 	def forward(self, data, edge_attr_dict=None, **kwargs):
 		if isinstance(data, dict):
 			x_dict, edge_index_dict = data, kwargs.get('edge_index_dict', {})
@@ -1033,17 +1047,13 @@ class se3_denoiser(torch.nn.Module):
 		feature_mask = edge_attr_dict.get('node_mask') if edge_attr_dict is not None else None
 		if feature_mask is None:
 			feature_mask = torch.ones(x_dict['res'].shape[0], device=x_dict['res'].device, dtype=torch.bool)
-		if not torch.isfinite(x_dict['res'][feature_mask]).all():
-			raise ValueError('SE3 received nonfinite valid features')
-		x_dict['res'] = x_dict['res'].masked_fill(~feature_mask.unsqueeze(-1), 0.0)
-		# Normalize and dropout input features
-		valid_features = x_dict['res'][feature_mask]
-		if valid_features.shape[0] == 0:
-			raise ValueError('SE3 received no valid features')
-		normalized = (F.batch_norm(valid_features, self.bn.running_mean, self.bn.running_var,
-			self.bn.weight, self.bn.bias, training=False) if valid_features.shape[0] == 1 else self.bn(valid_features))
-		x_dict['res'] = torch.zeros_like(x_dict['res']).index_copy(0, torch.where(feature_mask)[0], normalized)
-		x_dict['res'] = self.dropout(x_dict['res'])
+		prepared = kwargs.get('_normalized_features')
+		if prepared is None:
+			x_dict['res'] = self.normalize_residue_features(x_dict['res'], feature_mask)
+		else:
+			if prepared.shape != x_dict['res'].shape or prepared.device != x_dict['res'].device or not torch.isfinite(prepared[feature_mask]).all():
+				raise ValueError('Invalid prepared SE3 features')
+			x_dict['res'] = prepared.masked_fill(~feature_mask.unsqueeze(-1), 0.0)
 		runtime_device = x_dict['res'].device
 		
 		atom_ids = self._extract_atom_ids(

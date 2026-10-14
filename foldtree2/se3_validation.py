@@ -220,12 +220,14 @@ def losses(pred, angles, entry):
     return geometry + .1 * angle, geometry, fape, angle
 
 
-def forward(model, entry):
+def forward(model, entry, return_steps=False):
     g = HeteroData()
     g['res'].x = entry['features']
     out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
                 edge_attr_dict={'dot_prod': entry['dot'][None], 'node_mask': entry['mask'],
                                 'use_distance_contacts': True, 'distance_contact_cutoff': 8.})
+    if return_steps:
+        return [(step['coors_out_flat'], step['angles']) for step in out.get('refinement_outputs', [out])]
     return out['coors_out_flat'], out['angles']
 
 

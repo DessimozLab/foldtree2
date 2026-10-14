@@ -29,6 +29,7 @@ from foldtree2.se3_validation import forward, metrics
 from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
 from foldtree2.se3_gradient_accumulation import GradientAccumulator
 from foldtree2.src.losses.se3_balanced import build_loss
+from foldtree2.src.recycled_refiner import RecycledSE3Denoiser, refinement_weights, refinement_objective
 from foldtree2.src.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
                                             enable_tensor_ff_input_norm)
 
@@ -41,8 +42,10 @@ def calibrated(entry, scale):
     return result
 
 
-def build_model(feature_dim, architecture):
-    model = se3_denoiser(feature_dim, [architecture['hidden']], 3, 40, .25,
+def build_model(feature_dim, architecture, refinement_steps=1):
+    refinement_weights(refinement_steps)
+    cls=se3_denoiser if refinement_steps==1 else RecycledSE3Denoiser
+    model = cls(feature_dim, [architecture['hidden']], 3, 40, .25,
         dropout_p=0., depth=architecture['depth'], heads=architecture['heads'], dim_head=16,
         num_atom_types=40, coordinate_update='residual', zero_init_coordinate_update=True,
         coordinate_normalization='rms_radius', coordinate_residual_gain=32.,
@@ -54,7 +57,7 @@ def build_model(feature_dim, architecture):
 
 def source_identity():
     files = ['train_se3_lightning.py', 'se3_cache.py', 'se3_validation.py', 'se3_gradient_accumulation.py',
-             'src/se3_struct_decoder.py', 'src/geometry_seeds.py',
+             'src/se3_struct_decoder.py', 'src/geometry_seeds.py', 'src/recycled_refiner.py', 'src/recycling_parent_sources.json',
              'src/losses/se3_ablation.py', 'src/losses/se3_balanced.py', 'src/losses/fape.py', 'src/dynamictan.py',
              'src/quantizers.py', 'src/folding_refiner.py', 'src/manifold_hyper_connections.py']
     return {name: digest(Path(__file__).parent / name) for name in files}
@@ -101,6 +104,23 @@ def check_loss_warm_start(previous, current):
         raise ValueError('Loss ablation changed model or frozen preprocessing implementation')
 
 
+def check_refinement_warm_start(previous,current):
+    """Explicit weights-only migration across the reviewed recycling refactor."""
+    for key in ('bundle','input_identity','preprocessing','feature_dim'):
+        if previous[key]!=current[key]:
+            raise ValueError('Refinement ablation changed '+key)
+    ignored={'refinement_steps','refinement_loss_weights','epochs','checkpoint_metric','checkpoint_every'}
+    if {k:v for k,v in previous['training'].items() if k not in ignored}!={k:v for k,v in current['training'].items() if k not in ignored}:
+        raise ValueError('Refinement ablation changed loss, model or training protocol')
+    approved=json.loads((Path(__file__).parent/'src/recycling_parent_sources.json').read_text())['approved_parent_sources']
+    if previous['sources'] not in approved and previous['sources']!=current['sources']:
+        raise ValueError('Unrecognized parent sources for refinement ablation')
+    changed={'train_se3_lightning.py','se3_validation.py','src/se3_struct_decoder.py'}
+    for name in previous['sources'].keys() & current['sources'].keys():
+        if name not in changed and previous['sources'][name]!=current['sources'][name]:
+            raise ValueError('Unreviewed source change for refinement ablation: '+name)
+
+
 class CacheData(pl.LightningDataModule):
     def __init__(self, directory, manifest, state, global_batch=16, seed=42):
         super().__init__()
@@ -127,7 +147,9 @@ class Refiner(pl.LightningModule):
         super().__init__()
         self.automatic_optimization = False
         self.config, self.manifest = config, manifest
-        self.model = build_model(manifest['feature_dim'], config['model'])
+        self.refinement_steps=config.get('refinement_steps',1)
+        self.refinement_loss_weights=refinement_weights(self.refinement_steps,config.get('refinement_loss_weights'))
+        self.model = build_model(manifest['feature_dim'], config['model'],self.refinement_steps)
         if not isinstance(config.get('tensor_ff_input_norm', False), bool):
             raise ValueError('tensor_ff_input_norm must be an explicit boolean')
         if config.get('tensor_ff_input_norm', False):
@@ -215,8 +237,9 @@ class Refiner(pl.LightningModule):
         boundary = (batch_idx + 1) % accumulation == 0
         high_precision = self.config.get('gradient_accumulation_dtype') == 'float64'
         with optimizer.toggle_model(sync_grad=boundary and not high_precision):
-            pred, angle = forward(self.model, e)
-            values = self.loss_fn(pred, angle, e)
+            outputs = forward(self.model, e, return_steps=True)
+            pred, angle = outputs[-1]
+            values, pass_losses = refinement_objective(self.loss_fn, outputs, e, self.refinement_loss_weights)
             if not all(torch.isfinite(v) for v in values):
                 raise FloatingPointError(f'Nonfinite loss: {batch["id"]}')
             self.manual_backward(values[0] if high_precision else values[0] / accumulation)
@@ -241,6 +264,7 @@ class Refiner(pl.LightningModule):
                 torch.cuda.synchronize(self.device)
             elapsed = time.perf_counter() - self.update_began
             self.event('update', loss=float(values[0].detach()), gradient_norm=float(norm),
+                       per_pass_losses_last_microbatch=pass_losses,
                        loss_components_last_microbatch={k:float(v) for k,v in getattr(self.loss_fn,'last_components',{}).items()},
                        data_wait_seconds=data_wait, compute_seconds=time.perf_counter() - started,
                        length=len(batch['coords']), update_seconds=elapsed,
@@ -395,6 +419,8 @@ def main():
     parser.add_argument('--resume-from'); parser.add_argument('--warm-start')
     parser.add_argument('--allow-loss-change', action='store_true',
                         help='Explicit weights-only objective ablation; optimizer and stream restart')
+    parser.add_argument('--allow-refinement-change',action='store_true',
+                        help='Explicit weights-only recycling ablation; preserve loss/data, restart optimizer/stream')
     parser.add_argument('--allow-topology-change', action='store_true')
     parser.add_argument('--stop-after-epoch', type=int)
     parser.add_argument('--stop-after-updates', type=int)
@@ -402,8 +428,10 @@ def main():
     args = parser.parse_args()
     if args.resume_from and args.warm_start:
         parser.error('Choose resume or warm-start')
-    if args.allow_loss_change and not args.warm_start:
-        parser.error('--allow-loss-change requires --warm-start')
+    if (args.allow_loss_change or args.allow_refinement_change) and not args.warm_start:
+        parser.error('Explicit ablation flags require --warm-start')
+    if args.allow_loss_change and args.allow_refinement_change:
+        parser.error('Change the loss and architecture in separate experiments')
     config = yaml.safe_load(Path(args.config).read_text())
     if config['model'] not in ({'hidden':32,'depth':2,'heads':2}, {'hidden':64,'depth':4,'heads':4}):
         raise ValueError('This architecture failed float32 numerical gates; depth-six rollout remains blocked')
@@ -432,14 +460,16 @@ def main():
         if 'se3' in warm:
             prior = warm['se3']['provenance']
             check_warm_start_normalization(prior['training'], config)
-            if args.allow_loss_change:
+            if args.allow_refinement_change:
+                check_refinement_warm_start(prior,module.provenance)
+            elif args.allow_loss_change:
                 check_loss_warm_start(prior, module.provenance)
-            elif prior['training']['model'] != config['model'] or prior['sources'] != module.provenance['sources'] or prior['input_identity'] != manifest['input_identity'] or prior['preprocessing'] != module.provenance['preprocessing']:
+            elif prior['training']['model'] != config['model'] or prior['training'].get('refinement_steps',1)!=config.get('refinement_steps',1) or prior['sources'] != module.provenance['sources'] or prior['input_identity'] != manifest['input_identity'] or prior['preprocessing'] != module.provenance['preprocessing']:
                 raise ValueError('Warm-start architecture or implementation mismatch')
             module.load_state_dict(warm['state_dict'])
         else:
-            if args.allow_loss_change:
-                raise ValueError('Loss ablation requires a provenance-complete Lightning checkpoint')
+            if args.allow_loss_change or args.allow_refinement_change:
+                raise ValueError('Ablation requires a provenance-complete Lightning checkpoint')
             check_warm_start_normalization({}, config)
             spec = warm['provenance']['spec']
             if any(spec[k] != config['model'][k] for k in ('hidden', 'depth', 'heads')):
@@ -447,7 +477,8 @@ def main():
             if warm['provenance']['input_identity'] != manifest['input_identity']:
                 raise ValueError('Legacy warm-start frozen production identity mismatch')
             module.model.load_state_dict(warm['model'])
-        module.provenance['initialization'] = {'kind':'loss_ablation_weights_only' if args.allow_loss_change else 'warm_start',
+        module.provenance['initialization'] = {'kind':'refinement_ablation_weights_only' if args.allow_refinement_change else
+                                                       'loss_ablation_weights_only' if args.allow_loss_change else 'warm_start',
                                                'sha256':digest(args.warm_start),
                                                'optimizer_reset':True,'stream_reset':True}
     if saved:

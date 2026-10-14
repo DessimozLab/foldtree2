@@ -1,0 +1,291 @@
+{
+  "protocol": "se3-recycling-audit-v1",
+  "branch": "se3-recycled-refiner",
+  "checkpoint_sha256": "93ff91d18ff9b4b0df5396889f9cd6c4fc0c91f65f88775caf71d2c90487bb04",
+  "local_bundle_sha256": "0250c8b94e10884553794470f2035355eb044e327feff3e66a72553f0e37e290",
+  "parent_bundle_sha256": "b2c635e8cf30af851a63eb8f0836ff090fb5707b51523a6b709cca8b707877f3",
+  "split": "training only",
+  "production_forward_calls": 0,
+  "optimizer_steps": 0,
+  "parameters": [
+    1684514,
+    1684514
+  ],
+  "model_forward_seconds": [
+    12.884734397288412,
+    17.38335833349265
+  ],
+  "cpu_threads": 2,
+  "torch": "2.8.0+cu128",
+  "sources": {
+    "train_se3_lightning.py": "5ab5e9fb9e630713a1124d4a057e18b13dc97544d04b71c410f484b9844f9cf6",
+    "se3_cache.py": "31a486eada79950c0e31163cedae184d96c5ed6f01998e5cc2a441ff8f8c0a9e",
+    "se3_validation.py": "18e983151af57cd6820e48ceb4c6b3aa89aec5e4335b4970aa48b7c768bbb1bf",
+    "se3_gradient_accumulation.py": "95b9742b0f6ae79ff2e41c7ff7391c38e55f282b56f346a46517c74ceaa4dd94",
+    "src/se3_struct_decoder.py": "b6869c7db5b7f0cf2eeb92683c2161dab9ece030aaa9b20765f5f83f3cc7ee3b",
+    "src/geometry_seeds.py": "04679957b315db0ae30b7166e8415d873607a26f216e339eb77fbf33f5a98cc7",
+    "src/recycled_refiner.py": "4386d18c6b17df1be03c819296183e4d207e91d60351ab0535b3b35de16db5ce",
+    "src/recycling_parent_sources.json": "8a97e5bc2400700b7fb3e7e7e1120cf68997d285af4b2cba16db897559c24a6b",
+    "src/losses/se3_ablation.py": "835d0f309af00ecc2a3cb64b4a2c49fae63cea2af3f6133269f8f5358a860e41",
+    "src/losses/se3_balanced.py": "29838e9977e0accb1ea2a4fef2ec9c946b52109df886d4f5bcc585f4a4ae1e9f",
+    "src/losses/fape.py": "897c07fb49413183983f4c7416c13e0859b5a54241f0d29d06ed02dd7d12e761",
+    "src/dynamictan.py": "6d9afd8234c475e571d2273a5b7f0e678da263c8ad8dedd0904e7628cb743abc",
+    "src/quantizers.py": "ef48b1f368e339862fa9f183ee1a0a7259ce49cbb58c231f5a9197452b000641",
+    "src/folding_refiner.py": "98b13ceb64124e61c4d85df54ec7fba21c78e17a28494f526d194c728d96f5fc",
+    "src/manifold_hyper_connections.py": "e65eb03805151a8a49d23f620fe87951a2b27de083fa909316a2ee635e97ecc7"
+  },
+  "audit_source_sha256": "58901b4706687a8f40667a130fe8b56e02857687c9923da0cd690a6c57b59f89",
+  "rows": [
+    {
+      "id": "A0A7C2FT16",
+      "length": 98,
+      "single": {
+        "ca_bend_mae_radians": 0.6665942072868347,
+        "ca_torsion_mae_radians": 1.398006558418274,
+        "fape": 0.9262566566467285,
+        "ca_rmsd": 14.687908172607422,
+        "tm_score": 0.22300160930144214,
+        "lddt": 0.2561114430427551,
+        "ca_bond_mae": 0.946315348148346,
+        "ca_bond_deviation_3_8": 0.9416918754577637,
+        "angle_mae_radians": 0.22821107506752014,
+        "valid_residues": 97
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.8252648711204529,
+        "ca_torsion_mae_radians": 1.4510232210159302,
+        "fape": 0.9275538325309753,
+        "ca_rmsd": 14.49094009399414,
+        "tm_score": 0.1937926692243809,
+        "lddt": 0.2683342695236206,
+        "ca_bond_mae": 1.2881734371185303,
+        "ca_bond_deviation_3_8": 1.2841551303863525,
+        "angle_mae_radians": 0.2311941683292389,
+        "valid_residues": 97
+      },
+      "first_pass_exact": true,
+      "first_pass_coordinate_gradient_norm": 0.15901213884353638,
+      "model_gradient_norm": 8.207450866699219,
+      "pass_losses": [
+        {
+          "pass": 1,
+          "weight": 0,
+          "total": 2.9798855781555176,
+          "geometry": 2.9700400829315186,
+          "evaluation_fape": 0.9262566566467285
+        },
+        {
+          "pass": 2,
+          "weight": 1,
+          "total": 3.348985433578491,
+          "geometry": 3.3391146659851074,
+          "evaluation_fape": 0.9275538325309753
+        }
+      ]
+    },
+    {
+      "id": "A0A212QW43",
+      "length": 84,
+      "single": {
+        "ca_bend_mae_radians": 0.713195264339447,
+        "ca_torsion_mae_radians": 1.4220072031021118,
+        "fape": 0.9347795248031616,
+        "ca_rmsd": 12.264768600463867,
+        "tm_score": 0.23866463801842694,
+        "lddt": 0.23401015996932983,
+        "ca_bond_mae": 1.0601766109466553,
+        "ca_bond_deviation_3_8": 1.0526199340820312,
+        "angle_mae_radians": 0.43602827191352844,
+        "valid_residues": 81
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.7755641341209412,
+        "ca_torsion_mae_radians": 1.4540722370147705,
+        "fape": 0.9326186180114746,
+        "ca_rmsd": 14.759710311889648,
+        "tm_score": 0.19100738052516977,
+        "lddt": 0.23147207498550415,
+        "ca_bond_mae": 1.2968531847000122,
+        "ca_bond_deviation_3_8": 1.2954926490783691,
+        "angle_mae_radians": 0.4646115005016327,
+        "valid_residues": 81
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "S9TN18",
+      "length": 134,
+      "single": {
+        "ca_bend_mae_radians": 0.5682991743087769,
+        "ca_torsion_mae_radians": 1.5217654705047607,
+        "fape": 0.9475800395011902,
+        "ca_rmsd": 14.956300735473633,
+        "tm_score": 0.2817596506217302,
+        "lddt": 0.2759200930595398,
+        "ca_bond_mae": 0.9330254793167114,
+        "ca_bond_deviation_3_8": 0.9171866178512573,
+        "angle_mae_radians": 0.3343438506126404,
+        "valid_residues": 130
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.6822813749313354,
+        "ca_torsion_mae_radians": 1.4850810766220093,
+        "fape": 0.9477187991142273,
+        "ca_rmsd": 14.804988861083984,
+        "tm_score": 0.25013411123229995,
+        "lddt": 0.2762567400932312,
+        "ca_bond_mae": 1.2456215620040894,
+        "ca_bond_deviation_3_8": 1.233343243598938,
+        "angle_mae_radians": 0.3484177887439728,
+        "valid_residues": 130
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "A0A160M6Y3",
+      "length": 70,
+      "single": {
+        "ca_bend_mae_radians": 0.47611624002456665,
+        "ca_torsion_mae_radians": 1.3768593072891235,
+        "fape": 0.9034613370895386,
+        "ca_rmsd": 12.215431213378906,
+        "tm_score": 0.2625582494483986,
+        "lddt": 0.29685714840888977,
+        "ca_bond_mae": 0.7484374642372131,
+        "ca_bond_deviation_3_8": 0.7446076273918152,
+        "angle_mae_radians": 0.29232048988342285,
+        "valid_residues": 70
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.5741569399833679,
+        "ca_torsion_mae_radians": 1.4018620252609253,
+        "fape": 0.915213406085968,
+        "ca_rmsd": 14.324642181396484,
+        "tm_score": 0.21655563336787617,
+        "lddt": 0.20742857456207275,
+        "ca_bond_mae": 1.3252875804901123,
+        "ca_bond_deviation_3_8": 1.3110491037368774,
+        "angle_mae_radians": 0.29993095993995667,
+        "valid_residues": 70
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "A0A7Y8NXI1",
+      "length": 227,
+      "single": {
+        "ca_bend_mae_radians": 0.8663666844367981,
+        "ca_torsion_mae_radians": 1.7894200086593628,
+        "fape": 0.9660592079162598,
+        "ca_rmsd": 13.55272388458252,
+        "tm_score": 0.2381605437846101,
+        "lddt": 0.20831593871116638,
+        "ca_bond_mae": 0.9555997848510742,
+        "ca_bond_deviation_3_8": 0.952228307723999,
+        "angle_mae_radians": 0.7016505599021912,
+        "valid_residues": 203
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.8849257826805115,
+        "ca_torsion_mae_radians": 1.7526730298995972,
+        "fape": 0.9655946493148804,
+        "ca_rmsd": 14.09395980834961,
+        "tm_score": 0.20290644859803322,
+        "lddt": 0.21306344866752625,
+        "ca_bond_mae": 1.2565621137619019,
+        "ca_bond_deviation_3_8": 1.2577486038208008,
+        "angle_mae_radians": 0.6964501142501831,
+        "valid_residues": 203
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "A0A1V1SSF0",
+      "length": 195,
+      "single": {
+        "ca_bend_mae_radians": 0.7438939213752747,
+        "ca_torsion_mae_radians": 1.5710217952728271,
+        "fape": 0.9592283964157104,
+        "ca_rmsd": 13.660490989685059,
+        "tm_score": 0.20408119990496887,
+        "lddt": 0.22533676028251648,
+        "ca_bond_mae": 0.9111753106117249,
+        "ca_bond_deviation_3_8": 0.8997655510902405,
+        "angle_mae_radians": 0.46884194016456604,
+        "valid_residues": 152
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.8391632437705994,
+        "ca_torsion_mae_radians": 1.6079014539718628,
+        "fape": 0.9604761004447937,
+        "ca_rmsd": 14.887685775756836,
+        "tm_score": 0.17449455445562617,
+        "lddt": 0.1934429407119751,
+        "ca_bond_mae": 1.2093957662582397,
+        "ca_bond_deviation_3_8": 1.2086890935897827,
+        "angle_mae_radians": 0.4949021637439728,
+        "valid_residues": 152
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "A0A2M8UCS7",
+      "length": 179,
+      "single": {
+        "ca_bend_mae_radians": 0.625827431678772,
+        "ca_torsion_mae_radians": 1.466852068901062,
+        "fape": 0.9561678171157837,
+        "ca_rmsd": 16.31884002685547,
+        "tm_score": 0.2508221850433502,
+        "lddt": 0.19911912083625793,
+        "ca_bond_mae": 0.9243332743644714,
+        "ca_bond_deviation_3_8": 0.9166333675384521,
+        "angle_mae_radians": 0.2972119152545929,
+        "valid_residues": 174
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.7120348215103149,
+        "ca_torsion_mae_radians": 1.4872465133666992,
+        "fape": 0.9541133046150208,
+        "ca_rmsd": 15.442625045776367,
+        "tm_score": 0.20542242904611066,
+        "lddt": 0.23119905591011047,
+        "ca_bond_mae": 1.4006997346878052,
+        "ca_bond_deviation_3_8": 1.4048017263412476,
+        "angle_mae_radians": 0.3747236132621765,
+        "valid_residues": 174
+      },
+      "first_pass_exact": true
+    },
+    {
+      "id": "A0A0E0LYL1",
+      "length": 207,
+      "single": {
+        "ca_bend_mae_radians": 0.6071270108222961,
+        "ca_torsion_mae_radians": 1.5445021390914917,
+        "fape": 0.9240867495536804,
+        "ca_rmsd": 19.55330467224121,
+        "tm_score": 0.17350752296547975,
+        "lddt": 0.28665414452552795,
+        "ca_bond_mae": 1.0482248067855835,
+        "ca_bond_deviation_3_8": 1.0305705070495605,
+        "angle_mae_radians": 0.2711252272129059,
+        "valid_residues": 79
+      },
+      "two_untrained_recycles": {
+        "ca_bend_mae_radians": 0.6977492570877075,
+        "ca_torsion_mae_radians": 1.5117555856704712,
+        "fape": 0.933610737323761,
+        "ca_rmsd": 19.59053611755371,
+        "tm_score": 0.1877899335208857,
+        "lddt": 0.3208020031452179,
+        "ca_bond_mae": 2.538217782974243,
+        "ca_bond_deviation_3_8": 2.5654842853546143,
+        "angle_mae_radians": 0.29293519258499146,
+        "valid_residues": 79
+      },
+      "first_pass_exact": true
+    }
+  ],
+  "interpretation": "Weights were trained for one pass. Applying two passes is a stability audit, not trained two-pass performance or a merge gate."
+}

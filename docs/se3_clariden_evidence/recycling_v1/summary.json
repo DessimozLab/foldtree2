@@ -1,0 +1,28 @@
+{
+  "structures": 8,
+  "split": "training only",
+  "metrics": {
+    "fape": {
+      "single": 0.9397024661302567,
+      "two_untrained_recycles": 0.9421124309301376
+    },
+    "ca_rmsd": {
+      "single": 14.65122103691101,
+      "two_untrained_recycles": 15.299386024475098
+    },
+    "tm_score": {
+      "single": 0.23406944988605086,
+      "two_untrained_recycles": 0.20276289499629782
+    },
+    "lddt": {
+      "single": 0.2477906011044979,
+      "two_untrained_recycles": 0.2427498884499073
+    },
+    "ca_bond_mae": {
+      "single": 0.9409110099077225,
+      "two_untrained_recycles": 1.4451013952493668
+    }
+  },
+  "trained_for_two_passes": false,
+  "merge_gate_passed": false
+}
