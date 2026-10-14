@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "stream": {
+    "epoch": 16,
+    "cursor": 0,
+    "updates": 4096
+  },
+  "finite_tensor_counts": {
+    "model_tensors": 253,
+    "optimizer_tensors": 729
+  },
+  "best_geometry": 3.8428143362980336,
+  "topology": {
+    "world_size": 8,
+    "nodes": 2
+  }
+}

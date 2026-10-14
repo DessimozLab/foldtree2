@@ -94,3 +94,57 @@ tail -n 20 /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/medium_fp64_tria
 
 The event file appears after initialization. Launch evidence is retained in
 `docs/se3_clariden_evidence/medium_fp64_trial/submission.json`.
+
+## Completed trial
+
+Job **3657774 completed**, exit code 0, all **16 epochs / 4,096 optimizer
+updates**, in **26 minutes 40 seconds**. Eight GPUs consumed **3.556 GPUh** of
+walltime-based allocation, within the 16 GPUh reservation. Conservative ledger
+reservations remain 68 GPUh; this report does not silently release the unused
+reservation. Each epoch consumed all 4,096 training structures and validated
+all 512 unique held-out structures. No nonfinite/failure events were logged.
+
+Training geometry fell **13.12%**, from 4.418588 to 3.838908. Validation geometry
+fell **8.39%**, from 4.194667 to 3.842814. Epoch 16 produced the best complete-epoch
+validation geometry and is the saved `best.ckpt`. Evaluation FAPE fell from
+0.935413 at epoch one to 0.931963 at epoch 16 (**0.37%**); its lowest value was
+0.931552 at epoch nine. Geometry selection does not select the lowest FAPE.
+
+| Held-out metric | Epoch one | Epoch 16 | Raw decoder |
+| --- | ---: | ---: | ---: |
+| FAPE | 0.935413 | 0.931963 | 0.942045 |
+| Aligned CA RMSD, Å | 16.3730 | 15.8320 | 19.1519 |
+| TM-score | 0.215328 | 0.212935 | 0.079161 |
+| lDDT | 0.241826 | 0.253324 | 0.020720 |
+| CA bond MAE, Å | 1.45250 | 1.14577 | 3.63840 |
+| CA bend MAE, radians | 0.74905 | 0.72903 | 1.44343 |
+| CA torsion MAE, radians | 1.55112 | 1.54051 | 1.54856 |
+| Predicted angle MAE, radians | 0.58799 | 0.52274 | unavailable |
+
+All means use identical structure IDs and masks; torsion uses 511 structures
+with defined geometry. At epoch 16, FAPE improved over raw decoder coordinates
+for 500/512 structures, aligned RMSD for 479/512, and TM-score, lDDT and bond
+MAE for 512/512. TM-score declined slightly from epoch one (-0.002394); other
+listed metrics improved. This is below the existing material-regression
+threshold of an absolute 0.01 TM-score decrease, but should remain visible.
+
+The raw-decoder comparison includes calibration and seed lifting, as described
+above. The epoch-one versus epoch-16 comparison supports learning after that
+preprocessing. The historical small trial reached geometry 3.78858 and FAPE
+0.930440 at its selected checkpoint, so this medium trial does **not** establish
+that more parameters improved quality. Their training mathematics differed;
+a matched small control remains necessary for a capacity claim. Residue RMSD
+and FAPE remain poor in absolute terms. No larger job was automatically launched.
+
+Median global update throughput was **50.20 structures/s**, excluding separate
+validation phases. Rank-zero peak GPU allocation was **4.085 GiB**; this is not
+an all-rank maximum. Checkpoints, complete events, software/provenance and
+paired epoch-one/epoch-16 metrics are preserved alongside the results summary.
+
+The final checkpoint was downloaded and its SHA-256 verified:
+`431421b8aff7e8e38ef2cce651023dad6dea384af6d391c147db61913259affa`.
+CPU inspection confirmed the exact completed stream and finite values in all
+253 model-state tensors and 729 optimizer-state tensors. Its topology records
+eight ranks/two nodes. No production encoder/decoder calls occurred in training.
+
+![Training and held-out learning curves](se3_clariden_evidence/medium_fp64_trial/learning-curves.png)
