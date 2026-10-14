@@ -299,3 +299,26 @@ discrepancy; remaining decoder/runtime differences are bounded and explicitly
 recorded, not asserted to be zero. At calibration scale 10.9284, the maximum
 seed-coordinate difference corresponds to roughly 0.00434 Å before lifting.
 No loss, model architecture or production weights were changed.
+
+All **4,096 additions completed** and the durable **8,704-entry** bundle passed
+its inventory hashes and frozen-state checks. Bundle identity:
+`b2c635e8cf30af851a63eb8f0836ff090fb5707b51523a6b709cca8b707877f3`.
+Job 3659766 then exited 127 at the staging command because the image lacks
+`rsync`; its six-minute-seven-second allocation was about 0.4078 GPUh.
+The completed, verified frozen cache is preserved and extraction is not rerun.
+
+Stage-in now uses the CPU-only `xfer` partition and the standard-library
+`scripts.stage_se3_growth` copier, which verifies each SHA-256 and publishes the
+scratch manifest only after all payloads pass. The first CPU job 3659831
+exposed the user's ARM Python on x86 transfer nodes; job 3659848 used native
+`/usr/bin/python3` but exposed its older Python 3.6 `copytree` API. Both stopped
+in one second and allocated no GPUs. The corrected script uses Python-3.6-
+compatible file copies; current transfer job **3659864** is running. This
+stage copies the existing cache only and spends no new GPU preparation
+allocation. Training submission runs from the modern ARM login-node Python
+after transfer completion, rather than relying on the transfer-node interpreter.
+
+The corrected stage and upcoming training are pinned to
+`0f60572ea175607814af6f104f0fcdc04187ee58`, code archive SHA-256
+`cad4eb432d4b9baa77e11a5897419b19a78f43c1c1b1885c1042c3479d68c06f`.
+All training mathematics remain identical to the validated medium trial.
