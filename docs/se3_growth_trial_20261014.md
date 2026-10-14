@@ -283,3 +283,19 @@ repeatability, frozen-state, source hash and cache inventory gates. Its two
 GPUh reservation takes the conservative ledger to 76 GPUh, or 92 after the
 guarded larger training is submitted. The failed 103-second audit's actual
 allocation was approximately 0.1144 GPUh. No unchanged retry loop is enabled.
+
+Corrected job **3659766** is running under pinned revision
+`c1061d6bacd6c5dfb4124b70043aee94162d5427`, code archive SHA-256
+`7cf5d3c00858913e2c65e815dac5d8d1fe4a4874557466f128b843b9e9e95691`.
+It **passed the numerical audit and same-runtime repeatability check**, then
+started extraction of the 4,096 additions. With full matrix precision, the
+retained probe's feature/latent maximum difference is **1.19209e-7**, versus
+2.43902e-4 under the container defaults (approximately 2,046-fold reduction).
+The remaining seed-coordinate difference is 0.000397414, contact-embedding
+difference 0.000119537, and converted-angle difference 1.19209e-7 radians.
+Tokens, codebook, target coordinates, residue mask and all 1,176 union contact
+edges match exactly. This is evidence that TF32 caused the encoder-feature
+discrepancy; remaining decoder/runtime differences are bounded and explicitly
+recorded, not asserted to be zero. At calibration scale 10.9284, the maximum
+seed-coordinate difference corresponds to roughly 0.00434 Å before lifting.
+No loss, model architecture or production weights were changed.
