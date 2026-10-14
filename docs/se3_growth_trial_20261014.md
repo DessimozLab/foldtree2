@@ -151,3 +151,18 @@ Its code archive passed the 20-dependency release check, SHA-256
 `3d756da06409e129f63cd2604e53ef1311ab6f935c93dc3883baeac1613d31b7`.
 The data archive is verified before extraction submission. Export manifest and
 progress evidence are preserved under `docs/se3_clariden_evidence/growth_8192`.
+
+Actual preparation job: **3658044** (the test-only ID 3658043 is not a job
+submission). Initial observed state is **PENDING / QOSGrpNodeLimit**, with no
+GPU allocation or extraction outputs yet. Its two-GPUh reservation brings the
+conservative shared ledger to **70 GPUh**. The training stage is not yet
+submitted/reserved; it will be submitted once only after preparation passes,
+raising the ledger to 86 GPUh. Both stages run on Clariden; there is no remaining
+workstation GPU dependency.
+
+Preparation log:
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/logs/growth-extraction-3658044.out`.
+Preparation receipt: `.../se3/artifacts/growth-extraction-submission.json`.
+Extraction verification: `.../se3/artifacts/growth-extraction.json` and `.jsonl`.
+The automatically submitted training ID will be recorded in
+`.../se3/artifacts/growth_fp64_8192-submission.json`.
