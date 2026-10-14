@@ -6,7 +6,7 @@ def compare_entries(reference, current, accept_runtime_drift=False):
     if reference.keys() != current.keys():
         raise ValueError('Frozen entry fields differ')
     report = {}
-    exact = {'tokens', 'codebook', 'target', 'angles', 'mask'}
+    exact = {'tokens', 'codebook', 'target', 'mask'}
     for key, value in reference.items():
         other = current[key]
         if not isinstance(value, torch.Tensor):
@@ -28,7 +28,11 @@ def compare_entries(reference, current, accept_runtime_drift=False):
         finite = delta[torch.isfinite(delta)]
         report[key] = {'max_absolute': float(finite.max()) if finite.numel() else 0.,
                        'rmse': float(finite.square().mean().sqrt()) if finite.numel() else 0.}
-        if accept_runtime_drift and key not in exact and value.is_floating_point():
+        if key == 'angles':
+            # Raw graph tensors are hash-verified; degree-to-radian arithmetic
+            # may differ by one float32 ULP across CUDA/compiler versions.
+            atol = rtol = 1e-6
+        elif accept_runtime_drift and key not in exact and value.is_floating_point():
             atol = rtol = 1e-3
         elif key in exact or not value.is_floating_point():
             atol = rtol = 0.

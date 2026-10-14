@@ -4,6 +4,7 @@
     {"name": "growth_extract_clariden", "nodes": 1, "hours": 0.5, "gpuh": 2},
     {"name": "growth_extract_h5pyfix", "nodes": 1, "hours": 0.5, "gpuh": 2},
     {"name": "growth_extract_runtime_audit", "nodes": 1, "hours": 0.5, "gpuh": 2},
+    {"name": "growth_extract_ieee", "nodes": 1, "hours": 0.5, "gpuh": 2},
     {"name": "growth_fp64_8192", "nodes": 2, "hours": 2, "gpuh": 16}
   ]
 }

@@ -93,6 +93,13 @@ def main():
     settings = {'matmul_precision': torch.get_float32_matmul_precision(),
                 'matmul_allow_tf32': torch.backends.cuda.matmul.allow_tf32,
                 'cudnn_allow_tf32': torch.backends.cudnn.allow_tf32}
+    ieee_differences = {}
+    for key, value in cached.items():
+        if isinstance(value, torch.Tensor):
+            delta = (value.double() - fresh[key].double()).abs()
+            finite = delta[torch.isfinite(delta)]
+            ieee_differences[key] = float(finite.max()) if finite.numel() else 0.
+    event('runtime_ieee_audit', settings=settings, differences=ieee_differences)
     differences = compare_entries(cached, fresh, args.accept_runtime_drift)
     again = frozen_entry(graph(parity_id), encoder, decoder, device)
     compare_entries(fresh, again)
@@ -125,7 +132,9 @@ def main():
     manifest['extraction_producer'].update(precision=settings, runtime_default_audit=default_differences,
         parity=differences, accepted_runtime_drift=args.accept_runtime_drift,
         cross_runtime_float_tolerance=1e-3 if args.accept_runtime_drift else 1e-6,
-        same_runtime_tolerance=1e-6, parity_policy_sha256=digest(Path(__file__).with_name('se3_extraction_parity.py')))
+        same_runtime_tolerance=1e-6, converted_angle_tolerance=1e-6,
+        runtime_ieee_audit=ieee_differences,
+        parity_policy_sha256=digest(Path(__file__).with_name('se3_extraction_parity.py')))
     manifest['bundle_sha256'] = identity_hash(manifest)
     check_growth(previous, manifest)
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

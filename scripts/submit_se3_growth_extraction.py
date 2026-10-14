@@ -11,14 +11,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--submit', action='store_true')
     parser.add_argument('--available-credit', required=True, type=float)
-    parser.add_argument('--stage', choices=['growth_extract_clariden', 'growth_extract_h5pyfix', 'growth_extract_runtime_audit'],
+    parser.add_argument('--stage', choices=['growth_extract_clariden', 'growth_extract_h5pyfix', 'growth_extract_runtime_audit', 'growth_extract_ieee'],
                         default='growth_extract_clariden')
     args = parser.parse_args()
     root = Path('/capstor/store/cscs/swissai/a0117/foldtree2/se3')
     code = Path(__file__).resolve().parents[1]
     if args.stage != 'growth_extract_clariden':
-        prior_artifact = ('growth-extraction-submission.json' if args.stage == 'growth_extract_h5pyfix'
-                          else 'growth_extract_h5pyfix-submission.json')
+        prior_artifact = {'growth_extract_h5pyfix': 'growth-extraction-submission.json',
+                          'growth_extract_runtime_audit': 'growth_extract_h5pyfix-submission.json',
+                          'growth_extract_ieee': 'growth_extract_runtime_audit-submission.json'}[args.stage]
         previous = json.loads((root / 'artifacts' / prior_artifact).read_text())
         state = subprocess.check_output(['sacct', '-X', '-j', previous['job_id'],
             '--format=State', '-n', '-P'], text=True).strip()

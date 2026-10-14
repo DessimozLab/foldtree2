@@ -28,6 +28,14 @@ def test_runtime_drift_remains_bounded():
         compare_entries({'features': torch.zeros(2)}, {'features': torch.full((2,), float('nan'))}, True)
 
 
+def test_converted_angles_allow_one_ulp_but_not_material_label_changes():
+    a = torch.ones(2)
+    b = torch.nextafter(a, torch.full_like(a, float('inf')))
+    compare_entries({'angles': a}, {'angles': b})
+    with pytest.raises(AssertionError):
+        compare_entries({'angles': a}, {'angles': a + .001}, True)
+
+
 def test_contact_topology_drift_is_reported_and_bounded():
     a = torch.ones(20, 20, dtype=torch.bool)
     b = a.clone(); b[0, 1] = b[1, 0] = False

@@ -259,3 +259,27 @@ passed. Initial observed state is **PENDING / Priority**, with no audit events
 yet and conservative reservations confirmed at 74 GPUh. No training job is
 submitted until its guarded preparation passes. Evidence is retained in
 `docs/se3_clariden_evidence/growth_8192/runtime-audit-submission.json`.
+
+The audit **3659735 ran** and identified the container's defaults as matrix
+precision `high`, matrix TF32 enabled, cuDNN TF32 enabled. Against the original
+cache, maximum differences were features/latent 0.000243902, seed coordinates
+0.002773806, contact embeddings 0.001057163, and converted angles 1.19209e-7.
+Tokens, codebook, contact adjacency, CA targets and masks matched exactly.
+This establishes a real precision-default difference between environments.
+
+After explicitly selecting full matrix precision, the floating-output and
+discrete comparisons passed the authorized bounds. The audit then failed because
+the new policy incorrectly required converted angle values to match exactly:
+46/294 values differed by one float32 ULP (maximum 1.19209e-7 radians). This
+was an overly strict new check, not changed raw graph labels or nonfinite output.
+The raw graph labels remain content-hash verified; converted angles now use
+the original numerical tolerance `atol=rtol=1e-6`, including when cross-runtime
+drift is accepted. A regression test accepts one ULP and rejects material label
+changes. Fifteen targeted parity/split tests pass.
+
+The next one-node/30-minute `growth_extract_ieee` stage records every field
+under full matrix precision before checking it and retains all same-runtime
+repeatability, frozen-state, source hash and cache inventory gates. Its two
+GPUh reservation takes the conservative ledger to 76 GPUh, or 92 after the
+guarded larger training is submitted. The failed 103-second audit's actual
+allocation was approximately 0.1144 GPUh. No unchanged retry loop is enabled.
