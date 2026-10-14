@@ -195,3 +195,24 @@ job has been submitted as of this correction. There is no automatic retry loop.
 The corrected job's observed state is **PENDING / QOSGrpNodeLimit**; it has
 not allocated GPUs yet. Failure and retry evidence is retained in
 `docs/se3_clariden_evidence/growth_8192/h5py-correction.json`.
+
+## Retry outcome: numerical parity failure
+
+Job **3659682 failed**, exit 1, after **1m27s**. Both Gemmi and h5py installed
+and the production-loader import check passed. The encoder and decoder loaded
+successfully. The retained entry's frozen feature comparison then failed:
+1,928/3,920 elements differed beyond `atol=rtol=1e-6`, with maximum absolute
+difference **0.000243902** and maximum relative difference **0.000444022**.
+No growth cache was published and the training job was not submitted. Gemmi's
+shutdown reference-leak warnings are additional diagnostics; the actual fatal
+exception is the tensor comparison assertion.
+
+Actual allocation for this retry was about 0.0967 GPUh. Conservative reservations
+remain 72 GPUh. Do not retry the unchanged extraction job or loosen the parity
+tolerance automatically. The workstation PyTorch 2.8 defaults were checked:
+matrix precision `highest`, matrix TF32 disabled, cuDNN TF32 enabled. The
+Clariden extraction path has no explicit matrix precision setting, whereas the
+cache-only trainer explicitly disables TF32. Cross-runtime precision defaults
+are therefore a hypothesis to test, not a proven cause. Full per-field parity
+and actual Clariden precision settings are needed before spending another
+training allocation; the failed assertion stopped on the first feature field.

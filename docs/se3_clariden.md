@@ -24,9 +24,11 @@ capacity comparison and four-node gate remain outstanding.
 A [training-data growth pipeline](se3_growth_trial_20261014.md) now doubles the
 training cohort to 8,192 while retaining the 512-structure holdout. Clariden
 preparation job **3658044** failed on a missing `h5py` import. The dependency is
-now pinned in an isolated extraction environment; corrected job **3659682** is
-pending behind the shared node limit. It will submit the bounded eight-GPU training trial only after frozen-output
-parity and cache verification pass. Neither stage needs a workstation GPU.
+now pinned in an isolated extraction environment. Corrected job **3659682**
+loaded both production models but failed frozen-feature parity against the
+workstation cache (maximum difference 0.000244). No larger training job was
+submitted. Precision/runtime parity needs diagnosis before another allocation;
+the tolerance remains unchanged. Neither stage needs a workstation GPU.
 The 128-wide, six-layer variant is **blocked** by nonfinite forward features in
 GotenNet 0.3.1. Code and the verified cache have been staged on Clariden. The user confirmed sufficient credit and authorized submission. Slurm fair-share
 is not a credit balance.
