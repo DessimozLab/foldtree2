@@ -1,5 +1,9 @@
 # Clariden architecture comparison
 
+The [completed Clariden comparison](se3_pairs_seed_results_20261015.md) improves
+FAPE with pair conditioning but fails the bend-geometry merge gate. All jobs
+and CUDA checks completed; no merge or further training was performed.
+
 The authorized comparison was submitted as seven sequential jobs, pinned to
 `7503bfbf4bfff9c6c040616f4971d803e1762e03`. The five four-epoch trials are: control, continuous
 pairs, learned seed, pairs plus seed, and pairs plus seed with two shared passes.

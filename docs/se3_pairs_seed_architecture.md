@@ -1,11 +1,15 @@
 # Continuous decoder pairs and learned initial geometry
 
+The [completed Clariden comparison](se3_pairs_seed_results_20261015.md) improves
+FAPE with pair conditioning but fails the bend-geometry merge gate. All jobs
+and CUDA checks completed; no merge or further training was performed.
+
 Implemented on `se3-recycled-refiner`, independently switchable alongside
 [shared recycling](se3_recycling_architecture.md). This is residue-level SE(3)
 refinement. Production epoch-40 encoder/decoder weights stay frozen; the separate
 staged transformer is unchanged. Architecture training and merging remain
-conditional on a matched quality comparison. The matched variants are now [queued on Clariden](se3_pairs_seed_clariden.md)
-behind CUDA recovery and two-node agreement gates; training quality is pending.
+conditional on a matched quality comparison. The matched variants [completed on Clariden](se3_pairs_seed_results_20261015.md),
+including CUDA recovery and two-node agreement gates.
 
 ## Continuous pair conditioning
 
