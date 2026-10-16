@@ -1,0 +1,29 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {
+      "name": "scale_capacity_v3_debug_one",
+      "nodes": 1,
+      "hours": 0.3333333333333333,
+      "gpuh": 1.3333333333333333
+    },
+    {
+      "name": "scale_capacity_v3_debug_two",
+      "nodes": 2,
+      "hours": 0.16666666666666666,
+      "gpuh": 1.3333333333333333
+    },
+    {
+      "name": "scale_capacity_v3_width64",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6.0
+    },
+    {
+      "name": "scale_capacity_v3_width80",
+      "nodes": 2,
+      "hours": 0.75,
+      "gpuh": 6.0
+    }
+  ]
+}
