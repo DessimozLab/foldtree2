@@ -170,3 +170,51 @@ suite passed with **226 passed, 1 skipped, 1 xfailed**. Documentation checks sti
 cover 51 documents / 65 examples with zero errors. The new monitor has produced
 a verified remote heartbeat. Slurm statistics confirm active CPU work and reads
 in the original validation allocation, not merely an accepted submission.
+
+## CATH validation and TCS recovery, 2026-10-17
+
+The earlier pilot-only policy and pending validation status above are historical.
+The user subsequently requested finishing CATH and starting TCS, authorizing
+the **existing gated** full-sweep release, not bypassing any scientific gate.
+
+| Stage | Job | Verified recovery state |
+| --- | --- | --- |
+| Original v9 independent validation | 66047632 | **Completed**, exit 0, 1 h 8 min 26 s; 1,339 families, 18,545 tips, zero duplicate genera; hash-bound validation marker present. |
+| Corrected runtime check | 66047940 | **Completed**, exit 0; all five bundles, native tools, golden TCS and workflow passed. |
+| Original v10 inventory | 66048014 | **Timed out** at four hours, without final `plan.json` or `pilot.json`; last recorded progress 3,281 eligible / 2,169 excluded, part-way through CATH. These are not final cohort counts. |
+| Old blocked pilot | 66048060 | Never ran; cancelled only after Slurm rejected dependency repair. |
+| Inventory retry | 66082884 | **Running**, 24-hour allocation; unchanged frozen inventory and validated-cohort gate. |
+| Replacement pilot | 66082935 | **Pending**, `afterok:66082884`; 12-hour allocation and previously passed runtime gate. |
+
+Operational `inventory.sbatch` and `pilot.sbatch` now preserve the longer limits
+for infrastructure retries as well. Original scripts and supervision state were
+retained with `before-20261017-recovery` names. The scientific payload, cohort
+files, model bundles, source manifests and shared environments remain unchanged.
+
+Two short controller attempts, 66083246 and 66083304, failed explicitly because
+compute nodes do not have the login node's `/usr/local/bin/quotacheck`; their
+system utility of the same name does not accept `--show-paths`. Compute-node
+diagnostic 66083454 verified the installed GPFS tools and actual project fileset.
+The operational controller now resolves that fileset with `mmlsattr`, reads
+machine-readable `mmlsquota`, subtracts in-doubt blocks and checks file quota.
+It does not substitute global filesystem free space for project availability.
+The last login-node quota observation was approximately **0.39 TB available**.
+
+[Cluster-resident callbacks](curnagl_tcs.md#cluster-resident-advancement) replace
+the failed VPN-dependent workstation service. They invoke the existing gates,
+then schedule a short successor after the current Slurm job; no allocation
+sits idle during inference. Completed jobs absent from `squeue` fall back to
+`sacct`. Missing terminal/peak-memory accounting gets at most ten delayed checks.
+Errors remain explicit and the failed workstation service is not restarted.
+Controller job **66083625 completed successfully** in 53 seconds, recorded
+410,856,833,024 available project bytes and scheduled callback **66083755** with
+`afterany:66082884`. Its persisted callback history confirms that control has
+actually run on the cluster, not just that a submission was accepted.
+
+The operational state records `stop_after_pilot: false` and the user's release
+authorization. The full sweep still requires complete hash-bound **26-score**
+pilot coverage, accounted batch peak memory **<=24,000 MB**, and live quota
+checks. **No full-sweep result or completed TCS pilot is claimed here.**
+
+Local validation after controller recovery: **232 passed, 1 skipped, 1 xfailed**;
+documentation scanner: **51 documents, 65 CLI examples, zero errors**.

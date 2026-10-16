@@ -13,8 +13,8 @@ RETRYABLE = {'TIMEOUT', 'PREEMPTED', 'NODE_FAIL', 'BOOT_FAIL'}
 ACTIVE = {'PENDING', 'RUNNING', 'CONFIGURING', 'COMPLETING', 'REQUEUED', 'RESIZING', 'SUSPENDED'}
 
 
-def execute(argv):
-    return subprocess.check_output(argv, text=True, timeout=35).strip()
+def execute(argv, timeout=35):
+    return subprocess.check_output(argv, text=True, timeout=timeout).strip()
 
 
 def save(path, state):
@@ -32,10 +32,11 @@ def submit(root, phase):
 
 
 def accounting(job_id):
-    queued = execute(['squeue', '-h', '-j', job_id, '-o', '%T|%r'])
-    if queued:
-        status, _, reason = queued.splitlines()[0].partition('|')
-        return ('DEPENDENCY_FAILED' if reason == 'DependencyNeverSatisfied' else status), []
+    queued = execute(['squeue', '-h', '--me', '-o', '%i|%T|%r'])
+    for row in queued.splitlines():
+        ident, status, reason = row.split('|', 2)
+        if ident == job_id:
+            return ('DEPENDENCY_FAILED' if reason == 'DependencyNeverSatisfied' else status), []
     rows = execute(['sacct', '-j', job_id, '-n', '-P', '--format=JobIDRaw,State,ExitCode,MaxRSS,Elapsed']).splitlines()
     parsed = [r.split('|') for r in rows if r.strip()]
     own = next((r for r in parsed if r[0] == job_id), None)
@@ -140,7 +141,30 @@ def shutil_disk_free(root):
     physical = shutil.disk_usage(root).free
     if not str(root).startswith('/work/FAC/'):
         return physical
-    quota = execute(['quotacheck', '--show-paths'])
+    gpfs = Path('/usr/lpp/mmfs/bin')
+    if all(os.access(gpfs / name, os.X_OK) for name in ('mmlsattr', 'mmlsquota')):
+        attributes = execute([str(gpfs / 'mmlsattr'), '-L', str(root)], timeout=120)
+        fileset = next((line.split(':', 1)[1].strip() for line in attributes.splitlines()
+                        if line.startswith('fileset name:')), None)
+        if not fileset:
+            raise RuntimeError('Cannot identify project fileset; refusing unattended submission')
+        quota = execute([str(gpfs / 'mmlsquota'), '-Y', '-j', fileset,
+                         '--block-size', 'K', 'work'], timeout=120)
+        header = None
+        for line in quota.splitlines():
+            fields = line.split(':')
+            if fields[:3] == ['mmlsquota', 'fileset', 'HEADER']:
+                header = fields
+            elif header and fields[:3] == ['mmlsquota', 'fileset', '0']:
+                data = dict(zip(header, fields))
+                if data['filesystemName'] == 'work' and data['name'] == fileset:
+                    available = (int(data['blockQuota']) - int(data['blockUsage'])
+                                 - int(data['blockInDoubt'])) * 1024
+                    if int(data['filesUsage']) + int(data['filesInDoubt']) >= int(data['filesQuota']):
+                        return 0
+                    return min(physical, max(0, available))
+        raise RuntimeError('Cannot verify GPFS project quota; refusing unattended submission')
+    quota = execute(['quotacheck', '--show-paths'], timeout=120)
     candidates = []
     for line in quota.splitlines():
         fields = line.split()

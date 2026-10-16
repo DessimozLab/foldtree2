@@ -278,7 +278,8 @@ python scripts/supervise_curnagl_tcs.py \
 ```
 
 `--once` performs one check/submission. The default interval is five minutes.
-For persistent supervision, run this under a user service and retain its log.
+For unattended completion, prefer cluster-resident callbacks (below); a
+workstation user service alone depends on SSH/VPN and is not durable.
 The stages are:
 
 1. CATH rebuild and isolated taxonomy refresh: 8 CPUs, 32 GB, eight hours;
@@ -321,6 +322,42 @@ output hashes must match. After completion, document the deployment ID, cohort
 counts/exclusions, full method coverage, any accepted limitations, and links to
 the summary tables. Adding a method requires expanding the registry, pilot gate,
 coverage tests and this document before launching a new frozen run.
+
+### Cluster-resident advancement
+
+[The callback controller](../scripts/advance_curnagl_tcs.py) calls the same
+[supervision gates](../scripts/supervise_curnagl_tcs.py), then submits one short
+successor with `afterany:CURRENT_JOB` and a two-minute minimum delay. It does not
+occupy a CPU while inference runs. Terminal accounting or peak-memory delays
+receive at most ten delayed checks; exhaustion records `needs_attention`.
+Scientific errors and failed gates do not release the full sweep.
+
+Install these operational scripts beside, **not inside**, the frozen scientific
+source: `advance.py` and `supervise_curnagl_tcs.py`. Supply `advance.sbatch` with
+the deployment's real account/CPU partition, 1 CPU, 2 GB, 30 minutes, and a log
+under `logs/controller-%j.log`. Its command is:
+
+```bash
+export PYTHONPATH="$DEPLOYMENT"
+python "$DEPLOYMENT/advance.py" --deployment "$DEPLOYMENT"
+```
+
+Use the existing cluster Python and an explicit deployment path. Compute nodes
+do not provide the login node's quota helper. When GPFS commands are installed,
+the controller resolves the actual deployment fileset with `mmlsattr` and reads
+machine-readable `mmlsquota`, subtracting in-doubt blocks and checking file
+quota. Otherwise it uses the cluster `quotacheck --show-paths` helper. Queries
+have bounded 120-second timeouts and must succeed; filesystem free space alone
+is insufficient. Submit the
+initial callback once with `sbatch advance.sbatch`; do not run a second monitor
+concurrently. Verify its exit status, log and `callback-state.json` successor
+ID/dependency, rather than treating an accepted submission as working control.
+Maintain operational hashes and preserve superseded batch scripts.
+
+The v10 October 17 recovery uses **24-hour inventory and 12-hour pilot**
+allocations, including automatic retries, after the original four-hour
+inventory timed out. These are operational budget changes only; the inventory
+code, cohort, scientific payload and gates are unchanged.
 
 To hold a deployment for review after the pilot, set `stop_after_pilot: true`
 in its operational `supervision.json` before starting supervision. With complete

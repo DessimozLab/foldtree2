@@ -95,7 +95,7 @@ def test_supervisor_retry_cap_and_storage_gate(tmp_path, monkeypatch):
 def test_failed_slurm_dependency_stops_instead_of_waiting_forever(tmp_path, monkeypatch):
     import json
     import supervise_curnagl_tcs as supervisor
-    monkeypatch.setattr(supervisor, 'execute', lambda argv: 'PENDING|DependencyNeverSatisfied')
+    monkeypatch.setattr(supervisor, 'execute', lambda argv: '123|PENDING|DependencyNeverSatisfied')
     assert supervisor.accounting('123') == ('DEPENDENCY_FAILED', [])
     state = {'phase': 'inventory', 'jobs': {'inventory': '123'},
              'attempts': {'inventory': 0}, 'status': 'active'}
@@ -134,13 +134,120 @@ def test_project_quota_is_used_instead_of_whole_filesystem(monkeypatch):
     import shutil
     from types import SimpleNamespace
     import supervise_curnagl_tcs as supervisor
+    monkeypatch.setattr(supervisor.os, 'access', lambda *args: False)
     monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=200 * 1000**4))
-    monkeypatch.setattr(supervisor, 'execute', lambda args: '\n'.join([
+    monkeypatch.setattr(supervisor, 'execute', lambda args, **kwargs: '\n'.join([
         'Project Quota Used Avail Use%',
         '/work/FAC/FBM/DBC/cdessim2/default 27.00 26.10 0.90 97%',
         '/work/FAC/FBM/DBC/cdessim2/oma 10.25 8.63 1.63 84%']))
     root = Path('/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/test')
     assert supervisor.shutil_disk_free(root) == 900 * 1000**3
+
+
+def test_accounting_falls_back_after_completed_job_leaves_queue(monkeypatch):
+    import supervise_curnagl_tcs as supervisor
+    def execute(argv):
+        if argv[0] == 'squeue':
+            assert '--me' in argv and '-j' not in argv
+            return '456|RUNNING|None'
+        return '123|COMPLETED|0:0||01:00\n123.batch|COMPLETED|0:0|1024M|01:00'
+    monkeypatch.setattr(supervisor, 'execute', execute)
+    state, rows = supervisor.accounting('123')
+    assert state == 'COMPLETED' and len(rows) == 2
+
+
+def test_quota_uses_longer_bounded_timeout(monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+    import supervise_curnagl_tcs as supervisor
+    monkeypatch.setattr(supervisor.os, 'access', lambda *args: False)
+    monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=10**12))
+    def execute(argv, timeout):
+        assert timeout == 120
+        return '/work/FAC/project 1.00 0.50 0.50 50%'
+    monkeypatch.setattr(supervisor, 'execute', execute)
+    assert supervisor.shutil_disk_free(Path('/work/FAC/project/run')) == 500 * 1000**3
+
+
+def test_callback_waits_on_scheduler_and_exits_on_failed_gate(tmp_path, monkeypatch):
+    import json
+    import advance_curnagl_tcs as callback
+    state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active', 'slurm_state': 'RUNNING'}
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    monkeypatch.setattr(callback, 'tick', lambda root: state)
+    commands = []
+    def execute(argv):
+        commands.append(argv)
+        return '456'
+    monkeypatch.setattr(callback, 'execute', execute)
+    assert callback.advance(tmp_path)['callback_job'] == '456'
+    assert '--dependency=afterany:123' in commands[0]
+    state['status'] = 'needs_attention'
+    assert callback.advance(tmp_path)['status'] == 'needs_attention'
+    assert len(commands) == 1
+
+
+def test_gpfs_quota_is_bound_to_fileset_and_reserves_in_doubt_blocks(tmp_path, monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+    import supervise_curnagl_tcs as supervisor
+    monkeypatch.setattr(supervisor.os, 'access', lambda *args: True)
+    monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=10**12))
+    response = [
+        'fileset name: project',
+        'mmlsquota:fileset:HEADER:filesystemName:name:blockUsage:blockQuota:blockInDoubt:filesUsage:filesQuota:filesInDoubt:\n'
+        'mmlsquota:fileset:0:work:project:100:1000:50:10:100:5:',
+    ]
+    monkeypatch.setattr(supervisor, 'execute', lambda argv, timeout: response.pop(0))
+    assert supervisor.shutil_disk_free(Path('/work/FAC/project/run')) == 850 * 1024
+    response[:] = ['fileset name: project',
+                  'mmlsquota:fileset:HEADER:filesystemName:name:blockUsage:blockQuota:blockInDoubt:filesUsage:filesQuota:filesInDoubt:\n'
+                  'mmlsquota:fileset:0:work:other:100:1000:50:10:100:5:']
+    with pytest.raises(RuntimeError, match='Cannot verify GPFS'):
+        supervisor.shutil_disk_free(Path('/work/FAC/project/run'))
+
+
+def test_callback_advances_to_full_only_through_existing_gates(tmp_path, monkeypatch):
+    import json
+    import advance_curnagl_tcs as callback
+    state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active'}
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    calls = []
+    def tick(root):
+        calls.append(1)
+        if len(calls) == 1:
+            state['phase'] = 'full'
+        elif len(calls) == 2:
+            state['jobs']['full'] = '456'
+        else:
+            state['slurm_state'] = 'RUNNING'
+        (root / 'supervision.json').write_text(json.dumps(state))
+        return dict(state)
+    monkeypatch.setattr(callback, 'tick', tick)
+    commands = []
+    monkeypatch.setattr(callback, 'execute', lambda argv: commands.append(argv) or '789')
+    result = callback.advance(tmp_path)
+    assert len(calls) == 3 and result['phase'] == 'full'
+    assert '--dependency=afterany:456' in commands[0]
+
+
+def test_callback_accounting_wait_is_delayed_and_bounded(tmp_path, monkeypatch):
+    import json
+    import advance_curnagl_tcs as callback
+    state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active',
+             'slurm_state': 'WAITING_FOR_PEAK_MEMORY_ACCOUNTING'}
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    monkeypatch.setattr(callback, 'tick', lambda root: state)
+    commands = []
+    monkeypatch.setattr(callback, 'execute', lambda argv: commands.append(argv) or '456')
+    for _ in range(10):
+        callback.advance(tmp_path)
+    assert all('--begin=now+2minutes' in cmd and not any(a.startswith('--dependency') for a in cmd)
+               for cmd in commands)
+    with pytest.raises(RuntimeError, match='ten callbacks'):
+        callback.advance(tmp_path)
+    assert len(commands) == 10
+    assert json.loads((tmp_path / 'supervision.json').read_text())['status'] == 'needs_attention'
 
 
 def test_inventory_checks_domain_sequences_taxonomy_and_complete_cohort(tmp_path):
