@@ -120,3 +120,53 @@ cohort are different protocols; never pool or silently substitute them.
    provenance, tool logs and accounted memory before authorizing the full sweep.
 5. Compile paired per-family scores and uncertainty only after complete coverage.
    A successful dataset-generation job is not a topology benchmark result.
+
+## Recovery started after approval, 2026-10-16
+
+The observations above remain the pre-recovery record. After approval to get the
+benchmark running, the following jobs were submitted:
+
+| Stage | Job | Status at recovery check |
+| --- | --- | --- |
+| Original v9 independent generation validation | 66047632 | Running; original source and supervision checksums passed before submission. |
+| New v10 runtime check | 66047940 | **Completed, exit 0**, 1 min 53 s, batch peak RSS 631,080 K; native tools, all five bundles, golden TCS and workflow parsing passed. |
+| New v10 inventory | 66048014 | Queued with `afterok:66047632`; a separate marker/hash/count gate must pass before inventory starts. |
+| New v10 26-score pilot | 66048060 | Queued with `afterok:66048014:66047940`; cannot start until both inventory and runtime succeed. |
+
+The new deployment is
+`/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10`.
+It uses the unchanged OMA source and the **new genus-deduplicated v9 CATH**
+cohort, not the repaired v8 cohort. Its archive has 187 files, including all
+five production bundles and the previously missing native RAxML executable.
+The archive transfer was verified against SHA-256
+`1e462625df451e5a11e9abfb1ef8dae4ef0b4f2d50eab5e63e843057923285cc`.
+The immutable archive manifest records working-tree content hashes and base
+commit `86e8583`; that commit alone is not the source snapshot.
+
+The offline Gemmi 0.7.5 wheel was copied from the old deployment and installed
+into a new deployment-local layer, with wheel/content hashes. No shared runtime
+environment was changed. Operational scripts and job files are recorded
+separately in `operational-source.json`, outside frozen scientific source.
+Inventory requires the v9 marker to match the frozen plan/summary hashes and
+the exact 1,342 planned / 1,339 validated / 18,545-tip / zero-duplicate scope.
+It records the validated-cohort marker hash in `cohort-validation-input.json`.
+
+The old supervisor log identifies its failure as **SSH unreachable while the
+VPN remained connected**, not a failed generation job. It was not restarted.
+New workstation monitoring uses user service `foldtree2-curnagl-v10.service`;
+logs are under `runs/curnagl_tcs/20261016-genus-tcs-v10/`.
+The first new monitor invocation also failed; a separate service-environment
+access diagnostic then succeeded, and it was deliberately restarted once.
+The Slurm dependency chain does not depend on workstation monitoring staying
+alive. Any failed prerequisite leaves downstream work blocked for inspection.
+
+The new controller state has `stop_after_pilot: true`. A complete pilot records
+`pilot_complete`; **no full-sweep job has been submitted or authorized by this
+recovery**. Final cohort validation, inventory coverage and pilot results remain
+pending until their actual output/accounting gates pass.
+
+Recovery-controller regressions passed (16 targeted tests); the final full CPU
+suite passed with **226 passed, 1 skipped, 1 xfailed**. Documentation checks still
+cover 51 documents / 65 examples with zero errors. The new monitor has produced
+a verified remote heartbeat. Slurm statistics confirm active CPU work and reads
+in the original validation allocation, not merely an accepted submission.

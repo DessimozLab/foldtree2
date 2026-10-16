@@ -32,9 +32,10 @@ def submit(root, phase):
 
 
 def accounting(job_id):
-    queued = execute(['squeue', '-h', '-j', job_id, '-o', '%T'])
+    queued = execute(['squeue', '-h', '-j', job_id, '-o', '%T|%r'])
     if queued:
-        return queued.splitlines()[0], []
+        status, _, reason = queued.splitlines()[0].partition('|')
+        return ('DEPENDENCY_FAILED' if reason == 'DependencyNeverSatisfied' else status), []
     rows = execute(['sacct', '-j', job_id, '-n', '-P', '--format=JobIDRaw,State,ExitCode,MaxRSS,Elapsed']).splitlines()
     parsed = [r.split('|') for r in rows if r.strip()]
     own = next((r for r in parsed if r[0] == job_id), None)
@@ -124,7 +125,10 @@ def _tick(root):
                 state.update(status='needs_attention', reason='Pilot peak memory exceeds 24 GB full per-rule budget')
             else:
                 state['pilot_peak_rss_mb'] = max(peaks)
-                state['phase'] = 'full'
+                if state.get('stop_after_pilot'):
+                    state.update(status='pilot_complete', reason='Full sweep requires explicit release')
+                else:
+                    state['phase'] = 'full'
         else:
             state.update(status='complete', expected_scores=expected)
     save(path, state)
@@ -184,6 +188,8 @@ def main():
                 return
         except Exception as error:
             # Do not reconnect repeatedly through credential, host-key, or scientific failures.
+            if isinstance(error, subprocess.CalledProcessError) and error.output:
+                print(error.output, flush=True)
             print(json.dumps({'status': 'needs_attention', 'reason': str(error)}), flush=True)
             raise
         time.sleep(args.interval)

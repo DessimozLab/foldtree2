@@ -321,3 +321,12 @@ output hashes must match. After completion, document the deployment ID, cohort
 counts/exclusions, full method coverage, any accepted limitations, and links to
 the summary tables. Adding a method requires expanding the registry, pilot gate,
 coverage tests and this document before launching a new frozen run.
+
+To hold a deployment for review after the pilot, set `stop_after_pilot: true`
+in its operational `supervision.json` before starting supervision. With complete
+26-score coverage and accounted memory, supervision records `pilot_complete`
+and exits without submitting `full.sbatch`. Existing deployments without this
+setting retain their previous gated full-sweep behavior. Releasing a held sweep
+requires explicit approval and an intentional controller-state update.
+Queued jobs with Slurm reason `DependencyNeverSatisfied` stop supervision with
+`needs_attention`, rather than remaining indefinitely marked as a normal wait.

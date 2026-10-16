@@ -92,6 +92,21 @@ def test_supervisor_retry_cap_and_storage_gate(tmp_path, monkeypatch):
     assert supervisor.tick(tmp_path)['status'] == 'needs_attention'
 
 
+def test_failed_slurm_dependency_stops_instead_of_waiting_forever(tmp_path, monkeypatch):
+    import json
+    import supervise_curnagl_tcs as supervisor
+    monkeypatch.setattr(supervisor, 'execute', lambda argv: 'PENDING|DependencyNeverSatisfied')
+    assert supervisor.accounting('123') == ('DEPENDENCY_FAILED', [])
+    state = {'phase': 'inventory', 'jobs': {'inventory': '123'},
+             'attempts': {'inventory': 0}, 'status': 'active'}
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    monkeypatch.setattr(supervisor, 'shutil_disk_free', lambda root: 100 * 1024**3)
+    updated = supervisor.tick(tmp_path)
+    assert updated['status'] == 'needs_attention'
+    assert 'DEPENDENCY_FAILED' in updated['reason']
+    assert updated['jobs'] == {'inventory': '123'}
+
+
 def test_pilot_gate_requires_coverage_and_accounted_memory(tmp_path, monkeypatch):
     import hashlib
     import json
@@ -107,6 +122,12 @@ def test_pilot_gate_requires_coverage_and_accounted_memory(tmp_path, monkeypatch
     marker = {'scores': 26, 'plan_sha256': hashlib.sha256((tmp_path / 'pilot.json').read_bytes()).hexdigest()}
     (tmp_path / 'validated.json').write_text(json.dumps(marker))
     assert supervisor.tick(tmp_path)['phase'] == 'full'
+    state['stop_after_pilot'] = True
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    updated = supervisor.tick(tmp_path)
+    assert updated['status'] == 'pilot_complete'
+    assert updated['phase'] == 'pilot'
+    assert 'full' not in updated['jobs']
 
 
 def test_project_quota_is_used_instead_of_whole_filesystem(monkeypatch):
