@@ -109,3 +109,28 @@ No production replacement or branch merge occurs automatically.
 Access/launch follow the [Clariden skill](/home/dmoi/.codex/skills/clariden/SKILL.md).
 Live normal-partition limits were rechecked against
 [Clariden documentation](https://docs.cscs.ch/clusters/clariden/).
+
+## Submitted rollout
+
+Pinned revision: `57de193211bab13ef58bb451427338cf66b87d87`.
+The transferred release passed all 36 required-dependency checks; SHA256
+`10cc390b9cb20df2ff2dffa4092273c327f2fc3ce8685a85547e8a1941cdb0ba`.
+
+| Job | Stage |
+|---:|---|
+| 3673916 | One-node staging and exact recovery checks |
+| 3673917 | Two-node agreement checks |
+| 3673918 | One-pass, eight additional epochs |
+| 3673919 | Two-pass, eight additional epochs |
+| 3673920 | Two-pass, bend weight 0.5, eight additional epochs |
+| 3673921 | Two-pass, bend weight 2.0, eight additional epochs |
+| 3673922 | Quality screen for conditional step 5 |
+
+Initial state: the first check was pending on priority. Receipt collection then
+observed it RUNNING on `nid006248` (34 seconds elapsed), with all subsequent
+jobs waiting on dependencies. The ledger confirms 221.666667 / 256 GPUh reserved.
+[Submission receipts](se3_clariden_evidence/bend_recycle_v2/submission.json)
+retain commands, parent/cache identities, runtime check-config hashes and observed
+queue states. The existing trainer/model/loss source hashes were checked against
+the trained pair checkpoint and match exactly. Release tests also passed (3/3).
+No passed CUDA/quality result is inferred from submission.
