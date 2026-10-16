@@ -9,6 +9,7 @@ def test_growth_retains_splits_and_reserves_fresh_confirmation():
     train=previous['train_ids']+['n'+str(i) for i in range(8192)]
     val=previous['val_ids']+fresh
     validate_extension(previous,train,val,fresh)
+    validate_extension(previous,train[:12288],val,fresh)
     changed=list(train);changed[0],changed[1]=changed[1],changed[0]
     with pytest.raises(ValueError,match='membership'):validate_extension(previous,changed,val,fresh)
     bad=list(fresh);bad[0]=previous['train_ids'][0]

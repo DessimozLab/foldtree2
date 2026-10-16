@@ -34,7 +34,7 @@ python3 -m scripts.submit_se3_scale_capacity --available-credit 15 --submit
 
 ## Data preparation in progress
 
-`prepare_se3_scaleup_inputs.py` selects **16,384 training structures**, retains
+`prepare_se3_scaleup_inputs.py` targets **16,384 training structures**, retains
 all old 8,192 training IDs and 512 development IDs, and reserves **512 fresh
 confirmation structures**. All selections exclude earlier training/holdout IDs,
 respect the 256-residue cap, and use seed 42. Confirmation IDs are stored
@@ -46,9 +46,14 @@ tensors. There is **no graph regeneration or production forward pass** locally.
 Frozen feature extraction must run on Clariden, preserving the old cached entries
 bit-for-bit and recording repeatability/parity checks before publishing a new
 bundle. The current CPU preparation writes under
-`/tmp/foldtree2-se3-recycling/runs/se3_scaleup_v3/inputs_v2`; its persistent log is
-`runs/se3_scaleup_v3/prepare_v2.log`. The initial superseded preparer was stopped
-before use; only corrected `inputs_v2` may be consumed.
+`/tmp/foldtree2-se3-recycling/runs/se3_scaleup_v3/inputs_v3`; its persistent log is
+`runs/se3_scaleup_v3/prepare_v3.log`. The initial superseded preparer was stopped
+before use. The fixed-16k attempt failed the available-structure check after
+source verification: too few unused chains pass the existing length/geometry
+filters. The corrected preparer selects the largest available expansion in
+1,024-training-structure increments, between 9,216 and 16,384 total training
+structures, while retaining all 512 fresh confirmation IDs. Requested and actual
+counts and rejected sizes are logged. Only completed `inputs_v3` may be consumed.
 
 Next, stage and validate those inputs, extract only added frozen entries on
 Clariden, then compare the winning trained width-64 model continued on old versus
@@ -61,3 +66,29 @@ submitting; no expanded-data training job exists yet.
 Local tests cover finite two-pass training at both widths, updated pair heads,
 identical initial coordinate predictions, matched configuration/budget/dependency
 rules, retained membership, disjoint fresh confirmation, and duplicate rejection.
+
+## Capacity submissions
+
+Pinned code `72e27f7d2dabd5c5bccc64593582f3f06f207948` passed 42 release-dependency
+checks. Archive SHA256:
+`88e916cfc0c42e73f7f2f9ca3cbcaa0a04f5b8d689594de082eaed0f4f29ef54`.
+Eleven local capacity/cohort/bend/release tests passed. Jobs:
+
+| Job | Stage |
+|---:|---|
+| 3675417 | One-node exact recovery checks |
+| 3675418 | Two-node agreement checks |
+| 3675419 | Fresh width-64 control, four epochs |
+| 3675420 | Fresh width-80 candidate, four epochs |
+
+At submission, the first check waited on priority and subsequent jobs on
+successful dependencies. The ledger confirms **236.333333 / 256 GPUh** reserved.
+[Receipts](se3_clariden_evidence/scale_capacity_v3/submission.json) retain all
+commands and checksums. No new capacity result is inferred from submission.
+The bounded expanded-cohort preparation is a separate running CPU operation;
+expanded-data extraction/training is not yet submitted.
+
+The 16k shortage does not change the running capacity configs or residue cap.
+The data transfer/extraction/train stages remain pending completed cohort input
+validation. The failed selection is preserved in `runs/se3_scaleup_v3/inputs_v2/`
+and `prepare_v2.log`; it produced no published frozen bundle.

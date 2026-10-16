@@ -16,8 +16,8 @@ from scripts.prepare_se3_larger_cohort import fresh_splits
 
 
 def validate_extension(previous,train,val,fresh_val):
-    if len(train)!=16384 or len(val)!=1024 or len(fresh_val)!=512:
-        raise ValueError('Expected 16384 training, 512 retained + 512 fresh holdouts')
+    if len(train)<9216 or len(train)>16384 or len(train)%1024 or len(val)!=1024 or len(fresh_val)!=512:
+        raise ValueError('Expected a bounded training expansion and 512 retained + 512 fresh holdouts')
     if train[:8192]!=previous['train_ids'] or val[:512]!=previous['val_ids'] or val[512:]!=fresh_val:
         raise ValueError('Retained split membership changed')
     if len(set(train+val))!=len(train+val):raise ValueError('Training/validation overlap or duplicates')
@@ -48,12 +48,21 @@ def main():
     dataset=base.pdbgraphmk2.StructureDataset(a.dataset)
     used=set(previous['train_ids']+previous['val_ids'])|set(cohort['excluded_prior_ids'])
     event('selecting',train_count=16384,retained_validation=512,fresh_confirmation=512)
-    additional,fresh_val,skipped=fresh_splits(dataset,used,8192,512,256,42)
+    for count in range(8192,0,-1024):
+        try:
+            additional,fresh_val,skipped=fresh_splits(dataset,used,count,512,256,42)
+            break
+        except ValueError as error:
+            if str(error)!='Insufficient structures within the residue bound':raise
+            event('insufficient_unused_structures',requested_additional=count,confirmation_count=512)
+    else:raise ValueError('No expansion of at least 1024 training structures plus 512 fresh holdouts fits the fixed residue cap')
+    event('selected',train_count=8192+len(additional),retained_validation=512,fresh_confirmation=512)
     train=previous['train_ids']+additional;val=previous['val_ids']+fresh_val
     validate_extension(previous,train,val,fresh_val)
     selection={'protocol':'se3-scaleup-v3-cohort','identity':identity,'train_ids':train,'val_ids':previous['val_ids'],'evaluation_ids':val,
                'fresh_confirmation_ids':fresh_val,'retained_bundle_sha256':previous['bundle_sha256'],
                'excluded_prior_ids':sorted(used),'skipped':skipped,'seed':42,'max_residues':256,
+               'requested_train_count':16384,'actual_train_count':len(train),
                'quality_gate_winner_sha256':gate['checkpoints']['bend05']['sha256'],
                'scope':'Structure-level confirmation only; production pretraining independence not claimed'}
     (root/'cohort.json').write_text(json.dumps(selection,indent=2)+'\n')
