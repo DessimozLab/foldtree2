@@ -1,0 +1,47 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {
+      "name": "bend_recycle_v2_debug_one",
+      "nodes": 1,
+      "hours": 0.5,
+      "gpuh": 2.0
+    },
+    {
+      "name": "bend_recycle_v2_debug_two",
+      "nodes": 2,
+      "hours": 0.3333333333333333,
+      "gpuh": 2.6666666666666665
+    },
+    {
+      "name": "bend_recycle_v2_one",
+      "nodes": 2,
+      "hours": 1.0,
+      "gpuh": 8.0
+    },
+    {
+      "name": "bend_recycle_v2_two",
+      "nodes": 2,
+      "hours": 1.0,
+      "gpuh": 8.0
+    },
+    {
+      "name": "bend_recycle_v2_bend05",
+      "nodes": 2,
+      "hours": 1.0,
+      "gpuh": 8.0
+    },
+    {
+      "name": "bend_recycle_v2_bend20",
+      "nodes": 2,
+      "hours": 1.0,
+      "gpuh": 8.0
+    },
+    {
+      "name": "bend_recycle_v2_quality",
+      "nodes": 1,
+      "hours": 0.08333333333333333,
+      "gpuh": 0.3333333333333333
+    }
+  ]
+}

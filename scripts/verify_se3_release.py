@@ -16,6 +16,14 @@ REQUIRED = {
     'foldtree2/src/recycling_parent_sources.json', 'foldtree2/src/losses/se3_balanced.py',
     'foldtree2/src/losses/se3_ablation.py', 'foldtree2/src/losses/fape.py',
     'scripts/se3_budget.py', 'scripts/se3_capacity_gate.py',
+    'scripts/submit_se3_loss_trials.py', 'scripts/submit_se3_bend_recycle.py',
+    'scripts/prepare_se3_bend_recycle.py', 'scripts/gate_se3_bend_recycle.py',
+    'configs/clariden_se3/bend_recycle_v2_reference.json',
+    'configs/clariden_se3/bend_recycle_v2_budget.json',
+    'configs/clariden_se3/bend_recycle_v2_one.yaml',
+    'configs/clariden_se3/bend_recycle_v2_two.yaml',
+    'configs/clariden_se3/bend_recycle_v2_bend05.yaml',
+    'configs/clariden_se3/bend_recycle_v2_bend20.yaml',
 }
 
 
