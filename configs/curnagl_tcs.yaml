@@ -1,0 +1,29 @@
+# Render absolute deployment paths before inventory; no implicit downloads.
+deployment_dir: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID
+foldtree2_repo: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/foldtree2
+benchmark_repo: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/benchmark
+original_foldtree_repo: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/original
+baseline_score_source: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/legacy_snapshot/src/treescore.py
+models_manifest: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/foldtree2/configs/production_models.yaml
+output_dir: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/results/full
+taxonomy_db: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/inputs/taxonomy/taxa.sqlite
+python: /work/FAC/FBM/DBC/cdessim2/default/dmoi/miniforge/envs/foldtree2/bin/python
+mad: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/foldtree2/foldtree2/madroot/mad
+datasets:
+  OMA: /work/FAC/FBM/DBC/cdessim2/default/dmoi/projects/snake_tree/OMA_data_unfiltered/OMA_data
+  CATH: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/rebuilt/CATH_data
+cath_rebuild:
+  source: /work/FAC/FBM/DBC/cdessim2/default/dmoi/projects/ft2_benchmark/ft2_benchmark/CATH_data
+  destination: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/rebuilt/CATH_data
+  taxonomy_dir: /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/REPLACE_RUN_ID/inputs/taxonomy
+  workers: 8
+  min_identity: 0.95
+  min_coverage: 0.8
+  min_matches: 20
+foldtree_kernels: [fident, alntmscore, lddt]
+foldtree_corrections: [raw, exp]
+three_di_route: foldmason
+device: cpu
+threads: 8
+seed: 42
+starts_each: 10
