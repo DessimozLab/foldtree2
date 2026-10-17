@@ -8,6 +8,8 @@ import shlex
 import shutil
 import subprocess
 
+from isolate_curnagl_tcs import install as install_step_workflow
+
 
 def configure(root, template):
     root = root.resolve()
@@ -58,7 +60,7 @@ def configure(root, template):
     controller = work / 'miniconda3/envs/snakemake/bin/snakemake'
     python = env / 'bin/python'
     driver = root / 'foldtree2/scripts/curnagl_tcs.py'
-    snakefile = root / 'foldtree2/workflow/curnagl_tcs.smk'
+    snakefile = install_step_workflow(root)
     stages = [('inventory', 4, '16G', '4:00:00'),
                                          ('runtime-check', 4, '16G', '0:30:00'),
                                          ('pilot', 8, '32G', '4:00:00'),
@@ -86,12 +88,9 @@ def configure(root, template):
                                  '--config', 'plan=' + str(plan), '--cores', str(cores),
                                  '--resources', 'mem_mb=' + str(24000 if phase == 'pilot' else 96000),
                                  '--rerun-incomplete', '--printshellcmds', '--latency-wait', '60'])
-        if phase in {'pilot', 'full'}:
-            command = 'srun --cpu-bind=cores ' + command
-        allocated_cores = 16 if phase == 'pilot' else cores
         header = '\n'.join(['#!/bin/bash', '#SBATCH --account=cdessim2_default', '#SBATCH --partition=cpu',
                             '#SBATCH --ntasks=1', '#SBATCH --hint=nomultithread',
-                            '#SBATCH --job-name=ft2-tcs-' + phase, '#SBATCH --cpus-per-task=' + str(allocated_cores),
+                            '#SBATCH --job-name=ft2-tcs-' + phase, '#SBATCH --cpus-per-task=' + str(cores),
                             '#SBATCH --mem=' + memory, '#SBATCH --time=' + duration,
                             '#SBATCH --output=' + str(root / ('logs/' + phase + '-%j.log'))])
         (root / (phase + '.sbatch')).write_text(header + '\n' + setup + '\n' + command + '\n')

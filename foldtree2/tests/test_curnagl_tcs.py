@@ -369,6 +369,9 @@ def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypa
     source = root / 'foldtree2/scripts/supervise_curnagl_tcs.py'
     source.parent.mkdir(parents=True)
     source.write_text('# fixture\n')
+    workflow = root / 'foldtree2/workflow/curnagl_tcs.smk'
+    workflow.parent.mkdir()
+    workflow.write_text((Path(__file__).resolve().parents[2] / 'workflow/curnagl_tcs.smk').read_text())
     template = tmp_path / 'template.yaml'
     template.write_text(f'deployment_dir: {root}\n')
     commands = []
@@ -387,9 +390,57 @@ def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypa
         batch = (root / (phase + '.sbatch')).read_text()
         assert '#SBATCH --ntasks=1\n' in batch
         assert '#SBATCH --hint=nomultithread\n' in batch
-        assert 'srun --cpu-bind=cores ' in batch
+        assert 'srun ' not in batch
+        assert '--snakefile ' + str(root / 'slurm-steps.smk') in batch
         assert '--force perf_threads' not in batch
-        assert f'#SBATCH --cpus-per-task={16 if phase == "pilot" else 32}\n' in batch
+        assert f'#SBATCH --cpus-per-task={8 if phase == "pilot" else 32}\n' in batch
         assert f'--cores {8 if phase == "pilot" else 32}' in batch
     assert ['git', 'status', '--short', '--', '.'] in commands
     assert ['git', 'diff', '--binary', 'HEAD', '--', '.'] in commands
+
+
+def test_isolated_workflow_preserves_science_and_records_both_hashes(tmp_path):
+    import hashlib
+    import json
+    from isolate_curnagl_tcs import install, render
+    source = tmp_path / 'foldtree2/workflow/curnagl_tcs.smk'
+    source.parent.mkdir(parents=True)
+    original = (Path(__file__).resolve().parents[2] / 'workflow/curnagl_tcs.smk').read_bytes()
+    source.write_bytes(original)
+    output = install(tmp_path)
+    prefix = ('srun --exclusive --exact --ntasks=1 --cpus-per-task={threads} '
+              '--cpu-bind=cores --mem={resources.mem_mb}M ')
+    assert output.read_text().count(prefix) == 6
+    assert output.read_text().replace(prefix, '') == original.decode()
+    assert source.read_bytes() == original
+    record = json.loads((tmp_path / 'slurm-step-workflow.json').read_text())
+    assert record['source_sha256'] == hashlib.sha256(original).hexdigest()
+    assert record['workflow_sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
+    with pytest.raises(FileExistsError):
+        install(tmp_path)
+    with pytest.raises(ValueError):
+        render(output.read_text())
+    with pytest.raises(ValueError):
+        render(original.decode() + "\n    shell: 'extra'")
+
+
+def test_recovery_preserves_incomplete_native_outputs_without_touching_complete_ones(tmp_path):
+    import json
+    from prepare_curnagl_step_recovery import preserve_incomplete
+    output = tmp_path / 'results/full'
+    families = output / 'families'
+    (tmp_path / 'plan.json').write_text(json.dumps({
+        'config': {'output_dir': str(output)}, 'families': {'CATH__1': {}, 'OMA__2': {}}}))
+    for family in ('CATH__1', 'OMA__2'):
+        native = families / family / '3Di/native'
+        native.mkdir(parents=True)
+        (native / 'provenance.json').write_text('old provenance')
+    (families / 'OMA__2/3Di/native/completed.json').write_text('verified')
+    moved = preserve_incomplete(tmp_path, '123')
+    assert len(moved) == 1
+    assert (tmp_path / 'recovery/slurm-steps-123/CATH__1/provenance.json').read_text() == 'old provenance'
+    assert (families / 'OMA__2/3Di/native/completed.json').read_text() == 'verified'
+    with pytest.raises(FileExistsError):
+        preserve_incomplete(tmp_path, '123')
+    with pytest.raises(ValueError):
+        preserve_incomplete(tmp_path, '../unsafe')

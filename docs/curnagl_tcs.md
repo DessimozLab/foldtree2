@@ -291,17 +291,35 @@ The stages are:
 5. Full sweep: only after pilot completion and peak RSS accounting <=24 GB;
    32 CPUs, 96 GB, 24 hours, at most four 8-thread inference tasks concurrently.
 
-Generated allocations request one task and `--hint=nomultithread`; inference
-launches through `srun --cpu-bind=cores` so requested CPUs correspond to distinct
-physical cores. Without this, an eight-CPU allocation can expose only four
-physical cores and RAxML rejects eight threads as oversubscribed. Do not disable
-its safety check with `--force perf_threads`. Pilot memory/exit checks include
-numbered `srun` steps as well as `.batch`, since inference now runs in a step.
-The pilot reserves **16 Slurm CPUs** but retains **8 workflow/tool threads**:
-the shipped RAxML parallel-parsimony check still reports half the assigned CPUs
-as physical cores on these nodes. The full allocation remains 32 CPUs with
-eight threads per inference. Validate the production random **and parsimony**
-starts; a random-only search does not exercise this failure.
+Generated allocations request one task and `--hint=nomultithread`. Each rule
+runs in an **exclusive, exact Slurm step**, requesting its declared CPU and
+memory resources with `--cpu-bind=cores`. Concurrent inference steps therefore
+receive disjoint CPU masks rather than competing within one broad mask.
+Snakemake itself runs in the batch shell, not in a step that reserves all CPUs.
+Pilot memory/exit checks include numbered steps as well as `.batch`.
+
+RAxML 1.2.2's oversubscription detector times synchronization barriers; its
+reported physical-core count alone does **not** explain or predict this error.
+Increasing the pilot reservation to 16 CPUs helped the historical v10 pilot
+pass, but did not solve full-run concurrency. Current generated jobs use eight
+pilot CPUs and 32 full CPUs, with eight threads per inference and disjoint steps.
+Do not disable the safety check with `--force perf_threads`. Test simultaneous
+searches with the production random **and parsimony** starts.
+
+[The operational renderer](../scripts/isolate_curnagl_tcs.py) copies the frozen
+workflow to `slurm-steps.smk`, changing only command-launch prefixes, and records
+both hashes in `slurm-step-workflow.json`. It never edits the frozen source.
+Batch files select this operational workflow. Resume commands retain mtime,
+input, parameter and environment triggers, but omit Snakemake's shell-code
+trigger so changing the launch prefix does not invalidate completed science;
+the driver's frozen asset, plan, signature and output-hash checks still apply.
+
+Before manually resuming a stopped full run, with no active inference job,
+[the recovery helper](../scripts/prepare_curnagl_step_recovery.py) can move
+incomplete native 3Di stages into a job-ID-specific recovery directory. This
+preserves evidence while avoiding stale, allocation-dependent version banners.
+Complete native stages and completed method outputs are never moved. Do not
+run this helper concurrently with inference or overwrite old recovery records.
 
 Only timeout, preemption, boot failure or node failure permit automatic
 resubmission, at most twice per stage. Scientific failures, missing tools,

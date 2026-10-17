@@ -123,7 +123,8 @@ def _tick(root):
             peaks = [rss_mb(r[3]) for r in rows
                      if r[0].startswith(job_id + '.') and not r[0].endswith('.extern') and r[3]]
             batch = root / 'pilot.sbatch'
-            uses_srun = batch.is_file() and 'srun --cpu-bind=cores' in batch.read_text()
+            uses_srun = ((batch.is_file() and 'srun --cpu-bind=cores' in batch.read_text())
+                         or (root / 'slurm-step-workflow.json').is_file())
             step_peaks = [r[3] for r in rows
                           if r[0].startswith(job_id + '.') and r[0].rsplit('.', 1)[1].isdigit() and r[3]]
             if not peaks or (uses_srun and not step_peaks):

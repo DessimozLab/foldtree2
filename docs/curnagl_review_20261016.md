@@ -277,3 +277,62 @@ errors. VPN authorization expired during the next inspection; the maintained
 helper reported connected-but-SSH-unreachable and did not reset the shared VPN.
 This does not stop the submitted cluster jobs. No completed pilot/full sweep
 is claimed.
+
+## Full-run concurrency recovery, 2026-10-17 late evening
+
+Restored VPN access established that pilot **66136808 completed successfully**
+in **33 min 13 s**, with all **26 hash-bound scores** and peak inference-step
+RSS **1,030.97 MB**. Controller 66136809 released full sweep **66137560**, which
+failed after **1 h 21 min 56 s** on FT2-40 for
+`OMA__Euteleostomi__HOG1412`. The workflow had finished 4,781/107,887 steps;
+that is workflow progress, **not** 4,781 scored comparisons. The controller
+correctly stopped without retrying the scientific failure.
+
+The native RAxML log reported 16 allocated physical cores and eight threads
+but still raised its oversubscription error. Inspection of the upstream 1.2.2
+[`check_oversubscribe` implementation](https://github.com/amkozlov/raxml-ng/blob/1.2.2/src/main.cpp)
+shows that it times 100 thread barriers and rejects mean synchronization time
+above about 5 ms; it does **not** compare the displayed core count with threads.
+Earlier core-count explanations were incomplete. All concurrent inference
+processes inherited the same broad allocation mask, allowing CPU contention
+despite a sufficient total reservation.
+
+The operational workflow now starts each command in its own
+`srun --exclusive --exact --ntasks=1 --cpus-per-task={threads} --cpu-bind=cores`
+step, with rule-specific memory. The controller runs in the batch shell rather
+than reserving all CPUs in an outer step. The full reservation remains
+32 CPUs/96 GB, eight threads per inference, up to four concurrent inferences.
+No force flag, model, start count or scientific source change is used.
+
+Concurrent regression **66157153 completed successfully**: four exact
+`rand{10},pars{10}` RAxML searches on the previously failing alignment/model,
+each with eight threads. Step masks were disjoint (`7-14`, `15-22`, `23-30`,
+`31-38`); all four steps exited zero in 7 seconds. An initial workflow-target
+test 66157376 failed before execution because a relative target did not match
+the workflow's absolute output paths; corrected regression **66157490** uses
+the actual absolute target and production driver.
+
+[The renderer](../scripts/isolate_curnagl_tcs.py) records both original and
+operational workflow hashes; removing its six launch prefixes reproduces
+the original workflow byte-for-byte. The frozen workflow, source, plans,
+cohorts and bundles are unchanged. Snakemake's shell-code rerun trigger is
+omitted only for this launch-prefix transition; mtime/input/parameter/environment
+triggers and scientific signature/hash checks remain enforced.
+Superseded operational files/state/hashes are retained with
+`before-20261017-step-isolation` names. Incomplete native 3Di provenance is
+preserved through [the recovery helper](../scripts/prepare_curnagl_step_recovery.py),
+never overwritten or treated as a valid complete result.
+
+Local validation: **235 passed, 1 skipped, 1 xfailed**; documentation scanner:
+**51 documents, 65 CLI examples, zero errors**.
+
+The exact failed-family workflow regression **66157490 completed successfully**
+in **2 min 3 s**, including frozen FT2 encoding/alignment, the production
+20-start RAxML search and a new verified completion marker. Preservation job
+**66157494 completed** and found no incomplete native 3Di directories needing
+movement (`[]`). Pilot coverage and repaired-output hashes were verified before
+resuming control. Controller **66157527 completed**, submitted full job **66157528**
+and dependent callback **66157529**. At the final scheduler check, full job
+66157528 was **PENDING (`QOSGrpNodeLimit`)**: shared cluster quota/resource
+availability, not an application failure. No running or completed replacement
+full sweep is claimed.
