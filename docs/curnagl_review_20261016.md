@@ -267,3 +267,13 @@ allocation already reserves 32 CPUs with eight threads per inference.
 The second incomplete CATH native stage was also preserved under the recovery
 directory before resubmission through controller **66136788**. No RAxML force
 flag, model, start count, cohort or thread-count change was used.
+
+At the final reachable check, controller 66136788 had completed successfully;
+replacement pilot **66136808 was RUNNING** (53 seconds elapsed), with successor
+**66136809** waiting on its dependency. The exact production-shape RAxML probe
+66136761 remained RUNNING at 1 min 56 s with ongoing likelihood optimization.
+Final local validation: **233 passed, 1 skipped, 1 xfailed** and zero documentation
+errors. VPN authorization expired during the next inspection; the maintained
+helper reported connected-but-SSH-unreachable and did not reset the shared VPN.
+This does not stop the submitted cluster jobs. No completed pilot/full sweep
+is claimed.
