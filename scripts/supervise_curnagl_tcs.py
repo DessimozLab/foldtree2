@@ -82,7 +82,8 @@ def _tick(root):
         state.setdefault('previous_jobs', []).append({'phase': phase, 'job_id': job_id, 'state': status})
         state['jobs'][phase] = submit(root, phase)
         state['attempts'][phase] += 1
-    elif status != 'COMPLETED' or any(r[2] != '0:0' for r in rows if r[0] in {job_id, job_id + '.batch'}):
+    elif status != 'COMPLETED' or any(r[2] != '0:0' for r in rows
+                                     if r[0] == job_id or r[0].startswith(job_id + '.')):
         state.update(status='needs_attention', reason=f'{phase} job {job_id}: {status}; no scientific/OOM retries')
     elif phase == 'rebuild':
         cfg_path = root / 'rebuild-result-location.json'
@@ -119,8 +120,13 @@ def _tick(root):
                 or data['scores'] != expected or (phase == 'pilot' and expected != 26)):
             raise ValueError('Completion marker does not pass full-coverage gate')
         if phase == 'pilot':
-            peaks = [rss_mb(r[3]) for r in rows if r[0].endswith('.batch') and r[3]]
-            if not peaks:
+            peaks = [rss_mb(r[3]) for r in rows
+                     if r[0].startswith(job_id + '.') and not r[0].endswith('.extern') and r[3]]
+            batch = root / 'pilot.sbatch'
+            uses_srun = batch.is_file() and 'srun --cpu-bind=cores' in batch.read_text()
+            step_peaks = [r[3] for r in rows
+                          if r[0].startswith(job_id + '.') and r[0].rsplit('.', 1)[1].isdigit() and r[3]]
+            if not peaks or (uses_srun and not step_peaks):
                 state['slurm_state'] = 'WAITING_FOR_PEAK_MEMORY_ACCOUNTING'
             elif max(peaks) > 24000:
                 state.update(status='needs_attention', reason='Pilot peak memory exceeds 24 GB full per-rule budget')

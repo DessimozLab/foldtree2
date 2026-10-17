@@ -86,8 +86,12 @@ def configure(root, template):
                                  '--config', 'plan=' + str(plan), '--cores', str(cores),
                                  '--resources', 'mem_mb=' + str(24000 if phase == 'pilot' else 96000),
                                  '--rerun-incomplete', '--printshellcmds', '--latency-wait', '60'])
+        if phase in {'pilot', 'full'}:
+            command = 'srun --cpu-bind=cores ' + command
+        allocated_cores = 16 if phase == 'pilot' else cores
         header = '\n'.join(['#!/bin/bash', '#SBATCH --account=cdessim2_default', '#SBATCH --partition=cpu',
-                            '#SBATCH --job-name=ft2-tcs-' + phase, '#SBATCH --cpus-per-task=' + str(cores),
+                            '#SBATCH --ntasks=1', '#SBATCH --hint=nomultithread',
+                            '#SBATCH --job-name=ft2-tcs-' + phase, '#SBATCH --cpus-per-task=' + str(allocated_cores),
                             '#SBATCH --mem=' + memory, '#SBATCH --time=' + duration,
                             '#SBATCH --output=' + str(root / ('logs/' + phase + '-%j.log'))])
         (root / (phase + '.sbatch')).write_text(header + '\n' + setup + '\n' + command + '\n')

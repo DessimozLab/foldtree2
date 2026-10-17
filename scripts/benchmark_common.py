@@ -86,8 +86,11 @@ def tool_version(tool):
         raise FileNotFoundError(f'Required tool not installed: {tool}')
     flag = '--version' if tool == 'raxml-ng' else 'version'
     result = subprocess.run([executable, flag], capture_output=True, text=True)
+    version = (result.stdout + result.stderr).strip()
+    if tool == 'raxml-ng':
+        version = version.split('\nSystem:', 1)[0].rstrip()
     return {'executable': executable, 'sha256': digest(executable),
-            'version': (result.stdout + result.stderr).strip()[:1000]}
+            'version': version[:1000]}
 
 
 def begin_stage(outdir, signature):

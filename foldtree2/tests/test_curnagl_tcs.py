@@ -64,6 +64,21 @@ def test_incomplete_baseline_fails(tmp_path):
         scoring_functions(source)
 
 
+def test_raxml_version_provenance_ignores_runtime_cpu_allocation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import benchmark_common as common
+    executable = tmp_path / 'raxml-ng'
+    executable.write_text('fixture binary')
+    monkeypatch.setattr(common.shutil, 'which', lambda tool: str(executable))
+    signatures = []
+    for cores in (4, 8):
+        monkeypatch.setattr(common.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(
+            stdout=f'RAxML-NG v. 1.2.2\nSystem: CPU (allocated: {cores} physical cores)\n', stderr=''))
+        signatures.append(common.tool_version('raxml-ng'))
+    assert signatures[0] == signatures[1]
+    assert signatures[0]['version'] == 'RAxML-NG v. 1.2.2'
+
+
 def test_supervisor_retries_only_infrastructure_failures(tmp_path, monkeypatch):
     import json
     import supervise_curnagl_tcs as supervisor
@@ -128,6 +143,15 @@ def test_pilot_gate_requires_coverage_and_accounted_memory(tmp_path, monkeypatch
     assert updated['status'] == 'pilot_complete'
     assert updated['phase'] == 'pilot'
     assert 'full' not in updated['jobs']
+    (tmp_path / 'pilot.sbatch').write_text('srun --cpu-bind=cores snakemake\n')
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    assert supervisor.tick(tmp_path)['slurm_state'] == 'WAITING_FOR_PEAK_MEMORY_ACCOUNTING'
+    (tmp_path / 'supervision.json').write_text(json.dumps(state))
+    monkeypatch.setattr(supervisor, 'accounting', lambda job: ('COMPLETED', [
+        ['123', 'COMPLETED', '0:0', '', '1:00'],
+        ['123.batch', 'COMPLETED', '0:0', '10M', '1:00'],
+        ['123.0', 'COMPLETED', '0:0', '25000M', '1:00']]))
+    assert supervisor.tick(tmp_path)['status'] == 'needs_attention'
 
 
 def test_project_quota_is_used_instead_of_whole_filesystem(monkeypatch):
@@ -359,5 +383,13 @@ def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypa
     monkeypatch.setattr(configure.subprocess, 'check_output', output)
     monkeypatch.setattr(configure.subprocess, 'run', run)
     configure.configure(root, template)
+    for phase in ('pilot', 'full'):
+        batch = (root / (phase + '.sbatch')).read_text()
+        assert '#SBATCH --ntasks=1\n' in batch
+        assert '#SBATCH --hint=nomultithread\n' in batch
+        assert 'srun --cpu-bind=cores ' in batch
+        assert '--force perf_threads' not in batch
+        assert f'#SBATCH --cpus-per-task={16 if phase == "pilot" else 32}\n' in batch
+        assert f'--cores {8 if phase == "pilot" else 32}' in batch
     assert ['git', 'status', '--short', '--', '.'] in commands
     assert ['git', 'diff', '--binary', 'HEAD', '--', '.'] in commands

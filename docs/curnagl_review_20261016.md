@@ -218,3 +218,52 @@ checks. **No full-sweep result or completed TCS pilot is claimed here.**
 
 Local validation after controller recovery: **232 passed, 1 skipped, 1 xfailed**;
 documentation scanner: **51 documents, 65 CLI examples, zero errors**.
+
+## Pilot CPU-allocation repair, 2026-10-17 afternoon
+
+Inventory 66082884 completed successfully in **8 h 1 min 28 s**, freezing
+**2,514 OMA + 1,339 CATH = 3,853 families**, 2,169 exclusions and **50,089**
+expected method-family scores. Pilot 66082935 then failed after 56 min 38 s:
+CATH `1.10.10.10` 3Di RAxML requested eight threads but detected four allocated
+physical cores. Its native log explicitly reported core oversubscription, not
+an OOM or missing executable. Callback 66130960 correctly stopped supervision
+with `needs_attention`; no full sweep was released.
+
+The repair changes operational scheduling, not scientific inputs: both pilot
+and full batch scripts request `--ntasks=1 --hint=nomultithread` and launch
+Snakemake through `srun --cpu-bind=cores`. Diagnostic **66136592 completed** and
+verified eight distinct physical cores in the step affinity. Actual RAxML
+search probe **66136611**, using the failing alignment and published model,
+passed its oversubscription check and entered likelihood optimization with
+eight threads; the diagnostic uses one random starting tree, not a benchmark
+result or substitute for the production 20-start search.
+That search completed successfully in **18 seconds** with exit zero.
+
+Original operational files/state/hashes were retained with
+`before-20261017-cpu-fix` names. Scientific source, plans, model bundles and
+existing signed outputs remain unchanged; production resumption still uses
+`--rerun-incomplete` and provenance validation. Numbered `srun` step memory and
+exit codes now participate in the supervisor gates, so the small `.batch`
+shell cannot hide inference memory use or step failures.
+
+Restart 66136646 exposed a second issue before RAxML ran: native 3Di provenance
+stores the RAxML version banner, including its allocation-specific `System:`
+line. The changed core count invalidated the old incomplete-stage signature.
+The incomplete OMA/CATH native 3Di directories were moved, not deleted, under
+`recovery/20261017-cpu-fix/`; complete method outputs were retained. Its waiting
+callback 66136647 was cancelled and controller 66136685 submitted for the clean
+restart. The local version helper now omits that dynamic system line while
+retaining executable path, binary hash and version banner for future frozen
+deployments; **the v10 frozen source was not patched**.
+
+The clean eight-CPU restart **66136699** still failed in **parallel parsimony**:
+the shipped RAxML reports half the assigned CPUs as physical cores even with
+the corrected binding. This shows why the successful random-only diagnostic
+was insufficient. The pilot now reserves **16 CPUs while preserving eight
+workflow/tool threads**. Production-shape diagnostic **66136761** uses exactly
+`rand{10},pars{10}`, eight threads, the failing alignment and published model;
+it passed parallel parsimony and entered likelihood optimization. The full
+allocation already reserves 32 CPUs with eight threads per inference.
+The second incomplete CATH native stage was also preserved under the recovery
+directory before resubmission through controller **66136788**. No RAxML force
+flag, model, start count, cohort or thread-count change was used.

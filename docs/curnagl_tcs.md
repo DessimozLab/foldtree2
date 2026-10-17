@@ -291,6 +291,18 @@ The stages are:
 5. Full sweep: only after pilot completion and peak RSS accounting <=24 GB;
    32 CPUs, 96 GB, 24 hours, at most four 8-thread inference tasks concurrently.
 
+Generated allocations request one task and `--hint=nomultithread`; inference
+launches through `srun --cpu-bind=cores` so requested CPUs correspond to distinct
+physical cores. Without this, an eight-CPU allocation can expose only four
+physical cores and RAxML rejects eight threads as oversubscribed. Do not disable
+its safety check with `--force perf_threads`. Pilot memory/exit checks include
+numbered `srun` steps as well as `.batch`, since inference now runs in a step.
+The pilot reserves **16 Slurm CPUs** but retains **8 workflow/tool threads**:
+the shipped RAxML parallel-parsimony check still reports half the assigned CPUs
+as physical cores on these nodes. The full allocation remains 32 CPUs with
+eight threads per inference. Validate the production random **and parsimony**
+starts; a random-only search does not exercise this failure.
+
 Only timeout, preemption, boot failure or node failure permit automatic
 resubmission, at most twice per stage. Scientific failures, missing tools,
 OOM, failed score gates and authentication/host-key failures stop supervision
