@@ -63,7 +63,7 @@ def configure(root, template):
     snakefile = install_step_workflow(root)
     stages = [('inventory', 4, '16G', '4:00:00'),
                                          ('runtime-check', 4, '16G', '0:30:00'),
-                                         ('pilot', 8, '32G', '4:00:00'),
+                                         ('pilot', 16, '32G', '4:00:00'),
                                          ('full', 32, '96G', '24:00:00')]
     if cfg.get('cath_rebuild'):
         stages.insert(0, ('rebuild', cfg['cath_rebuild']['workers'], '32G', '8:00:00'))
@@ -87,6 +87,7 @@ def configure(root, template):
             command = shlex.join([str(controller), '--snakefile', str(snakefile), '--directory', str(root),
                                  '--config', 'plan=' + str(plan), '--cores', str(cores),
                                  '--resources', 'mem_mb=' + str(24000 if phase == 'pilot' else 96000),
+                                 'slurm_cpus=' + str(cores),
                                  '--rerun-incomplete', '--printshellcmds', '--latency-wait', '60'])
         header = '\n'.join(['#!/bin/bash', '#SBATCH --account=cdessim2_default', '#SBATCH --partition=cpu',
                             '#SBATCH --ntasks=1', '#SBATCH --hint=nomultithread',

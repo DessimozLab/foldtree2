@@ -286,29 +286,54 @@ The stages are:
    require at least one fully validated family before proceeding.
 2. Inventory: 4 CPUs, 16 GB, four hours; freeze `plan.json` and `pilot.json`.
 3. Runtime check: 4 CPUs, 16 GB, 30 minutes; verify tools, bundles and workflow.
-4. Pilot: the first sorted eligible OMA and CATH families, 8 CPUs, 32 GB,
+4. Pilot: the first sorted eligible OMA and CATH families, 16 CPUs, 32 GB,
    four hours; require all **26** method-family scores and valid provenance.
 5. Full sweep: only after pilot completion and peak RSS accounting <=24 GB;
-   32 CPUs, 96 GB, 24 hours, at most four 8-thread inference tasks concurrently.
+   32 CPUs, 96 GB, 24 hours, at most four single-thread ML inference tasks
+   concurrently. Other structural kernels retain eight threads.
 
 Generated allocations request one task and `--hint=nomultithread`. Each rule
 runs in an **exclusive, exact Slurm step**, requesting its declared CPU and
-memory resources with `--cpu-bind=cores`. Concurrent inference steps therefore
-receive disjoint CPU masks rather than competing within one broad mask.
+memory resources with `--cpu-bind=cores`, `--hint=nomultithread` and
+`--threads-per-core=1`. The `slurm_cpus` workflow resource reserves two CPUs per
+tool thread, bounded by 16 CPUs for the pilot and 32 CPUs for the full sweep.
+Concurrent inference steps receive disjoint CPU masks. Before executing a tool,
+[the affinity wrapper](../scripts/curnagl_physical_step.py) reads each permitted
+CPU's socket/core IDs from Linux sysfs, requires enough distinct physical cores,
+and pins the process to one hardware thread on each selected physical core.
+It logs the allocated and selected masks and fails before computation if the
+topology is insufficient. BLAS/OpenMP thread limits follow the rule's thread count.
 Snakemake itself runs in the batch shell, not in a step that reserves all CPUs.
 Pilot memory/exit checks include numbered steps as well as `.batch`.
 
 RAxML 1.2.2's oversubscription detector times synchronization barriers; its
 reported physical-core count alone does **not** explain or predict this error.
 Increasing the pilot reservation to 16 CPUs helped the historical v10 pilot
-pass, but did not solve full-run concurrency. Current generated jobs use eight
-pilot CPUs and 32 full CPUs, with eight threads per inference and disjoint steps.
+pass, but did not solve full-run concurrency. The earlier exclusive-step fix
+also failed in full job 66157528 on 2026-10-18. Explicit pinning with two
+eight-thread searches subsequently passed 90 tests but failed the next
+allocation's startup gate (66226560); that policy is rejected. Unfinished AA,
+3Di and FT2 methods now use one thread, with parallelism across families.
+The frozen driver records that actual thread count. Already completed methods
+retain their original thread signatures and verified outputs. The operational
+workflow chooses threads from a completed marker only for reuse; the frozen
+driver still verifies the marker, signature and output hashes.
 Do not disable the safety check with `--force perf_threads`. Test simultaneous
 searches with the production random **and parsimony** starts.
+[The bounded verification](../scripts/check_curnagl_raxml_affinity.py) exercises
+all seven ML models from both validated pilot families with eight selected
+alignment rows, plus the exact previously failed AA alignment, three times each
+(45 searches, four concurrent single-thread searches). Sampled rows are strictly for launch verification;
+their source hashes are recorded and they produce no benchmark scores. Follow
+this with the real workflow on the failed family before releasing the full run.
+See the [2026-10-19 recovery report](curnagl_raxml_affinity_20261019.md) for the
+actual verification jobs, resource policy and release checks.
 
 [The operational renderer](../scripts/isolate_curnagl_tcs.py) copies the frozen
-workflow to `slurm-steps.smk`, changing only command-launch prefixes, and records
-both hashes in `slurm-step-workflow.json`. It never edits the frozen source.
+workflow to `slurm-steps.smk`, adding launch prefixes, the CPU reservation
+resource and the explicit inference thread policy. It records workflow/source/affinity-wrapper hashes in
+`slurm-step-workflow.json`. It never edits the frozen source, inference models,
+seeds, random/parsimony start counts, alignments or score definitions.
 Batch files select this operational workflow. Resume commands retain mtime,
 input, parameter and environment triggers, but omit Snakemake's shell-code
 trigger so changing the launch prefix does not invalidate completed science;
@@ -316,7 +341,9 @@ the driver's frozen asset, plan, signature and output-hash checks still apply.
 
 Before manually resuming a stopped full run, with no active inference job,
 [the recovery helper](../scripts/prepare_curnagl_step_recovery.py) can move
-incomplete native 3Di stages into a job-ID-specific recovery directory. This
+incomplete native 3Di stages into a job-ID-specific recovery directory. With
+`--all-ml`, it preserves whole unfinished AA/3Di/FT2 method directories before
+restarting them with a one-thread provenance signature. This
 preserves evidence while avoiding stale, allocation-dependent version banners.
 Complete native stages and completed method outputs are never moved. Do not
 run this helper concurrently with inference or overwrite old recovery records.

@@ -30,9 +30,41 @@ def preserve_incomplete(root, attempt):
     return moved
 
 
+def preserve_incomplete_ml(root, attempt):
+    """Preserve unfinished method attempts before changing their thread signature."""
+    if not attempt.isdigit():
+        raise ValueError('Recovery attempt must be a Slurm job identifier')
+    plan = json.loads((root / 'plan.json').read_text())
+    families = Path(plan['config']['output_dir']) / 'families'
+    destination = root / 'recovery' / ('single-thread-' + attempt)
+    if destination.exists():
+        raise FileExistsError(destination)
+    moved = []
+    for family in plan['families']:
+        directory = families / family
+        if not directory.is_dir():
+            continue
+        for method in directory.iterdir():
+            spec = plan['methods'].get(method.name, {})
+            if (spec.get('kind') not in {'AA', '3Di', 'FT2'} or not method.is_dir()
+                    or (method / 'completed.json').exists()):
+                continue
+            if (method / 'tcs/completed.json').exists():
+                raise ValueError(f'Completed score has unfinished inference: {method}')
+            target = destination / family / method.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(method), str(target))
+            moved.append({'source': str(method), 'preserved': str(target)})
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / 'preserved.json').write_text(json.dumps(moved, indent=2) + '\n')
+    return moved
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--deployment', required=True, type=Path)
     parser.add_argument('--attempt', required=True)
+    parser.add_argument('--all-ml', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(preserve_incomplete(args.deployment.resolve(), args.attempt)), flush=True)
+    action = preserve_incomplete_ml if args.all_ml else preserve_incomplete
+    print(json.dumps(action(args.deployment.resolve(), args.attempt)), flush=True)

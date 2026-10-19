@@ -393,8 +393,9 @@ def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypa
         assert 'srun ' not in batch
         assert '--snakefile ' + str(root / 'slurm-steps.smk') in batch
         assert '--force perf_threads' not in batch
-        assert f'#SBATCH --cpus-per-task={8 if phase == "pilot" else 32}\n' in batch
-        assert f'--cores {8 if phase == "pilot" else 32}' in batch
+        assert f'#SBATCH --cpus-per-task={16 if phase == "pilot" else 32}\n' in batch
+        assert f'slurm_cpus={16 if phase == "pilot" else 32}' in batch
+        assert f'--cores {16 if phase == "pilot" else 32}' in batch
     assert ['git', 'status', '--short', '--', '.'] in commands
     assert ['git', 'diff', '--binary', 'HEAD', '--', '.'] in commands
 
@@ -408,20 +409,101 @@ def test_isolated_workflow_preserves_science_and_records_both_hashes(tmp_path):
     original = (Path(__file__).resolve().parents[2] / 'workflow/curnagl_tcs.smk').read_bytes()
     source.write_bytes(original)
     output = install(tmp_path)
-    prefix = ('srun --exclusive --exact --ntasks=1 --cpus-per-task={threads} '
-              '--cpu-bind=cores --mem={resources.mem_mb}M ')
+    prefix = ('srun --exclusive --exact --ntasks=1 --cpus-per-task={resources.slurm_cpus} '
+              '--hint=nomultithread --threads-per-core=1 --cpu-bind=cores --mem={resources.mem_mb}M '
+              '{PYTHON:q} {PHYSICAL_STEP:q} --threads {threads} -- ')
     assert output.read_text().count(prefix) == 6
-    assert output.read_text().replace(prefix, '') == original.decode()
+    restored = output.read_text().replace(prefix, '').replace(
+        "\nPHYSICAL_STEP = str(Path(PLAN_PATH).parent / 'curnagl_physical_step.py')", '').replace(
+        'resources: slurm_cpus=lambda wildcards, threads: 2 * threads, mem_mb=', 'resources: mem_mb=')
+    start, end = restored.index('def inference_threads('), restored.index('wildcard_constraints:')
+    policy = restored[start:end]
+    restored = (restored[:start] + restored[end:]).replace(
+        '    threads: inference_threads', "    threads: CFG['threads']")
+    assert [line for line in restored.splitlines() if line.strip()] == [
+        line for line in original.decode().splitlines() if line.strip()]
+    namespace = {'Path': Path, 'json': json, 'ROOT': str(tmp_path),
+                 'CFG': {'threads': 8}, 'PLAN': {'methods': {'AA': {'kind': 'AA'},
+                                                          'FT': {'kind': 'FoldTree'}}}}
+    exec(policy, namespace)
+    from types import SimpleNamespace
+    w = SimpleNamespace(family='family', method='AA')
+    assert namespace['inference_threads'](w) == 1
+    marker = tmp_path / 'families/family/AA/completed.json'
+    marker.parent.mkdir(parents=True)
+    marker.write_text(json.dumps({'signature': {'threads': 8}}))
+    assert namespace['inference_threads'](w) == 8
+    w.method = 'FT'
+    assert namespace['inference_threads'](w) == 8
     assert source.read_bytes() == original
     record = json.loads((tmp_path / 'slurm-step-workflow.json').read_text())
     assert record['source_sha256'] == hashlib.sha256(original).hexdigest()
     assert record['workflow_sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
+    worker = tmp_path / 'curnagl_physical_step.py'
+    assert record['worker_sha256'] == hashlib.sha256(worker.read_bytes()).hexdigest()
     with pytest.raises(FileExistsError):
         install(tmp_path)
     with pytest.raises(ValueError):
         render(output.read_text())
     with pytest.raises(ValueError):
         render(original.decode() + "\n    shell: 'extra'")
+
+
+def test_physical_affinity_groups_smt_siblings_and_distinguishes_sockets(tmp_path, monkeypatch):
+    import curnagl_physical_step as step
+    for cpu, package, core in [(0, 0, 0), (1, 0, 0), (2, 0, 1), (3, 0, 1), (4, 1, 0)]:
+        directory = tmp_path / f'cpu{cpu}/topology'
+        directory.mkdir(parents=True)
+        (directory / 'physical_package_id').write_text(str(package))
+        (directory / 'core_id').write_text(str(core))
+    assert step.physical_cpu_groups(range(5), tmp_path) == {
+        (0, 0): [0, 1], (0, 1): [2, 3], (1, 0): [4]}
+    affinity = {0, 1, 2, 3}
+    monkeypatch.setattr(step.os, 'sched_getaffinity', lambda _: affinity)
+    monkeypatch.setattr(step.os, 'sched_setaffinity', lambda _, cpus: affinity.intersection_update(cpus))
+    original = step.physical_cpu_groups
+    monkeypatch.setattr(step, 'physical_cpu_groups', lambda cpus: original(cpus, tmp_path))
+    with pytest.raises(RuntimeError, match='2 physical cores for 3 threads'):
+        step.bind(3)
+    for name in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        monkeypatch.setenv(name, '8')
+    assert step.bind(2)['affinity_pinned'] == [0, 2]
+    assert affinity == {0, 2}
+
+
+def test_affinity_release_requires_successful_accounting_for_every_step(monkeypatch):
+    import resume_curnagl_affinity as release
+    monkeypatch.setattr(release.subprocess, 'check_output', lambda *args, **kwargs:
+                        '123|COMPLETED|0:0|\n123.0|FAILED|1:0|\n')
+    with pytest.raises(ValueError, match='did not finish successfully'):
+        release.completed(123)
+    monkeypatch.setattr(release.subprocess, 'check_output', lambda *args, **kwargs: '')
+    with pytest.raises(ValueError, match='No accounting'):
+        release.completed(123)
+
+
+def test_single_thread_recovery_preserves_unfinished_ml_only(tmp_path):
+    import json
+    from prepare_curnagl_step_recovery import preserve_incomplete_ml
+    output = tmp_path / 'results'
+    (tmp_path / 'plan.json').write_text(json.dumps({
+        'config': {'output_dir': str(output)}, 'families': {'CATH__1': {}},
+        'methods': {'AA': {'kind': 'AA'}, 'FT2_40': {'kind': 'FT2'}, 'FT': {'kind': 'FoldTree'}}}))
+    incomplete = output / 'families/CATH__1/AA'
+    incomplete.mkdir(parents=True)
+    (incomplete / 'provenance.json').write_text('original eight-thread attempt')
+    complete = output / 'families/CATH__1/FT2_40'
+    complete.mkdir()
+    (complete / 'completed.json').write_text('original completed result')
+    structural = output / 'families/CATH__1/FT'
+    structural.mkdir()
+    assert len(preserve_incomplete_ml(tmp_path, '123')) == 1
+    assert not incomplete.exists()
+    assert (tmp_path / 'recovery/single-thread-123/CATH__1/AA/provenance.json').read_text() == 'original eight-thread attempt'
+    assert (complete / 'completed.json').read_text() == 'original completed result'
+    assert structural.is_dir()
+    with pytest.raises(FileExistsError):
+        preserve_incomplete_ml(tmp_path, '123')
 
 
 def test_recovery_preserves_incomplete_native_outputs_without_touching_complete_ones(tmp_path):

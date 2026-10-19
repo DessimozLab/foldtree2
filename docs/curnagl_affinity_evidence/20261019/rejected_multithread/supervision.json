@@ -1,0 +1,104 @@
+{
+  "phase": "full",
+  "jobs": {
+    "inventory": "66082884",
+    "runtime-check": "66047940",
+    "pilot": "66136808",
+    "full": "66226560"
+  },
+  "attempts": {
+    "inventory": 1,
+    "runtime-check": 0,
+    "pilot": 0,
+    "full": 0
+  },
+  "status": "active",
+  "stop_after_pilot": false,
+  "cohort_validation_job": "66047632",
+  "heartbeat_utc": "2026-10-19T10:56:41.231763+00:00",
+  "free_bytes": 352321257472,
+  "accounting": [],
+  "previous_jobs": [
+    {
+      "phase": "inventory",
+      "job_id": "66048014",
+      "state": "TIMEOUT",
+      "time_limit": "4:00:00"
+    },
+    {
+      "phase": "pilot",
+      "job_id": "66048060",
+      "state": "CANCELLED",
+      "reason": "Unsatisfiable old dependency; scheduler refused dependency repair"
+    },
+    {
+      "phase": "pilot",
+      "job_id": "66082935",
+      "state": "FAILED",
+      "reason": "RAxML detected 4 physical cores for 8 threads; repaired Slurm physical-core allocation, verified probe 66136592 and search 66136611"
+    },
+    {
+      "phase": "pilot",
+      "job_id": "66136646",
+      "state": "FAILED",
+      "reason": "Incomplete native 3Di signature embeds previous physical-core count; preserved stages under recovery/20261017-cpu-fix before clean restart"
+    },
+    {
+      "phase": "pilot",
+      "job_id": "66136699",
+      "state": "FAILED",
+      "reason": "Eight-core hint insufficient for shipped RAxML parallel parsimony; production rand10/pars10 probe 66136761 passes startup with 16 reserved CPUs and 8 tool threads"
+    },
+    {
+      "phase": "full",
+      "job_id": "66137560",
+      "state": "FAILED",
+      "reason": "RAxML barrier-time oversubscription under shared CPU mask; exact exclusive per-rule Slurm steps validated by four concurrent searches 66157153 and failed-family workflow regression 66157490"
+    },
+    {
+      "phase": "full",
+      "job_id": "66157528",
+      "state": "FAILED",
+      "reason": "User-authorized physical-affinity repair; two-node RAxML and 13-method workflow checks passed"
+    }
+  ],
+  "full_release_authorization": "User requested finishing CATH and starting TCS, 2026-10-17; pilot/provenance/memory/quota gates remain mandatory",
+  "inventory_recovery_time_limit": "24:00:00",
+  "pilot_recovery_time_limit": "12:00:00",
+  "runtime_gate": "passed",
+  "cpu_allocation_recovery": {
+    "hint": "nomultithread",
+    "ntasks": 1,
+    "binding": "srun --cpu-bind=cores",
+    "authorization": "User requested RAxML repair and resumption, 2026-10-17",
+    "reserved_pilot_cpus": 16
+  },
+  "pilot_peak_rss_mb": 1030.96875,
+  "slurm_step_recovery": {
+    "workflow": "slurm-steps.smk",
+    "concurrent_probe": "66157153",
+    "workflow_regression": "66157490",
+    "preservation_job": "66157494",
+    "authorization": "User requested full-run repair and continuation, 2026-10-17T23:30+02:00",
+    "utc": "2026-10-17T21:40:28.530529+00:00"
+  },
+  "slurm_state": "PENDING",
+  "physical_affinity_recovery": {
+    "source": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/foldtree2/workflow/curnagl_tcs.smk",
+    "source_sha256": "f2cc85c57d886188b0e6e06be66fd6851c2bb70dad35ead0cc6cc2fb3fd0f29d",
+    "workflow": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/slurm-steps.smk",
+    "workflow_sha256": "f111eb3ac0ab6eb100fe77f51a0a59b0f1038162ce0686cab7f00b94b47d7686",
+    "worker": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/curnagl_physical_step.py",
+    "worker_sha256": "7d097d379d06a2394d26c3cd95dc3a8f81c92cea82500b7c1d2cb30295e0fa6b",
+    "probe_jobs": [
+      66226303,
+      66226375
+    ],
+    "probe_nodes": [
+      "dna003",
+      "dna006"
+    ],
+    "workflow_job": 66226386,
+    "policy": "two reserved CPUs per tool thread; topology-verified physical affinity; two simultaneous eight-thread searches in 32-CPU allocation"
+  }
+}
