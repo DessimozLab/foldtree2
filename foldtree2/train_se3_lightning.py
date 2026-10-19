@@ -445,6 +445,17 @@ class Refiner(pl.LightningModule):
                    cursor=self.stream['cursor'])
 
 
+def validate_experiment_architecture(config):
+    supported = ({'hidden': 32, 'depth': 2, 'heads': 2},
+                 {'hidden': 64, 'depth': 4, 'heads': 4},
+                 {'hidden': 80, 'depth': 4, 'heads': 4})
+    if config['model'] not in supported:
+        raise ValueError('Unsupported architecture; the depth-six model remains blocked by numerical gates')
+    if config['model']['hidden'] == 80 and (not config.get('tensor_ff_input_norm')
+            or config.get('gradient_accumulation_dtype') != 'float64'):
+        raise ValueError('Width-80 experiments require tensor FF input normalization and float64 gradient accumulation')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True)
@@ -465,8 +476,7 @@ def main():
     if args.allow_loss_change and args.allow_refinement_change:
         parser.error('Change the loss and architecture in separate experiments')
     config = yaml.safe_load(Path(args.config).read_text())
-    if config['model'] not in ({'hidden':32,'depth':2,'heads':2}, {'hidden':64,'depth':4,'heads':4}):
-        raise ValueError('This architecture failed float32 numerical gates; depth-six rollout remains blocked')
+    validate_experiment_architecture(config)
     if config['seed'] != 42 or config['global_batch'] != 16 or config['max_residues'] != 256:
         raise ValueError('Canonical seed/global batch/length must be 42/16/256')
     torch.set_num_threads(2); pl.seed_everything(42, workers=True)

@@ -16,20 +16,20 @@ PREFIX='scale_capacity_v3_'
 STAGES=(PREFIX+'debug_one',PREFIX+'debug_two')+tuple(PREFIX+a for a in ARMS)
 
 
-def check_name(arm,mode):
+def check_name(arm,mode,prefix=PREFIX):
     if arm not in ARMS or mode not in ('resume','single','two'):raise ValueError('Unknown architecture check')
-    return PREFIX+'check_'+arm+'_'+mode
+    return prefix+'check_'+arm+'_'+mode
 
 
-def prepare_checks(code):
+def prepare_checks(code,prefix=PREFIX):
     """Derive check configs without altering canonical configs or provenance knobs."""
     code=Path(code);directory=code/'runtime-configs';directory.mkdir(exist_ok=True)
     records={}
     for arm in ARMS:
-        source=code/'configs/clariden_se3'/(PREFIX+arm+'.yaml');text=source.read_text()
+        source=code/'configs/clariden_se3'/(prefix+arm+'.yaml');text=source.read_text()
         for mode in ('resume','single','two'):
-            name=check_name(arm,mode)
-            old='output: '+str(ROOT/'runs'/(PREFIX+arm))+'\n'
+            name=check_name(arm,mode,prefix)
+            old='output: '+str(ROOT/'runs'/(prefix+arm))+'\n'
             if text.count(old)!=1 or text.count('nodes: 2\n')!=1:
                 raise ValueError('Unexpected canonical configuration: '+arm)
             value=text.replace(old,'output: '+str(ROOT/'runs'/name)+'\n')
@@ -48,10 +48,11 @@ def verifier(stage,arm,candidate,control,exact=False):
     return 'srun --nodes=1 --ntasks=1 --environment="$EDF_PATH" --network=disable_rdzv_get --mpi=none --cpu-bind=none --kill-on-bad-exit=1 bash -c '+shlex.quote(check)+'\n'
 
 
-def command(code,stage,dependency=None):
+def command(code,stage,dependency=None,prefix=PREFIX):
     code=Path(code).resolve()
-    if stage not in STAGES:raise ValueError('Unknown architecture stage')
-    one=stage==PREFIX+'debug_one';check=stage in STAGES[:2]
+    stages=(prefix+'debug_one',prefix+'debug_two')+tuple(prefix+a for a in ARMS)
+    if stage not in stages:raise ValueError('Unknown architecture stage')
+    one=stage==prefix+'debug_one';check=stage in stages[:2]
     nodes=1 if one else 2;minutes=20 if one else 10 if check else 45
     cmd=['sbatch','--account=a0117','--partition=normal',f'--nodes={nodes}',f'--time={minutes}',
          '--ntasks-per-node=1','--gpus-per-task=4','--cpus-per-task=8','--exclude=nid007494',
@@ -63,7 +64,7 @@ def command(code,stage,dependency=None):
     warm=''  # Both width arms start fresh; no shape-incompatible checkpoint import.
     body='set -eu\n'
     for arm in ARMS:
-        single=check_name(arm,'single');candidate=check_name(arm,'resume' if one else 'two')
+        single=check_name(arm,'single',prefix);candidate=check_name(arm,'resume' if one else 'two',prefix)
         config='runtime-configs/'+candidate+'.yaml'
         if one:
             body+=f'{train} --config {config}{warm} --stop-after-updates 1\n'
@@ -74,14 +75,14 @@ def command(code,stage,dependency=None):
     return cmd+['--wrap',body]
 
 
-def validate_inputs(code):
+def validate_inputs(code,prefix=PREFIX):
     code=Path(code)
     if hashlib.sha256(PARENT.read_bytes()).hexdigest()!=PARENT_SHA:raise ValueError('Parent checkpoint mismatch')
     manifest=json.loads(Path('/iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192/manifest.json').read_text())
     expected=manifest.pop('bundle_sha256')
     if expected!=BUNDLE_SHA or hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()!=expected:
         raise ValueError('Frozen cache/split mismatch')
-    for stage in tuple(PREFIX+a for a in ARMS)+tuple(check_name(a,m) for a in ARMS for m in ('resume','single','two')):
+    for stage in tuple(prefix+a for a in ARMS)+tuple(check_name(a,m,prefix) for a in ARMS for m in ('resume','single','two')):
         if (ROOT/'runs'/stage).exists():raise ValueError('Output already exists: '+stage)
     if not (ROOT/'environments/028cc752968f218de4e5837f75b2e7a8a004162a/bin/activate').is_file():
         raise ValueError('Validated training environment missing')

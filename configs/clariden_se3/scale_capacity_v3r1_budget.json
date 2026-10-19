@@ -1,0 +1,17 @@
+{
+  "ceiling_gpuh": 256,
+  "stages": [
+    {
+      "name": "scale_capacity_v3r1_debug_one",
+      "nodes": 1,
+      "hours": 0.3333333333333333,
+      "gpuh": 1.3333333333333333
+    }
+  ],
+  "reused_reservations": {
+    "scale_capacity_v3r1_debug_two": "scale_capacity_v3_debug_two",
+    "scale_capacity_v3r1_width64": "scale_capacity_v3_width64",
+    "scale_capacity_v3r1_width80": "scale_capacity_v3_width80"
+  },
+  "policy": "Reuse only verified CANCELLED/never-started reservations once; preserve all prior ledger rows and receipts. The failed one-node stage is fully charged; its repeat receives a new 1.333333 GPUh reservation."
+}

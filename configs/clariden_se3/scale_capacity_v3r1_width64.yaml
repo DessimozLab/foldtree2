@@ -1,0 +1,37 @@
+seed: 42
+global_batch: 16
+learning_rate: 0.0005
+max_residues: 256
+train_count: 8192
+val_count: 512
+epochs: 4
+nodes: 2
+devices: 4
+accelerator: cuda
+checkpoint_every: 64
+scheduler: false
+structural_metrics: true
+min_delta: 0.0
+cache: /iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192
+output: /capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/scale_capacity_v3r1_width64
+model:
+  hidden: 64
+  depth: 4
+  heads: 4
+tensor_ff_input_norm: true
+distributed_timeout_seconds: 180
+gradient_accumulation_dtype: float64
+refinement_steps: 2
+refinement_loss_weights:
+- 0.0
+- 1.0
+checkpoint_metric: evaluation_fape
+pair_information:
+  protocol: decoder_pairs_v1
+  decoder_sha256: b9642afd20db829a5ce2dd1c908c86df0c351319347fccd2ad1d335b3aa9089d
+  contact_temperature: 2.4314587116241455
+  contact_bias: -1.3124585151672363
+loss:
+  protocol: balanced_geometry_v1
+  weights:
+    bend: 0.5

@@ -1,5 +1,13 @@
 # Conditional step 5: data and capacity
 
+**2026-10-19:** the original capacity chain stopped before width-80 training
+because a stale CLI allowlist rejected the requested architecture. Width-64
+exact recovery passed bitwise. No four-epoch capacity trial ran. The CLI fix,
+bounded recovery and original failure evidence are documented in
+[the recovery report](se3_scale_capacity_recovery_20261019.md).
+The CPU export completed with **10,240 training IDs**, the retained 512
+development IDs and 512 fresh confirmation IDs.
+
 The completed bend/recycling quality gate passed with winner `bend05`, checkpoint
 SHA256 `ec74e62f44ae58cc4d99ac977e88fb1795dabec8f3e2e342c01d8930885d1145`.
 This meets the user's condition for bounded more-data/capacity experiments.
@@ -32,9 +40,9 @@ hash are verified again before queuing capacity work.
 python3 -m scripts.submit_se3_scale_capacity --available-credit 15 --submit
 ```
 
-## Data preparation in progress
+## Data preparation completed
 
-`prepare_se3_scaleup_inputs.py` targets **16,384 training structures**, retains
+`prepare_se3_scaleup_inputs.py` targeted **16,384 training structures**, retains
 all old 8,192 training IDs and 512 development IDs, and reserves **512 fresh
 confirmation structures**. All selections exclude earlier training/holdout IDs,
 respect the 256-residue cap, and use seed 42. Confirmation IDs are stored
@@ -85,10 +93,14 @@ At submission, the first check waited on priority and subsequent jobs on
 successful dependencies. The ledger confirms **236.333333 / 256 GPUh** reserved.
 [Receipts](se3_clariden_evidence/scale_capacity_v3/submission.json) retain all
 commands and checksums. No new capacity result is inferred from submission.
-The bounded expanded-cohort preparation is a separate running CPU operation;
-expanded-data extraction/training is not yet submitted.
+The expanded-cohort CPU preparation subsequently completed: 2,561 exported
+graphs (2,048 added training IDs, 512 confirmation IDs, one parity structure),
+2.4 GiB of existing graph tensors, export identity
+`2f45d9c5a8b35ef3adb6bf1dcd1b2ec69b89017adf9a5f1cf52c2b66b8d1a617`.
+No expanded-data extraction/training is submitted yet. Confirmation IDs remain
+separate from development/checkpoint selection.
 
 The 16k shortage does not change the running capacity configs or residue cap.
-The data transfer/extraction/train stages remain pending completed cohort input
-validation. The failed selection is preserved in `runs/se3_scaleup_v3/inputs_v2/`
+The data transfer/extraction/train stages remain pending frozen GPU extraction
+and bundle validation. The failed selection is preserved in `runs/se3_scaleup_v3/inputs_v2/`
 and `prepare_v2.log`; it produced no published frozen bundle.
