@@ -82,3 +82,34 @@ known blocked depth-six configuration. The capacity tests exercise finite
 two-pass learning and pair-head updates for both widths, the actual width-80
 CLI, and single-use reservation recovery. CPU numerical checks do not replace
 the pending one-/two-node CUDA checks.
+
+## Recovery submission
+
+Pinned training code: `9b661111538f9288f1eb86a8dc4f78d422efca9c`, branch
+`se3-recycled-refiner`. The transferred archive passed all 46 required release
+dependency checks and SHA256 verification:
+`852fb76a5cad72efa3bc543284e97cf31f723285bac2565e86ab8f9d7327bff9`.
+Live accounting, parent-reservation checks and all four Slurm test submissions
+passed before real submission.
+
+| Job | Stage | Dependency |
+|---:|---|---:|
+| 3700111 | One-node exact-resume checks, both widths | — |
+| 3700112 | Two-node agreement checks, both widths | 3700111 |
+| 3700114 | Fresh width 64, four epochs | 3700112 |
+| 3700115 | Fresh width 80, four epochs | 3700114 |
+
+At submission the first job was pending scheduling. The evidence refresh
+observed 3700111 running on `nid006118` at 34 seconds elapsed; the others still
+waited on successful dependencies. These receipts establish execution startup,
+not completed CUDA
+validation or learning. The ledger confirms **237.666667 GPUh** reserved.
+[Recovery receipts and observed scheduler state](se3_clariden_evidence/scale_capacity_v3/recovery_20261019.json)
+record the complete commands, dependency chain and reservation links.
+
+On Clariden, logs are under
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/9b661111538f9288f1eb86a8dc4f78d422efca9c/logs/scale_capacity_v3r1_*-<job>.out`.
+Checkpoints/events use the corresponding `runs/scale_capacity_v3r1_*` directory
+below the same SE3 root; gate artifacts and submission receipts use `artifacts/`.
+No trained width-80 quality claim is justified until the checks and matched
+training comparison finish.

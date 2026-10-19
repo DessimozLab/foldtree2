@@ -65,10 +65,12 @@ counts and rejected sizes are logged. Only completed `inputs_v3` may be consumed
 
 Next, stage and validate those inputs, extract only added frozen entries on
 Clariden, then compare the winning trained width-64 model continued on old versus
-expanded training data. Match optimizer updates/sample visits (e.g. old data four
-epochs versus expanded data two epochs) and preserve the development split. Run
+expanded training data. Match optimizer updates/sample visits: five epochs on
+8,192 versus four on 10,240 gives 2,560 updates each at global batch 16. Preserve
+the development split. Run
 fresh confirmation only after selecting checkpoints. Reserve all extraction,
-stability and training allocations within the remaining 19.667 GPUh before
+stability and training allocations within the remaining 18.333 GPUh after the
+bounded capacity recovery, before
 submitting; no expanded-data training job exists yet.
 
 Local tests cover finite two-pass training at both widths, updated pair heads,
@@ -100,7 +102,13 @@ graphs (2,048 added training IDs, 512 confirmation IDs, one parity structure),
 No expanded-data extraction/training is submitted yet. Confirmation IDs remain
 separate from development/checkpoint selection.
 
-The 16k shortage does not change the running capacity configs or residue cap.
+The 16k shortage does not change the capacity configurations or residue cap.
 The data transfer/extraction/train stages remain pending frozen GPU extraction
 and bundle validation. The failed selection is preserved in `runs/se3_scaleup_v3/inputs_v2/`
 and `prepare_v2.log`; it produced no published frozen bundle.
+
+The CLI allowlist recovery is now queued as 3700111 → 3700112 → 3700114 →
+3700115, with fresh pinned code `9b66111`. See the
+[recovery report](se3_scale_capacity_recovery_20261019.md) for accounting and
+receipts. Reserved total is now 237.666667 GPUh; no completed capacity training
+result is available at submission.
