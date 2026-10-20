@@ -97,3 +97,38 @@ remain in force. Launch verification is not a completed full benchmark.
 Operational files are under `ops-20261019-single-thread/`; earlier rejected
 policy files remain under `ops-20261019-affinity-v2/`. Reports and accounting
 are retained in [the evidence directory](curnagl_affinity_evidence/20261019/).
+
+## Keep-going continuation, 2026-10-20
+
+Full job 66226757 stopped after 9h37m with 7,947/103,067 workflow steps
+reported complete (8%). The stopping task was the TCS score for
+`CATH__1.10.287.740/FoldTree_fident_exp`: its tree taxa differ from the frozen
+taxonomy. The supervisor preserved the failure and did not retry it.
+
+The user requested Snakemake `-k` so independent tasks continue despite failed
+tasks; diagnosis of incomplete results is deferred. The operational launcher
+now adds only `-k` to its existing Snakemake invocation. The 32-CPU, 96-GB,
+24-hour CPU allocation, startup RAxML probes, provenance assertions, frozen
+taxonomy checks and quota checks remain in force. Completed outputs are reused
+under their existing signatures; no taxa are pruned and no failed score is
+marked successful. Final aggregation remains blocked until its dependencies
+complete, so an eventual failed Slurm state can coexist with useful progress.
+
+[`scripts/resume_curnagl_keepgoing.py`](../scripts/resume_curnagl_keepgoing.py)
+checks the identified failed allocation and launcher provenance, backs up the
+launcher/supervision state, validates the changed batch script and activates the
+existing supervisor. It rejects duplicate application. Local checks verified
+that only `-k` is inserted and malformed/repeated changes are rejected.
+
+Activation job **66276634** was submitted. The old operational files are saved
+under `ops-20261020-keepgoing/`; its `receipt.json` records the activation and
+new launcher SHA256
+`06f3657a2596c291976c0f61a2878e2768d8e09f072aff5d956544fecb4df1d4`.
+The supervisor keeps its existing bounded infrastructure retries; scientific
+failures still require inspection after independent tasks finish.
+
+Activation completed and submitted full job **66276636**, with supervisor
+callback **66276638**. The full job is **PENDING (QOSGrpNodeLimit)** at the
+status check; the callback waits on its completion. Quota validation passed
+with approximately 339 GB of project headroom. This is a queued continuation,
+not a completed benchmark.
