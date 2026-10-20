@@ -1,5 +1,7 @@
 # Conditional step 5: data and capacity
 
+For a new agent, start with the [SE(3) decoder handoff](se3_decoder_handoff.md).
+
 **2026-10-20 update:** Both recovered four-epoch capacity trials completed,
 including exact-resume/topology checks. Width 80 fails the aggregate quality
 thresholds despite a small FAPE gain; keep the trained width-64 incumbent.
