@@ -1,5 +1,10 @@
 # Conditional step 5: data and capacity
 
+**2026-10-20 update:** Both recovered four-epoch capacity trials completed,
+including exact-resume/topology checks. Width 80 fails the aggregate quality
+thresholds despite a small FAPE gain; keep the trained width-64 incumbent.
+[Results, loss tradeoff and access diagnosis](se3_clariden_diagnosis_20261020.md).
+
 **2026-10-19:** the original capacity chain stopped before width-80 training
 because a stale CLI allowlist rejected the requested architecture. Width-64
 exact recovery passed bitwise. No four-epoch capacity trial ran. The CLI fix,

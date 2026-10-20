@@ -1,0 +1,111 @@
+{
+  "source": "Aggregates read through authenticated Clariden SSH earlier on 2026-10-20; transcribed from the successful status query. Current second-hop access fails. Paired rows/checkpoint hashes have not yet been downloaded.",
+  "code_revision": "9b661111538f9288f1eb86a8dc4f78d422efca9c",
+  "initialization": "fresh, matched loss/pair/recycling/data settings",
+  "train_count": 8192,
+  "validation_count": 512,
+  "epochs": 4,
+  "updates": 2048,
+  "width64": {
+    "job_id": "3700114",
+    "state": "COMPLETED",
+    "elapsed_seconds": 1486,
+    "training_geometry": [
+      4.323027816863032,
+      3.7626122406891227,
+      3.193978161621999,
+      3.1054133118923346
+    ],
+    "best_epoch": 3,
+    "best_metrics": {
+      "geometry": 3.1103797558462247,
+      "fape": 0.9263712903484702,
+      "ca_rmsd": 15.927916574291885,
+      "tm_score": 0.24108070397661585,
+      "lddt": 0.35043375223176554,
+      "ca_bond_mae": 0.295244234992424,
+      "ca_bend_mae_radians": 0.4085661593853729,
+      "ca_torsion_mae_radians": 1.4975863557505749,
+      "angle_mae_radians": 0.5494570944283623
+    },
+    "recorded_failures": 0,
+    "validation_epoch1_components": {
+      "geometry": 4.039229523157701,
+      "training_fape": 1.8865066831931472,
+      "bond": 0.7876686801901087,
+      "distance": 1.226676772814244,
+      "bend": 0.27675474327406846
+    },
+    "validation_epoch4_components": {
+      "geometry": 3.0348454519407824,
+      "training_fape": 2.010885394352954,
+      "bond": 0.061451657202269416,
+      "distance": 0.9117842146079056,
+      "bend": 0.10144839508939185
+    }
+  },
+  "width80": {
+    "job_id": "3700115",
+    "state": "COMPLETED",
+    "elapsed_seconds": 1487,
+    "training_geometry": [
+      4.337317247045576,
+      4.000223176430154,
+      3.394558945103199,
+      3.183619428109523
+    ],
+    "best_epoch": 4,
+    "best_metrics": {
+      "geometry": 3.100568840862252,
+      "fape": 0.9261022460414097,
+      "ca_rmsd": 15.830606570467353,
+      "tm_score": 0.2435504543966524,
+      "lddt": 0.35342782584484667,
+      "ca_bond_mae": 0.36153673750231974,
+      "ca_bend_mae_radians": 0.45975042117061093,
+      "ca_torsion_mae_radians": 1.5111312849880898,
+      "angle_mae_radians": 0.5540790192026179
+    },
+    "recorded_failures": 0,
+    "validation_epoch1_components": {
+      "geometry": 4.135238405782729,
+      "training_fape": 1.8859258402662817,
+      "bond": 0.8663808802957647,
+      "distance": 1.242778528132476,
+      "bend": 0.28030628769192845
+    },
+    "validation_epoch4_components": {
+      "geometry": 3.100568840862252,
+      "training_fape": 1.9532474449079018,
+      "bond": 0.10001768828078639,
+      "distance": 0.9830413365270942,
+      "bend": 0.12852473075326998
+    }
+  },
+  "stability_gates": {
+    "one_node_width64": {
+      "passed": true,
+      "maximum_parameter_buffer_difference": 0.0
+    },
+    "one_node_width80": {
+      "passed": true,
+      "maximum_parameter_buffer_difference": 0.0
+    },
+    "two_node_width64": {
+      "passed": true,
+      "maximum_parameter_buffer_difference": 0.0
+    },
+    "two_node_width80": {
+      "passed": true,
+      "maximum_parameter_buffer_difference": 0.0
+    }
+  },
+  "aggregate_comparison": {
+    "geometry_reduction": 0.003154249883967508,
+    "fape_delta": -0.0002690443070605397,
+    "bond_relative_change": 0.22453445199902644,
+    "bend_relative_change": 0.1252777808672092,
+    "passes_existing_aggregate_thresholds": false,
+    "paired_ci_available": false
+  }
+}
