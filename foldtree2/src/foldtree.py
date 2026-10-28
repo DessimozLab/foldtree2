@@ -1,3 +1,9 @@
+"""Historical FoldTree distance-tree orchestration.
+
+This module retains legacy imports (including corecut) absent from the supported
+runtime. Use ft2treebuilder for production inference; do not treat this wrapper
+as an independently installable CLI.
+"""
 
 from foldtree2.src import foldseek2tree
 from foldtree2.src import corecut

@@ -1,3 +1,8 @@
+"""Legacy AFDB/UniProt download and sequence extraction helpers.
+
+These functions perform network and filesystem operations. Use isolated data
+directories; downloaded references are inputs, not packaged model resources.
+"""
 
 import os 
 import wget 

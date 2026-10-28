@@ -1,3 +1,8 @@
+"""Chebyshev graph convolution with lazy channel initialization.
+
+StableChebConv supports the heterogeneous graph wrappers' paired input-channel
+convention; its edge/Laplacian normalization must match the supplied graph.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

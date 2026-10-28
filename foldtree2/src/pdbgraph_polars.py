@@ -1,3 +1,8 @@
+"""Experimental alternative graph/dataset implementation retained for research.
+
+Use pdbgraphmk2 for supported CLI conversion. Verify feature compatibility before
+using this module's graphs with an existing encoder.
+"""
 import copy
 import importlib
 import warnings

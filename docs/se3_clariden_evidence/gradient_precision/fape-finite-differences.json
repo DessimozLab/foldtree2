@@ -1,0 +1,130 @@
+[
+  {
+    "id": "A0A0F9FY66",
+    "coordinate_gradient_norm": 0.39191283703856167,
+    "minimum_valid_bend_sine": 0.028506998244415778,
+    "directional_derivative": 0.005590956635155272,
+    "finite_difference": 0.005590957030676691,
+    "absolute_derivative_error": 3.955214185683009e-10
+  },
+  {
+    "id": "A0A095AHV2",
+    "coordinate_gradient_norm": 0.7750073633519801,
+    "minimum_valid_bend_sine": 0.0061432314325245594,
+    "directional_derivative": -0.028643804781846402,
+    "finite_difference": -0.028643804439454357,
+    "absolute_derivative_error": 3.4239204527164446e-10
+  },
+  {
+    "id": "A0A847YHM2",
+    "coordinate_gradient_norm": 0.5822853950939156,
+    "minimum_valid_bend_sine": 0.009576091380526482,
+    "directional_derivative": 0.008829870074322616,
+    "finite_difference": 0.00882987016836978,
+    "absolute_derivative_error": 9.404716415362113e-11
+  },
+  {
+    "id": "A0A7M7JWK3",
+    "coordinate_gradient_norm": 0.15387373096935114,
+    "minimum_valid_bend_sine": 0.026459721387242684,
+    "directional_derivative": 0.006995375276501483,
+    "finite_difference": 0.006995375390062009,
+    "absolute_derivative_error": 1.1356052556643625e-10
+  },
+  {
+    "id": "A0A372L7A4",
+    "coordinate_gradient_norm": 0.19071677631136003,
+    "minimum_valid_bend_sine": 0.025930747180270584,
+    "directional_derivative": -0.00130693555241249,
+    "finite_difference": -0.0013069354487527107,
+    "absolute_derivative_error": 1.0365977932795534e-10
+  },
+  {
+    "id": "A0A6N8WHS2",
+    "coordinate_gradient_norm": 0.2978933271749586,
+    "minimum_valid_bend_sine": 0.02749788598115329,
+    "directional_derivative": 0.013559456650280759,
+    "finite_difference": 0.013559456668588155,
+    "absolute_derivative_error": 1.8307395530103854e-11
+  },
+  {
+    "id": "A0A3D9VDX0",
+    "coordinate_gradient_norm": 0.22250077202461477,
+    "minimum_valid_bend_sine": 0.04831821215395295,
+    "directional_derivative": 0.016543321961093635,
+    "finite_difference": 0.01654332204559239,
+    "absolute_derivative_error": 8.449875521510108e-11
+  },
+  {
+    "id": "A0A2R6NTI7",
+    "coordinate_gradient_norm": 0.7956027574337818,
+    "minimum_valid_bend_sine": 0.03738074514371457,
+    "directional_derivative": -0.0271375722428005,
+    "finite_difference": -0.027137571967372764,
+    "absolute_derivative_error": 2.7542773617383887e-10
+  },
+  {
+    "id": "A0A2V8LRG3",
+    "coordinate_gradient_norm": 0.44323251110083745,
+    "minimum_valid_bend_sine": 0.009242756354477012,
+    "directional_derivative": 0.01317742719596423,
+    "finite_difference": 0.013177427038435496,
+    "absolute_derivative_error": 1.575287331134767e-10
+  },
+  {
+    "id": "A0A2Z6NAK4",
+    "coordinate_gradient_norm": 0.500270490044151,
+    "minimum_valid_bend_sine": 0.028770684366735876,
+    "directional_derivative": 0.03617822262180941,
+    "finite_difference": 0.036178222639904334,
+    "absolute_derivative_error": 1.8094921394595787e-11
+  },
+  {
+    "id": "A0A090X0Q2",
+    "coordinate_gradient_norm": 1.0392966789224822,
+    "minimum_valid_bend_sine": 0.04936008010677549,
+    "directional_derivative": 0.03605801444240102,
+    "finite_difference": 0.036058014130091465,
+    "absolute_derivative_error": 3.123095532187037e-10
+  },
+  {
+    "id": "A0A1B8SLC8",
+    "coordinate_gradient_norm": 0.7769138463598564,
+    "minimum_valid_bend_sine": 0.03221056746748478,
+    "directional_derivative": -0.11396313215956,
+    "finite_difference": -0.11396313248646095,
+    "absolute_derivative_error": 3.2690095075338377e-10
+  },
+  {
+    "id": "A0A0Q8DBS1",
+    "coordinate_gradient_norm": 0.3022031115619483,
+    "minimum_valid_bend_sine": 0.02014739006592516,
+    "directional_derivative": -0.011612962060185706,
+    "finite_difference": -0.011612961925422383,
+    "absolute_derivative_error": 1.3476332376416433e-10
+  },
+  {
+    "id": "A0A7Y0PE90",
+    "coordinate_gradient_norm": 0.46694479453547333,
+    "minimum_valid_bend_sine": 0.0075752929591552465,
+    "directional_derivative": -0.002144214111388364,
+    "finite_difference": -0.002144214583665871,
+    "absolute_derivative_error": 4.722775070326035e-10
+  },
+  {
+    "id": "A0A836SY22",
+    "coordinate_gradient_norm": 0.5873951492203521,
+    "minimum_valid_bend_sine": 0.015501051581896028,
+    "directional_derivative": -0.01883509182244864,
+    "finite_difference": -0.018835092152613697,
+    "absolute_derivative_error": 3.30165058487486e-10
+  },
+  {
+    "id": "A0A1V3X0R5",
+    "coordinate_gradient_norm": 0.11430703764570385,
+    "minimum_valid_bend_sine": 0.03966079619358075,
+    "directional_derivative": 0.00039136165281912234,
+    "finite_difference": 0.00039136138774154006,
+    "absolute_derivative_error": 2.65077582280171e-10
+  }
+]

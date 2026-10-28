@@ -380,7 +380,40 @@ counts/exclusions, full method coverage, any accepted limitations, and links to
 the summary tables. Adding a method requires expanding the registry, pilot gate,
 coverage tests and this document before launching a new frozen run.
 
-### Cluster-resident advancement
+### Login-node controller with Slurm jobs
+
+The v10 run switched to this mode on 2026-10-23 after the monolithic full-run
+allocation timed out and its retry encountered an abandoned workflow lock.
+Snakemake now runs on the login node inside tmux session
+`foldtree2-tcs-v10-20261023`, using the deployment-local `login-slurm/` profile.
+Only orchestration runs there: every executable rule is submitted with `sbatch`
+and executes its existing physical-affinity wrapper on a compute node.
+
+The profile adapts the existing legacy `slurmsimple/simple` configuration, but
+uses the workflow's `slurm_cpus` resource rather than `{threads}` for Slurm
+reservations, preserves the existing runtime environment, and checks allocation
+state **and exit code** through `sacct`. Each rule has a 24-hour limit; the
+controller itself no longer inherits a 24-hour allocation limit. Submission is
+bounded to 16 jobs, two submissions/second, and global budgets of 32 reserved
+CPUs and 96,000 MB. Keep-going remains enabled; failed rules are reported
+explicitly, not silently retried or counted as successful coverage.
+
+Operational files and their hashes are retained in `login-slurm/`. Inspect
+`logs/login-controller-20261023.log`, `logs/cluster/JOB_ID.log`, the existing
+per-family logs and `login-controller-20261023.exit`. A zero exit and the
+full hash-bound validation marker are required before calling the run complete.
+At the initial 2026-10-23 14:19 CEST check, the controller was still actively
+building the large full-run DAG against shared storage; no rule jobs had yet
+been submitted. Starting tmux is not evidence of completed inference.
+The old callback supervisor is marked `login_controller_active` so it does not
+start a second full-run controller. Do not launch both execution modes together.
+
+The old lock was cleared with Snakemake's `--unlock` only after checking that
+there were no owned active Slurm jobs or Snakemake/controller processes on the
+login node; this authorization is recorded in the deployment. No source,
+cohort, model, scoring policy or completed result was changed for this switch.
+
+### Cluster-resident advancement (previous execution mode)
 
 [The callback controller](../scripts/advance_curnagl_tcs.py) calls the same
 [supervision gates](../scripts/supervise_curnagl_tcs.py), then submits one short

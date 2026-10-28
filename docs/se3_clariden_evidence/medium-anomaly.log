@@ -1,0 +1,43 @@
+<stdin>:7: UserWarning: Anomaly Detection has been enabled. This mode will increase the runtime and should only be enabled for debugging.
+Seed set to 42
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/autograd/graph.py:829: UserWarning: Error detected in LinalgVectorNormBackward0. Traceback of forward call that caused the error:
+  File "<stdin>", line 10, in <module>
+  File "/home/dmoi/projects/foldtree2/foldtree2/se3_validation.py", line 226, in forward
+    out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/dmoi/projects/foldtree2/foldtree2/src/se3_struct_decoder.py", line 1267, in forward
+    invariant, coors_out = self.gotennet(
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/dmoi/projects/foldtree2/foldtree2/src/se3_struct_decoder.py", line 64, in forward
+    h, c = self._safe_forward(atoms[i, idx].unsqueeze(0), coors[i, idx].unsqueeze(0), adj_mat=adj)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/gotennet_pytorch/gotennet.py", line 867, in forward
+    x = [norm(one_degree) for one_degree, norm in zip(x, self.x_final_norms)]
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/gotennet_pytorch/gotennet.py", line 867, in <listcomp>
+    x = [norm(one_degree) for one_degree, norm in zip(x, self.x_final_norms)]
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/gotennet_pytorch/gotennet.py", line 74, in forward
+    den = norms.norm(dim = -2, keepdim = True) * self.scale
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/_tensor.py", line 893, in norm
+    return torch.norm(self, p, dim, keepdim, dtype=dtype)
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/functional.py", line 1833, in norm
+    return torch.linalg.vector_norm(
+ (Triggered internally at /pytorch/torch/csrc/autograd/python_anomaly_mode.cpp:122.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/_tensor.py", line 647, in backward
+    torch.autograd.backward(
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/autograd/__init__.py", line 354, in backward
+    _engine_run_backward(
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/autograd/graph.py", line 829, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: Function 'LinalgVectorNormBackward0' returned nan values in its 0th output.

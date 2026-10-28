@@ -1,0 +1,425 @@
+# Training-data growth trial, 2026-10-14
+
+The user requested more structures after the normalized medium model completed
+the [16-epoch trial](se3_medium_fp64_trial_20261014.md) with stable finite training
+and improving held-out geometry. This is an explicit training-data growth
+experiment, independent of the still-unpassed matched model-capacity gate.
+The historical `prepare_se3_expanded_cohort` workflow remains unchanged; its
+new-validation and capacity-win protocol is a different experiment.
+
+Use **8,192 training structures / the same 512 validation structures**, up to
+256 residues per complete chain. Retain all existing 4,096 training IDs, add
+4,096 fresh eligible IDs from the existing mk2 HDF5, and exclude every retained
+holdout and the source cohort's earlier diagnostic IDs from additions. No graph
+regeneration or production-model retraining. Preserve frozen extractor and
+production checkpoint hashes, latent/codebook features, geometry contacts,
+targets/masks, calibration and seed lift. Reuse existing cached entries byte for
+byte and extract only the new entries. The source dataset has 20,090 structures;
+eligibility is determined from residue count, confidence, finite coordinates,
+defined frames and available angles, with skipped structures recorded.
+
+Both workstation GPUs were occupied during preparation. Use CPU for frozen
+extraction without interrupting either GPU workload; verify cache/uncached
+parity and unchanged frozen weights/absence of gradients. CPU preparation is
+not a local training run and spends no Clariden GPU allocation.
+
+```bash
+python -m scripts.prepare_se3_growth_cohort \
+  --config configs/clariden_se3/prepare_growth_local.yaml
+python -m scripts.export_se3_cache \
+  --cohort runs/se3_growth_cache_20261014/cohort.json \
+  --calibration runs/se3_loss_ablation_20261009/provenance.json \
+  --output runs/se3_clariden/bundle_growth_8192
+```
+
+Training configuration: `configs/clariden_se3/growth_fp64_8192.yaml`. Keep the
+previous width 64/depth 4/four-head model, input normalization, float64 gradient
+accumulation/reduction, float32 forward/backward/AdamW, seed 42, global batch 16,
+learning rate 5e-4, clipping at 1, losses, scheduler disabled and 16 epochs.
+Start from the same fresh initialization rather than warm-starting the previous
+trial, so training data is the intended change. This doubles the completed
+optimizer updates to **8,192** and training visits to **131,072**; comparisons
+must acknowledge both more unique structures and more optimization steps.
+
+Use two GH200 nodes/eight GPUs on `normal`, at most two hours: **16 GPUh** ceiling.
+The shared 256 GPUh ledger remains authoritative, moving from 68 to 84 GPUh
+conservative reservations on submission. The user previously confirmed enough
+credit; neither this ledger nor Slurm fair-share is a portal balance. The
+previous measured 26m40s trial suggests approximately 50 minutes including
+overheads; this is an estimate, not a guarantee. No auto-requeue or follow-on
+expansion is enabled.
+
+The bounded launcher checks earlier stability gates and completed learning,
+retained split membership, preprocessing identity and entry hashes. After
+staging a verified fresh revision directory and both durable and scratch cache:
+
+```bash
+python3 -m scripts.submit_se3_growth_trial --available-credit 256 --submit
+```
+
+Use the already verified pinned ARM image/venv and one torchrun launcher per
+node/four workers each. Durable cache:
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/cache/bundle_growth_8192`.
+Scratch cache: `/iopsstor/scratch/cscs/dmoi/se3/bundle_growth_8192`.
+Durable output: `/capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/growth_fp64_8192`.
+Save every 64 completed updates and every epoch, preserving optimizer, RNG,
+stream and strict provenance. Select `best.ckpt` by complete-epoch validation
+geometry and preserve every paired validation result.
+
+Assess learning curves, finite model/optimizer states, complete sample counts,
+paired FAPE, aligned CA RMSD, TM-score, lDDT, backbone geometry and angle errors
+against both raw decoder and the previous medium trial on identical holdout
+IDs. The repeatedly monitored holdout is not a new independent confirmation set;
+production pretraining independence is not claimed. A material regression or
+failure requires diagnosis rather than automatic resubmission or larger scale.
+
+## Preparation status
+
+The complete 8,192/512 cohort has been selected and audited: all original
+training IDs remain as the prefix, all 512 validation IDs remain identical,
+all 8,704 IDs are unique, and additions exclude prior diagnostic IDs. Selection
+recorded 4,970 skipped candidates. Eight targeted growth/exclusion tests passed;
+all twelve training source files match the completed medium trial byte for byte.
+Training settings differ only in training count and cache/output paths. The
+growth release passed all 20 archive dependency checks and is staged under
+revision `1d29587ba0a2a7b7a320e84461131476978210e9`, archive SHA-256
+`62470025a44c346c9ff937bdc99119707e9e9a5d3d0af9106dfee1185b74c7cc`.
+
+CPU preparation failed the existing cached-versus-uncached parity check on the
+first retained structure: coordinate maximum difference 0.000775367, exceeding
+`atol=rtol=1e-6`. No new frozen entries were published. The tolerance was not
+relaxed and the old cache was not overwritten. Preserve the selected cohort and
+failure log in `runs/se3_growth_cache_20261014` and
+`runs/se3_clariden/prepare-growth-20261014.log`. An earlier selection-only CPU
+attempt was interrupted to limit PyTorch threads to two; no cluster allocation
+was involved.
+
+Both workstation GPUs were occupied: GPU 0 by an ESM workload and GPU 1 by a
+resident llama-server. No workload was stopped. GPU extraction is pending a
+user-selected available device in the original local preparation attempt. **The growth training job has not been submitted,
+and its 16 GPUh reservation has not been made.** The shared ledger remains at
+68 GPUh. The frozen parity failure is a preparation issue, not a recurrence of
+the refiner's earlier training instability.
+
+## Clariden preparation replaces local extraction
+
+The user clarified that the work should run on Clariden and requested
+continuation. Frozen-output preparation is therefore moved to a bounded
+Clariden GPU allocation too; no workstation GPU needs to be freed. The earlier
+CPU failure remains preserved. A certificate-status check was briefly blocked
+by the automatic approval service's usage limit; the later user-directed
+continuation succeeded without changing credentials or bypassing review.
+
+`scripts/export_se3_graph_inputs.py` reads the existing HDF5 and serializes the
+unaltered graph tensors for the 4,096 additions and one retained parity probe.
+It verifies the original dataset/checkpoint/extractor hashes and records each
+graph file hash in a content-addressed export manifest. The full 39 GB HDF5
+stays on the workstation; only the selected existing graphs and the frozen
+11 MB encoder/decoder pair are transferred. This is a serialization of existing
+graphs, not regeneration. The transfer archive and every graph/checkpoint are
+hash-verified on Clariden.
+
+`alps/se3/extract_growth.sbatch` allocates one GH200 node on `normal` for at most
+30 minutes (**2 GPUh**). It runs the pinned image/verified venv with extraction-only
+Gemmi 0.7.3 isolated in a separate dependency directory. It requires the retained
+GPU cache parity check at the existing `atol=rtol=1e-6`, checks repeat extraction
+of the first new structure, and verifies production parameters remain unchanged
+with no gradients. It publishes a fresh durable 8,704-entry frozen bundle,
+copies it to scratch and verifies both inventories/hashes. Retained entries
+are copied byte for byte. New entries' ARM/PyTorch/CUDA producer details and
+the source graph export identity are bound into the bundle manifest.
+
+Only after all preparation checks pass, the host batch shell submits the exact
+authorized `growth_fp64_8192` training trial once. A preparation failure stops
+the chain; there is no silent parity relaxation or automatic retry. Both stages
+use the shared budget ledger: 68 prior conservative GPUh + 2 preparation + 16
+training = **86 GPUh**, within the user's 256 GPUh ceiling. This supersedes the
+earlier workstation-device dependency. Training mathematics and the retained
+validation protocol remain unchanged.
+
+Graph export completed with **4,097 graphs** and content identity
+`387d0bd1e5f59053bae86d7475de432841f72c2a3ddae42f6e74e18d1b809ca2`.
+An actual source/export round trip reproduced all 41 tensor fields of the
+retained probe exactly, including dtype and shape. Targeted split tests passed
+again (eight tests), and extraction/submission Python and batch-shell syntax
+checks passed. Raw graph inputs occupy about 3.9 GiB; the transfer archive is
+about 2.1 GiB, SHA-256
+`8632362c5cb93503c4b07bd60565420b683e6a91198bea3e283c1b1fd1d881b8`.
+
+The Clariden pipeline is pinned to `5b3946394aef1dae0756f617b186e81a9232520e`.
+Its code archive passed the 20-dependency release check, SHA-256
+`3d756da06409e129f63cd2604e53ef1311ab6f935c93dc3883baeac1613d31b7`.
+The data archive is verified before extraction submission. Export manifest and
+progress evidence are preserved under `docs/se3_clariden_evidence/growth_8192`.
+
+Actual preparation job: **3658044** (the test-only ID 3658043 is not a job
+submission). Initial observed state is **PENDING / QOSGrpNodeLimit**, with no
+GPU allocation or extraction outputs yet. Its two-GPUh reservation brings the
+conservative shared ledger to **70 GPUh**. The training stage is not yet
+submitted/reserved; it will be submitted once only after preparation passes,
+raising the ledger to 86 GPUh. Both stages run on Clariden; there is no remaining
+workstation GPU dependency.
+
+Preparation log:
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/logs/growth-extraction-3658044.out`.
+Preparation receipt: `.../se3/artifacts/growth-extraction-submission.json`.
+Extraction verification: `.../se3/artifacts/growth-extraction.json` and `.jsonl`.
+The automatically submitted training ID will be recorded in
+`.../se3/artifacts/growth_fp64_8192-submission.json`.
+
+## Extraction dependency correction
+
+Preparation **3658044 ran and failed**, exit 1, after 3m52s. Gemmi installed
+successfully, but importing the production encoder's dataset module raised
+`ModuleNotFoundError: No module named 'h5py'`. No production extraction or
+training followed, and no growth cache was published. Actual walltime-based
+allocation was approximately 0.258 GPUh; its two-GPUh reservation remains in
+the conservative ledger.
+
+Pin **h5py 3.14.0** beside Gemmi 0.7.3 in a fresh isolated extraction dependency
+directory; leave the tested training venv unchanged. Check all production-loader
+imports before expensive inventory validation, and read the unchanged retained
+bundle from existing Iopsstor scratch instead of Capstor for random reads.
+The exact training mathematics, dataset selection, frozen checkpoints and
+parity tolerance are unchanged. Python compilation, batch syntax and release
+completeness checks passed.
+
+One diagnosed, bounded retry was submitted as job **3659682**, pinned revision
+`7aad695af64d27597784581ed021021076eaf3b4`, archive SHA-256
+`cc1d5b6c227389a37dc7f456fd02f447d7d42019a2b64dcb522036aa275e773e`.
+The launcher requires the preceding preparation to be FAILED and uses a
+distinct ledger stage, `growth_extract_h5pyfix`, preserving the first receipt.
+This adds at most two GPUh: conservative reservations are now 72 GPUh, or 88
+if the verification-gated 16 GPUh training stage is later submitted. No training
+job has been submitted as of this correction. There is no automatic retry loop.
+The corrected job's observed state is **PENDING / QOSGrpNodeLimit**; it has
+not allocated GPUs yet. Failure and retry evidence is retained in
+`docs/se3_clariden_evidence/growth_8192/h5py-correction.json`.
+
+## Retry outcome: numerical parity failure
+
+Job **3659682 failed**, exit 1, after **1m27s**. Both Gemmi and h5py installed
+and the production-loader import check passed. The encoder and decoder loaded
+successfully. The retained entry's frozen feature comparison then failed:
+1,928/3,920 elements differed beyond `atol=rtol=1e-6`, with maximum absolute
+difference **0.000243902** and maximum relative difference **0.000444022**.
+No growth cache was published and the training job was not submitted. Gemmi's
+shutdown reference-leak warnings are additional diagnostics; the actual fatal
+exception is the tensor comparison assertion.
+
+Actual allocation for this retry was about 0.0967 GPUh. Conservative reservations
+remain 72 GPUh. Do not retry the unchanged extraction job or loosen the parity
+tolerance automatically. The workstation PyTorch 2.8 defaults were checked:
+matrix precision `highest`, matrix TF32 disabled, cuDNN TF32 enabled. The
+Clariden extraction path has no explicit matrix precision setting, whereas the
+cache-only trainer explicitly disables TF32. Cross-runtime precision defaults
+are therefore a hypothesis to test, not a proven cause. Full per-field parity
+and actual Clariden precision settings are needed before spending another
+training allocation; the failed assertion stopped on the first feature field.
+
+## User-authorized runtime audit and training
+
+The user explicitly accepted small runtime differences and prioritized a
+trained Clariden model. The next preparation records the image's actual matrix
+precision defaults and all per-field differences, then explicitly selects
+`highest` matrix precision/TF32 disabled, matching the workstation producer.
+cuDNN TF32 remains enabled as it was in the original extractor. This isolates
+matrix precision effects; it does not assume that they explain every difference.
+
+The explicit `--accept-runtime-drift` option allows cross-runtime floating
+differences at `atol=rtol=1e-3` and reports their maximum absolute error/RMSE.
+Targets, raw angles, masks, tokens and codebook values still require exact
+agreement. At most 1% of the union of directed contact edges may differ, with
+the changed fraction reported. Shape, dtype and matching nonfinite masks remain
+checked. The default comparison without the option remains strict. These bounds
+are an experiment policy authorized by the user's direction, not a claim that
+different hardware must produce identical values.
+
+Same-runtime repeat extraction of the retained probe and the first eight new
+structures still requires `atol=rtol=1e-6`. Production weights must remain
+unchanged with no gradients. All selected precision settings, comparisons,
+policy source hash and producer versions are included in the content-hashed
+bundle manifest. Retained entries and validation inputs remain byte-identical.
+No training architecture or loss is changed. Fourteen targeted split/parity
+tests passed, including excessive drift, changed targets/tokens, nonfinite
+values, contact drift and strict default comparison.
+
+One bounded `growth_extract_runtime_audit` stage is authorized: one node,
+30 minutes, at most two GPUh. It submits the existing 8,192/512, eight-GPU,
+16-epoch trial only after the audit and inventory checks pass. Conservative
+reservations become 74 GPUh for preparation, or **90 GPUh** after training is
+submitted, within the 256 GPUh ceiling. This is a diagnosed policy/precision
+change, not an unchanged retry or an automatic retry loop.
+
+Actual audit/preparation submission: **3659735**, pinned revision
+`61001d42071b26e494fd1b01484916f094af8121`, archive SHA-256
+`cfe949582322df8dc853daf801c4125fad54ea01c05b61e97227242c2127bdc1`.
+The test-only ID 3659734 is not the submitted job. The archive dependency check
+passed. Initial observed state is **PENDING / Priority**, with no audit events
+yet and conservative reservations confirmed at 74 GPUh. No training job is
+submitted until its guarded preparation passes. Evidence is retained in
+`docs/se3_clariden_evidence/growth_8192/runtime-audit-submission.json`.
+
+The audit **3659735 ran** and identified the container's defaults as matrix
+precision `high`, matrix TF32 enabled, cuDNN TF32 enabled. Against the original
+cache, maximum differences were features/latent 0.000243902, seed coordinates
+0.002773806, contact embeddings 0.001057163, and converted angles 1.19209e-7.
+Tokens, codebook, contact adjacency, CA targets and masks matched exactly.
+This establishes a real precision-default difference between environments.
+
+After explicitly selecting full matrix precision, the floating-output and
+discrete comparisons passed the authorized bounds. The audit then failed because
+the new policy incorrectly required converted angle values to match exactly:
+46/294 values differed by one float32 ULP (maximum 1.19209e-7 radians). This
+was an overly strict new check, not changed raw graph labels or nonfinite output.
+The raw graph labels remain content-hash verified; converted angles now use
+the original numerical tolerance `atol=rtol=1e-6`, including when cross-runtime
+drift is accepted. A regression test accepts one ULP and rejects material label
+changes. Fifteen targeted parity/split tests pass.
+
+The next one-node/30-minute `growth_extract_ieee` stage records every field
+under full matrix precision before checking it and retains all same-runtime
+repeatability, frozen-state, source hash and cache inventory gates. Its two
+GPUh reservation takes the conservative ledger to 76 GPUh, or 92 after the
+guarded larger training is submitted. The failed 103-second audit's actual
+allocation was approximately 0.1144 GPUh. No unchanged retry loop is enabled.
+
+Corrected job **3659766** is running under pinned revision
+`c1061d6bacd6c5dfb4124b70043aee94162d5427`, code archive SHA-256
+`7cf5d3c00858913e2c65e815dac5d8d1fe4a4874557466f128b843b9e9e95691`.
+It **passed the numerical audit and same-runtime repeatability check**, then
+started extraction of the 4,096 additions. With full matrix precision, the
+retained probe's feature/latent maximum difference is **1.19209e-7**, versus
+2.43902e-4 under the container defaults (approximately 2,046-fold reduction).
+The remaining seed-coordinate difference is 0.000397414, contact-embedding
+difference 0.000119537, and converted-angle difference 1.19209e-7 radians.
+Tokens, codebook, target coordinates, residue mask and all 1,176 union contact
+edges match exactly. This is evidence that TF32 caused the encoder-feature
+discrepancy; remaining decoder/runtime differences are bounded and explicitly
+recorded, not asserted to be zero. At calibration scale 10.9284, the maximum
+seed-coordinate difference corresponds to roughly 0.00434 Å before lifting.
+No loss, model architecture or production weights were changed.
+
+All **4,096 additions completed** and the durable **8,704-entry** bundle passed
+its inventory hashes and frozen-state checks. Bundle identity:
+`b2c635e8cf30af851a63eb8f0836ff090fb5707b51523a6b709cca8b707877f3`.
+Job 3659766 then exited 127 at the staging command because the image lacks
+`rsync`; its six-minute-seven-second allocation was about 0.4078 GPUh.
+The completed, verified frozen cache is preserved and extraction is not rerun.
+
+Stage-in now uses the CPU-only `xfer` partition and the standard-library
+`scripts.stage_se3_growth` copier, which verifies each SHA-256 and publishes the
+scratch manifest only after all payloads pass. The first CPU job 3659831
+exposed the user's ARM Python on x86 transfer nodes; job 3659848 used native
+`/usr/bin/python3` but exposed its older Python 3.6 `copytree` API. Both stopped
+in one second and allocated no GPUs. The corrected script uses Python-3.6-
+compatible file copies; current transfer job **3659864** is running. This
+stage copies the existing cache only and spends no new GPU preparation
+allocation. Training submission runs from the modern ARM login-node Python
+after transfer completion, rather than relying on the transfer-node interpreter.
+
+The corrected stage and upcoming training are pinned to
+`0f60572ea175607814af6f104f0fcdc04187ee58`, code archive SHA-256
+`cad4eb432d4b9baa77e11a5897419b19a78f43c1c1b1885c1042c3479d68c06f`.
+All training mathematics remain identical to the validated medium trial.
+
+Transfer job **3659864 completed**, exit 0, in **6m21s**. All **8,704 payloads**
+passed SHA-256 verification on scratch, with identical bundle identity to the
+durable source. Stage-in verification is recorded in
+`.../se3/artifacts/growth-stage-in.json`; the two targeted stage-publication tests
+passed, including rejecting a corrupted payload without publishing a manifest.
+
+The actual training job is **3659891**, submitted from the login node after
+successful transfer (test-only ID 3659890 is not the job). It is **RUNNING** on
+two nodes/eight GPUs, with all eight workers reporting seed 42. The run is
+fresh initialization, 8,192 training/512 retained validation structures,
+16 epochs/8,192 updates, global batch 16, original learning rate/losses/model
+and both stability fixes. The two-hour/16-GPUh bound remains enforced, and
+the shared ledger now conservatively reserves **92 of 256 GPUh**. Training
+success and learning must still be judged from its updates, checkpoints and
+held-out epoch metrics, not the scheduler's RUNNING state.
+
+Log: `.../se3/code/0f60572ea175607814af6f104f0fcdc04187ee58/logs/growth_fp64_8192-3659891.out`.
+Output/checkpoints: `.../se3/runs/growth_fp64_8192`.
+Receipt: `.../se3/artifacts/growth_fp64_8192-submission.json`.
+
+Startup verification: the run passed **338 completed optimizer updates** with
+finite logged losses, nonzero finite gradient norms and periodic atomic
+checkpoints. Recent global update throughput was approximately 27–49
+structures/s, with rank-zero peak GPU allocation 4,476,560,896 bytes (4.17 GiB).
+Per-update losses are the last microbatch's value, so they must not be treated
+as an epoch learning curve; complete-epoch geometry and held-out metrics remain
+the quality assessment. No production model is loaded or called during this
+cache-only refiner training.
+
+The **first complete epoch passed**: all 8,192 training structures consumed,
+all 512 unique held-out structures evaluated, and both `last.ckpt` and
+`best.ckpt` saved (about 20 MB each). First-epoch training geometry is 4.220507,
+held-out geometry **3.982758**, FAPE **0.933002**, aligned CA RMSD **16.0463 Å**,
+TM-score **0.211868**, lDDT **0.247964**, bond MAE **1.27538 Å**, and predicted
+angle MAE **0.576613 radians**. The run continued into epoch two, beyond 576
+completed optimizer updates, with finite losses and gradients. These are interim
+results, not completion of the requested 16 epochs. The trained first-epoch
+checkpoint is available now; the full trial will continue within its bound.
+
+After **three complete epochs / 1,536 updates**, the run demonstrates learning:
+training geometry fell **4.220507 → 3.883516 (7.99%)**, held-out geometry
+**3.982758 → 3.862820 (3.01%)**, and FAPE **0.933002 → 0.931063**.
+lDDT improved **0.247964 → 0.261732**, bond MAE **1.275381 → 1.126010 Å**,
+and predicted angle MAE **0.576613 → 0.542913 radians**. Aligned CA RMSD rose
+slightly **16.0463 → 16.1157 Å** and TM-score fell **0.211868 → 0.209856**;
+these remain visible and below the previously used material-regression bounds.
+All three epochs consumed 8,192 training and 512 unique validation structures
+and saved trained checkpoints. The run passed 1,887 updates without logged
+nonfinite events and continues toward 16 epochs; these remain interim results.
+
+## Completed 8,192-structure trial
+
+Job **3659891 completed successfully**, exit 0, in **49m44s** on two
+nodes/eight GPUs (**6.631 actual GPUh**, within its 16-GPUh reservation).
+All **16 epochs / 8,192 optimizer updates** completed; each epoch consumed
+8,192 training and evaluated all 512 unique validation structures. There were
+**zero logged failure events**. Epoch 16 had the lowest complete-epoch
+validation geometry and is the saved `best.ckpt` and `last.ckpt`.
+
+![Completed learning curves](se3_clariden_evidence/growth_8192/final/learning-curves.png)
+
+Training geometry fell **4.220507 → 3.623650 (14.14%)**; validation geometry
+fell **3.982758 → 3.630099 (8.85%)**.
+
+| Held-out metric | Epoch 1 | Epoch 16 | Frozen decoder |
+|---|---:|---:|---:|
+| FAPE ↓ | 0.933002 | 0.929814 | 0.942045 |
+| Aligned CA RMSD, Å ↓ | 16.0463 | 15.6886 | 19.1519 |
+| TM-score ↑ | 0.211868 | 0.214902 | 0.079161 |
+| lDDT ↑ | 0.247964 | 0.254775 | 0.020720 |
+| CA bond MAE, Å ↓ | 1.275381 | 0.923609 | 3.638404 |
+| CA bend MAE, radians ↓ | 0.741393 | 0.708719 | 1.443429 |
+| CA torsion MAE, radians ↓ | 1.533527 | 1.520316 | 1.548562 |
+| Predicted angle MAE, radians ↓ | 0.576613 | 0.514091 | unavailable |
+
+Metrics are per-structure means with identical structure IDs/masks; torsion has
+511 defined structures. The full paired records, mean/median deltas and
+improved-structure counts are preserved in
+[final evidence](se3_clariden_evidence/growth_8192/final/summary.json).
+All listed mean structural metrics improved from epoch one to the selected
+final checkpoint. Relative to the previous 4,096-structure medium trial,
+validation geometry improved from 3.842814 to 3.630099 (5.53%); FAPE, RMSD,
+TM-score, lDDT, bond and predicted-angle means also improved. This comparison
+changes both unique training data and optimizer-step count, so it cannot isolate
+the effect of more data.
+
+The best checkpoint was downloaded to
+`runs/se3_clariden/growth-fp64-8192-best.ckpt` and its SHA-256 verified:
+`93ff91d18ff9b4b0df5396889f9cd6c4fc0c91f65f88775caf71d2c90487bb04`.
+CPU loading verified **253 model tensors and 729 optimizer tensors are finite**,
+with stream epoch 16, cursor 0, updates 8,192 and topology two nodes/eight ranks.
+The durable checkpoint remains in
+`/capstor/store/cscs/swissai/a0117/foldtree2/se3/runs/growth_fp64_8192/best.ckpt`.
+No production checkpoint was replaced.
+
+This establishes a trained refiner and stable learning on Clariden. Absolute
+FAPE/RMSD/TM-score still indicate limited structural accuracy; decoder-to-refiner
+gains include calibration and seed lift. The repeatedly monitored 512 holdouts
+are not a new independent test, and pretraining independence is not claimed.
+No additional training, model-size expansion or duration extension was submitted.

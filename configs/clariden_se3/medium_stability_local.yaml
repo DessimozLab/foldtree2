@@ -1,0 +1,21 @@
+accelerator: cuda
+cache: /home/dmoi/projects/foldtree2/runs/se3_clariden/bundle_4096
+checkpoint_every: 32
+devices: 1
+epochs: 1
+global_batch: 16
+learning_rate: 0.0005
+max_residues: 256
+min_delta: 0.0
+model:
+  depth: 4
+  heads: 4
+  hidden: 64
+nodes: 1
+output: /home/dmoi/projects/foldtree2/runs/se3_clariden/medium_stability_20261013
+scheduler: false
+seed: 42
+structural_metrics: true
+train_count: 4096
+val_count: 512
+tensor_ff_input_norm: true

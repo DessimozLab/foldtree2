@@ -59,6 +59,18 @@ class CondaStagingTests(unittest.TestCase):
                 stage_source(source, recipe, destination, max_file_bytes=1)
             self.assertFalse(destination.exists())
 
+    def test_companion_recipe_is_staged_outside_main_recipe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, recipe = self.fixture(root)
+            companion = source / 'conda-pydssp'
+            companion.mkdir()
+            (companion / 'meta.yaml').write_text('package:\n  name: pydssp\n')
+            destination = root / 'stage'
+            stage_source(source, recipe, destination)
+            self.assertTrue((destination / 'conda-pydssp/meta.yaml').is_file())
+            self.assertEqual(len(list((destination / 'conda-recipe').rglob('meta.yaml'))), 1)
+
     def test_rejects_nested_or_stale_destinations_and_missing_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

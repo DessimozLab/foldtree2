@@ -1,4 +1,8 @@
-# Foldseek cluster utilities
+"""Legacy Foldseek distance-tree workflow and external-program adapters.
+
+These helpers invoke Foldseek and distance-tree tools; they are not the learned
+alphabet MAFFT/RAxML pipeline exposed by the foldtree2 command.
+"""
 import os
 import shlex
 import subprocess

@@ -1,3 +1,8 @@
+"""Dynamic-tanh normalization and recursive LayerNorm conversion for experiments.
+
+Replacing normalization changes the model function and requires recording the
+architecture choice alongside checkpoints.
+"""
 import torch.nn as nn
 import torch.nn.functional as F
 import torch

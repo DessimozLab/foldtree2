@@ -1,0 +1,32 @@
+{
+  "deployed_revision": "f625bf1948a1057e59a8013c8adb4b234d916437",
+  "environment_revision": "028cc752968f218de4e5837f75b2e7a8a004162a",
+  "one_node": {
+    "job_id": "3653704",
+    "state": "COMPLETED",
+    "optimizer_updates": 4,
+    "resume_from_update": 2,
+    "validation_count": 512
+  },
+  "two_node": {
+    "job_id": "3653761",
+    "state": "COMPLETED",
+    "optimizer_updates": 2,
+    "validation_count": 512
+  },
+  "small": {
+    "job_id": "3653793",
+    "observed_state": "RUNNING",
+    "observed_updates": 246
+  },
+  "medium": {
+    "job_id": "3653794",
+    "observed_state": "PENDING",
+    "dependency": "3653793"
+  },
+  "one_node_geometry_at_update_2": 4.835154625587165,
+  "two_node_geometry_at_update_2": 4.835154631640762,
+  "reservation_ceiling_gpuh": 256,
+  "conservative_reserved_gpuh": 44,
+  "scope": "Startup evidence only; capacity learning results pending"
+}

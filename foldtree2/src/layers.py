@@ -1,3 +1,4 @@
+"""Shared activation and positional-encoding layers for encoder/decoder heads."""
 import torch
 import torch.nn as nn
 

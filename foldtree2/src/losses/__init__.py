@@ -1,3 +1,4 @@
+"""Shared loss exports; geometry conventions are documented in fape.py."""
 from foldtree2.src.losses.fape import (
     ca_bond_length_loss,
     ca_local_step_targets,

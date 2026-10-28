@@ -13,6 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Rigid rotations/translations and quaternion algebra used by geometry losses.
+
+Keep frame direction, quaternion ordering and batch dimensions consistent with
+the consuming decoder. Original upstream attribution is retained above.
+"""
 from __future__ import annotations
 from functools import lru_cache
 from typing import Tuple, Any, Sequence, Callable, Optional

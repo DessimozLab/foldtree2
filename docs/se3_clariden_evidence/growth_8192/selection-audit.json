@@ -1,0 +1,9 @@
+{
+  "train_count": 8192,
+  "val_count": 512,
+  "unique_count": 8704,
+  "skipped_count": 4970,
+  "targeted_tests_passed": 8,
+  "cache_extraction": "failed CPU/GPU parity; no new entries published",
+  "training_submission": null
+}

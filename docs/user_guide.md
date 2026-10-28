@@ -15,17 +15,23 @@ Traditional sequence-based methods struggle with:
 
 FoldTree2 addresses these by:
 1. Encoding protein structures into discrete "structural alphabets"
-2. Aligning structures using FoldSeek for sensitive detection of structural similarity
-3. Generating custom substitution matrices from structural alignments
+2. Aligning encoded tokens with MAFFT using a matching substitution matrix
+3. Using matrices estimated in advance from structural reference alignments
 4. Inferring trees with RAxML-NG using structure-appropriate models
 
 ## Building a Phylogenetic Tree
 
 ### Prerequisites
 
-- Trained encoder-decoder model (see :doc:`training` for training your own)
+- Trusted matching encoder, decoder, MAFFT matrix, RAxML matrix and character-map
+  bundle (see [training](training.md) for creating your own)
 - Protein structures in PDB format (one file per protein)
-- RAxML-NG and MAFFT installed (bundled with FoldTree2)
+- Linux x86_64; bundled multistate RAxML-NG and **separately installed MAFFT**
+
+There is currently no automatic model download or verified public bundle URL.
+The local paths in the project quick start are examples from this development
+checkout, not files supplied by pip/conda. Public versioned bundles with licenses,
+checksums and compatible code revisions are a [release gate](releasing.md).
 
 ### Step-by-Step Workflow
 
@@ -124,7 +130,7 @@ makesubmat \
 | Convergence plots | Training diagnostics |
 | Metrics report | Quality assessment |
 
-See :doc:`training` for details on matrix generation and validation.
+See [training](training.md) for details on matrix generation and validation.
 
 ## Training Your Own Models
 
@@ -143,21 +149,22 @@ For research applications requiring custom structural alphabets:
      --num-embeddings 30 \
      --epochs 1000 \
      --batch-size 16 \
-     --device cuda
+     --output-dir models/my_model
    ```
 
 3. **Generate substitution matrix** from trained model
 
-See :doc:`training` for complete details on model training and evaluation.
+See [training](training.md) for complete details on model training and evaluation.
 
 ## Practical Considerations
 
 ### Choosing Alphabet Size
 
-The number of structural states (alphabet size) affects resolution:
-- **Smaller (10-20)**: Coarse structural classification, robust to noise
-- **Medium (30-40)**: Balance of resolution and robustness (recommended)
-- **Larger (50+)**: Fine-grained discrimination, requires more data
+Alphabet size changes model capacity, occupancy and matrix evidence requirements.
+The production comparison includes 10, 20, 30, 40 and 50 states. No optimal size
+is established by the quick-start example; select a validated complete bundle
+and consult the [final benchmark checklist](final_benchmarks.md) for evidence.
+The FT2-50 matrix has an explicit nonconvergence acceptance exception.
 
 ### Quality Control
 
@@ -175,10 +182,12 @@ The number of structural states (alphabet size) affects resolution:
 
 ## Further Resources
 
-- :doc:`overview` - Core concepts and architecture
-- :doc:`training` - Model training and matrix generation
-- :doc:`experiments` - Running phylogenetic-gain experiments
-- :doc:`manuscript_methods_framework` - Methodological details
+- [CLI index](cli/README.md) - Command-specific guides
+- [Source modules](../foldtree2/src/README.md) - Core concepts and architecture
+- [Training](training.md) - Model training and matrix generation
+- [Experiments](experiments.md) - Running phylogenetic-gain experiments
+- [Notebooks](../foldtree2/notebooks/README.md) - Interactive workflows
+- [Manuscript methods](manuscript_methods_framework.md) - Methodological details
 
 Use a fresh output directory for changed structures/artifacts. The tree CLI may
 reuse files without artifact provenance checks. `--redo` applies to RAxML, not

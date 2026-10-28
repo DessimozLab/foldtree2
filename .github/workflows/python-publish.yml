@@ -6,9 +6,20 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Python Distribution
 
 on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [dev]
+    paths:
+      - 'foldtree2/**'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'MANIFEST.in'
+      - 'scripts/check_distribution.py'
+      - '.github/workflows/python-publish.yml'
   release:
     types: [published]
 
@@ -17,28 +28,76 @@ permissions:
 
 jobs:
   release-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.10"
 
       - name: Build release distributions
         run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
+          python -m pip install build twine auditwheel
           python -m build
+          python scripts/check_distribution.py dist/*
+          python -m auditwheel repair --plat manylinux_2_34_x86_64 --wheel-dir dist dist/*-linux_x86_64.whl
+          mv dist/*-linux_x86_64.whl "$RUNNER_TEMP/"
+          python scripts/check_distribution.py --release dist/*
+          python -m twine check dist/*
+
+      - name: Check release version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from email.parser import Parser
+          import zipfile
+          wheel = next(Path('dist').glob('*.whl'))
+          with zipfile.ZipFile(wheel) as archive:
+              name = next(n for n in archive.namelist() if n.endswith('.dist-info/METADATA'))
+              version = Parser().parsestr(archive.read(name).decode())['Version']
+          if os.environ['RELEASE_TAG'] != f'v{version}':
+              raise SystemExit(f'Release tag must be v{version}')
+          PY
+
+      - name: Install and smoke-test wheel outside checkout
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mafft
+          python -m venv "$RUNNER_TEMP/wheel-env"
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip check
+          cd "$RUNNER_TEMP"
+          export PATH="$RUNNER_TEMP/wheel-env/bin:$PATH"
+          foldtree2 --help
+          ft2treebuilder --help
+          makesubmat --help
+          pdbs-to-graphs --help
+          foldcomp2fasta --help
+          tune-monodecoder-bayes --help
+          raxml-ng --version
+          mafft --version
+          printf '>smoke\n01 02 03\n' | hex2maffttext | maffttext2hex > tokens.txt
+          grep -q '01 02 03' tokens.txt
+          printf '((A:0.101,B:0.203):0.307,(C:0.409,D:0.503):0.607);\n' > smoke.nwk
+          mad smoke.nwk
+          test -s smoke.nwk.rooted
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
           path: dist/
+          if-no-files-found: error
 
   pypi-publish:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     needs:
       - release-build

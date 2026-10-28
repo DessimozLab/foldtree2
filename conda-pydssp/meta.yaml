@@ -1,0 +1,43 @@
+{% set version = "0.9.1" %}
+
+package:
+  name: pydssp
+  version: {{ version }}
+
+source:
+  url: https://files.pythonhosted.org/packages/00/78/9cbcc1c073b9d4918e925af1a059762265dc65004e020511b2a06fbfd020/pydssp-0.9.1-py3-none-any.whl
+  sha256: 74fb8129c07c1625bb687b80f7e94ae7ebf1277725258d7fc75fc1f3d12a67dc
+
+build:
+  number: 0
+  noarch: python
+  script: "{{ PYTHON }} -m pip install pydssp-0.9.1-py3-none-any.whl --no-deps -vv"
+
+requirements:
+  host:
+    - python
+    - pip
+    - setuptools
+    - wheel
+  run:
+    - python >=3.9
+    - numpy
+    - pytorch
+    - einops
+    - tqdm
+
+test:
+  imports:
+    - pydssp
+  commands:
+    - pydssp --help
+
+about:
+  home: https://github.com/ShintaroMinami/PyDSSP
+  license: MIT
+  license_file: pydssp-0.9.1.dist-info/LICENSE
+  summary: Simplified DSSP secondary-structure assignment for PyTorch and NumPy
+
+extra:
+  recipe-maintainers:
+    - dmoi

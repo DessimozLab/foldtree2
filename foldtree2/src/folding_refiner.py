@@ -1,3 +1,8 @@
+"""Quaternion-based iterative folding refinement from predicted residue frames.
+
+This research decoder is separate from the production structure-to-tree path.
+Frame/quaternion conventions are shared with the geometry loss utilities.
+"""
 import torch
 import pytorch_lightning as L
 

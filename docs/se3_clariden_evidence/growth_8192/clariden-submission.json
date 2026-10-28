@@ -1,0 +1,25 @@
+{
+  "observed_utc": "2026-10-14T00:40:48.713408+00:00",
+  "submission": {
+    "job_id": "3658044",
+    "code_revision": "5b3946394aef1dae0756f617b186e81a9232520e",
+    "command": [
+      "sbatch",
+      "--account=a0117",
+      "--partition=normal",
+      "--nodes=1",
+      "--time=30",
+      "--ntasks-per-node=1",
+      "--gpus-per-task=4",
+      "--cpus-per-task=8",
+      "--parsable",
+      "--output=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/logs/growth-extraction-%j.out",
+      "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/alps/se3/extract_growth.sbatch"
+    ],
+    "credit_basis": "User-confirmed sufficient credit; authorized 256 GPUh ceiling"
+  },
+  "queue": "   JOBID USER     ACCOUNT           NAME EXEC_HOST ST     REASON   START_TIME     END_TIME  TIME_LEFT NODES   PRIORITY\n 3658044 dmoi     a0117   ft2-se3-extrac       n/a PD QOSGrpNode          N/A          N/A      30:00     1     554383\n",
+  "accounting": "JobID|State|Elapsed|ExitCode\n3658044|PENDING|00:00:00|0:0\n",
+  "reserved_gpuh": 70.0,
+  "training_submission": null
+}

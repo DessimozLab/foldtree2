@@ -1,0 +1,104 @@
+# Mirrors foldtree2/notebooks/experiments/train_frozen_encoder_geometry_refiner.ipynb.
+# Run from the repository root with learn_production_staged_transformer_geometry.py.
+
+dataset: /home/dmoi/projects/foldtree2/structs_train_final.h5
+pretrained_encoder_path: /home/dmoi/projects/foldtree2/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt
+pretrained_encoder_full_path: /home/dmoi/projects/foldtree2/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_41.pt
+pretrained_geometry_decoder_path: /home/dmoi/projects/foldtree2/models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_41.pt
+fallback_latent_dim: 20
+checkpoint_dir: /tmp/foldtree2_staged_geometry_refiner_notebook
+
+epochs: 10
+limit_train_batches: 200
+limit_val_batches: 20
+batch_size: 4
+val_batch_size: 1
+target_effective_batch_size: 12
+num_workers: 0
+val_fraction: 0.1
+val_count: null
+split_seed: 42
+seed: 42
+
+learning_rate: 1.0e-4
+weight_decay: 0.0
+lr_scheduler: cosine
+lr_scheduler_interval: epoch
+lr_scheduler_frequency: 1
+lr_scheduler_monitor: val/loss
+lr_warmup_epochs: 0
+lr_min: 1.0e-6
+lr_step_size: 10
+lr_gamma: 0.5
+clip_grad: 1.0
+
+accelerator: auto
+devices: 2
+strategy: auto
+precision: 32-true
+save_top_k: -1
+log_every_n_steps: 1
+nan_guard: true
+sanitize_nonfinite_grads: true
+use_uncertainty_weighting: false
+
+production_coordinate_source: auto
+production_coordinate_scale: 1.0
+transformer_width: 256
+transformer_layers: 4
+transformer_nheads: 8
+transformer_dropout: 0.05
+se3_num_atom_types: 40
+se3_contact_sketch_top_k: 8
+se3_contact_sketch_threshold: .inf
+se3_contact_sketch_min_seq_sep: 3
+se3_contact_local_window: 1
+
+staged_hidden: 256
+staged_heads: 8
+staged_layers: 4
+staged_dropout: 0.05
+staged_max_step: 4.0
+staged_max_refine_delta: 2.0
+staged_use_mhc: true
+staged_mhc_streams: 4
+staged_mhc_sinkhorn_iters: 5
+staged_mhc_temperature: 1.0
+staged_mhc_eps: 1.0e-6
+stage_loss_weights: 0.25,0.5,1.0
+stage_angle_loss: false
+stage_quat_loss: false
+stage_ca_loss: true
+stage_fape_clamp: 30.0
+
+# Non-redundant staged loss stack: staged CA plus sampled staged FAPE.
+use_coarse_ca_loss: true
+use_coarse_ca_step_loss: true
+use_coarse_ca_bond_loss: true
+use_coarse_ca_pairwise_loss: false
+coarse_ca_weight: 1.0
+coarse_ca_step_weight: 1.0
+coarse_ca_bond_weight: 0.1
+coarse_ca_pairwise_weight: 0.1
+coarse_ca_pairwise_max_seq_sep: 64
+coarse_ca_pairwise_max_pairs: 4096
+fape_pair_sample_size: 1024
+
+use_coarse_backbone_loss: false
+use_coarse_backbone_atom_loss: false
+use_coarse_c_loss: false
+use_coarse_cb_loss: false
+use_coarse_n_loss: false
+use_coarse_backbone_fape_loss: false
+use_coarse_backbone_angle_loss: false
+coarse_backbone_atom_weight: 0.05
+coarse_c_weight: 0.05
+coarse_cb_weight: 0.05
+coarse_n_weight: 0.05
+coarse_backbone_fape_weight: 0.25
+coarse_backbone_angle_weight: 0.05
+
+use_frame_fape_loss: false
+use_quat_geodesic_loss: false
+use_decoder_angle_loss: false
+use_se3: false

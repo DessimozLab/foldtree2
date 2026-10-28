@@ -1,3 +1,8 @@
+"""Plot decoder reconstructions and training curves from precomputed outputs.
+
+Figures diagnose the supplied batch/run; they do not establish held-out model
+quality or substitute for cohort-level benchmark summaries.
+"""
 import torch
 from colour import Color
 

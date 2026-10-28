@@ -1,0 +1,17 @@
+[
+  {
+    "path": "runs/se3_larger_local_20261013/best.pt",
+    "sha256": "2933c37c4931220e99a0b8c0f9e96977597d8344ffb5da26d80416983a529ac7",
+    "bytes": 3615797
+  },
+  {
+    "path": "runs/se3_larger_local_20261013/last.pt",
+    "sha256": "359693dc1532a3ba96bb572da0a2f5f70f812b1c9fff39735b43d4749039d5c4",
+    "bytes": 3615797
+  },
+  {
+    "path": "runs/se3_larger_local_20261013/initial.pt",
+    "sha256": "fa28a2791faaeb1ee1da81223c56a89b3b7c6170958f2197caebeec59b0e6c0f",
+    "bytes": 1297857
+  }
+]

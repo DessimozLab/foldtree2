@@ -37,9 +37,15 @@ def main():
     parser.add_argument('--families', type=Path, default=ROOT / 'families/Information_benchmark/marker_genes')
     parser.add_argument('--cohort', type=Path, help='Frozen OMA cohort; automatic for the standard notebook input root')
     parser.add_argument('--threads', type=int, default=8)
+    parser.add_argument('--raxml-threads', type=int,
+                        help='Runtime thread limit for unfinished RAxML stages on resume; '
+                             'preserves configured cache identity and records actual tree-search threads')
     args = parser.parse_args()
     if not 1 <= args.threads <= 8:
         parser.error('Workstation queue permits 1–8 CPU threads')
+    if args.raxml_threads is not None and not 1 <= args.raxml_threads <= args.threads:
+        parser.error('--raxml-threads must be between 1 and --threads')
+    raxml_threads = args.raxml_threads or args.threads
     if set(args.sizes) - {10, 20, 30, 40, 50}:
         parser.error('Sizes must be 10, 20, 30, 40 or 50')
     if args.max_families is not None and args.max_families < 1:
@@ -73,6 +79,12 @@ def main():
             state['waiting_for'] = args.wait_for_service
             write_json(statefile, state)
             time.sleep(30)
+        # The preceding service may have finished more jobs while we waited.
+        # Reload its final state rather than overwrite it with our old snapshot.
+        if statefile.exists():
+            state = json.loads(statefile.read_text())
+            if state.get('protocol') != protocol:
+                raise ValueError('Queue scope changed while waiting')
         state.pop('waiting_for', None)
         write_json(statefile, state)
     entries = {e['size']: e for e in json.loads((ROOT / 'configs/production_models.yaml').read_text())['models']}
@@ -141,7 +153,7 @@ def main():
         matrix = ROOT / entries[size]['directory'] / entries[size]['raxml']
         tree, fitted = cached_ml(aln, f'MULTI{size}_GTR{{{matrix}}}+I', destination, digest(matrix))
         reconstruct(aln, tree, fitted, destination / 'ml.raxml.log', MULTI_ORDER[:size],
-                    destination / 'ancestral', family.name, f'FT2_{size}', args.threads)
+                    destination / 'ancestral', family.name, f'FT2_{size}', raxml_threads)
         return str(destination)
 
     def cached_ml(alignment, model, destination, matrix_hash=None):
@@ -151,8 +163,9 @@ def main():
         tree = destination / 'ml.raxml.bestTree'
         fitted = destination / 'ml.raxml.bestModel'
         if begin_stage(destination, signature):
-            tree, fitted = infer_ml(alignment, model, destination / 'ml', args.threads)
-            complete_stage(destination, signature, [tree, fitted, destination / 'ml.raxml.log'])
+            tree, fitted = infer_ml(alignment, model, destination / 'ml', raxml_threads)
+            complete_stage(destination, signature, [tree, fitted, destination / 'ml.raxml.log'],
+                           execution_threads=raxml_threads)
         return tree, fitted
 
     # First rebuild each retained model independently, then pilot its encoding,
@@ -238,7 +251,8 @@ def main():
         job('joint_OMA_comparison', lambda: command('joint_OMA_comparison', [
             'scripts/compare_oma_representations.py', '--cohort', cohort_path,
             '--experiment-root', experiment_root, '--native-root', out, '--sizes', *ready,
-            '--outdir', out / 'joint_comparison', '--threads', args.threads, *limit]))
+            '--outdir', out / 'joint_comparison', '--threads', args.threads,
+            *(['--gain-threads', raxml_threads] if args.raxml_threads is not None else []), *limit]))
     state['finished'] = time.time()
     state['status'] = 'completed' if all(j['status'] == 'completed' for j in state['jobs'].values()) else 'finished_with_failures'
     state['remaining_scope'] = ['extended notebook analyses', 'paired family aggregation and plotting']

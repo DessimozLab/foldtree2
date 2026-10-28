@@ -110,23 +110,43 @@ fi
 WORK_DIR="$(mktemp -d -t foldtree2-cli-smoke-XXXXXX)"
 ENV_PREFIX="${WORK_DIR}/env"
 
-log "Creating fresh conda environment"
-conda create -y -p "${ENV_PREFIX}" "python=${PYTHON_VERSION}" >/dev/null
+PACKAGE_CHANNEL="$(cd "$(dirname "${PACKAGE_PATH}")/.." && pwd)"
+PACKAGE_NAME="$(basename "${PACKAGE_PATH}")"
+[[ "${PACKAGE_NAME}" == foldtree2-* ]] || fail "Expected a foldtree2 package: ${PACKAGE_NAME}"
+PACKAGE_STEM="${PACKAGE_NAME%.conda}"
+PACKAGE_STEM="${PACKAGE_STEM%.tar.bz2}"
+PACKAGE_STEM="${PACKAGE_STEM#foldtree2-}"
+PACKAGE_SPEC="foldtree2=${PACKAGE_STEM%-*}=${PACKAGE_STEM##*-}"
 
-log "Installing package: ${PACKAGE_PATH}"
-conda install -y -p "${ENV_PREFIX}" "${PACKAGE_PATH}" -c conda-forge -c pytorch -c bioconda >/dev/null
+# Direct archive installation is explicit mode and does not solve dependencies.
+log "Creating fresh environment from local channel: ${PACKAGE_SPEC}"
+conda create -y -p "${ENV_PREFIX}" --override-channels \
+  -c "file://${PACKAGE_CHANNEL}" -c conda-forge -c bioconda \
+  "python=${PYTHON_VERSION}" "${PACKAGE_SPEC}"
 
 run_cmd() {
   local label="$1"
   shift
   log "Running: ${label}"
-  conda run -p "${ENV_PREFIX}" "$@" >/dev/null
+  (cd "${WORK_DIR}" && conda run --no-capture-output -p "${ENV_PREFIX}" "$@")
 }
 
 run_cmd "foldtree2 --about" foldtree2 --about
 run_cmd "pdbs-to-graphs --help" pdbs-to-graphs --help
 run_cmd "makesubmat --help" makesubmat --help
 run_cmd "ft2treebuilder --help" ft2treebuilder --help
+run_cmd "foldcomp2fasta --help" foldcomp2fasta --help
+run_cmd "tune-monodecoder-bayes --help" tune-monodecoder-bayes --help
+run_cmd "raxml-ng --version" raxml-ng --version
+run_cmd "mafft --version" mafft --version
+
+printf '>smoke\n01 02 03\n' > "${WORK_DIR}/tokens.hex"
+conda run --no-capture-output -p "${ENV_PREFIX}" hex2maffttext < "${WORK_DIR}/tokens.hex" > "${WORK_DIR}/tokens.text"
+conda run --no-capture-output -p "${ENV_PREFIX}" maffttext2hex < "${WORK_DIR}/tokens.text" > "${WORK_DIR}/tokens.roundtrip"
+grep -q '01 02 03' "${WORK_DIR}/tokens.roundtrip" || fail "Token conversion round trip failed"
+printf '((A:0.101,B:0.203):0.307,(C:0.409,D:0.503):0.607);\n' > "${WORK_DIR}/tree.nwk"
+run_cmd "MAD rooting" mad "${WORK_DIR}/tree.nwk"
+[[ -s "${WORK_DIR}/tree.nwk.rooted" ]] || fail "MAD did not produce a rooted tree"
 
 if [[ -n "${SAMPLE_PDB_DIR}" ]]; then
   [[ -d "${SAMPLE_PDB_DIR}" ]] || fail "Sample directory not found: ${SAMPLE_PDB_DIR}"

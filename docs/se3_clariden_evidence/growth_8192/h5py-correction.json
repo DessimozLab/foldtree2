@@ -1,0 +1,26 @@
+{
+  "observed_utc": "2026-10-14T09:06:20.890162+00:00",
+  "failed_job_accounting": "JobID|State|Elapsed|ExitCode\n3658044|FAILED|00:03:52|1:0\n3658044.batch|FAILED|00:03:52|1:0\n3658044.extern|COMPLETED|00:03:52|0:0\n3658044.0|FAILED|00:03:44|1:0\n",
+  "failed_log": "Collecting gemmi==0.7.3\n  Downloading gemmi-0.7.3-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (2.3 kB)\nDownloading gemmi-0.7.3-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (2.3 MB)\n   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 2.3/2.3 MB 7.4 MB/s eta 0:00:00\nInstalling collected packages: gemmi\nSuccessfully installed gemmi-0.7.3\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/scripts/extract_se3_growth_clariden.py\", line 116, in <module>\n    main()\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/scripts/extract_se3_growth_clariden.py\", line 61, in main\n    encoder, _ = base.build_encoder(SimpleNamespace(pretrained_encoder_path=str(inputs / 'encoder.pt'),\n                 ^^^^^^^^^^^^^^^^^^\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/foldtree2/se3_validation.py\", line 31, in __getattr__\n    from foldtree2 import learn_geometry_lightning\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/foldtree2/learn_geometry_lightning.py\", line 36, in <module>\n    from foldtree2.src import encoder as ecdr\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/foldtree2/src/encoder.py\", line 30, in <module>\n    from foldtree2.src.pdbgraphmk2 import StructureDataset, FoldcompStructureDataset, _load_foldcomp_ids\n  File \"/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/5b3946394aef1dae0756f617b186e81a9232520e/foldtree2/src/pdbgraphmk2.py\", line 21, in <module>\n    import h5py\nModuleNotFoundError: No module named 'h5py'\nsrun: error: nid007218: task 0: Exited with exit code 1\nsrun: Terminating StepId=3658044.0\n",
+  "corrected_submission": {
+    "job_id": "3659682",
+    "code_revision": "7aad695af64d27597784581ed021021076eaf3b4",
+    "command": [
+      "sbatch",
+      "--account=a0117",
+      "--partition=normal",
+      "--nodes=1",
+      "--time=30",
+      "--ntasks-per-node=1",
+      "--gpus-per-task=4",
+      "--cpus-per-task=8",
+      "--parsable",
+      "--output=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/7aad695af64d27597784581ed021021076eaf3b4/logs/growth-extraction-%j.out",
+      "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/7aad695af64d27597784581ed021021076eaf3b4/alps/se3/extract_growth.sbatch"
+    ],
+    "credit_basis": "User-confirmed sufficient credit; authorized 256 GPUh ceiling"
+  },
+  "corrected_queue": "   JOBID USER     ACCOUNT           NAME EXEC_HOST ST     REASON   START_TIME     END_TIME  TIME_LEFT NODES   PRIORITY\n 3659682 dmoi     a0117   ft2-se3-extrac       n/a PD QOSGrpNode          N/A          N/A      30:00     1     554444\n",
+  "corrected_log": null,
+  "training_submission": null
+}

@@ -1,5 +1,12 @@
 # Production SE(3) residue refiner
 
+For the current reconstruction diagnostic programme and its local GPU gates,
+see the [2026-10-20 reconstruction plan](se3_reconstruction_plan_20261020.md).
+The original validation protocol below remains a historical reference.
+The plan's 2026-10-21 follow-up adds opt-in `per_structure`/`layer` input
+normalization and separate inferred/seed contact policies. Historical defaults
+remain unchanged; compare complete held-out experiments before promotion.
+
 This validation path is separate from `learn_production_staged_transformer_geometry.py` and its staged transformer. It refines the production geometry bottleneck with GotenNet. The 40-character epoch-40 encoder and decoder are resolved through `configs/production_models.yaml` and frozen throughout. No graph regeneration, alphabet benchmarking, production checkpoint replacement, distributed training or atom refinement is performed.
 
 Activate the CUDA-capable `foldtree2` environment and select an idle GPU. On this workstation GPU 1 was made available for validation. Run GPU commands outside Codex's restricted sandbox as directed by `AGENTS.md`.
@@ -48,6 +55,15 @@ Existing token-only SE(3) checkpoints are incompatible with the continuous-featu
 Caches store latent/codebook features, tokens, bottleneck coordinates, contact embeddings and adjacency, targets and masks. Their identity includes dataset/checkpoint SHA-256 hashes and preprocessing settings/code. A full dataset hash is reused only if path, device, inode, size, mtime and ctime agree. Delete `runs/se3_validation/hashes` to force rehashing. Cached and fresh features and full refiner outputs are checked at startup. Resume restores optimizer, scheduler, epoch, step and CPU/CUDA RNG state and rejects a changed dataset, checkpoint pair, split, model/loss implementation or optimizer configuration. Checkpoint writes use temporary files and atomic replacement. The existing production Lightning trainer also accepts `--resume-from` and validates production provenance; use the bounded runner for the canonical experiments.
 
 ## Results and larger-run gate
+
+The follow-up [coordinate-scale and planarity investigation](se3_investigation_20261009.md)
+found that the three-channel contact bottleneck is essentially planar. The
+original validation report remains a historical protocol-v2 result; the
+investigation uses corrected distance metrics and separate experimental model
+modes. In particular, historical lDDT calculations could include numerical
+nonzero self-distances; the current implementation explicitly excludes them.
+Do not pool the two protocols' metrics. Exact original implementation/evidence
+is preserved by commit `e7954c3` and the original archive.
 
 See [the generated report](se3_validation_report.md). Each run retains `events.jsonl`, `provenance.json`, `baseline.json`, `paired_metrics.json`, `length_profile.json`, `last.pt` and `best.pt`. Events contain loss terms, effective structure counts, nonfinite failures, gradient norms, throughput and peak host/GPU memory. Paired metrics compare the same structures and masks. The best checkpoint is selected by validation FAPE.
 

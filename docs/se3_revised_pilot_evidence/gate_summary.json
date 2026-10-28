@@ -1,0 +1,53 @@
+{
+  "epochs": 14,
+  "best_epoch": 9,
+  "evaluated_structures": 128,
+  "fape_improved": true,
+  "no_material_regression": true,
+  "metrics": {
+    "fape": {
+      "input": 0.9478593836538494,
+      "refined": 0.9410358527675271,
+      "delta": -0.00682353088632226,
+      "material_regression": false
+    },
+    "ca_rmsd": {
+      "input": 18.40328325331211,
+      "refined": 17.91413927823305,
+      "delta": -0.4891439750790596,
+      "material_regression": false
+    },
+    "tm_score": {
+      "input": 0.19222074393425248,
+      "refined": 0.20692224523117275,
+      "delta": 0.014701501296920272,
+      "material_regression": false
+    },
+    "lddt": {
+      "input": 0.1958122099749744,
+      "refined": 0.2471079103415832,
+      "delta": 0.0512957003666088,
+      "material_regression": false
+    },
+    "ca_bond_mae": {
+      "input": 1.7628455581143498,
+      "refined": 1.2916285549290478,
+      "delta": -0.471217003185302,
+      "material_regression": false
+    },
+    "ca_bend_mae_radians": {
+      "input": 0.8435609587468207,
+      "refined": 0.736896094866097,
+      "delta": -0.10666486388072371,
+      "material_regression": false
+    },
+    "ca_torsion_mae_radians": {
+      "input": 1.566215993836522,
+      "refined": 1.5471416423097253,
+      "delta": -0.019074351526796818,
+      "material_regression": false
+    }
+  },
+  "failure_events": 0,
+  "fape_improved_structures": 118
+}

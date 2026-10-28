@@ -1,37 +1,32 @@
-API Reference
-=============
+Source and API map
+==================
 
-This section contains the automatically generated API documentation from docstrings.
+The maintained `source module map
+<https://github.com/DessimozLab/foldtree2/blob/main/foldtree2/src/README.md>`_
+groups modules by responsibility and links their notebook origins.
+Public import and class names remain stable for existing notebooks, scripts
+and serialized checkpoints.
 
-.. currentmodule:: foldtree2
+Core inference
+--------------
 
-Core Modules
-------------
+* ``foldtree2.ft2treebuilder`` orchestrates the structure-to-tree pipeline.
+* ``foldtree2.src.pdbgraphmk2`` converts structures and loads graph datasets.
+* ``foldtree2.src.encoder`` and ``foldtree2.src.quantizers`` encode learned states.
+* ``foldtree2.makesubmat`` builds model-specific matrices from references.
+* ``foldtree2.src.ancestral`` shares native ancestral reconstruction.
 
-.. autosummary::
-   :toctree: _autosummary
-   :template: custom-module-template.rst
-   :recursive:
+Training and research
+---------------------
 
-   makesubmat
+See the `decoder/geometry/loss module catalogue
+<https://github.com/DessimozLab/foldtree2/blob/main/foldtree2/src/README.md#model-and-geometry-modules>`_
+for input/output contracts, optional dependencies and research limitations.
+See :doc:`cli/README` for executable interfaces and :doc:`training` for protocols.
 
-Makesubmat Module
------------------
-
-.. automodule:: foldtree2.makesubmat
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Functions
-~~~~~~~~~
-
-.. autofunction:: foldtree2.makesubmat.main
-.. autofunction:: foldtree2.makesubmat.parse_args
-.. autofunction:: foldtree2.makesubmat.read_reps
-.. autofunction:: foldtree2.makesubmat.download_structs_fn
-.. autofunction:: foldtree2.makesubmat.align_structs_fn
-.. autofunction:: foldtree2.makesubmat.encode_structures
-.. autofunction:: foldtree2.makesubmat.build_char_set
-.. autofunction:: foldtree2.makesubmat.compute_pair_counts_and_bg
-.. autofunction:: foldtree2.makesubmat.compute_log_odds_from_counts
+Documentation builds deliberately do not import training CLIs or optional
+research modules. Historical generated RST pages remain in the repository for
+reference but are excluded from the default site: some import modules that parse
+arguments or require unavailable legacy components. Source docstrings remain the
+implementation-level reference; importing every module is not a documentation
+validation strategy.

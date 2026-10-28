@@ -1,0 +1,61 @@
+{
+  "protocol": "se3-lightning-v1",
+  "bundle": "0250c8b94e10884553794470f2035355eb044e327feff3e66a72553f0e37e290",
+  "training": {
+    "checkpoint_every": 32,
+    "epochs": 1,
+    "global_batch": 16,
+    "learning_rate": 0.0005,
+    "max_residues": 256,
+    "min_delta": 0.0,
+    "model": {
+      "depth": 4,
+      "heads": 4,
+      "hidden": 64
+    },
+    "scheduler": false,
+    "seed": 42,
+    "structural_metrics": true,
+    "train_count": 4096,
+    "val_count": 512,
+    "tensor_ff_input_norm": true
+  },
+  "sources": {
+    "train_se3_lightning.py": "28f1a668eac7bbf8ff88c80525f87b8f2b9353d201deb530cf86a3f379806702",
+    "se3_cache.py": "31a486eada79950c0e31163cedae184d96c5ed6f01998e5cc2a441ff8f8c0a9e",
+    "se3_validation.py": "762f3f71447bcd43969f996e3b4572e756c98f5a76e9a4f5533ca0334eabac10",
+    "src/se3_struct_decoder.py": "db8ed2ce9d6600074e1d38e71b4fbef89ef694e7496d8ce0ff7106ff882b9960",
+    "src/geometry_seeds.py": "04679957b315db0ae30b7166e8415d873607a26f216e339eb77fbf33f5a98cc7",
+    "src/losses/se3_ablation.py": "835d0f309af00ecc2a3cb64b4a2c49fae63cea2af3f6133269f8f5358a860e41",
+    "src/losses/fape.py": "897c07fb49413183983f4c7416c13e0859b5a54241f0d29d06ed02dd7d12e761",
+    "src/dynamictan.py": "6d9afd8234c475e571d2273a5b7f0e678da263c8ad8dedd0904e7628cb743abc",
+    "src/quantizers.py": "ef48b1f368e339862fa9f183ee1a0a7259ce49cbb58c231f5a9197452b000641",
+    "src/folding_refiner.py": "98b13ceb64124e61c4d85df54ec7fba21c78e17a28494f526d194c728d96f5fc",
+    "src/manifold_hyper_connections.py": "e65eb03805151a8a49d23f620fe87951a2b27de083fa909316a2ee635e97ecc7"
+  },
+  "feature_dim": 40,
+  "input_identity": {
+    "format": 1,
+    "dataset_sha256": "2c970702701a5bf789dd46974ff689f02c0805dcf146746db8d1eba07a2b3673",
+    "encoder_sha256": "75d176f4dd11fa1e676c536be953b78a767c40c405b425a49182192fbb6a7fc6",
+    "decoder_sha256": "b9642afd20db829a5ce2dd1c908c86df0c351319347fccd2ad1d335b3aa9089d",
+    "preprocessing": {
+      "extractor_sha256": "ad5494de73bad022a80e47a75a0790d7d52aaab9f90867d7068f1175babdb36a",
+      "coordinate_source": "bottleneck",
+      "max_residues": 384,
+      "contact_top_k": 8,
+      "contact_min_sep": 3,
+      "contact_cutoff": 8.0,
+      "plddt_threshold": 0.5,
+      "features": "latent+codebook"
+    }
+  },
+  "preprocessing": {
+    "scale": 10.92841422532637,
+    "lift_fraction": 0.1,
+    "gain": 32.0
+  },
+  "initialization": {
+    "kind": "fresh"
+  }
+}

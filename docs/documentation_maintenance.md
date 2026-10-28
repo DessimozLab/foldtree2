@@ -10,6 +10,9 @@ an output file appearing is not enough to mark scientific work complete.
 
 1. Add the entrypoint/purpose to the [experiment guide](experiments.md). Identify
    notebook origins and any differences; do not imply an entire notebook was ported.
+   Update the [notebook catalogue](../foldtree2/notebooks/README.md),
+   [source map](../foldtree2/src/README.md), [CLI index](cli/README.md) and
+   [final benchmark checklist](final_benchmarks.md) where applicable.
 2. Document inputs/layout/identifiers, artifact selection, portable smoke/full
    commands, device/thread controls, measured runtime/storage if available,
    output tables, metric units, and limitations.
@@ -67,7 +70,11 @@ Validation checks performed:
 
 ## Documentation checks
 
-- Run `python scripts/check_documentation.py` for local links and example flags.
+- Run `python scripts/check_documentation.py` for local links and example flags,
+  including nested notebook/source READMEs and the workflow guide.
+- Run documentation unit tests to check module-purpose docstrings and catalogue
+  coverage for every notebook. Preserve serialized module/class paths during
+  source reorganizations; test loading existing checkpoints.
 - Run `git diff --check`; inspect changes for stale claims or unrelated edits.
 - Check CLI help and smoke commands in fresh directories. Do not launch full
   training/download jobs simply to test documentation examples.
@@ -76,6 +83,11 @@ Validation checks performed:
   that were not rerun in full.
 
 ## Validation log
+
+The records below describe earlier documentation checks. The later packaging,
+fresh conda inference and full-suite results are recorded in
+[verified local release preparation](releasing.md#verified-local-preparation).
+Do not interpret an older staging-only result as the current distribution status.
 
 Documentation refresh checks on the Linux workstation:
 

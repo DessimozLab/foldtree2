@@ -62,6 +62,8 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv-mlflow/
+.mlflow/
 env/
 venv/
 ENV/
@@ -160,3 +162,32 @@ models/
 !docs/se3_validation_evidence/**/*.json
 !docs/se3_validation_evidence/**/*.jsonl
 !docs/se3_validation_evidence/**/*.png
+
+# Bounded follow-up investigation evidence and experimental seed diagnostics.
+!docs/se3_investigation_evidence/**/*.json
+!docs/se3_investigation_evidence/**/*.jsonl
+!docs/se3_investigation_evidence/**/*.png
+
+!docs/se3_spatial_learning_evidence/**/*.json
+!docs/se3_spatial_learning_evidence/**/*.jsonl
+!docs/se3_spatial_learning_evidence/**/*.png
+
+!docs/se3_loss_ablation_evidence/**/*.json
+!docs/se3_loss_ablation_evidence/**/*.jsonl
+!docs/se3_loss_ablation_evidence/**/*.png
+
+!docs/se3_revised_pilot_evidence/**/*.json
+!docs/se3_revised_pilot_evidence/**/*.jsonl
+!docs/se3_revised_pilot_evidence/**/*.png
+
+!docs/se3_larger_local_evidence/**/*.json
+!docs/se3_larger_local_evidence/**/*.jsonl
+!docs/se3_larger_local_evidence/**/*.png
+
+!docs/se3_clariden_evidence/**/*.json
+!docs/se3_clariden_evidence/**/*.jsonl
+!configs/clariden_se3/budget.json
+!alps/se3/requirements.txt
+
+# Playwright CLI temp artifacts
+.playwright-cli/

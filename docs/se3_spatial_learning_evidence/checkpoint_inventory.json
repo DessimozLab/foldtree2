@@ -1,0 +1,42 @@
+[
+  {
+    "path": "runs/se3_spatial_learning_20261009/planar_control_best.pt",
+    "sha256": "93a9c9ea49bc89d2c1cffb7406ae0930134557e3f162e4042e292fa2bb74007f",
+    "bytes": 3549979
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/lifted_circular_best.pt",
+    "sha256": "edea02a863abad04e00b261b0f47c3dd8fac04a7e48ac827c74839ee993300e3",
+    "bytes": 3550591
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/lifted_circular_last.pt",
+    "sha256": "7731d3d34fbf64a62fd66f093a8847dad9c49f4a7eb92f9cce2dec23f47a7788",
+    "bytes": 3550591
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/overfit_lifted_circular_last.pt",
+    "sha256": "479a8d84b91dbc9b51c5a84eefaa79efd43f1489538fc25e8fb8b353e4f0cccc",
+    "bytes": 3555999
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/planar_control_last.pt",
+    "sha256": "c4219e6630c14ca011a97d17305d7e36401f09df6599e7237e5d13514e61027e",
+    "bytes": 3549979
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/lifted_residual_last.pt",
+    "sha256": "b4fcb28c4da13ad96ee12f4c3d0f4304e78f843b53ff8cf21fb6ee14e41da12f",
+    "bytes": 3550595
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/overfit_lifted_circular_best.pt",
+    "sha256": "8e01cad6e2969d1335ef73261e3f17ab545cd73e302326a082983fde79f754ab",
+    "bytes": 3555999
+  },
+  {
+    "path": "runs/se3_spatial_learning_20261009/lifted_residual_best.pt",
+    "sha256": "021475a48ea04eb76f34e759e2c75dca4b372589a862ef0c669a0ae810742ca1",
+    "bytes": 3550595
+  }
+]

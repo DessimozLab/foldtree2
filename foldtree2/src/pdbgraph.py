@@ -1,3 +1,8 @@
+"""Legacy ProDy-based graph conversion and HDF5 datasets.
+
+Retained for historical notebooks/checkpoints. Current CLI PDB conversion uses
+pdbgraphmk2; feature layouts from the two converters are not interchangeable.
+"""
 import warnings
 import json
 import time

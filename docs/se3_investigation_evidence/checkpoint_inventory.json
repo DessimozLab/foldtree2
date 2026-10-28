@@ -1,0 +1,172 @@
+[
+  {
+    "path": "runs/se3_investigation_20261009/overfit_calibrated_residual_rms_best.pt",
+    "bytes": 3554563,
+    "sha256": "7e6cfcb102cd55a87489ce25927fb354c0c389f7addd8fb84dfc123d386f6cda"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_residual_last.pt",
+    "bytes": 3546339,
+    "sha256": "35f52e81f52ffcc8f6a63662f80bdcd41595c92d9f854c1ffb91200a34f3dfb3"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_absolute_best.pt",
+    "bytes": 3546339,
+    "sha256": "e135a8fd3ea312f20b38b851fb7e76edb16fec05a545e8379b7f7939e13ad2e7"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/raw_residual_last.pt",
+    "bytes": 3541707,
+    "sha256": "f058359f88b9bee2f7d3226316c2ba2b52ab373839c1ed74504b7c8832cb78ed"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/raw_absolute_best.pt",
+    "bytes": 3541707,
+    "sha256": "0fd6fa856342bf4a50d7dd2f050ef4800e8861d1fbf4d4d4dfa359e6c9a4bed2"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_residual_rms_best.pt",
+    "bytes": 3548803,
+    "sha256": "cd2bff2ae0627f7b1139baade0cfb1a260004e507edb0e0e505affce37ed9de7"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/raw_residual_best.pt",
+    "bytes": 3541707,
+    "sha256": "24badf6a28333b88342e3f833f82545298caeb518e218e893a42c347de342717"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_residual_rms_last.pt",
+    "bytes": 3548803,
+    "sha256": "9b7a75dc3d68005927202cf3da64058ea2ac67f3b028c7106881d3b2fd3b8ddb"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/raw_absolute_last.pt",
+    "bytes": 3541707,
+    "sha256": "276ca6a0716826fd393b76c87fef6e2b6757b754f49ee7a797bf325924169bba"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_absolute_last.pt",
+    "bytes": 3546339,
+    "sha256": "7432f8fe8516631a24bd69610a1af70fda94759d24c76ec24a33ba9028b0c319"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/overfit_calibrated_residual_rms_last.pt",
+    "bytes": 3554563,
+    "sha256": "e020f77ea3a1d597c8dcdf805ef9efeb32204c155af91073bbe957d888fb0d18"
+  },
+  {
+    "path": "runs/se3_investigation_20261009/calibrated_residual_best.pt",
+    "bytes": 3546339,
+    "sha256": "d385f2aab1e9cc220f4c28f4cfbfc02ce900d0fc0f4a23539c7d17a4e95f8923"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_gain32_last.pt",
+    "bytes": 3540603,
+    "sha256": "a4d2f65e8b3b5f38f96f38766e5dbd7254dd74a624f587d4882d9cb175c8ebd6"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/overfit_rms_gain32_last.pt",
+    "bytes": 3546235,
+    "sha256": "143004ed9cdf10b4e92d82ff7b5a8073c87bd947d99d867220835203d4c0f5d4"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_gain32_best.pt",
+    "bytes": 3540603,
+    "sha256": "b02590d1e7505381c742a25e95dd4d535e882f31c7a33dc32e472538b1a13a99"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_geometry_scheduler_last.pt",
+    "bytes": 3548251,
+    "sha256": "857efdb28e257e6be2ec150c59253a46aa3fad0583afa2e1f59a2f25e28c0caa"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/overfit_rms_gain32_best.pt",
+    "bytes": 3546235,
+    "sha256": "e0bdccf8b8acbc6736624f224fb170ea6817b0e6088a117c54fa24dc0d55d4ea"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_geometry_scheduler_best.pt",
+    "bytes": 3548251,
+    "sha256": "2f05df43fff13b2c860b9fc1ce5bb60cf6dec70e8d93e9d992004eeb31c290af"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_gain32_circular_last.pt",
+    "bytes": 3546287,
+    "sha256": "2d117399e59e90ff72b19dc3510f392d6eaff9584359ce7cdd7100b0eaf7f6de"
+  },
+  {
+    "path": "runs/se3_parameterization_20261009/rms_gain32_circular_best.pt",
+    "bytes": 3546287,
+    "sha256": "1ffcc506d1a14f727db0c2d2a8ff525f71d30b3fcd824551ff40f6b486d94d45"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/planar_control_best.pt",
+    "bytes": 3542939,
+    "sha256": "a1d607ecc23e3434608826f87c938a8b900295412de3eccb2cc2422bcd9747ee"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/lifted_circular_best.pt",
+    "bytes": 3543679,
+    "sha256": "a2872d4334491dacb2a37619db2bae724656e22ba68ebb7ac6b79a0c997282d0"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/lifted_circular_last.pt",
+    "bytes": 3543679,
+    "sha256": "f11cb88f37c19c1a2fc4339d3bfd2dd3abc56e7d13ae2c50f1d3162609a8c828"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/planar_control_last.pt",
+    "bytes": 3542939,
+    "sha256": "c4cb80adcc509e1314f06f4be83efc7b4b65b63c302ba23a868c8722d7f306b1"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/lifted_residual_last.pt",
+    "bytes": 3543555,
+    "sha256": "d0905c151f4946ce4f9b49f3b5b46e6831d05f534c4edaa521f47fc98cdb9f03"
+  },
+  {
+    "path": "runs/se3_spatial_smoke_20261009/lifted_residual_best.pt",
+    "bytes": 3543555,
+    "sha256": "78076ea03878af38e843bac49c5bf4fa11702a0a5e3ba6ea328983aee7d734ff"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/calibrated_residual_last.pt",
+    "bytes": 3546339,
+    "sha256": "f0de231838a9a253c4eeb991d3e79eca7ea9fc75c6585161abf2cb2aba04cf70"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/calibrated_absolute_best.pt",
+    "bytes": 3546339,
+    "sha256": "e54d504e2cabb886f60755cf0498cd14a5e922f4e64dd3245e1c189f0548f05e"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/raw_residual_last.pt",
+    "bytes": 3541707,
+    "sha256": "d2c376f3319a38d2270fc6267788ca719b69f8618ad309810d4baa4ce4b1215e"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/raw_absolute_best.pt",
+    "bytes": 3541707,
+    "sha256": "7443524c532248228fb06bd0592292e25f97ce1091b67ee464931a1bf3c11413"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/raw_residual_best.pt",
+    "bytes": 3541707,
+    "sha256": "c3eb487c98ac5aef628ebdd71f36cb51964416688f2c8077117604dc32f791fb"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/raw_absolute_last.pt",
+    "bytes": 3541707,
+    "sha256": "22e64f7e2a2f9f294810848f934a3b379cc14274c55326dd1619846647e5f5a0"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/calibrated_absolute_last.pt",
+    "bytes": 3546339,
+    "sha256": "bcfa5156aa8d6f0492107570e0d6d91504358b74aedabdd1f95a11719096218a"
+  },
+  {
+    "path": "runs/se3_investigation_20261009_metric_attempt/calibrated_residual_best.pt",
+    "bytes": 3546339,
+    "sha256": "d89c502632486e74dc790fa0cd94f6c2bdace1b2bdad8969f6ec1731eca6a508"
+  }
+]

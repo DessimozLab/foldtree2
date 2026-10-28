@@ -8,13 +8,17 @@
 pdbs-to-graphs /path/to/pdb_directory /path/to/training_graphs.h5 --verbose
 ```
 
-This recursively searches PDBs using the older converter. Verify populated HDF5
+This searches PDBs using the current mk2 converter. Verify populated HDF5
 groups and conversion logs. Graphs, checkpoints, and inference must share feature
 definitions, not just alphabet size. Retained production encoders expect 857
 features; approved new 10/50 training also uses 857 features from the notebook's
 precomputed `/mnt/data2/datasets/ft2_train_final.h5`. The earlier 865-feature
 training attempt is superseded; its checkpoints are preserved separately.
 Arbitrary graph datasets are not interchangeable.
+
+See the [encoding CLI guide](cli/encoding.md),
+[training notebook catalogue](../foldtree2/notebooks/experiments/README.md) and
+[source module map](../foldtree2/src/README.md) for related interfaces.
 
 ## Train
 

@@ -1,3 +1,4 @@
+"""Resolve packaged amino-acid properties independently of the working directory."""
 from pathlib import Path
 from typing import Optional
 

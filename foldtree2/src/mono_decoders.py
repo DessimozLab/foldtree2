@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
+"""Sequence, contact and geometry decoders paired with structural encoders.
+
+MultiMonoDecoder combines task-specific heads. Geometry heads expose different
+coordinate/frame representations; consume their named outputs with the matching
+loss utilities, not by assuming every decoder returns Cartesian coordinates.
+"""
 
 import copy
 import importlib

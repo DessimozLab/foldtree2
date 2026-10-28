@@ -1,0 +1,482 @@
+[
+  {
+    "id": "A0A0W7X8K2",
+    "seed_singular_values": [
+      17.935671517105416,
+      10.776585104632257,
+      1.083522194783309e-06
+    ],
+    "target_singular_values": [
+      204.21636235738393,
+      141.34907788229157,
+      90.16307918111902
+    ],
+    "seed_smallest_largest_ratio": 6.041157665883566e-08,
+    "best_planar_target_rmsd_bound": 6.915192501859152
+  },
+  {
+    "id": "A0A518IXF4",
+    "seed_singular_values": [
+      13.579132254259733,
+      7.366508510351378,
+      1.0063461868952457e-06
+    ],
+    "target_singular_values": [
+      93.64943193683517,
+      81.6980034316621,
+      56.12871386956461
+    ],
+    "seed_smallest_largest_ratio": 7.410975665102297e-08,
+    "best_planar_target_rmsd_bound": 5.503873217188
+  },
+  {
+    "id": "T1XI41",
+    "seed_singular_values": [
+      18.52419937645976,
+      11.543763160433071,
+      1.2265734262689889e-06
+    ],
+    "target_singular_values": [
+      157.9501082375308,
+      144.3698177952606,
+      98.24874284820169
+    ],
+    "seed_smallest_largest_ratio": 6.6214652592635e-08,
+    "best_planar_target_rmsd_bound": 7.146544460891039
+  },
+  {
+    "id": "A0A552Q9F5",
+    "seed_singular_values": [
+      6.481632309453351,
+      1.9677654876747623,
+      5.073307147047747e-07
+    ],
+    "target_singular_values": [
+      61.18098354521914,
+      33.0448850665573,
+      18.40761125817916
+    ],
+    "seed_smallest_largest_ratio": 7.827206025939507e-08,
+    "best_planar_target_rmsd_bound": 2.80713440011068
+  },
+  {
+    "id": "A0A6M0S7I9",
+    "seed_singular_values": [
+      7.877360594078158,
+      6.193091450223658,
+      1.3746314293892272e-06
+    ],
+    "target_singular_values": [
+      82.8977592799891,
+      39.58101603693393,
+      28.10299653044866
+    ],
+    "seed_smallest_largest_ratio": 1.745040630008245e-07,
+    "best_planar_target_rmsd_bound": 3.6280812513650824
+  },
+  {
+    "id": "A0A0N4UQQ1",
+    "seed_singular_values": [
+      19.83222246028741,
+      9.52932616611814,
+      1.1356276704262073e-06
+    ],
+    "target_singular_values": [
+      341.1476417590281,
+      90.9406051043695,
+      75.90213056993929
+    ],
+    "seed_smallest_largest_ratio": 5.726174525826439e-08,
+    "best_planar_target_rmsd_bound": 5.610846942807045
+  },
+  {
+    "id": "A0A1G3R0V7",
+    "seed_singular_values": [
+      17.16978836025901,
+      7.689937684446648,
+      9.979690672795636e-07
+    ],
+    "target_singular_values": [
+      108.19804161865396,
+      99.80638143505269,
+      67.76879154879632
+    ],
+    "seed_smallest_largest_ratio": 5.8123550875528036e-08,
+    "best_planar_target_rmsd_bound": 6.085817137055557
+  },
+  {
+    "id": "A0A2W5KC43",
+    "seed_singular_values": [
+      8.564003172473747,
+      4.926026780543628,
+      8.637558523761766e-07
+    ],
+    "target_singular_values": [
+      84.57809712688972,
+      57.63538870882696,
+      20.170869448530027
+    ],
+    "seed_smallest_largest_ratio": 1.0085888981830879e-07,
+    "best_planar_target_rmsd_bound": 2.5826151897235587
+  },
+  {
+    "id": "A0A5D2C3K6",
+    "seed_singular_values": [
+      8.753570161512664,
+      4.077344456835543,
+      7.352915884728461e-07
+    ],
+    "target_singular_values": [
+      150.81855741755695,
+      44.101750052841446,
+      34.04750078836086
+    ],
+    "seed_smallest_largest_ratio": 8.399905123348937e-08,
+    "best_planar_target_rmsd_bound": 5.192195193623261
+  },
+  {
+    "id": "A0A0G1IXS9",
+    "seed_singular_values": [
+      17.074026084913104,
+      7.8994309688434345,
+      1.0614704297778578e-06
+    ],
+    "target_singular_values": [
+      134.77603881943995,
+      85.11966934641082,
+      58.24936230246588
+    ],
+    "seed_smallest_largest_ratio": 6.216872485135717e-08,
+    "best_planar_target_rmsd_bound": 5.1285703832095715
+  },
+  {
+    "id": "A0A1X7UZW2",
+    "seed_singular_values": [
+      14.337533994880149,
+      6.275074798243054,
+      1.2117921974029712e-06
+    ],
+    "target_singular_values": [
+      135.91085719436742,
+      65.26890048665763,
+      50.63028732128812
+    ],
+    "seed_smallest_largest_ratio": 8.451887178336912e-08,
+    "best_planar_target_rmsd_bound": 5.3369008841338585
+  },
+  {
+    "id": "A0A7W1W0E0",
+    "seed_singular_values": [
+      7.642128529995219,
+      2.4327039506807053,
+      9.825319245146831e-07
+    ],
+    "target_singular_values": [
+      109.91971040515945,
+      48.643655642442155,
+      27.77171477205241
+    ],
+    "seed_smallest_largest_ratio": 1.2856783560473536e-07,
+    "best_planar_target_rmsd_bound": 3.5853129602593827
+  },
+  {
+    "id": "A0A4V1LZW6",
+    "seed_singular_values": [
+      13.96795803496781,
+      5.600885946683159,
+      8.838544021976168e-07
+    ],
+    "target_singular_values": [
+      85.97129792826081,
+      71.36257790561919,
+      47.13200831894211
+    ],
+    "seed_smallest_largest_ratio": 6.327728075821454e-08,
+    "best_planar_target_rmsd_bound": 5.082375163679058
+  },
+  {
+    "id": "A0A1I6M2U8",
+    "seed_singular_values": [
+      16.080225874699682,
+      12.042025868388547,
+      1.2412384280334344e-06
+    ],
+    "target_singular_values": [
+      314.1107415069888,
+      217.87793210728395,
+      165.7717488886082
+    ],
+    "seed_smallest_largest_ratio": 7.719036024154207e-08,
+    "best_planar_target_rmsd_bound": 13.490313603586012
+  },
+  {
+    "id": "A0A6H0ACP5",
+    "seed_singular_values": [
+      6.261146439228119,
+      1.8936102674847393,
+      9.482727696018938e-07
+    ],
+    "target_singular_values": [
+      52.29734478452088,
+      38.25773332083059,
+      28.751031241166398
+    ],
+    "seed_smallest_largest_ratio": 1.514535363141575e-07,
+    "best_planar_target_rmsd_bound": 4.025949644227242
+  },
+  {
+    "id": "A0A7S3RFH6",
+    "seed_singular_values": [
+      18.868260618953165,
+      8.180569890604733,
+      1.2051212976283318e-06
+    ],
+    "target_singular_values": [
+      171.45297545602358,
+      93.66606488648611,
+      84.06611929161785
+    ],
+    "seed_smallest_largest_ratio": 6.387029106529234e-08,
+    "best_planar_target_rmsd_bound": 6.485841912504737
+  },
+  {
+    "id": "A0A2E2EUC0",
+    "seed_singular_values": [
+      19.57125275558869,
+      11.341115503739335,
+      1.1554968563198087e-06
+    ],
+    "target_singular_values": [
+      294.6694627377631,
+      152.5811550352546,
+      115.72084482564897
+    ],
+    "seed_smallest_largest_ratio": 5.9040515737545184e-08,
+    "best_planar_target_rmsd_bound": 9.036279832674618
+  },
+  {
+    "id": "A0A2N7VJ36",
+    "seed_singular_values": [
+      18.433350233222537,
+      8.946250011518885,
+      1.1393654072625858e-06
+    ],
+    "target_singular_values": [
+      124.12109111732497,
+      115.58004319004142,
+      63.24235831080786
+    ],
+    "seed_smallest_largest_ratio": 6.181000159206548e-08,
+    "best_planar_target_rmsd_bound": 5.3835470532660015
+  },
+  {
+    "id": "A0A7V9IY55",
+    "seed_singular_values": [
+      21.328826641894413,
+      11.262818595995947,
+      1.1065398260456144e-06
+    ],
+    "target_singular_values": [
+      273.2070351660735,
+      118.46274150951157,
+      88.39362591318319
+    ],
+    "seed_smallest_largest_ratio": 5.18800140591012e-08,
+    "best_planar_target_rmsd_bound": 6.204016298886243
+  },
+  {
+    "id": "A0A7V0UDR5",
+    "seed_singular_values": [
+      14.124479862305932,
+      6.67539863719826,
+      9.62019806686192e-07
+    ],
+    "target_singular_values": [
+      229.60085378045684,
+      47.679201309847535,
+      44.635782352238884
+    ],
+    "seed_smallest_largest_ratio": 6.81101050137456e-08,
+    "best_planar_target_rmsd_bound": 4.9595313724709875
+  },
+  {
+    "id": "E5BHY7",
+    "seed_singular_values": [
+      22.607367973436574,
+      11.61505482245116,
+      1.3053652764529187e-06
+    ],
+    "target_singular_values": [
+      385.1060249147985,
+      131.509477806783,
+      120.46181493873459
+    ],
+    "seed_smallest_largest_ratio": 5.774070108412043e-08,
+    "best_planar_target_rmsd_bound": 7.633957338886794
+  },
+  {
+    "id": "D0VWQ8",
+    "seed_singular_values": [
+      11.733553487018758,
+      5.971964034655,
+      8.253788281870118e-07
+    ],
+    "target_singular_values": [
+      63.70931469290651,
+      61.01877463376584,
+      51.04784066016453
+    ],
+    "seed_smallest_largest_ratio": 7.034346663183981e-08,
+    "best_planar_target_rmsd_bound": 5.63729094692757
+  },
+  {
+    "id": "A0A1Y0ISQ8",
+    "seed_singular_values": [
+      14.38941353563312,
+      7.441228519542367,
+      1.0149184492555947e-06
+    ],
+    "target_singular_values": [
+      203.80814125018014,
+      56.68957609384063,
+      51.087010096515165
+    ],
+    "seed_smallest_largest_ratio": 7.053230117699437e-08,
+    "best_planar_target_rmsd_bound": 4.848964411219602
+  },
+  {
+    "id": "A0A1C0U6B9",
+    "seed_singular_values": [
+      16.138558817247436,
+      7.601987281264995,
+      9.7386317708716e-07
+    ],
+    "target_singular_values": [
+      111.61899751720676,
+      78.95839181623958,
+      69.5833552149883
+    ],
+    "seed_smallest_largest_ratio": 6.034387507057836e-08,
+    "best_planar_target_rmsd_bound": 6.790640143031078
+  },
+  {
+    "id": "A0A819IRJ0",
+    "seed_singular_values": [
+      19.299969595088335,
+      9.625194762747416,
+      1.1217133037224419e-06
+    ],
+    "target_singular_values": [
+      172.7640635044102,
+      92.96849051058574,
+      80.53792046362884
+    ],
+    "seed_smallest_largest_ratio": 5.811995185774322e-08,
+    "best_planar_target_rmsd_bound": 6.3276566336105295
+  },
+  {
+    "id": "A0A388Q026",
+    "seed_singular_values": [
+      15.482378317788745,
+      5.7970850510854355,
+      9.454335512590998e-07
+    ],
+    "target_singular_values": [
+      159.544820408583,
+      93.53087812157777,
+      47.603425381873045
+    ],
+    "seed_smallest_largest_ratio": 6.106513688357735e-08,
+    "best_planar_target_rmsd_bound": 4.833395540870918
+  },
+  {
+    "id": "A0A1J1CXQ6",
+    "seed_singular_values": [
+      9.912615561710533,
+      4.282748682591754,
+      8.926580956081462e-07
+    ],
+    "target_singular_values": [
+      105.87932747776286,
+      32.3759008004754,
+      30.16760029536872
+    ],
+    "seed_smallest_largest_ratio": 9.005273028606267e-08,
+    "best_planar_target_rmsd_bound": 3.9611999827227793
+  },
+  {
+    "id": "E4X664",
+    "seed_singular_values": [
+      14.724329609760238,
+      8.276859587671577,
+      9.910687284351615e-07
+    ],
+    "target_singular_values": [
+      227.25205330785684,
+      120.68902439800365,
+      87.57444846538542
+    ],
+    "seed_smallest_largest_ratio": 6.730824116965006e-08,
+    "best_planar_target_rmsd_bound": 8.426855232603879
+  },
+  {
+    "id": "A0A532CPA4",
+    "seed_singular_values": [
+      16.76822307550542,
+      7.196168539713936,
+      1.191716325888287e-06
+    ],
+    "target_singular_values": [
+      288.46931479917913,
+      149.53554348237776,
+      47.94073026822792
+    ],
+    "seed_smallest_largest_ratio": 7.106992318280372e-08,
+    "best_planar_target_rmsd_bound": 4.287949270829574
+  },
+  {
+    "id": "A0A5F4C6F5",
+    "seed_singular_values": [
+      15.415694411375132,
+      5.688509805398358,
+      1.0698539947359682e-06
+    ],
+    "target_singular_values": [
+      203.09794293329867,
+      108.33680403111141,
+      99.11580384554787
+    ],
+    "seed_smallest_largest_ratio": 6.940031153877378e-08,
+    "best_planar_target_rmsd_bound": 10.506254195140697
+  },
+  {
+    "id": "A0A6N7V3G6",
+    "seed_singular_values": [
+      16.256454534795367,
+      10.661187156238556,
+      9.2741433592144e-07
+    ],
+    "target_singular_values": [
+      323.2054231025967,
+      135.7914897738704,
+      35.90165702658444
+    ],
+    "seed_smallest_largest_ratio": 5.704899145975523e-08,
+    "best_planar_target_rmsd_bound": 3.2111418246530308
+  },
+  {
+    "id": "A0A0C3F3X7",
+    "seed_singular_values": [
+      15.108956911438057,
+      7.574540210010694,
+      9.549455321768922e-07
+    ],
+    "target_singular_values": [
+      123.17966337713435,
+      78.80610587394108,
+      67.45176438761199
+    ],
+    "seed_smallest_largest_ratio": 6.320393510778775e-08,
+    "best_planar_target_rmsd_bound": 6.490549054417166
+  }
+]

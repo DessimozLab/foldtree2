@@ -39,6 +39,42 @@ def test_endpoint_fape_ignores_masked_third_neighbors():
     torch.testing.assert_close(frame_fape(pred, target, mask), reference)
 
 
+def test_fape_masked_nan_coordinates_have_finite_valid_gradients():
+    torch.manual_seed(82)
+    target = torch.randn(10, 3, dtype=torch.float64)
+    pred = target + torch.randn_like(target) * .1
+    mask = torch.ones(10, dtype=torch.bool); mask[4] = False
+    expected = frame_fape(pred, target, mask)
+    pred[~mask] = float('nan'); target[~mask] = float('nan')
+    pred.requires_grad_()
+    actual = frame_fape(pred, target, mask)
+    torch.testing.assert_close(actual, expected)
+    grad = torch.autograd.grad(actual, pred)[0]
+    assert torch.isfinite(grad).all() and grad[~mask].eq(0).all()
+
+
+def test_fape_reference_independent_rigid_motion_and_gradcheck():
+    from foldtree2.src.losses.fape import equivariant_ca_frame_rotmat, coarse_backbone_fape_loss
+    torch.manual_seed(83)
+    target = torch.randn(7, 3, dtype=torch.float64)
+    pred = (target + torch.randn_like(target) * .1).requires_grad_()
+    mask = torch.ones(7, dtype=torch.bool)
+    pr, _ = equivariant_ca_frame_rotmat(pred)
+    tr, _ = equivariant_ca_frame_rotmat(target)
+    reference = coarse_backbone_fape_loss(target[:, None], pred[:, None], tr, pr, target, pred) / 10.
+    torch.testing.assert_close(frame_fape(pred, target, mask), reference)
+    q, _ = torch.linalg.qr(torch.randn(3, 3, dtype=torch.float64)); q[:, 0] *= torch.linalg.det(q)
+    torch.testing.assert_close(frame_fape(pred @ q.T + 17, target, mask), reference)
+    assert torch.autograd.gradcheck(lambda p: frame_fape(p, target, mask), (pred,), atol=1e-4, rtol=1e-3)
+
+
+def test_fape_rejects_nonfinite_valid_coordinates():
+    import pytest
+    p = torch.randn(6, 3); t = p.clone(); p[2, 0] = float('nan')
+    with pytest.raises(ValueError, match='Nonfinite valid FAPE'):
+        frame_fape(p, t, torch.ones(6, dtype=torch.bool))
+
+
 def test_resume_restores_optimizer_scheduler_and_rejects_changed_provenance():
     import copy
     import pytest
@@ -110,3 +146,73 @@ def test_cached_batch_collation_preserves_individual_refiner_outputs():
         torch.testing.assert_close(joined['coors_out_flat'][offset:offset+n],coords,atol=1e-4,rtol=1e-4)
         torch.testing.assert_close(joined['angles'][offset:offset+n],angles,atol=1e-4,rtol=1e-4)
         offset+=n
+
+
+def test_geometry_loss_remains_invariant_under_large_translation():
+    from foldtree2.se3_validation import losses
+    torch.manual_seed(19)
+    target=torch.randn(50,3)*10
+    pred=target+torch.randn_like(target)
+    entry={'target':target,'mask':torch.ones(50,dtype=torch.bool),'angles':torch.zeros(50,3)}
+    original=losses(pred,torch.zeros(50,3),entry)
+    moved=losses(pred+1000,torch.zeros(50,3),{**entry,'target':target+1000})
+    for a,b in zip(original,moved): torch.testing.assert_close(a,b,atol=1e-4,rtol=1e-4)
+
+
+def test_lddt_excludes_nonzero_numerical_self_distances(monkeypatch):
+    from foldtree2.se3_validation import metrics
+    torch.manual_seed(31)
+    target=torch.randn(64,3)*4;pred=torch.randn(64,3)
+    real_cdist=torch.cdist
+    p=pred-pred.mean(0);t=target-target.mean(0)
+    pd,td=real_cdist(p,p),real_cdist(t,t)
+    neighbors=(td<15)&(td>0)&~torch.eye(64,dtype=torch.bool)
+    expected=torch.stack([((pd-td).abs()[neighbors]<cutoff).float().mean() for cutoff in (.5,1.,2.,4.)]).mean()
+    def nonzero_diagonal(x,y,*args,**kwargs):
+        result=real_cdist(x,y,*args,**kwargs)
+        result.fill_diagonal_(1.)
+        return result
+    monkeypatch.setattr(torch,'cdist',nonzero_diagonal)
+    entry={'target':target,'mask':torch.ones(64,dtype=torch.bool),'angles':torch.zeros(64,3)}
+    torch.testing.assert_close(torch.tensor(metrics(pred,None,entry)['lddt']),expected)
+
+
+def test_train_only_calibration_recovers_uniform_scale_and_is_equivariant():
+    from scripts.investigate_se3_scale import fit_scale,calibrated_entry
+    torch.manual_seed(15)
+    coords=torch.randn(20,3);q,_=torch.linalg.qr(torch.randn(3,3));q[:,0]*=torch.linalg.det(q)
+    mask=torch.ones(20,dtype=torch.bool);mask[4]=False
+    entry={'coords':coords,'target':coords@q.T*7+100,'mask':mask}
+    factor=fit_scale([entry]);assert abs(factor-7)<1e-5
+    calibrated=calibrated_entry(entry,factor)
+    moved=calibrated_entry({**entry,'coords':coords@q.T+50},factor)
+    torch.testing.assert_close(moved['coords'][mask],calibrated['coords'][mask]@q.T+50,atol=1e-4,rtol=1e-4)
+    assert moved['coords'][~mask].eq(0).all()
+
+
+def test_normal_lift_escapes_plane_and_transforms_under_se3():
+    from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+    theta=torch.arange(12)*2*torch.pi/12
+    coords=torch.stack([theta.cos(),theta.sin(),torch.zeros(12)],-1)
+    features=(3*theta).sin()[:,None]
+    mask=torch.ones(12,dtype=torch.bool)
+    lifted=lift_seed_with_local_normals(coords,features,mask)
+    assert torch.linalg.svdvals(lifted-lifted.mean(0))[-1]>.01
+    q,_=torch.linalg.qr(torch.randn(3,3));q[:,0]*=torch.linalg.det(q)
+    moved=lift_seed_with_local_normals(coords@q.T+100,features,mask)
+    torch.testing.assert_close(moved,lifted@q.T+100,atol=1e-4,rtol=1e-4)
+
+
+def test_normal_lift_keeps_degenerate_and_masked_stencils_safe():
+    from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+    coords=torch.zeros(7,3,requires_grad=True);features=torch.zeros(7,2,requires_grad=True)
+    mask=torch.ones(7,dtype=torch.bool);mask[2]=False
+    result=lift_seed_with_local_normals(coords,features,mask)
+    assert result.eq(0).all()
+    result.sum().backward();assert torch.isfinite(coords.grad).all()
+    assert torch.isfinite(features.grad).all()
+    coords=torch.randn(7,3);features=torch.randn(7,2);features[2]=float('nan');coords[2]=float('nan')
+    result=lift_seed_with_local_normals(coords,features,mask)
+    assert torch.isfinite(result).all() and result[2].eq(0).all()
+    # Endpoint zero's normal uses residue two and must not move across that gap.
+    torch.testing.assert_close(result[0],coords[0])

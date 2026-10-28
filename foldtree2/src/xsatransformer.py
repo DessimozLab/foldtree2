@@ -1,3 +1,8 @@
+"""Exclusive-self-attention transformer layers and graph-convolution adapters.
+
+Padding/mask semantics and channel widths must agree with the encoder/decoder
+that constructs these layers.
+"""
 import copy
 import math
 from typing import Optional, Callable, Union

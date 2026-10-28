@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------------------
 [build-system]
 requires = [
-  "setuptools>=61.0",  # PEP-621 support
+  "setuptools>=68",
   "wheel"
 ]
 build-backend = "setuptools.build_meta"
@@ -26,7 +26,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent"
+  "Operating System :: POSIX :: Linux"
 ]
 dependencies = [
   "numpy",
@@ -46,6 +46,7 @@ dependencies = [
   "biopython",
   "datasketch",
   "wget",
+  "requests",
   "toytree",
   "toyplot",
   "statsmodels",
@@ -71,19 +72,23 @@ foldcomp2fasta = "foldtree2.foldcomp2fasta:main"
 tune-monodecoder-bayes = "foldtree2.scripts.tune_monodecoder_bayes:main"
 
 [tool.setuptools.packages.find]
-where = ["." , "src", "scripts"]
-exclude = ["tests*"]
+where = ["."]
+include = ["foldtree2", "foldtree2.*"]
+exclude = ["foldtree2.tests*", "foldtree2.notebooks*", "foldtree2.workflow*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 "foldtree2" = [
   "config/*.csv",
   "config/*.yaml",
   "config/*.yml",
-  "mafft_tools/*",
-  "madroot/*",
-  "raxml-ng/*"
+  "config/3diphy_submats/*",
+  "mafft_tools/hex2maffttext",
+  "mafft_tools/maffttext2hex",
+  "madroot/mad",
+  "raxml-ng/raxml-ng",
+  "raxml-ng/LICENSE.txt"
 ]
 
 [tool.setuptools]
-include-package-data = true
-py-modules = ["ft2treebuilder", "makesubmat"]
+include-package-data = false

@@ -1,3 +1,8 @@
+"""Experimental side-chain torsion and C-beta direction prediction with losses.
+
+Residue-specific chi masks determine valid targets; absent torsions must not be
+scored as zero-angle observations.
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

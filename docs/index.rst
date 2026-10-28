@@ -11,7 +11,18 @@ FoldTree2 is a toolkit for protein structure phylogenetic analysis using neural 
    installation
    user_guide
    training
+   cli/README
+   experiments
+   final_benchmarks
+   releasing
+   documentation_maintenance
    api
+
+Repository guides
+-----------------
+
+* `Notebook catalogue <https://github.com/DessimozLab/foldtree2/blob/main/foldtree2/notebooks/README.md>`_
+* `Source module map <https://github.com/DessimozLab/foldtree2/blob/main/foldtree2/src/README.md>`_
 
 Overview
 ========
@@ -67,22 +78,26 @@ This creates an HDF5 dataset suitable for training with the FoldTree2 neural net
 
 For more details on data preparation and training, see the :doc:`training` guide.
 
-API Reference
-=============
+Research and reference guides
+=============================
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 1
+   :glob:
 
-   foldtree2
-
-Modules
--------
-
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
-
-   foldtree2
+   cli/encoding
+   cli/treebuilding
+   cli/training
+   cli/matrices
+   cli/native_tools
+   curnagl_tcs
+   manuscript_methods_framework
+   production_alphabet_readiness
+   representation_conversion_guide
+   staged_geometry_training
+   se3*
+   se3*/README
+   results/*
 
 Indices and tables
 ==================

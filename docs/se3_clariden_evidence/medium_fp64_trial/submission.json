@@ -1,0 +1,33 @@
+{
+  "observed_utc": "2026-10-13T23:02:34.999976+00:00",
+  "submission": {
+    "job_id": "3657774",
+    "code_revision": "1afdd56ad16f23327e1e93cf60293b2240cbf5a4",
+    "stage": "medium_fp64_trial",
+    "command": [
+      "sbatch",
+      "--account=a0117",
+      "--partition=normal",
+      "--nodes=2",
+      "--time=120",
+      "--ntasks-per-node=1",
+      "--gpus-per-task=4",
+      "--cpus-per-task=8",
+      "--parsable",
+      "--job-name=ft2-se3-medium-fp64",
+      "--output=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/logs/medium_fp64_trial-%j.out",
+      "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/alps/se3/train.sbatch",
+      "--config",
+      "configs/clariden_se3/medium_fp64_trial.yaml"
+    ],
+    "credit_basis": "User confirmed sufficient project credit; 256 GPUh authorized rollout ceiling"
+  },
+  "receipt": {
+    "stdout": "3657774\n",
+    "time": 1791932494.0759294
+  },
+  "job": "JobId=3657774 JobName=ft2-se3-medium-fp64\n   UserId=dmoi(65746) GroupId=a0117(1053) MCS_label=N/A\n   Priority=554380 Nice=0 Account=a0117 QOS=normal\n   JobState=PENDING Reason=QOSGrpNodeLimit Dependency=(null)\n   Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0\n   RunTime=00:00:00 TimeLimit=02:00:00 TimeMin=N/A\n   SubmitTime=01:01:34 EligibleTime=01:01:34\n   AccrueTime=01:01:34\n   StartTime=Unknown EndTime=Unknown Deadline=N/A\n   SuspendTime=None SecsPreSuspend=0 LastSchedEval=01:02:34 Scheduler=Main\n   Partition=normal AllocNode:Sid=172.28.38.18:260466\n   ReqNodeList=(null) ExcNodeList=(null)\n   NodeList=\n   NumNodes=2-2 NumCPUs=16 NumTasks=2 CPUs/Task=8 ReqB:S:C:T=0:0:*:*\n   ReqTRES=cpu=16,mem=900G,node=2,billing=2,gres/gpu=8\n   AllocTRES=(null)\n   Socks/Node=* NtasksPerN:B:S:C=1:0:*:* CoreSpec=*\n   MinCPUsNode=8 MinMemoryNode=450G MinTmpDiskNode=0\n   Features=(null) DelayBoot=00:00:00\n   OverSubscribe=NO Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)\n   Command=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/alps/se3/train.sbatch\n   WorkDir=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4\n   StdErr=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/logs/medium_fp64_trial-3657774.out\n   StdIn=/dev/null\n   StdOut=/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/1afdd56ad16f23327e1e93cf60293b2240cbf5a4/logs/medium_fp64_trial-3657774.out\n   TresBind=gres/gpu:per_task:4\n   TresPerTask=cpu=8,gres/gpu=4\n   \n\n",
+  "queue": "   JOBID USER     ACCOUNT           NAME EXEC_HOST ST     REASON   START_TIME     END_TIME  TIME_LEFT NODES   PRIORITY\n 3657774 dmoi     a0117   ft2-se3-medium       n/a PD QOSGrpNode          N/A          N/A    2:00:00     2     554380\n",
+  "conservative_reserved_gpuh": 68.0,
+  "archive_sha256": "01c5f9e778c787bf7293ba1a68e94769e320a95ff6f31567255c19a5569a8180"
+}

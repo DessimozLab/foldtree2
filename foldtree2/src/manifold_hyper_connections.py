@@ -1,3 +1,4 @@
+"""Sinkhorn-constrained multi-stream residual mixing for experimental refiners."""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

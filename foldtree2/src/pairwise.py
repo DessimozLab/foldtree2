@@ -1,6 +1,10 @@
-#import libraries
 #!/usr/bin/env python
 # coding: utf-8
+"""Experimental pairwise encoded-sequence and complex interaction models.
+
+These similarity/decoder helpers are not the monomer tree-inference pipeline;
+their paired graphs and labels require separate training data.
+"""
 
 import copy
 import importlib

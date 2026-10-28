@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Extract residue-aligned structural tracks and discrete diagnostic alphabets.
+
+Reads the first structural model, preserving chain/residue correspondence for
+neighborhood, burial and confidence tracks. These tracks are not learned FT2
+codebook states.
+"""
 from __future__ import annotations
 
 import argparse

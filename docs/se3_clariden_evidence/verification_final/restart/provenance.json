@@ -1,0 +1,35 @@
+{
+  "protocol": "se3-lightning-v1",
+  "bundle": "4ec99c25fbcd8516fed90811894963c7c8c9796b483885cc500fa2c1728cd071",
+  "training": {
+    "checkpoint_every": 1,
+    "epochs": 1,
+    "global_batch": 16,
+    "learning_rate": 0.0005,
+    "max_residues": 256,
+    "model": {
+      "depth": 2,
+      "heads": 2,
+      "hidden": 32
+    },
+    "scheduler": true,
+    "seed": 42,
+    "structural_metrics": true,
+    "train_count": 32,
+    "val_count": 3
+  },
+  "sources": {
+    "train_se3_lightning.py": "463828266537fc36795e27f2742e14dcea1fd94d016a7df020d9878a4b4826e3",
+    "se3_cache.py": "31a486eada79950c0e31163cedae184d96c5ed6f01998e5cc2a441ff8f8c0a9e",
+    "se3_validation.py": "762f3f71447bcd43969f996e3b4572e756c98f5a76e9a4f5533ca0334eabac10",
+    "src/se3_struct_decoder.py": "582b0f607a25513d539f81253be1f020fef3a6dc79dfc953588cb442cd799497",
+    "src/geometry_seeds.py": "04679957b315db0ae30b7166e8415d873607a26f216e339eb77fbf33f5a98cc7",
+    "src/losses/se3_ablation.py": "835d0f309af00ecc2a3cb64b4a2c49fae63cea2af3f6133269f8f5358a860e41",
+    "src/losses/fape.py": "897c07fb49413183983f4c7416c13e0859b5a54241f0d29d06ed02dd7d12e761",
+    "src/dynamictan.py": "6d9afd8234c475e571d2273a5b7f0e678da263c8ad8dedd0904e7628cb743abc",
+    "src/quantizers.py": "ef48b1f368e339862fa9f183ee1a0a7259ce49cbb58c231f5a9197452b000641",
+    "src/folding_refiner.py": "98b13ceb64124e61c4d85df54ec7fba21c78e17a28494f526d194c728d96f5fc",
+    "src/manifold_hyper_connections.py": "e65eb03805151a8a49d23f620fe87951a2b27de083fa909316a2ee635e97ecc7"
+  },
+  "feature_dim": 40
+}

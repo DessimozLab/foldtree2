@@ -1,3 +1,9 @@
+"""Current Gemmi-based PDB/Foldcomp conversion and graph datasets.
+
+Residue features, geometry tracks and heterogeneous edges form a version-sensitive
+encoder input contract. Use matching dataset/checkpoint schemas rather than
+padding features from the legacy converters. Property tables resolve at runtime.
+"""
 import json
 import multiprocessing as mp
 import os

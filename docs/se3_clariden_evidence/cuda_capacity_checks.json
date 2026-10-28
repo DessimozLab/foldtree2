@@ -1,0 +1,68 @@
+[
+  {
+    "width": 32,
+    "depth": 2,
+    "length": 32,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 33.626518700271845
+  },
+  {
+    "width": 32,
+    "depth": 2,
+    "length": 128,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 110.31480061262846
+  },
+  {
+    "width": 32,
+    "depth": 2,
+    "length": 256,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 42.24570098519325
+  },
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 32,
+    "finite_loss": true,
+    "finite_gradients": true,
+    "gradient_sum": 42.69948313012719
+  },
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 128,
+    "finite_loss": true,
+    "finite_gradients": false,
+    "gradient_sum": null
+  },
+  {
+    "width": 64,
+    "depth": 4,
+    "length": 256,
+    "finite_loss": true,
+    "finite_gradients": false,
+    "gradient_sum": null
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 32,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 128,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  },
+  {
+    "width": 128,
+    "depth": 6,
+    "length": 256,
+    "failure": "GotenNet produced nonfinite valid invariant features"
+  }
+]

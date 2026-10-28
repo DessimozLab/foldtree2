@@ -1,0 +1,8 @@
+{
+  "foldtree2/se3_validation.py": "011d7edbcc08c6d6edfe64376957c2a1ac3cc38c70cfc431b4c9015bc7ff441b",
+  "foldtree2/src/losses/se3_ablation.py": "835d0f309af00ecc2a3cb64b4a2c49fae63cea2af3f6133269f8f5358a860e41",
+  "scripts/investigate_se3_scale.py": "4885d861353e0f1fbe71577517cefe0fb2ae19b27d0b21569b4d1539d4728b7f",
+  "scripts/run_se3_loss_ablation.py": "429669aa31cf67bf1008752a6038896c626caec23c92fb1753450a09d0787508",
+  "scripts/report_se3_loss_ablation.py": "c3eb0aebcc622a78d02064d9e662ef36ce69c9d62acf9290c2172d4e02d30493",
+  "foldtree2/tests/test_se3_loss_ablation.py": "4401be99507c2b3cb5bfade28228ee67d406c9730ddaaf77a91118bb333c5741"
+}

@@ -13,6 +13,8 @@ ENTRYPOINTS = {
     'ft2treebuilder': 'foldtree2/ft2treebuilder.py',
     'makesubmat': 'foldtree2/makesubmat.py',
     'pdbs-to-graphs': 'foldtree2/scripts/pdbs_to_graphs.py',
+    'foldcomp2fasta': 'foldtree2/foldcomp2fasta.py',
+    'tune-monodecoder-bayes': 'foldtree2/scripts/tune_monodecoder_bayes.py',
 }
 
 
@@ -28,7 +30,14 @@ def flags_for(path):
 
 def check():
     errors = []
-    docs = [ROOT / 'README.md', *sorted((ROOT / 'docs').rglob('*.md'))]
+    docs = [
+        ROOT / 'README.md',
+        *sorted((ROOT / 'docs').rglob('*.md')),
+        *sorted((ROOT / 'foldtree2').rglob('README.md')),
+    ]
+    workflow_readme = ROOT / '.github/workflows/README.md'
+    if workflow_readme.exists():
+        docs.append(workflow_readme)
     checked_commands = 0
     for path in docs:
         source = path.read_text()

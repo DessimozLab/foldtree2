@@ -2,6 +2,39 @@
 
 [Back to README](../README.md)
 
+## Supported release target
+
+Linux x86_64 with glibc >=2.34 is the initial supported platform. Bundled RAxML-NG, MAD and token
+helpers are native ELF executables; macOS, Windows and ARM are unsupported.
+Release wheels are audited/repaired to `manylinux_2_34_x86_64`; local intermediate
+wheels use `linux_x86_64` and must not be uploaded directly to PyPI.
+Python 3.10 is the installation-test target; CUDA is optional for inference.
+
+## Registry installations after publication
+
+The development branch is not automatically published. Confirm the release
+version and the maintainer's actual Anaconda owner before using these routes:
+
+```bash
+# PyPI: create/activate an isolated Python environment and install MAFFT separately.
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install foldtree2
+python -m pip check
+
+# Conda: replace OWNER with the release's documented Anaconda account.
+conda create -n foldtree2-cpu --override-channels \
+  -c OWNER -c conda-forge -c bioconda python=3.10 foldtree2
+conda activate foldtree2-cpu
+foldtree2 --help
+```
+
+The named channel must contain both FoldTree2 (`linux-64`) and the companion
+PyDSSP (`noarch`) package. PyDSSP is not currently available in conda-forge/
+bioconda; the checked-in companion recipe preserves legacy notebook imports.
+Do not substitute an assumed GitHub organization/channel name. Before publication,
+install from a checkout or locally built artifacts instead. Registry ownership,
+model hosting and publication gates are in the [release procedure](releasing.md).
+
 ## CPU-first installation
 
 Run from a checkout. Use a new environment rather than changing one running jobs:
@@ -120,11 +153,17 @@ build that recipe, not directly run `conda build conda-recipe` in a data-filled
 checkout: `source.path: ..` otherwise copies the checkout before the build script
 runs. `.conda_build_ignore` is not relied on to enforce filtering.
 
-This source-staging fix does not establish end-to-end conda installation support.
-Recipe dependency/entrypoint alignment, platform-aware CI artifact discovery,
-archive verification, and fresh conda installation tests remain separate work.
-Staging only reads runtime/build sources; it does not touch production artifacts,
-datasets, or active training/matrix jobs.
+The build helper now builds the companion dependency, uses conda-forge's
+`pytorch_geometric` package name, runs recipe tests, discovers Linux-64 artifacts,
+inspects the real archive format and can install into a fresh environment with
+`--cli-smoke`. Pip and conda share the Python metadata/entrypoints and package-local
+native resources. These checks must pass on the release revision; staging alone
+is not a successful installation test. Staging only reads runtime/build sources
+and does not touch datasets, production models or active training/matrix jobs.
+For local installation, use the generated local channel and a package spec.
+Passing a `.conda` filename directly to `conda install` uses explicit-archive mode
+and can omit dependencies; the smoke helper deliberately resolves through the
+local channel instead.
 
 ## Troubleshooting
 

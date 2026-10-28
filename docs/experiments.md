@@ -2,6 +2,11 @@
 
 [Back to README](../README.md)
 
+Navigation: [notebook origins](../foldtree2/notebooks/benchmarks/README.md) |
+[source modules](../foldtree2/src/README.md) |
+[final results to compile](final_benchmarks.md) |
+[cluster TCS benchmark](curnagl_tcs.md).
+
 Run scripts from the repository root in the installed environment. Datasets are
 local inputs, not pip package data. See [maintenance](documentation_maintenance.md)
 when adding a benchmark or reporting completion.
@@ -351,8 +356,8 @@ must not be treated as corresponding sites for cross-alphabet MI.
 
 ## Other prepared alignments and trees
 
-Copy the [gain specification](../scripts/phylogenetic_information_gain.spec.example.json)
-and replace dataset paths/model details:
+Create a specification using the [gain analysis CLI](../scripts/phylogenetic_information_gain.py)
+and supply your dataset paths/model details:
 
 ```bash
 python scripts/phylogenetic_information_gain.py \
@@ -373,6 +378,23 @@ documented in the [validation report](se3_validation_report.md) and
 The overfit learning gate failed; larger training and atom refinement remain
 deferred. These experiments do not change the staged transformer or alphabet
 benchmarks.
+
+The [follow-up scale and planarity investigation](se3_investigation_20261009.md)
+uses separate corrected metric protocols. Its
+[diagnostic workflow](se3_investigation_workflow.md) records CPU ablations,
+experimental residual/circular-head options and the untrained full-dimensional
+seed prototype. A larger run remains deferred.
+
+The [bounded 3D-seed learning test and loss audit](se3_spatial_learning_20261009.md)
+records the completed GPU 0 experiment, failed learning/held-out gates, FAPE
+gradient checks and masked-NaN correction. Its
+[evidence archive](se3_spatial_learning_evidence/README.md) preserves executed
+training sources separately from the subsequent loss correction.
+
+The [loss ablation](se3_loss_ablation_20261009.md) isolates soft FAPE and local
+CA bond penalties, retaining the clamped evaluation metric. Both full learning
+cases use the same 32 chains, seed and 30-epoch budget; the 128 holdouts evaluate
+predeclared objectives rather than selecting weights.
 
 Transfer validated bundles, hashes, dataset versions, and configurations.
 Alignment/tree-quality, scaling, and reconstruction experiments are not covered

@@ -1,3 +1,4 @@
+"""Lion sign-momentum optimizer; optimizer state belongs to the training run."""
 import torch
 from typing import Tuple
 
@@ -72,4 +73,3 @@ class Lion(torch.optim.Optimizer):
                 exp_avg.mul_(beta2).add_(grad, alpha=1 - beta2)
         
         return loss
-

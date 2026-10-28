@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
+"""Graph encoders and vector-quantized structural alphabet training.
+
+Inputs must match the checkpoint's graph feature schema. Discrete indices refer
+to that encoder's codebook, not a universal alphabet; retain its character map
+and substitution matrices when exporting sequences or rebuilding trees.
+"""
 
 import importlib
 import multiprocessing as mp

@@ -59,7 +59,7 @@ def shared_occupancy(records, supports, max_missing=.3):
 
 
 def gain_family(family, frame, alignments, supports, native_root, entries, outdir, threads, native=False,
-                native_sitelh_threads=1):
+                native_sitelh_threads=1, gain_threads=None):
     ident = family['family']
     projected = controlled_alignments(family, frame, native_root) if not native else None
     mask = shared_occupancy(projected, supports) if projected is not None else None
@@ -102,13 +102,14 @@ def gain_family(family, frame, alignments, supports, native_root, entries, outdi
             'raxml': tool_version('raxml-ng'), 'common_occupancy_mask': mask.astype(int).tolist() if mask is not None else None}
         summary_file = destination / 'summary.json'
         if begin_stage(destination, signature):
+            execution_threads = gain_threads or (native_sitelh_threads if native else threads)
             if native:
                 run(['raxml-ng', '--sitelh', '--redo', '--msa', alignment, '--tree', tree,
                      '--model', model, '--opt-model', 'off', '--opt-branches', 'off',
-                     '--threads', native_sitelh_threads, '--prefix', destination / 'sites'], destination / 'sites.command.log')
+                     '--threads', execution_threads, '--prefix', destination / 'sites'], destination / 'sites.command.log')
                 sitelh = destination / 'sites.raxml.siteLH'
             else:
-                sitelh = run_raxml_sitelh(alignment, tree, model, destination / 'sites', 'raxml-ng', threads)
+                sitelh = run_raxml_sitelh(alignment, tree, model, destination / 'sites', 'raxml-ng', execution_threads)
             spec = DatasetSpec(name, name, alignment, tree, str(model), sitelh, None)
             table = analyze_alphabet_phylogenetic_info(spec, parse_raxml_sitelh(sitelh), set(supports[name]), '-', .3)
             if mask is not None:
@@ -122,7 +123,7 @@ def gain_family(family, frame, alignments, supports, native_root, entries, outdi
             summary = {'family': ident, 'model': name, 'protocol': protocol, **compute_summary_stats(table, name)}
             write_json(summary_file, summary)
             complete_stage(destination, signature, [output, summary_file, sitelh],
-                           execution_threads=native_sitelh_threads if native else threads)
+                           execution_threads=execution_threads)
         rows.append(json.loads(summary_file.read_text()))
     return rows
 
@@ -143,9 +144,13 @@ def main():
     parser.add_argument('--native-sitelh-threads', type=int, default=1,
                         help='Execution threads for frozen native likelihoods (default: 1). '
                              'Does not change fitted models or cache identity; actual threads are recorded in completion metadata.')
+    parser.add_argument('--gain-threads', type=int,
+                        help='Runtime thread limit for incomplete controlled/native gain stages on resume')
     parser.add_argument('--max-families', type=int)
     parser.add_argument('--wait-for-service')
     args = parser.parse_args()
+    if args.gain_threads is not None and not 1 <= args.gain_threads <= args.threads:
+        parser.error('--gain-threads must be between 1 and --threads')
     if not 1 <= args.native_sitelh_threads <= args.threads <= 8 or min(args.orders) < 0 or args.folds < 2 or (args.max_families is not None and args.max_families < 1):
         parser.error('Invalid thread, order, fold, or family limit')
     if len(set(args.sizes)) != len(args.sizes) or set(args.sizes) - {10, 20, 30, 40, 50}:
@@ -194,7 +199,7 @@ def main():
             try:
                 aggregate.extend(gain_family(family, frame, alignments, supports, args.native_root,
                     entries, args.outdir, args.threads, native=stage == 'native-gain',
-                    native_sitelh_threads=args.native_sitelh_threads))
+                    native_sitelh_threads=args.native_sitelh_threads, gain_threads=args.gain_threads))
             except Exception as error:
                 failures.append({'stage': stage, 'family': family['family'], 'error': repr(error)})
             if aggregate:

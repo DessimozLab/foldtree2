@@ -1,0 +1,49 @@
+
+*****************************************
+Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+*****************************************
+[rank: 0] Seed set to 42
+[rank: 0] Seed set to 42
+[rank: 1] Seed set to 42
+[rank: 1] Seed set to 42
+GPU available: True (cuda), used: False
+TPU available: False, using: 0 TPU cores
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/pytorch_lightning/trainer/setup.py:175: GPU available but not used. You can set it by doing `Trainer(accelerator='gpu')`.
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/2
+Initializing distributed: GLOBAL_RANK: 1, MEMBER: 2/2
+[Gloo] Rank [Gloo] Rank 01 is connected to  is connected to 11 peer ranks.  peer ranks. Expected number of connected peer ranks is : Expected number of connected peer ranks is : 11
+
+----------------------------------------------------------------------------------------------------
+distributed_backend=gloo
+All distributed processes registered. Starting with 2 processes
+----------------------------------------------------------------------------------------------------
+
+
+  | Name  | Type         | Params | Mode  | FLOPs
+-------------------------------------------------------
+0 | model | se3_denoiser | 283 K  | train | 0    
+-------------------------------------------------------
+283 K     Trainable params
+0         Non-trainable params
+283 K     Total params
+1.135     Total estimated model params size (MB)
+214       Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+{"event": "ready", "time": 1791930303.0961082, "epoch": 0, "global_step": 0, "topology": {"world_size": 2, "nodes": 1}, "bundle": "4ec99c25fbcd8516fed90811894963c7c8c9796b483885cc500fa2c1728cd071", "frozen_production_calls": 0, "initialization": {"kind": "fresh"}, "parameters": 283770}
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=15` in the `DataLoader` to improve performance.
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=15` in the `DataLoader` to improve performance.
+`weights_only` was not set, defaulting to `False`.
+{"event": "update", "time": 1791930308.051757, "epoch": 0, "global_step": 1, "loss": 6.172752857208252, "gradient_norm": 10.9501314163208, "data_wait_seconds": 0.005710378056392074, "compute_seconds": 0.5236923168413341, "length": 44, "update_seconds": 4.915587601950392, "structures_per_second": 3.2549516549459048, "peak_host_memory_bytes": 1032790016, "peak_memory_bytes": 0}
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791930308.1185796, "epoch": 0, "global_step": 1, "path": "last.ckpt", "seconds": 0.06606586906127632, "cursor": 1}
+{"event": "update", "time": 1791930311.733221, "epoch": 0, "global_step": 2, "loss": 7.577430248260498, "gradient_norm": 12.95092487335205, "data_wait_seconds": 0.004306718939915299, "compute_seconds": 0.3204317369963974, "length": 41, "update_seconds": 3.600496659055352, "structures_per_second": 4.443831369697161, "peak_host_memory_bytes": 1032790016, "peak_memory_bytes": 0}
+{"event": "validation", "time": 1791930312.1348763, "epoch": 0, "global_step": 2, "complete_epoch": true, "metrics": {"geometry": 4.468854268391927, "evaluation_fape": 0.8761691451072693, "refined.angle_mae_radians": 1.882887601852417, "refined.ca_bend_mae_radians": 0.8911396463712057, "refined.ca_bond_deviation_3_8": 3.103837013244629, "refined.ca_bond_mae": 3.108777125676473, "refined.ca_rmsd": 10.053951263427734, "refined.ca_torsion_mae_radians": 1.7526638110478718, "refined.fape": 0.8761691451072693, "refined.lddt": 0.19099798798561096, "refined.tm_score": 0.17278518032000878, "refined.valid_residues": 35.333333333333336}, "counts": {"geometry": 3, "evaluation_fape": 3, "refined.angle_mae_radians": 3, "refined.ca_bend_mae_radians": 3, "refined.ca_bond_deviation_3_8": 3, "refined.ca_bond_mae": 3, "refined.ca_rmsd": 3, "refined.ca_torsion_mae_radians": 3, "refined.fape": 3, "refined.lddt": 3, "refined.tm_score": 3, "refined.valid_residues": 3}}
+{"event": "train_epoch", "time": 1791930312.1429114, "epoch": 0, "global_step": 2, "geometry": 5.480879329144955, "effective_structures": 32}
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791930312.2194674, "epoch": 1, "global_step": 2, "path": "last.ckpt", "seconds": 0.07623467198573053, "cursor": 0}
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791930312.2978573, "epoch": 1, "global_step": 2, "path": "best.ckpt", "seconds": 0.07798772305250168, "cursor": 0}
+`Trainer.fit` stopped: `max_epochs=1` reached.

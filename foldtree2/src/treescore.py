@@ -1,3 +1,8 @@
+"""Taxonomy-overlap tree scores and tree visualization helpers.
+
+Benchmark comparisons require identical retained taxa and a frozen taxonomy
+snapshot. Topology scores are separate from likelihood/information metrics.
+"""
 import toytree
 import toyplot
 

@@ -23,8 +23,21 @@ import torch
 import torch.nn.functional as F
 import yaml
 from torch_geometric.data import HeteroData
-from foldtree2 import learn_geometry_lightning as base
-from foldtree2.learn_production_geometry_se3_lightning import load_production_decoder
+
+
+class _LazyGeometryModule:
+    # Frozen extraction remains byte-identical for its cache provenance.
+    def __getattr__(self, name):
+        from foldtree2 import learn_geometry_lightning
+        return getattr(learn_geometry_lightning, name)
+
+
+base = _LazyGeometryModule()
+
+
+def load_production_decoder(*args, **kwargs):
+    from foldtree2.learn_production_geometry_se3_lightning import load_production_decoder as load
+    return load(*args, **kwargs)
 from foldtree2.src.se3_struct_decoder import se3_denoiser
 from foldtree2.src.losses.fape import equivariant_ca_frame_rotmat
 
@@ -156,8 +169,15 @@ def frozen_entry(graph, encoder, decoder, device):
     return {k: v.detach().cpu() if isinstance(v, torch.Tensor) else v for k, v in entry.items()}
 
 
-def frame_fape(pred, target, mask):
+def frame_point_errors(pred, target, mask):
     # Mask frame stencils, not just frame centers; gaps must not define a frame.
+    if pred.shape != target.shape or pred.ndim != 2 or pred.shape[-1] != 3:
+        raise ValueError('FAPE expects matching [N,3] coordinates')
+    if not torch.isfinite(pred[mask]).all() or not torch.isfinite(target[mask]).all():
+        raise ValueError('Nonfinite valid FAPE coordinates')
+    # Mask before frame construction: unselected NaN branches can otherwise
+    # contaminate valid gradients through neighboring cross products.
+    pred = pred.masked_fill(~mask[:, None], 0.)
     safe_target = target.masked_fill(~mask[:, None], 0.)
     pr, pu = equivariant_ca_frame_rotmat(pred)
     tr, tu = equivariant_ca_frame_rotmat(safe_target)
@@ -174,7 +194,11 @@ def frame_fape(pred, target, mask):
     td = safe_target[mask][None] - safe_target[frame_mask][:, None]
     pl = torch.einsum('fji,fpj->fpi', pr[frame_mask], pd)
     tl = torch.einsum('fji,fpj->fpi', tr[frame_mask], td)
-    return (pl - tl).norm(dim=-1).clamp(max=10.).mean() / 10.
+    return (pl - tl).norm(dim=-1)
+
+
+def frame_fape(pred, target, mask):
+    return frame_point_errors(pred, target, mask).clamp(max=10.).mean() / 10.
 
 
 def losses(pred, angles, entry):
@@ -182,8 +206,11 @@ def losses(pred, angles, entry):
     if mask.sum() < 3:
         raise ValueError('Fewer than three valid residues')
     fape = frame_fape(pred, entry['target'], mask)
-    pd = torch.cdist(pred[mask], pred[mask])
-    td = torch.cdist(entry['target'][mask], entry['target'][mask])
+    p, t = pred[mask], entry['target'][mask]
+    # Center before the matrix-product distance implementation to avoid
+    # translation-dependent cancellation in float32.
+    pd = torch.cdist(p-p.mean(0), p-p.mean(0))
+    td = torch.cdist(t-t.mean(0), t-t.mean(0))
     geometry = F.smooth_l1_loss(pd, td) / 10. + fape
     target_angles = entry['angles'][..., :3]
     amask = torch.isfinite(target_angles) & mask[:, None]
@@ -193,12 +220,27 @@ def losses(pred, angles, entry):
     return geometry + .1 * angle, geometry, fape, angle
 
 
-def forward(model, entry):
+CONTACT_POLICIES = ('normal', 'local-only', 'inferred-only', 'seed-only')
+
+
+def contact_inputs(entry, policy='normal'):
+    if policy not in CONTACT_POLICIES:
+        raise ValueError('Unknown SE3 contact policy: ' + str(policy))
+    if policy in ('local-only', 'seed-only'):
+        indices = torch.arange(len(entry['coords']), device=entry['coords'].device)
+        dot = (indices[:, None] - indices[None, :]).abs() == 1
+    else:
+        dot = entry['dot']
+    return {'dot_prod': dot[None], 'node_mask': entry['mask'],
+            'use_distance_contacts': policy in ('normal', 'seed-only'),
+            'distance_contact_cutoff': 8.}
+
+
+def forward(model, entry, contact_policy='normal'):
     g = HeteroData()
     g['res'].x = entry['features']
     out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
-                edge_attr_dict={'dot_prod': entry['dot'][None], 'node_mask': entry['mask'],
-                                'use_distance_contacts': True, 'distance_contact_cutoff': 8.})
+                edge_attr_dict=contact_inputs(entry, contact_policy))
     return out['coors_out_flat'], out['angles']
 
 
@@ -231,8 +273,11 @@ def metrics(pred, angles, entry):
     sign[-1] = torch.linalg.det(u @ vh)
     aligned = pc @ u @ torch.diag(sign) @ vh
     err = (aligned - tc).norm(dim=-1)
-    pd, td = torch.cdist(p, p), torch.cdist(t, t)
-    neighbors = (td < 15.) & (td > 0.)
+    pd, td = torch.cdist(pc, pc), torch.cdist(tc, tc)
+    # Float32 cdist can return nonzero self-distances. Exclude the diagonal
+    # explicitly rather than assuming td > 0 excludes self-pairs.
+    off_diagonal = ~torch.eye(len(p), device=p.device, dtype=torch.bool)
+    neighbors = (td < 15.) & (td > 0.) & off_diagonal
     delta = (pd - td).abs()
     if not neighbors.any():
         raise ValueError('No lDDT pairs')
@@ -295,6 +340,8 @@ def run(args):
     config = yaml.safe_load(Path(args.config).read_text())
     torch.set_num_threads(2)
     torch.use_deterministic_algorithms(True)
+    from foldtree2 import learn_geometry_lightning as base
+    from foldtree2.learn_production_geometry_se3_lightning import load_production_decoder
     base.pl.seed_everything(config['seed'], workers=True)
     device = torch.device(config.get('device', 'cuda:0'))
     output = Path(config['output']); output.mkdir(parents=True, exist_ok=True)
@@ -322,7 +369,7 @@ def run(args):
                   'seed': config['seed'],
                   'implementation_sha256': sha256('foldtree2/src/se3_struct_decoder.py'),
                   'selection_sha256': hashlib.sha256(inspect.getsource(split_structures).encode()).hexdigest(),
-                  'loss_sha256': hashlib.sha256((inspect.getsource(losses)+inspect.getsource(frame_fape)).encode()).hexdigest()}
+                  'loss_sha256': hashlib.sha256((inspect.getsource(losses)+inspect.getsource(frame_fape)+inspect.getsource(frame_point_errors)).encode()).hexdigest()}
     # Validate before replacing a run's audit record or doing expensive extraction.
     if args.resume_from:
         saved = torch.load(args.resume_from, map_location='cpu', weights_only=False)

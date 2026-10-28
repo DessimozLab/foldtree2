@@ -1,0 +1,6 @@
+{
+  "python": "3.9.23",
+  "torch": "2.8.0+cu128",
+  "cuda": "12.8",
+  "gpu": "NVIDIA RTX PRO 4000 Blackwell"
+}

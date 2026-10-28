@@ -8,7 +8,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 TOP_FILES = ('README.md', 'LICENSE.txt', 'pyproject.toml', 'setup.py', 'MANIFEST.in')
 TOOLS = ('mafft_tools/hex2maffttext', 'mafft_tools/maffttext2hex',
-         'raxml-ng/raxml-ng', 'madroot/mad')
+         'raxml-ng/raxml-ng', 'madroot/mad', 'raxml-ng/LICENSE.txt')
 EXCLUDED_DIRS = {'notebooks', 'tests', '__pycache__', 'workflow', '.git',
                  'models', 'runs', 'tmp', 'build', 'dist'}
 # Legacy scratch code, not imported by the runtime, and not syntactically valid.
@@ -47,7 +47,13 @@ def stage_source(source, recipe, destination, dry_run=False, max_file_bytes=50 *
                  if path.suffix == '.py']
     selected += [(path, path.relative_to(source)) for path in walk_files(source / 'foldtree2/config')
                  if path.suffix.lower() in {'.csv', '.yaml', '.yml'}]
+    matrix_dir = source / 'foldtree2/config/3diphy_submats'
+    if matrix_dir.is_dir():
+        selected += [(path, path.relative_to(source)) for path in walk_files(matrix_dir)]
     selected += [(path, Path(recipe.name) / path.relative_to(recipe)) for path in walk_files(recipe)]
+    companion = source / 'conda-pydssp'
+    if companion.is_dir():
+        selected += [(path, path.relative_to(source)) for path in walk_files(companion)]
     selected = sorted(set(selected), key=lambda pair: str(pair[1]))
     total = 0
     # Complete preflight before making a directory or opening files for copying.

@@ -8,12 +8,13 @@ cat << 'EOF'
 
 ⚠️  IMPORTANT: Additional setup required
 
-1️⃣  Download pretrained models (if needed):
-   
-   Visit: https://github.com/DessimozLab/foldtree2/releases
-   
+1️⃣  Obtain a trusted matching model bundle:
+
+   Model files are not included. See the user guide for bundle requirements;
+   do not assume every release provides model download assets.
+
    Or train your own models using:
-   python foldtree2/learn_lightning.py --config config.yaml
+   python -m foldtree2.learn_lightning --help
 
 2️⃣  Test your installation:
    

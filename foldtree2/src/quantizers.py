@@ -1,3 +1,8 @@
+"""Vector quantization, codebook updates and soft-assignment usage penalties.
+
+Codebook indices are local to a trained encoder. Training-time EMA and diversity
+updates must not be confused with the fixed codebook used for inference.
+"""
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -752,4 +757,3 @@ class VectorQuantizer(nn.Module):
 		embeddings = self.embeddings(indices)
 		
 		return embeddings
-

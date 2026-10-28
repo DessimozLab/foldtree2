@@ -1,0 +1,31 @@
+/home/dmoi/.config/matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /tmp/matplotlib-mqi65p39 because there was an issue with the default path (/home/dmoi/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Seed set to 42
+Seed set to 42
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/cuda/__init__.py:829: UserWarning: Can't initialize NVML
+  warnings.warn("Can't initialize NVML")
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+
+  | Name  | Type         | Params | Mode  | FLOPs
+-------------------------------------------------------
+0 | model | se3_denoiser | 283 K  | train | 0    
+-------------------------------------------------------
+283 K     Trainable params
+0         Non-trainable params
+283 K     Total params
+1.135     Total estimated model params size (MB)
+214       Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+{"event": "ready", "time": 1791930367.026104, "epoch": 0, "global_step": 1, "topology": {"world_size": 1, "nodes": 1}, "bundle": "4ec99c25fbcd8516fed90811894963c7c8c9796b483885cc500fa2c1728cd071", "frozen_production_calls": 0, "initialization": {"kind": "fresh"}, "parameters": 283770}
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=31` in the `DataLoader` to improve performance.
+/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=31` in the `DataLoader` to improve performance.
+{"event": "update", "time": 1791930374.947309, "epoch": 0, "global_step": 2, "loss": 4.059758186340332, "gradient_norm": 12.95092487335205, "data_wait_seconds": 0.0066492739133536816, "compute_seconds": 0.27112301508896053, "length": 41, "update_seconds": 7.906236298149452, "structures_per_second": 2.0237189222063843, "peak_host_memory_bytes": 1023963136, "peak_memory_bytes": 0}
+{"event": "validation", "time": 1791930375.1947038, "epoch": 0, "global_step": 2, "complete_epoch": true, "metrics": {"geometry": 4.468854268391927, "evaluation_fape": 0.8761691451072693, "refined.angle_mae_radians": 1.882887601852417, "refined.ca_bend_mae_radians": 0.8911396463712057, "refined.ca_bond_deviation_3_8": 3.103837013244629, "refined.ca_bond_mae": 3.108777125676473, "refined.ca_rmsd": 10.053951263427734, "refined.ca_torsion_mae_radians": 1.7526638110478718, "refined.fape": 0.8761691451072693, "refined.lddt": 0.19099798798561096, "refined.tm_score": 0.17278518032000878, "refined.valid_residues": 35.333333333333336}, "counts": {"geometry": 3, "evaluation_fape": 3, "refined.angle_mae_radians": 3, "refined.ca_bend_mae_radians": 3, "refined.ca_bond_deviation_3_8": 3, "refined.ca_bond_mae": 3, "refined.ca_rmsd": 3, "refined.ca_torsion_mae_radians": 3, "refined.fape": 3, "refined.lddt": 3, "refined.tm_score": 3, "refined.valid_residues": 3}}
+{"event": "train_epoch", "time": 1791930375.1977267, "epoch": 0, "global_step": 2, "geometry": 5.480879329144955, "effective_structures": 32}
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791930375.2687228, "epoch": 1, "global_step": 2, "path": "last.ckpt", "seconds": 0.07074736896902323, "cursor": 0}
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791930375.6506417, "epoch": 1, "global_step": 2, "path": "best.ckpt", "seconds": 0.381617798935622, "cursor": 0}
+`Trainer.fit` stopped: `max_epochs=1` reached.
