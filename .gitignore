@@ -94,11 +94,11 @@ Thumbs.db
 runs/
 logs/
 checkpoints/
-models/
+/models/
 wandb/
 lightning_logs/
 tmp/
-models/
+/models/
 **/checkpoints/
 ***/logs/
 **/**__pycache__/

@@ -21,41 +21,43 @@ Equal feature widths or alphabet sizes alone do not establish compatibility.
 Preserve trusted bundle hashes and exact state order. Never strip arbitrary
 whitespace from structural-token FASTA.
 
-## Model and geometry modules
+## Subpackages
 
-| Modules | Contract / role | Interactive starting point |
-| --- | --- | --- |
-| [mono_decoders](mono_decoders.py) | AA/contact/angle/geometry heads and multi-task composition; consume named geometry representations. | [Alphabet training](../notebooks/experiments/test_monodecoders.ipynb) |
-| [layers](layers.py), [chebconv](chebconv.py), [xsatransformer](xsatransformer.py) | Neural building blocks with graph/channel/mask contracts. | [Configured training](../notebooks/experiments/test_monodecoders_config.ipynb) |
-| [losses](losses/README.md) | Geometry and reconstruction objectives, units/masks and optional upstream losses. | [Conversion/FAPE checks](../notebooks/experiments/test_fapeloss.ipynb) |
-| [rigid_utils](rigid_utils.py), [folding_refiner](folding_refiner.py) | Quaternion/frame algebra and iterative folding; preserve frame direction and quaternion convention. | [Geometry exploration](<../notebooks/experiments/test_monodecoders _folding.ipynb>) |
-| [se3_struct_decoder](se3_struct_decoder.py), [geometry_seeds](geometry_seeds.py) | Experimental GotenNet/staged refiners and coordinate seeds; optional dependencies and versioned loss protocols. | [Frozen refiner](../notebooks/experiments/train_frozen_encoder_geometry_refiner.ipynb), [validation](../../docs/se3_validation.md) |
-| [sidechain_refiner](sidechain_refiner.py) | Experimental masked side-chain predictions, not a validated production folding system. | [Geometry experiments](../../docs/staged_geometry_training.md) |
-| [dynamictan](dynamictan.py), [manifold_hyper_connections](manifold_hyper_connections.py) | Experimental normalization/residual architectures; choices belong in checkpoint provenance. | [Geometry learning inspection](../notebooks/experiments/inspect_frozen_encoder_geometry_learning.ipynb) |
-| [training_protocol](training_protocol.py), [ddp_training](ddp_training.py), [lion_optimizer](lion_optimizer.py) | Deterministic splits, distributed training and optional optimizer. | [Lightning experiments](../notebooks/experiments/test_lightning.ipynb) |
-| [visualization](visualization.py) | Plot supplied reconstructions and metrics; figures are diagnostics, not held-out validation. | [Embedding inspection](../notebooks/experiments/test_embedding.ipynb) |
+The source tree is organized into importable domain subpackages, each with its
+own README describing contracts, status and entry points. Flat-path modules at
+this directory level (`pdbgraphmk2.py`, `encoder.py`, `mono_decoders.py`,
+`distance_restraints.py`, `ancestral.py`, and the rest) are backward-compatibility
+shims that re-export the canonical modules from the subpackages below; importing
+a shim and its canonical module yields identical class objects, so both stay
+valid for saved checkpoints and existing scripts. Prefer importing from the
+subpackages for new code.
 
-## Data, benchmarks and historical research
-
-| Modules | Status / use |
-| --- | --- |
-| [tracks](tracks.py) | Residue-aligned confidence/contact/burial diagnostic tracks; not trained codebook states. |
-| [download_utils](download_utils.py), [AFDB_tools](AFDB_tools.py) | Dataset/reference downloads; explicit network/storage side effects. AFDB_tools is historical. |
-| [treescore](treescore.py) | Taxonomy/tree drawing and scoring; frozen taxa/taxonomy required. See [TCS benchmark](../../docs/curnagl_tcs.md). |
-| [pairwise](pairwise.py) | Experimental complex/pairwise models; see [complex notebooks](../notebooks/complexes/README.md). |
-| [pdbgraph](pdbgraph.py), [pdbgraph_polars](pdbgraph_polars.py) | Historical/alternative graph builders. Do not swap their feature schemas into mk2 production inference. |
-| [foldseek2tree](foldseek2tree.py), [foldtree](foldtree.py) | Historical FoldTree distance pipeline, not the learned-alphabet CLI. foldtree retains an unavailable legacy corecut import. |
-| [test_chebconv_rework](test_chebconv_rework.py) | Developer scratch regression, excluded from runtime distributions. |
+- [graphs](graphs/README.md): PDB/Foldcomp structures to PyG residue graphs;
+  [pdbgraphmk2](graphs/pdbgraphmk2.py) is the current builder, [pdbgraph](graphs/pdbgraph.py)
+  and [pdbgraph_polars](graphs/pdbgraph_polars.py) are legacy/reference.
+- [models](models/README.md): neural encoders, codebooks and geometry decoders for
+  structure-token learning; [encoder](models/encoder.py) and
+  [mono_decoders](models/mono_decoders.py) are the main entry points.
+- [losses](losses/README.md): geometry and reconstruction objectives, units and
+  masks, plus optional upstream losses.
+- [distance](distance/README.md): pairwise-distance and contact supervision built
+  around [distance_restraints](distance/distance_restraints.py).
+- [trees](trees/README.md): phylogenetic tree inference, scoring and
+  ancestral-state reconstruction.
+- [data](data/README.md): dataset acquisition and reference downloads.
+- [training](training/README.md): deterministic splits, distributed training,
+  optional optimizers and diagnostics.
 
 ## Documentation conventions
 
-Every Python module in this directory and its loss subpackage has a purpose
+Every Python module in this directory and its subpackages has a purpose
 docstring. Public interfaces should describe non-obvious input/output shapes,
 geometry units/frame direction, masks, device behavior and side effects. Follow
 existing NumPy/Google docstring style within a module. Inline comments explain
 numerical/protocol constraints, not obvious assignments. Preserve upstream
 copyright/license notices.
 
-When adding a module, update this map and its notebook/CLI links. Document
-experimental dependencies explicitly rather than adding them implicitly to
-the base inference install. See the [maintenance checklist](../../docs/documentation_maintenance.md).
+When adding a module, update the relevant subpackage README and its
+notebook/CLI links. Document experimental dependencies explicitly rather than
+adding them implicitly to the base inference install. See the [maintenance
+checklist](../../docs/documentation_maintenance.md).
