@@ -10,7 +10,7 @@ prune foldtree2/tests
 prune foldtree2/notebooks
 prune foldtree2/workflow
 exclude foldtree2/scaling_experiment.py
-exclude foldtree2/src/test_chebconv_rework.py
+exclude foldtree2/src/models/test_chebconv_rework.py
 recursive-exclude * __pycache__ *.py[cod] *.h5 *.hdf5 *.pt *.pth *.pkl *.ipynb
 prune models
 prune runs

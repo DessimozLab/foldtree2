@@ -7,6 +7,12 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   foldtree2.src.graphs
+   foldtree2.src.models
+   foldtree2.src.distance
+   foldtree2.src.trees
+   foldtree2.src.data
+   foldtree2.src.training
    foldtree2.src.losses
 
 Submodules

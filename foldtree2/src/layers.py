@@ -1,59 +1,15 @@
-"""Shared activation and positional-encoding layers for encoder/decoder heads."""
-import torch
-import torch.nn as nn
+"""Backward-compatibility shim for ``foldtree2.src.layers``.
 
-
-
-
-class SwiGLU(nn.Module):
-    def __init__(self, dimension):
-        super().__init__()
-        self.linear_1 = nn.Linear(dimension,dimension)
-        self.linear_2 = nn.Linear(dimension,dimension)
-
-    def forward(self, x):
-        output = self.linear_1(x)
-        swish = output * torch.sigmoid(output)
-        swiglu = swish * self.linear_2(x)
-        return swiglu
-	
-class SIRENLayer(nn.Module):
-    def __init__(self, in_features, out_features, omega_0=30):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-        self.omega_0 = omega_0
-
-    def forward(self, x):
-        return torch.sin(self.omega_0 * self.linear(x))
-
-class Learnable_Positional_Encoding(nn.Module):
-	def __init__(self, dim, max_len=1024):
-		super(Learnable_Positional_Encoding, self).__init__()
-		self.pos_embedding = nn.Embedding(max_len, dim)
-
-	def forward(self, x):
-		# x shape: (batch_size, seq_len, dim)
-		seq_len = x.size(1)
-		position_ids = torch.arange(seq_len, dtype=torch.long, device=x.device)
-		position_ids = position_ids.unsqueeze(0).expand_as(x[:, :, 0])  # (batch_size, seq_len)
-		pos_embeddings = self.pos_embedding(position_ids)
-		return x + pos_embeddings
-
-class Position_MLP(torch.nn.Module):
-	def __init__(self, in_channels=256, hidden_channels=[128, 64], out_channels=32, dropout=0.01):
-		super(Position_MLP, self).__init__()
-		layers = []
-		#layernorm and dropout
-		layers.append( nn.LayerNorm(in_channels) )
-		layers.append( nn.Dropout(dropout) )
-		layers.append( nn.Linear(in_channels, hidden_channels[0]) )
-		layers.append( nn.GELU() )
-		for i in range(1, len(hidden_channels)):
-			layers.append( nn.Linear(hidden_channels[i-1], hidden_channels[i]) )
-			layers.append( nn.GELU() )
-		layers.append( nn.Linear(hidden_channels[-1], out_channels) )
-		layers.append( nn.Tanh() )  # constrain outputs to [-1, 1]
-		self.mlp = nn.Sequential( *layers )
-
-	def forward(self, x):
-		return self.mlp(x)
+This module moved to ``foldtree2.src.models.layers`` and is re-exported here
+so existing imports, tests, notebooks, docs and saved checkpoints keep
+working. New code should import the canonical location.
+"""
+from foldtree2.src.models.layers import *  # noqa: F401,F403
+from foldtree2.src.models.layers import (  # noqa: F401
+    Learnable_Positional_Encoding,
+    Position_MLP,
+    SIRENLayer,
+    SwiGLU,
+    nn,
+    torch,
+)

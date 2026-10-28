@@ -1,15 +1,12 @@
-"""Break query/key symmetry for the symmetric cross-dot contact head."""
-import torch
+"""Backward-compatibility shim for ``foldtree2.src.contact_cross_dot_perturbed``.
 
-from foldtree2.src.contact_dot_experiments import SymmetricCrossDotHead
-
-
-class PerturbedCrossDotHead(SymmetricCrossDotHead):
-    """Start near the shared sphere, with distinct learnable query/key projections."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        generator = torch.Generator(device='cpu').manual_seed(9281)
-        with torch.no_grad():
-            noise = torch.randn(self.key_projection.weight.shape, generator=generator,
-                                dtype=self.key_projection.weight.dtype)
-            self.key_projection.weight.add_(noise.to(self.key_projection.weight.device) * .001)
+This module moved to ``foldtree2.src.distance.contact_cross_dot_perturbed`` and is re-exported here
+so existing imports, tests, notebooks, docs and saved checkpoints keep
+working. New code should import the canonical location.
+"""
+from foldtree2.src.distance.contact_cross_dot_perturbed import *  # noqa: F401,F403
+from foldtree2.src.distance.contact_cross_dot_perturbed import (  # noqa: F401
+    PerturbedCrossDotHead,
+    SymmetricCrossDotHead,
+    torch,
+)
