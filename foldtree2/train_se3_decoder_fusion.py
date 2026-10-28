@@ -14,13 +14,13 @@ from foldtree2.se3_gradient_accumulation import GradientAccumulator
 from foldtree2.src.decoder_feature_fusion import DecoderFusionRefiner, MODES
 from foldtree2.src.losses.se3_balanced import BalancedGeometryLoss
 from foldtree2.train_se3_lightning import calibrated, source_identity
-from scripts.diagnose_se3_reconstruction import atomic_json, atomic_checkpoint, reconstruction_metrics
+from scripts.se3.diagnose_se3_reconstruction import atomic_json, atomic_checkpoint, reconstruction_metrics
 
 
 def fusion_sources():
     sources = {str(Path('foldtree2') / name): value for name, value in source_identity().items()}
     for name in ('foldtree2/src/decoder_feature_fusion.py', 'foldtree2/train_se3_decoder_fusion.py',
-                 'scripts/diagnose_se3_reconstruction.py'):
+                 'scripts/se3/diagnose_se3_reconstruction.py'):
         sources[name] = digest(name)
     return sources
 

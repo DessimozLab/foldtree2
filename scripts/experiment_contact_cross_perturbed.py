@@ -35,7 +35,7 @@ def main():
             raise RuntimeError('Cross-dot implementation changed during training')
     finally:
         if root.exists() and (root / 'provenance.json').exists():
-            from scripts.diagnose_se3_reconstruction import atomic_json
+            from scripts.se3.diagnose_se3_reconstruction import atomic_json
             provenance = json.loads((root / 'provenance.json').read_text())
             provenance['variant'] = {
                 'model_class': 'foldtree2.src.contact_cross_dot_perturbed.PerturbedCrossDotHead',

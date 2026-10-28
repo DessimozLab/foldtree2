@@ -1,7 +1,7 @@
 import copy
 import pytest
 import torch
-from scripts.prepare_se3_continuation import branch
+from scripts.se3.prepare_se3_continuation import branch
 
 
 def fixture():

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import pytest
-from scripts import stage_se3_growth
+from scripts.se3 import stage_se3_growth
 
 
 def setup_bundle(tmp_path, monkeypatch, corrupt=False):

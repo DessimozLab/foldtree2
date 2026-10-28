@@ -123,7 +123,7 @@ def test_normalization_and_contact_warm_start_guards():
 
 def test_subset_preparation_is_matched_and_content_verified(tmp_path):
     from foldtree2.se3_cache import digest, identity_hash, open_bundle
-    from scripts.run_se3_generalization import prepare, VARIANTS
+    from scripts.se3.run_se3_generalization import prepare, VARIANTS
     source = tmp_path / 'source'
     (source / 'entries').mkdir(parents=True)
     files = {}

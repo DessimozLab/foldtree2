@@ -11,7 +11,7 @@ from foldtree2.src.decoder_feature_fusion import (
 from foldtree2.train_se3_lightning import build_model
 from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
 from foldtree2.se3_validation import forward
-from scripts.enrich_se3_decoder_cache import frozen_aa
+from scripts.se3.enrich_se3_decoder_cache import frozen_aa
 
 
 def example():
@@ -183,7 +183,7 @@ class FrozenAAExample(torch.nn.Module):
 def test_enrichment_preserves_cache_and_publishes_only_success(tmp_path, monkeypatch, fail):
     from torch_geometric.data import HeteroData
     from foldtree2.se3_cache import FrozenDataset, digest, identity_hash, open_bundle
-    from scripts import enrich_se3_decoder_cache as enrichment
+    from scripts.se3 import enrich_se3_decoder_cache as enrichment
 
     parent = tmp_path / 'parent'
     (parent / 'entries').mkdir(parents=True)

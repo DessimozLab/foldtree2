@@ -1,6 +1,6 @@
 import pytest
 import torch
-from scripts.trace_se3_accumulation import reduce_gradients
+from scripts.se3.trace_se3_accumulation import reduce_gradients
 
 
 def test_high_precision_accumulation_preserves_global_mean_across_topologies():

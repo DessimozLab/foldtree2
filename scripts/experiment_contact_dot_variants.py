@@ -36,7 +36,7 @@ def main():
             raise RuntimeError('Contact-score implementation changed during training')
     finally:
         if root.exists() and (root / 'provenance.json').exists():
-            from scripts.diagnose_se3_reconstruction import atomic_json
+            from scripts.se3.diagnose_se3_reconstruction import atomic_json
             provenance = json.loads((root / 'provenance.json').read_text())
             provenance['variant'] = {'model_class': model_class.__module__ + '.' + model_class.__name__,
                                      'name': args.variant, 'sources_sha256': source_hashes,

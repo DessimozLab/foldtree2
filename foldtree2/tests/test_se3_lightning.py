@@ -160,7 +160,7 @@ def test_normalization_ablation_is_explicit_in_resume_provenance():
 
 
 def test_budget_reservation_is_bounded(tmp_path):
-    from scripts.se3_budget import reserve
+    from scripts.se3.se3_budget import reserve
     schedule=tmp_path/'budget.json';ledger=tmp_path/'ledger.jsonl'
     schedule.write_text(json.dumps({'ceiling_gpuh':2,'stages':[{'name':'one','nodes':1,'hours':.5,'gpuh':2}]}))
     cmd=['sbatch','--nodes=1','--account=a0117','--time=30','job.sbatch']

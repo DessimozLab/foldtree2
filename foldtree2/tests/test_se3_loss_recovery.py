@@ -1,5 +1,5 @@
 import pytest
-from scripts.recover_se3_loss_trial import recovery_cost
+from scripts.se3.recover_se3_loss_trial import recovery_cost
 
 
 def test_failed_allocation_and_retry_fit_original_reservation():

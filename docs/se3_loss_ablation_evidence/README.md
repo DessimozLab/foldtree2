@@ -33,5 +33,5 @@ These are CA-level metrics and refiner holdouts, without a production-pretrainin
 independence claim or an atom-level validation claim.
 
 ```bash
-python scripts/report_se3_loss_ablation.py --evidence docs/se3_loss_ablation_evidence --output docs/se3_loss_ablation_20261009.md
+python scripts/se3/archive/report_se3_loss_ablation.py --evidence docs/se3_loss_ablation_evidence --output docs/se3_loss_ablation_20261009.md
 ```

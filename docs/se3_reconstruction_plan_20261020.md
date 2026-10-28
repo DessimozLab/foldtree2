@@ -123,7 +123,7 @@ seeding explicit and test it before claiming multi-seed validation.
 
 ## Execution
 
-Run [the diagnostic runner](../scripts/diagnose_se3_reconstruction.py) in the
+Run [the diagnostic runner](../scripts/se3/diagnose_se3_reconstruction.py) in the
 CUDA-capable `foldtree2` environment. Example:
 
 ```bash
@@ -209,7 +209,7 @@ reported separately and are not part of this perfect-coordinate audit.
 CPU smoke checks verified local-only contacts, held-out monitoring and
 checkpoint-only evaluation. The expanded regression suite passed 48 tests.
 The queue entrypoint is
-[queue_se3_reconstruction_controls.py](../scripts/queue_se3_reconstruction_controls.py);
+[queue_se3_reconstruction_controls.py](../scripts/se3/queue_se3_reconstruction_controls.py);
 it stops on any failed parent or child, with no retry or automatic expansion.
 Follow-up services have a 140-minute hard ceiling including waiting for their
 parents; each queue permits at most 70 minutes of parent waiting.
@@ -297,9 +297,9 @@ reconstruction still requires a verified regenerated seed/contact cache.
 Multiple initialization seeds and fresh test-set confirmation remain gated.
 
 The runner is
-[queue_se3_remaining_controls.py](../scripts/queue_se3_remaining_controls.py);
+[queue_se3_remaining_controls.py](../scripts/se3/queue_se3_remaining_controls.py);
 probe implementation is
-[probe_se3_information.py](../scripts/probe_se3_information.py).
+[probe_se3_information.py](../scripts/se3/probe_se3_information.py).
 Focused validation passed 52 tests. Real-cache CPU checks verified matched
 probe execution and checkpoint train/eval/gradient auditing. No extra GPU work
 is launched before its preceding queue finishes.
@@ -401,7 +401,7 @@ improvements at TM-score near 0.2 remain far from reliable fold reconstruction.
 No automatic model promotion, larger-data expansion or retry is authorized by
 this pilot's code.
 
-The [generalization runner](../scripts/run_se3_generalization.py) stages fresh
+The [generalization runner](../scripts/se3/run_se3_generalization.py) stages fresh
 configs and a content-verified frozen subset, snapshots source dependencies,
 checks hashes before each child, verifies complete train/validation counts and
 finite model/optimizer states, and preserves FAPE-selected checkpoint hashes.
@@ -477,7 +477,7 @@ features. Its learned contact strength was discarded. The production
 
 ### Input-only enrichment
 
-[enrich_se3_decoder_cache.py](../scripts/enrich_se3_decoder_cache.py) creates
+[enrich_se3_decoder_cache.py](../scripts/se3/enrich_se3_decoder_cache.py) creates
 a new, hash-verified bundle without rewriting the parent cache or production
 checkpoints. It verifies both frozen checkpoint hashes and the original
 graph-dataset hash before extraction. The AA model receives only cached
@@ -550,7 +550,7 @@ the best checkpoint using unchanged evaluation FAPE; also compare final
 fixed-budget results and paired per-chain TM-score/RMSD/lDDT/bond errors.
 Snapshots are explicitly nonresumable in this isolated pilot.
 
-[run_se3_decoder_fusion.py](../scripts/run_se3_decoder_fusion.py) stages
+[run_se3_decoder_fusion.py](../scripts/se3/run_se3_decoder_fusion.py) stages
 source/configuration snapshots, verifies bundle/source/configuration identity
 before every case, enforces a 45-minute child ceiling and stops on failure.
 The persistent queue is `runs/se3_decoder_fusion_v2_20261021`, service
@@ -589,7 +589,7 @@ not another round of holdout-driven hyperparameter tuning.
 Before adding a learned distance head, test direct coordinate fitting under
 different restraint sources. This adds no network and does not modify the
 active decoder-fusion experiment.
-[diagnose_se3_restraints.py](../scripts/diagnose_se3_restraints.py) reuses the
+[diagnose_se3_restraints.py](../scripts/se3/diagnose_se3_restraints.py) reuses the
 exact eight training chains and calibrated/lifted initial coordinates of the
 original `coordinates_seed` control. It verifies the original bundle/panel
 identity and frozen decoder checkpoint hashes, then stages only those entries.
@@ -758,7 +758,7 @@ coordinate reconstruction.
 
 ### Pairwise error audit after completed reconstruction
 
-[audit_distance_pair_errors.py](../scripts/audit_distance_pair_errors.py)
+[audit_distance_pair_errors.py](../scripts/se3/audit_distance_pair_errors.py)
 decomposes all 213,574 eligible pairs on 64 development chains. Evidence:
 `runs/se3_pair_error_audit_v2_20261021/audit.json`. It checks export/checkpoint/
 bundle identity and reconstruction panel hashes, evaluates conditional distance
@@ -824,7 +824,7 @@ test; do not select contact thresholds on the monitored validation set.
 
 ## Distance learning and energy acceptance gates, 2026-10-21
 
-[diagnose_distance_learning.py](../scripts/diagnose_distance_learning.py) runs
+[diagnose_distance_learning.py](../scripts/se3/diagnose_distance_learning.py) runs
 the next bounded diagnostics without modifying existing heads, caches or
 historical coordinate scores.
 
@@ -968,7 +968,7 @@ AP 0.93607. Contact criteria pass, but the complete distance-learning gate
 does not. Continued learning is not evidence by itself of insufficient
 capacity; compare capacity and optimization budget explicitly.
 
-[compare_distance_capacity.py](../scripts/compare_distance_capacity.py)
+[compare_distance_capacity.py](../scripts/se3/compare_distance_capacity.py)
 runs widths **64, 128 and 256** sequentially on GPU 1, with respectively
 27,454 / 95,678 / 355,006 parameters. Every case starts fresh from seed 42
 on the exact previously selected eight training IDs, with unchanged feature
@@ -1000,7 +1000,7 @@ Success here establishes only training-panel capacity, not held-out geometry.
 ### Redirecting width comparison to development generalization
 
 At user request, do not spend the remaining queue on width256 memorization.
-[queue_distance_generalization.py](../scripts/queue_distance_generalization.py)
+[queue_distance_generalization.py](../scripts/se3/queue_distance_generalization.py)
 waits at most 30 minutes for width128 to complete its 40,000 updates, then
 stops the capacity service, preserving its width64/128 checkpoints and logs.
 If width256 starts during the transition, stop it and record that explicitly;
@@ -1085,7 +1085,7 @@ global top-L contact precision is 0.08387 versus 0.02606. Neither case predicts
 any contacts at probability 0.5. These are distance-prediction gains on the
 monitored development holdout, not demonstrated fold recovery.
 
-[reconstruct_distance_restraints.py](../scripts/reconstruct_distance_restraints.py)
+[reconstruct_distance_restraints.py](../scripts/se3/reconstruct_distance_restraints.py)
 now consumes the frozen validation distributions for direct coordinate
 optimization. It verifies checkpoint/export/bundle identities, exact head
 validation membership, canonical complete nonlocal pair coverage, normalized
@@ -1126,7 +1126,7 @@ The next test increases training diversity rather than capacity. The completed
 prediction from larger heads. That does not rule out improvement at a larger
 data scale, including a possible threshold-like transition.
 
-[scale_distance_data.py](../scripts/scale_distance_data.py) stages nested
+[scale_distance_data.py](../scripts/se3/scale_distance_data.py) stages nested
 256, 1,024 and 2,048 training representatives from the existing 4,096/512 cache.
 All cases use the same 256 validation representatives: the original monitored
 64 plus 192 additional IDs not previously used to evaluate the distance head.
@@ -1184,7 +1184,7 @@ transition or reliable fold reconstruction.
 
 ### Next expansion: 4,096 and 5,120 representatives
 
-[extend_distance_data.py](../scripts/extend_distance_data.py) selects 3,072
+[extend_distance_data.py](../scripts/se3/extend_distance_data.py) selects 3,072
 additional training representatives from the same original graph dataset,
 retaining all 2,048 preceding training IDs and exactly the same 256 validation
 IDs. Additions exclude every ID in the original 4,096/512 cache as well as the

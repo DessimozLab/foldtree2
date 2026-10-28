@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from scripts.submit_se3_loss_trials import command,STAGES
+from scripts.se3.submit_se3_loss_trials import command,STAGES
 
 
 def test_trials_preserve_parent_and_have_explicit_dependencies():

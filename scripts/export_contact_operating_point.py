@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 
 from foldtree2.se3_cache import digest
-from scripts.diagnose_se3_reconstruction import atomic_checkpoint
+from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint
 
 
 def shifted_checkpoint(checkpoint, calibration):

@@ -1,6 +1,6 @@
 import pytest
 import torch
-from scripts.se3_extraction_parity import compare_entries
+from scripts.se3.se3_extraction_parity import compare_entries
 
 
 def test_runtime_drift_is_explicit_and_repeatability_remains_strict():

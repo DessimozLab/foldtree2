@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import torch
 import yaml
 from foldtree2.src.se3_struct_decoder import se3_denoiser
-from scripts import train_se3_revised_pilot as trainer
+from scripts.se3 import train_se3_revised_pilot as trainer
 
 
 def test_warm_started_training_records_real_baseline_and_resumes(tmp_path, monkeypatch):

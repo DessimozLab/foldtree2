@@ -10,7 +10,7 @@ from foldtree2.src.distance_energy import (
     distance_energy, fit_reference, interval_log_weights, sample_contact_strata, separation_groups,
 )
 from foldtree2.src.distance_restraints import DISTANCE_EDGES, eligible_pairs
-from scripts.diagnose_distance_learning import memorization_pass, run, sampling_pilot
+from scripts.se3.diagnose_distance_learning import memorization_pass, run, sampling_pilot
 
 
 def test_interval_membership_has_unit_mass_with_unequal_bins_and_open_tail():

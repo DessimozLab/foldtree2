@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from scripts import queue_distance_generalization as queue
+from scripts.se3 import queue_distance_generalization as queue
 
 
 def test_queue_finishes_parent_cancels_service_and_preserves_matched_width_budgets(tmp_path, monkeypatch):

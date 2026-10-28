@@ -24,7 +24,7 @@ python -m pytest foldtree2/tests/test_se3_refiner.py foldtree2/tests/test_se3_va
 python -u -m foldtree2.se3_validation --config configs/se3_validation_smoke.yaml > runs/se3_validation/smoke.log 2>&1
 python -u -m foldtree2.se3_validation --config configs/se3_validation_overfit.yaml > runs/se3_validation/overfit.log 2>&1
 python -u -m foldtree2.se3_validation --config configs/se3_validation_pilot.yaml > runs/se3_validation/pilot.log 2>&1
-python scripts/report_se3_validation.py
+python scripts/se3/report_se3_validation.py
 ```
 
 Execute experiments sequentially after correctness and smoke checks pass. The overfit experiment trains and evaluates the same 32 structures for 30 epochs, bounded at 256 residues. The pilot uses 512 training and 128 disjoint validation structures bounded at 384 residues, up to 20 epochs, and stops after five validation FAPE epochs without an improvement of at least 1e-4. Structures outside the length bound are logged and excluded; chains are never cropped. The overfit split intentionally overlaps, while the pilot split is disjoint. These holdouts apply to the refiner, with no assertion about production pretraining overlap.
@@ -80,7 +80,7 @@ hashes and paths are listed in the archive's `checkpoint_inventory.json`.
 Regenerate the published report from the committed evidence:
 
 ```bash
-python scripts/report_se3_validation.py --root docs/se3_validation_evidence --output docs/se3_validation_report.md
+python scripts/se3/report_se3_validation.py --root docs/se3_validation_evidence --output docs/se3_validation_report.md
 ```
 
 Residue-level bond evaluation covers CA–CA spacing; atom bond metrics and atom refinement remain deferred. Missing production angle heads are reported as unavailable. Length profiles measure dense adjacency and forward/backward costs at batch size 1. The length-bucket utility groups nearby lengths for future batching; batch sizes greater than 1 need measurement before use. Observed success up to 384 residues is not evidence that larger graphs or atom graphs are safe.
@@ -89,7 +89,7 @@ After the pilot, measure warmed forward/backward costs and mixed-length padding 
 
 ```bash
 python -m scripts.profile_se3_validation --config configs/se3_validation_pilot.yaml --checkpoint runs/se3_validation/pilot/best.pt
-python scripts/report_se3_validation.py
+python scripts/se3/report_se3_validation.py
 ```
 
 The profiler uses per-measurement peak counters and includes both individual structures and cached mixed-length batches. `collate_cached` and `length_bucket_batches` provide batching support; canonical training stays at batch size 1. A profiling batch that fits does not establish training stability at that batch size.

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import torch
 
 from foldtree2.src.distance_restraints import eligible_pairs
-from scripts.compare_distance_capacity import train_width
+from scripts.se3.compare_distance_capacity import train_width
 
 
 def test_capacity_trials_preserve_budgets_panel_and_checkpoint_width(tmp_path):

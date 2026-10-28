@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from foldtree2.se3_cache import digest, open_bundle
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels
 from foldtree2.train_distance_restraints import evaluate, load_records
-from scripts.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
+from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 
 
 def contact_logit(logits, contact_bins):

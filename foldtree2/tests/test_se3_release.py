@@ -1,7 +1,7 @@
 import io
 import tarfile
 import pytest
-from scripts.verify_se3_release import REQUIRED, verify
+from scripts.se3.verify_se3_release import REQUIRED, verify
 
 
 def archive(path, omit=None):

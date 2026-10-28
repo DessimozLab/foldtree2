@@ -31,5 +31,5 @@ versioned loss ablation, not a longer or wider run of this objective.
 Reproduce the report without production model calls:
 
 ```bash
-python scripts/report_se3_spatial_learning.py --evidence docs/se3_spatial_learning_evidence --output docs/se3_spatial_learning_20261009.md
+python scripts/se3/archive/report_se3_spatial_learning.py --evidence docs/se3_spatial_learning_evidence --output docs/se3_spatial_learning_20261009.md
 ```

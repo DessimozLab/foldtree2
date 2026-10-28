@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import numpy as np
 import torch
-from scripts.prepare_se3_larger_cohort import fresh_splits
+from scripts.se3.prepare_se3_larger_cohort import fresh_splits
 
 
 def test_fresh_cohort_excludes_prior_structures_and_undefined_geometry():

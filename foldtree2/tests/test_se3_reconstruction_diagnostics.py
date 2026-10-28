@@ -3,7 +3,7 @@ import torch
 import json
 from types import SimpleNamespace
 
-from scripts.diagnose_se3_reconstruction import (
+from scripts.se3.diagnose_se3_reconstruction import (
     atomic_json, initialize, optimize_step, reconstruction_metrics, select_panel,
     model_forward, perfect_target_audit,
     audit_model,
@@ -100,7 +100,7 @@ def test_perfect_target_audit_and_local_contact_control():
 ])
 def test_queue_requires_successful_parent_and_preserves_bounds(
         tmp_path, monkeypatch, gpu, parents, expected_cases):
-    from scripts import queue_se3_reconstruction_controls as queue
+    from scripts.se3 import queue_se3_reconstruction_controls as queue
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr('sys.argv', ['queue', '--gpu', str(gpu)])
     root = tmp_path / 'runs/se3_reconstruction_20261020'
@@ -128,7 +128,7 @@ def test_queue_requires_successful_parent_and_preserves_bounds(
 
 
 def test_model_audit_restores_buffers_and_does_not_accumulate_gradients(monkeypatch):
-    import scripts.diagnose_se3_reconstruction as runner
+    import scripts.se3.diagnose_se3_reconstruction as runner
     from foldtree2.train_se3_lightning import build_model
     from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
     entry = {**example(), 'id': 'synthetic', 'features': torch.randn(20, 8),
@@ -150,7 +150,7 @@ def test_model_audit_restores_buffers_and_does_not_accumulate_gradients(monkeypa
 
 
 def test_information_probe_pairs_and_features_exclude_targets():
-    from scripts.probe_se3_information import pair_features, sample_pairs, report
+    from scripts.se3.probe_se3_information import pair_features, sample_pairs, report
     entry = {**example(), 'id': 'synthetic', 'features': torch.randn(20, 8),
              'codebook': torch.randn(20, 4)}
     pairs = sample_pairs(entry, torch.Generator().manual_seed(42), count=16)
@@ -172,7 +172,7 @@ def test_information_probe_pairs_and_features_exclude_targets():
 
 @pytest.mark.parametrize('gpu,count', [(0, 2), (1, 4)])
 def test_remaining_commands_use_nested_panels_and_distinct_outputs(gpu, count):
-    from scripts.queue_se3_remaining_controls import commands
+    from scripts.se3.queue_se3_remaining_controls import commands
     cases = commands(gpu)
     assert cases[0][cases[0].index('--count') + 1] == str(count)
     assert cases[0][cases[0].index('--panel-size') + 1] == '8'

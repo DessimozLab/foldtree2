@@ -12,12 +12,12 @@ import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
-from scripts.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
+from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 
 
 def sources():
     names = ('foldtree2/train_distance_restraints.py', 'foldtree2/src/distance_restraints.py',
-             'foldtree2/se3_cache.py', 'scripts/diagnose_se3_reconstruction.py')
+             'foldtree2/se3_cache.py', 'scripts/se3/diagnose_se3_reconstruction.py')
     return {name: digest(name) for name in names}
 
 

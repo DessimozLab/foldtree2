@@ -110,7 +110,7 @@ CPU failure remains preserved. A certificate-status check was briefly blocked
 by the automatic approval service's usage limit; the later user-directed
 continuation succeeded without changing credentials or bypassing review.
 
-`scripts/export_se3_graph_inputs.py` reads the existing HDF5 and serializes the
+`scripts/se3/export_se3_graph_inputs.py` reads the existing HDF5 and serializes the
 unaltered graph tensors for the 4,096 additions and one retained parity probe.
 It verifies the original dataset/checkpoint/extractor hashes and records each
 graph file hash in a content-addressed export manifest. The full 39 GB HDF5

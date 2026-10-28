@@ -126,7 +126,7 @@ def test_ca_virtual_angle_errors_are_zero_for_identical_coordinates():
 
 
 def test_cached_batch_collation_preserves_individual_refiner_outputs():
-    from scripts.profile_se3_validation import collate_cached
+    from scripts.se3.profile_se3_validation import collate_cached
     from foldtree2.src.se3_struct_decoder import se3_denoiser
     from foldtree2.se3_validation import forward
     torch.manual_seed(9)
@@ -178,7 +178,7 @@ def test_lddt_excludes_nonzero_numerical_self_distances(monkeypatch):
 
 
 def test_train_only_calibration_recovers_uniform_scale_and_is_equivariant():
-    from scripts.investigate_se3_scale import fit_scale,calibrated_entry
+    from scripts.se3.investigate_se3_scale import fit_scale,calibrated_entry
     torch.manual_seed(15)
     coords=torch.randn(20,3);q,_=torch.linalg.qr(torch.randn(3,3));q[:,0]*=torch.linalg.det(q)
     mask=torch.ones(20,dtype=torch.bool);mask[4]=False

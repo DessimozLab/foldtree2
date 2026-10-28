@@ -156,7 +156,7 @@ No expanded frozen-output cache has been extracted/published on Clariden, and
 no expanded-data training has been submitted. Confirmation IDs must remain
 outside validation/checkpoint selection.
 
-The old `scripts/extract_se3_growth_clariden.py` / growth validation contains
+The old `scripts/se3/extract_se3_growth_clariden.py` / growth validation contains
 4,096→8,192 assumptions. Do not run it unchanged for this 10,240 + confirmation
 extension. Adapt it to explicit added IDs, preserve all retained cache entries
 bitwise, verify hashes and frozen parameters, and keep same-runtime parity
@@ -221,8 +221,8 @@ CLI failure as a width-80 numerical failure or rerun either submission command.
 | `foldtree2/src/pair_features.py`, `recycled_refiner.py` | Invariant pairs and shared two-pass refinement |
 | `foldtree2/src/geometry_seeds.py`, `learned_geometry_seed.py` | Fixed and experimental learned seeds |
 | `foldtree2/src/losses/se3_ablation.py`, `se3_balanced.py` | Smooth training FAPE and weighted geometry terms |
-| `scripts/se3_capacity_gate.py` | Corrected paired comparison and declared-schedule checks |
-| `scripts/gate_se3_bend_recycle.py` | Incumbent selection and conditional scale-up gate |
+| `scripts/se3/se3_capacity_gate.py` | Corrected paired comparison and declared-schedule checks |
+| *(bend-recycle gate: ran on Clariden; results in `docs/se3_clariden_evidence/bend_recycle_v2/` — the `scripts/gate_se3_bend_recycle.py` file was never committed to this tree)* | Incumbent selection and conditional scale-up gate |
 | `configs/clariden_se3/scale_capacity_v3r1_width*.yaml` | Actual completed fresh width-trial configs |
 | `alps/se3/train.sbatch`, `extended-pinned.toml` | Validated distributed launcher/container |
 

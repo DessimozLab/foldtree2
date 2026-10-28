@@ -6,9 +6,9 @@ import pytest
 import torch
 
 from foldtree2.se3_cache import digest, identity_hash, open_bundle
-from scripts.scale_distance_data import choose_splits, subset_report, write_subset
-from scripts import scale_distance_data
-from scripts.extend_distance_data import select_additions
+from scripts.se3.scale_distance_data import choose_splits, subset_report, write_subset
+from scripts.se3 import scale_distance_data
+from scripts.se3.extend_distance_data import select_additions
 
 
 def bundle(tmp_path):

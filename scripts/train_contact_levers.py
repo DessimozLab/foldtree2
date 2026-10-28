@@ -16,7 +16,7 @@ from foldtree2.src.contact_lever_metrics import per_protein_range_metrics, summa
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
 from foldtree2.train_distance_restraints import evaluate, load_records
 from scripts.experiment_contact_objectives import balanced_contact_loss, contact_logit
-from scripts.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
+from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 
 
 def sample_from(pool, count, generator):

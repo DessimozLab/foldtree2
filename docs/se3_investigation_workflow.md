@@ -95,7 +95,7 @@ lifted inputs. For an idle GPU 0:
 
 ```bash
 python -m scripts.investigate_se3_scale --screen-suite spatial --device cuda:0 --train-case lifted_circular --output runs/se3_spatial_learning_replay
-python scripts/report_se3_spatial_learning.py --evidence docs/se3_spatial_learning_evidence --output docs/se3_spatial_learning_20261009.md
+python scripts/se3/archive/report_se3_spatial_learning.py --evidence docs/se3_spatial_learning_evidence --output docs/se3_spatial_learning_20261009.md
 ```
 
 ## Report and source provenance
@@ -103,7 +103,7 @@ python scripts/report_se3_spatial_learning.py --evidence docs/se3_spatial_learni
 Regenerate the published report without datasets or model calls:
 
 ```bash
-python scripts/report_se3_investigation.py --basic docs/se3_investigation_evidence/basic --parameterization docs/se3_investigation_evidence/parameterization --output docs/se3_investigation_20261009.md
+python scripts/se3/archive/report_se3_investigation.py --basic docs/se3_investigation_evidence/basic --parameterization docs/se3_investigation_evidence/parameterization --output docs/se3_investigation_20261009.md
 python scripts/check_documentation.py
 ```
 
@@ -128,7 +128,7 @@ are predeclared. The original clamped evaluation FAPE is retained.
 
 ```bash
 python -m scripts.run_se3_loss_ablation --device cuda:0 --output runs/se3_loss_ablation_replay
-python scripts/report_se3_loss_ablation.py --evidence docs/se3_loss_ablation_evidence --output docs/se3_loss_ablation_20261009.md
+python scripts/se3/archive/report_se3_loss_ablation.py --evidence docs/se3_loss_ablation_evidence --output docs/se3_loss_ablation_20261009.md
 ```
 
 Only use the CUDA command when that GPU is available; `--device cpu` is also

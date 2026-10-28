@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from scripts.diagnose_se3_restraints import MODES, objective, prepare_restraints
+from scripts.se3.diagnose_se3_restraints import MODES, objective, prepare_restraints
 
 
 def sample():
@@ -81,7 +81,7 @@ def test_oracle_distance_is_zero_at_native_and_contact_labels_are_explicit():
 
 def test_bounded_runner_completes_every_case_with_identical_initial_coordinates(tmp_path):
     from foldtree2.se3_cache import digest
-    from scripts.diagnose_se3_restraints import run, sources
+    from scripts.se3.diagnose_se3_restraints import run, sources
     entry = {**sample(), 'id': 'synthetic'}
     restraints, _ = prepare_restraints(entry, 2.4, -1.3)
     torch.save([{'entry': entry, 'restraints': restraints}], tmp_path / 'panel.pt')

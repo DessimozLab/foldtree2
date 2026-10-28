@@ -10,7 +10,7 @@ from foldtree2.se3_cache import open_bundle
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels
 from foldtree2.train_distance_restraints import contact_metrics, load_records
 from scripts.compare_spherical_contact_screen import operating_point
-from scripts.diagnose_se3_reconstruction import atomic_json
+from scripts.se3.diagnose_se3_reconstruction import atomic_json
 
 
 def main():

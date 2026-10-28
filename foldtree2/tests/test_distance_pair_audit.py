@@ -1,6 +1,6 @@
 import torch
 
-from scripts.audit_distance_pair_errors import describe, restraint_preferences
+from scripts.se3.audit_distance_pair_errors import describe, restraint_preferences
 
 
 def test_pair_audit_preserves_exact_bin_and_capped_distance_semantics():

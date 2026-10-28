@@ -1,8 +1,8 @@
 import pytest
 from copy import deepcopy
 from foldtree2.se3_cache import identity_hash
-from scripts.prepare_se3_growth_cohort import growth_splits
-from scripts.submit_se3_growth_trial import check_growth
+from scripts.se3.prepare_se3_growth_cohort import growth_splits
+from scripts.se3.submit_se3_growth_trial import check_growth
 
 
 def test_growth_preserves_holdout_and_excludes_used_ids(monkeypatch):
@@ -11,7 +11,7 @@ def test_growth_preserves_holdout_and_excludes_used_ids(monkeypatch):
         assert excluded == {'train', 'val', 'earlier'}
         assert (count, val_count, max_residues, seed) == (2, 0, 256, 42)
         return ['new1', 'new2'], [], [{'id': 'oversized', 'reason': 'length'}]
-    monkeypatch.setattr('scripts.prepare_se3_growth_cohort.fresh_splits', select)
+    monkeypatch.setattr('scripts.se3.prepare_se3_growth_cohort.fresh_splits', select)
     train, val, skipped = growth_splits(None, retained, 3)
     assert train == ['train', 'new1', 'new2']
     assert val == ['val']
