@@ -86,7 +86,7 @@ references, source hashes, taxonomy IDs and diagnostics. Historical PDB cross
 references are unverified candidates, not proof of an original PDB-chain mapping.
 Missing references may be downloaded only into the audit-local cache.
 
-After explicit approval to prune, `scripts/retain_cath_subsets.py` builds a new
+After explicit approval to prune, `scripts/cath/retain_cath_subsets.py` builds a new
 cohort from the recovery summary and completed audit JSON, without rerunning the
 audited alignments. Fully validated families are linked unchanged; previously
 excluded families retain only sequence-verified chains with resolvable original
@@ -96,7 +96,7 @@ the existing reference cache. Taxonomic diversity is reported, not silently used
 as an additional cutoff.
 
 ```bash
-python scripts/retain_cath_subsets.py \
+python scripts/cath/retain_cath_subsets.py \
   --summary RECOVERY/rebuilt/rebuild_summary.json --audit AUDIT/results \
   --cache AUDIT/cache --taxonomy-db PREVIOUS_RUN/inputs/taxonomy/taxa.sqlite \
   --out NEW_SUBSET_RUN/cohort --workers 8
@@ -126,7 +126,7 @@ the stopped pilot remain unchanged.
 
 ## Fresh genus-deduplicated CATH version
 
-`scripts/generate_cath_families.py` implements the legacy CATH/SIFTS experimental
+`scripts/cath/generate_cath_families.py` implements the legacy CATH/SIFTS experimental
 chain workflow in a separate output directory, with one representative per
 canonical NCBI genus within each family and at least four genera. It joins the
 current official CATH domain list, SIFTS chain-to-CATH/accession table and SIFTS
@@ -138,10 +138,10 @@ genera shared with the previous cohort are not globally excluded.
 Run planning and generation under CPU Slurm allocations:
 
 ```bash
-python scripts/generate_cath_families.py --out NEW_RUN/data \
+python scripts/cath/generate_cath_families.py --out NEW_RUN/data \
   --taxonomy-db PREVIOUS_RUN/inputs/taxonomy/taxa.sqlite \
   --max-families 2000 --max-genera 100 --plan-only
-python scripts/generate_cath_families.py --out NEW_RUN/data \
+python scripts/cath/generate_cath_families.py --out NEW_RUN/data \
   --taxonomy-db PREVIOUS_RUN/inputs/taxonomy/taxa.sqlite --from-plan --workers 8
 ```
 
@@ -166,7 +166,7 @@ their author chain, domain, taxon, genus, raw mmCIF, plan and output hashes.
 selection exclusions, download failures and final counts. No old cohort is
 overwritten and no old alignments/trees are reused for the new inputs.
 
-For persistent dataset supervision, run `scripts/supervise_cath_generation.py`
+For persistent dataset supervision, run `scripts/cath/supervise_cath_generation.py`
 with `--remote --deployment RUN_DIR` under a workstation user service. Its
 operational copy and dependency live outside frozen scientific source.
 Five-minute checks retain queue waits unchanged and record progress in
@@ -224,7 +224,7 @@ Read the Curnagl access runbook and use the saved `unil-access` helper. Do not
 record credentials in scripts or logs. Build a selective archive locally:
 
 ```bash
-python scripts/stage_curnagl_tcs.py \
+python scripts/curnagl/stage_curnagl_tcs.py \
   --out /tmp/tcs-RUN_ID.tar.gz \
   --benchmark /path/to/ft2_benchmark \
   --original /path/to/fold_tree \
@@ -236,7 +236,7 @@ Transfer it and `configs/curnagl_tcs.yaml` into a **new** directory under
 checksum, and extract there. Run the staged configuration script remotely:
 
 ```bash
-python3 foldtree2/scripts/configure_curnagl_tcs.py \
+python3 foldtree2/scripts/curnagl/configure_curnagl_tcs.py \
   --deployment "$PWD" --template curnagl_tcs.yaml
 ```
 
@@ -246,7 +246,7 @@ uses existing Snakemake 7.20 and the existing Python runtime, with staged source
 selected through `PYTHONPATH`; Foldmason and its libraries form an isolated tool
 layer. No global package installation is performed.
 
-The generated `runtime-check.sbatch` runs `scripts/check_curnagl_tcs.py` under a
+The generated `runtime-check.sbatch` runs `scripts/curnagl/check_curnagl_tcs.py` under a
 small Slurm allocation with the deployment's PATH/PYTHONPATH/library setup. It checks archive
 hashes, all five bundles, the real baseline's golden TCS result, required tools,
 and Snakemake dry-run parsing, then writes `runtime-check-passed.json` with package
@@ -260,7 +260,7 @@ Python 3.12 and x86-64 platform, transfer it, and run the isolated installer wit
 the cluster interpreter **before inference begins**:
 
 ```bash
-python scripts/install_curnagl_tcs_layer.py --deployment RUN_DIR package.whl
+python scripts/curnagl/install_curnagl_tcs_layer.py --deployment RUN_DIR package.whl
 ```
 
 This writes a new `python-layer/` and a wheel/content hash manifest, updates
@@ -273,7 +273,7 @@ check already exists. A failed runtime check stops for inspection and repair.
 Run supervision on the workstation (an existing authenticated VPN is required):
 
 ```bash
-python scripts/supervise_curnagl_tcs.py \
+python scripts/curnagl/supervise_curnagl_tcs.py \
   --remote --deployment /work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/RUN_ID
 ```
 
@@ -298,7 +298,7 @@ memory resources with `--cpu-bind=cores`, `--hint=nomultithread` and
 `--threads-per-core=1`. The `slurm_cpus` workflow resource reserves two CPUs per
 tool thread, bounded by 16 CPUs for the pilot and 32 CPUs for the full sweep.
 Concurrent inference steps receive disjoint CPU masks. Before executing a tool,
-[the affinity wrapper](../scripts/curnagl_physical_step.py) reads each permitted
+[the affinity wrapper](../scripts/curnagl/curnagl_physical_step.py) reads each permitted
 CPU's socket/core IDs from Linux sysfs, requires enough distinct physical cores,
 and pins the process to one hardware thread on each selected physical core.
 It logs the allocated and selected masks and fails before computation if the
@@ -320,7 +320,7 @@ workflow chooses threads from a completed marker only for reuse; the frozen
 driver still verifies the marker, signature and output hashes.
 Do not disable the safety check with `--force perf_threads`. Test simultaneous
 searches with the production random **and parsimony** starts.
-[The bounded verification](../scripts/check_curnagl_raxml_affinity.py) exercises
+[The bounded verification](../scripts/curnagl/check_curnagl_raxml_affinity.py) exercises
 all seven ML models from both validated pilot families with eight selected
 alignment rows, plus the exact previously failed AA alignment, three times each
 (45 searches, four concurrent single-thread searches). Sampled rows are strictly for launch verification;
@@ -329,7 +329,7 @@ this with the real workflow on the failed family before releasing the full run.
 See the [2026-10-19 recovery report](curnagl_raxml_affinity_20261019.md) for the
 actual verification jobs, resource policy and release checks.
 
-[The operational renderer](../scripts/isolate_curnagl_tcs.py) copies the frozen
+[The operational renderer](../scripts/curnagl/isolate_curnagl_tcs.py) copies the frozen
 workflow to `slurm-steps.smk`, adding launch prefixes, the CPU reservation
 resource and the explicit inference thread policy. It records workflow/source/affinity-wrapper hashes in
 `slurm-step-workflow.json`. It never edits the frozen source, inference models,
@@ -340,7 +340,7 @@ trigger so changing the launch prefix does not invalidate completed science;
 the driver's frozen asset, plan, signature and output-hash checks still apply.
 
 Before manually resuming a stopped full run, with no active inference job,
-[the recovery helper](../scripts/prepare_curnagl_step_recovery.py) can move
+[the recovery helper](../scripts/curnagl/prepare_curnagl_step_recovery.py) can move
 incomplete native 3Di stages into a job-ID-specific recovery directory. With
 `--all-ml`, it preserves whole unfinished AA/3Di/FT2 method directories before
 restarting them with a one-thread provenance signature. This
@@ -415,8 +415,8 @@ cohort, model, scoring policy or completed result was changed for this switch.
 
 ### Cluster-resident advancement (previous execution mode)
 
-[The callback controller](../scripts/advance_curnagl_tcs.py) calls the same
-[supervision gates](../scripts/supervise_curnagl_tcs.py), then submits one short
+[The callback controller](../scripts/curnagl/advance_curnagl_tcs.py) calls the same
+[supervision gates](../scripts/curnagl/supervise_curnagl_tcs.py), then submits one short
 successor with `afterany:CURRENT_JOB` and a two-minute minimum delay. It does not
 occupy a CPU while inference runs. Terminal accounting or peak-memory delays
 receive at most ten delayed checks; exhaustion records `needs_attention`.

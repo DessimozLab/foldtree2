@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from prepare_production_alphabets import check_convergence_acceptance
+from scripts.alphabets.prepare_production_alphabets import check_convergence_acceptance
 
 
 def test_nonconverged_acceptance_is_explicit_and_bound_to_artifacts():

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
 from audit_cath_chains import audit_family
-from retain_cath_subsets import process_family, stats
+from scripts.cath.retain_cath_subsets import process_family, stats
 from rebuild_cath_families import validate_rebuild
 
 

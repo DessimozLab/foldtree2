@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from ancestral_inspection import select_cohort, summarize_depth, bootstrap_curves
+from scripts.ancestral.ancestral_inspection import select_cohort, summarize_depth, bootstrap_curves
 
 
 def test_chunking_endpoints_occupancy_and_family_weights(tmp_path):

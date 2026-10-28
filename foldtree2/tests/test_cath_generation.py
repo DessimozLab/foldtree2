@@ -8,7 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
-import generate_cath_families as generation
+import scripts.cath.generate_cath_families as generation
 
 
 def taxonomy(path):

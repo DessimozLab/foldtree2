@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from extend_matrix_references import select_members, concatenate_encoded_fastas
+from scripts.alphabets.extend_matrix_references import select_members, concatenate_encoded_fastas
 
 
 def test_selection_excludes_old_families_and_samples_members_reproducibly(tmp_path):

@@ -10,7 +10,7 @@ from foldtree2.src.contact_lever_metrics import per_protein_range_metrics, summa
 from foldtree2.src.contact_levers import InspectablePairHead, XSAPairHead
 from foldtree2.src.distance_restraints import eligible_pairs, PairwiseDistanceHead
 from foldtree2.tests.test_distance_restraints import example
-from scripts.train_contact_levers import ranking_loss, train, batched_forward, make_optimizer
+from scripts.contact.train_contact_levers import ranking_loss, train, batched_forward, make_optimizer
 
 
 def test_range_metrics_use_per_protein_budget_and_separation():

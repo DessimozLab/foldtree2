@@ -14,7 +14,7 @@ run_case() {
         printf 'Refusing to overwrite %s\n' "$out" >&2
         return 1
     fi
-    python scripts/train_contact_levers.py --output "$out" "$@"
+    python scripts/contact/train_contact_levers.py --output "$out" "$@"
     local status=$?
     if (( status != 0 )); then
         mkdir -p "$out"

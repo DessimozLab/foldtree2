@@ -48,25 +48,25 @@ PhyloJEPA jobs were unrelated and left untouched.
 
 1. **Missing deployed RAxML binary.** The pilot's FT2-40 `ml.command.log` says
    `Executable raxml-ng not found` at the staged package-local native path.
-   [Archive staging](../scripts/stage_curnagl_tcs.py) included the Python wrapper
+   [Archive staging](../scripts/curnagl/stage_curnagl_tcs.py) included the Python wrapper
    but omitted that native executable. It now includes the executable and its
-   license. [Inventory](../scripts/curnagl_tcs.py) also freezes the binary hash.
+   license. [Inventory](../scripts/curnagl/curnagl_tcs.py) also freezes the binary hash.
 2. **False-positive runtime gate.** The shared baseline's version collector
    records stdout/stderr without requiring exit zero. Thus wrapper error text
    could pass the previous runtime check. The deployment-specific
-   [runtime check](../scripts/check_curnagl_tcs.py) now requires successful
+   [runtime check](../scripts/curnagl/check_curnagl_tcs.py) now requires successful
    RAxML, Foldseek and (when configured) Foldmason version commands before
    writing a passing marker.
 3. **Infrastructure errors could change the cohort.** Broad candidate/rebuild/
    audit catches could turn disk/memory/network failures into exclusions.
-   [Generation](../scripts/generate_cath_families.py),
+   [Generation](../scripts/cath/generate_cath_families.py),
    [rebuild](../scripts/rebuild_cath_families.py) and
    [audit](../scripts/audit_cath_chains.py) now propagate infrastructure failures.
    Generation/rebuild still record HTTP 404/410 as missing candidates/references;
    server/rate-limit errors stop the job. Empty local alignments become explicit
    sequence-gate failures rather than uncaught indexing errors.
 4. **Source snapshot could include unrelated project edits.**
-   [Configuration](../scripts/configure_curnagl_tcs.py) now scopes Git status and
+   [Configuration](../scripts/curnagl/configure_curnagl_tcs.py) now scopes Git status and
    the recorded patch to the legacy subdirectory. This matters because the
    observed cluster Git root encloses multiple projects.
 5. **Chain aliasing touched a copied model's chain registry.** Detach the selected
@@ -312,7 +312,7 @@ test 66157376 failed before execution because a relative target did not match
 the workflow's absolute output paths; corrected regression **66157490** uses
 the actual absolute target and production driver.
 
-[The renderer](../scripts/isolate_curnagl_tcs.py) records both original and
+[The renderer](../scripts/curnagl/isolate_curnagl_tcs.py) records both original and
 operational workflow hashes; removing its six launch prefixes reproduces
 the original workflow byte-for-byte. The frozen workflow, source, plans,
 cohorts and bundles are unchanged. Snakemake's shell-code rerun trigger is
@@ -320,7 +320,7 @@ omitted only for this launch-prefix transition; mtime/input/parameter/environmen
 triggers and scientific signature/hash checks remain enforced.
 Superseded operational files/state/hashes are retained with
 `before-20261017-step-isolation` names. Incomplete native 3Di provenance is
-preserved through [the recovery helper](../scripts/prepare_curnagl_step_recovery.py),
+preserved through [the recovery helper](../scripts/curnagl/prepare_curnagl_step_recovery.py),
 never overwritten or treated as a valid complete result.
 
 Local validation: **235 passed, 1 skipped, 1 xfailed**; documentation scanner:

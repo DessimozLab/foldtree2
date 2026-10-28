@@ -9,7 +9,7 @@ if [[ -e "$out" ]]; then
     printf 'Refusing to overwrite %s\n' "$out" >&2
     exit 1
 fi
-python scripts/train_contact_levers.py --output "$out" --model pair_xsa --device cuda:0 \
+python scripts/contact/train_contact_levers.py --output "$out" --model pair_xsa --device cuda:0 \
     --hidden 384 --context-layers 3 --context-heads 12 --batch-size 32 \
     --optimizer adamw --learning-rate 0.001
 status=$?

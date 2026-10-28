@@ -4,6 +4,11 @@ No production model calls, data regeneration or larger training.
 Calibration uses only the original 32 overfit training structures. The 128 pilot
 validation structures are reserved for final paired evaluation.
 """
+
+import os as _bootstrap_os, sys as _bootstrap_sys
+_bootstrap_root = _bootstrap_os.path.dirname(_bootstrap_os.path.dirname(_bootstrap_os.path.dirname(_bootstrap_os.path.abspath(__file__))))
+if _bootstrap_root not in _bootstrap_sys.path:
+    _bootstrap_sys.path.insert(0, _bootstrap_root)
 import argparse
 import hashlib
 import inspect

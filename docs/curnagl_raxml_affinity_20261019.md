@@ -114,7 +114,7 @@ under their existing signatures; no taxa are pruned and no failed score is
 marked successful. Final aggregation remains blocked until its dependencies
 complete, so an eventual failed Slurm state can coexist with useful progress.
 
-[`scripts/resume_curnagl_keepgoing.py`](../scripts/resume_curnagl_keepgoing.py)
+[`scripts/curnagl/resume_curnagl_keepgoing.py`](../scripts/curnagl/resume_curnagl_keepgoing.py)
 checks the identified failed allocation and launcher provenance, backs up the
 launcher/supervision state, validates the changed batch script and activates the
 existing supervisor. It rejects duplicate application. Local checks verified

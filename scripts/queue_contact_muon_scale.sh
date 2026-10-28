@@ -12,7 +12,7 @@ run_case() {
         printf 'Refusing to overwrite %s\n' "$out" >&2
         return 1
     fi
-    python scripts/train_contact_levers.py --output "$out" --model "$model" --device "cuda:$gpu" \
+    python scripts/contact/train_contact_levers.py --output "$out" --model "$model" --device "cuda:$gpu" \
         --hidden 384 --context-layers 3 --context-heads 12 --batch-size 32 \
         --optimizer "$optimizer" --muon-lr 0.02 --learning-rate "$lr"
     local status=$?

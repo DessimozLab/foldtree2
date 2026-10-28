@@ -131,7 +131,7 @@ def canonical_lineage(db, taxid):
 
 
 def observed_sequence(path):
-    from curnagl_tcs import pdb_sequence
+    from scripts.curnagl.curnagl_tcs import pdb_sequence
     return pdb_sequence(path)
 
 

@@ -11,6 +11,11 @@ Two eligibility tiers, filled in order:
   more nonlocal pairs per chain and add a length regime the current cohort
   (median 119 residues) barely covers, which is the point of diversity.
 """
+
+import os as _bootstrap_os, sys as _bootstrap_sys
+_bootstrap_root = _bootstrap_os.path.dirname(_bootstrap_os.path.dirname(_bootstrap_os.path.dirname(_bootstrap_os.path.abspath(__file__))))
+if _bootstrap_root not in _bootstrap_sys.path:
+    _bootstrap_sys.path.insert(0, _bootstrap_root)
 import argparse
 import copy
 import hashlib

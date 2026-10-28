@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
-import supervise_cath_generation as supervisor
+import scripts.cath.supervise_cath_generation as supervisor
 
 
 def run_root(tmp_path):

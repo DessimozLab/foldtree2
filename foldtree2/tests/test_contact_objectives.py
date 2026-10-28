@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, eligible_pairs
 from foldtree2.tests.test_distance_restraints import example
-from scripts.experiment_contact_objectives import balanced_contact_loss, contact_logit, experiment_cases
+from scripts.contact.experiment_contact_objectives import balanced_contact_loss, contact_logit, experiment_cases
 
 
 def test_configurable_cases_preserve_dimension_and_weight():
@@ -23,7 +23,7 @@ def test_configurable_cases_preserve_dimension_and_weight():
 
 def test_matched_cases_save_progress_checkpoints_and_final_metrics(tmp_path):
     from foldtree2.se3_cache import digest, identity_hash
-    from scripts.experiment_contact_objectives import run
+    from scripts.contact.experiment_contact_objectives import run
 
     cache = tmp_path / 'cache'
     (cache / 'entries').mkdir(parents=True)

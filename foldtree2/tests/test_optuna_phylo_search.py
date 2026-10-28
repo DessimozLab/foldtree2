@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def load_module():
-    module_path = Path(__file__).resolve().parents[1] / ".." / "scripts" / "optuna_phylo_information_search.py"
+    module_path = Path(__file__).resolve().parents[1] / ".." / "scripts" / "benchmarks" / "optuna_phylo_information_search.py"
     spec = spec_from_file_location("optuna_phylo_information_search", module_path)
     module = module_from_spec(spec)
     assert spec.loader is not None

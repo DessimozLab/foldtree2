@@ -12,7 +12,7 @@ from torch_geometric.data import HeteroData
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from foldtree2.makesubmat import compute_pair_counts_and_bg, MatrixConvergenceMonitor
-from production_alphabet_experiments import descriptions, notebook_functions
+from scripts.alphabets.production_alphabet_experiments import descriptions, notebook_functions
 from foldtree2.src.encoder import RESIDUE_TRACK_ORDER, residue_features_for_encoder
 
 

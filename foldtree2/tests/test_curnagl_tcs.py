@@ -6,7 +6,7 @@ import pytest
 from ete3 import Tree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from curnagl_tcs import scoring_functions, tcs
+from scripts.curnagl.curnagl_tcs import scoring_functions, tcs
 
 
 PURE_BASELINE = '''
@@ -81,7 +81,7 @@ def test_raxml_version_provenance_ignores_runtime_cpu_allocation(tmp_path, monke
 
 def test_supervisor_retries_only_infrastructure_failures(tmp_path, monkeypatch):
     import json
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'attempts': {'pilot': 0}, 'status': 'active'}
     (tmp_path / 'supervision.json').write_text(json.dumps(state))
     monkeypatch.setattr(supervisor, 'shutil_disk_free', lambda root: 100 * 1024**3)
@@ -96,7 +96,7 @@ def test_supervisor_retries_only_infrastructure_failures(tmp_path, monkeypatch):
 
 def test_supervisor_retry_cap_and_storage_gate(tmp_path, monkeypatch):
     import json
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor, 'shutil_disk_free', lambda root: 100 * 1024**3)
     monkeypatch.setattr(supervisor, 'accounting', lambda job: ('NODE_FAIL', []))
     state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'attempts': {'pilot': 2}, 'status': 'active'}
@@ -109,7 +109,7 @@ def test_supervisor_retry_cap_and_storage_gate(tmp_path, monkeypatch):
 
 def test_failed_slurm_dependency_stops_instead_of_waiting_forever(tmp_path, monkeypatch):
     import json
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor, 'execute', lambda argv: '123|PENDING|DependencyNeverSatisfied')
     assert supervisor.accounting('123') == ('DEPENDENCY_FAILED', [])
     state = {'phase': 'inventory', 'jobs': {'inventory': '123'},
@@ -125,7 +125,7 @@ def test_failed_slurm_dependency_stops_instead_of_waiting_forever(tmp_path, monk
 def test_pilot_gate_requires_coverage_and_accounted_memory(tmp_path, monkeypatch):
     import hashlib
     import json
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor, 'shutil_disk_free', lambda root: 100 * 1024**3)
     monkeypatch.setattr(supervisor, 'accounting', lambda job: ('COMPLETED', [['123', 'COMPLETED', '0:0', '', '1:00'],
                                                             ['123.batch', 'COMPLETED', '0:0', '1024M', '1:00']]))
@@ -157,7 +157,7 @@ def test_pilot_gate_requires_coverage_and_accounted_memory(tmp_path, monkeypatch
 def test_project_quota_is_used_instead_of_whole_filesystem(monkeypatch):
     import shutil
     from types import SimpleNamespace
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor.os, 'access', lambda *args: False)
     monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=200 * 1000**4))
     monkeypatch.setattr(supervisor, 'execute', lambda args, **kwargs: '\n'.join([
@@ -169,7 +169,7 @@ def test_project_quota_is_used_instead_of_whole_filesystem(monkeypatch):
 
 
 def test_accounting_falls_back_after_completed_job_leaves_queue(monkeypatch):
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     def execute(argv):
         if argv[0] == 'squeue':
             assert '--me' in argv and '-j' not in argv
@@ -183,7 +183,7 @@ def test_accounting_falls_back_after_completed_job_leaves_queue(monkeypatch):
 def test_quota_uses_longer_bounded_timeout(monkeypatch):
     import shutil
     from types import SimpleNamespace
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor.os, 'access', lambda *args: False)
     monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=10**12))
     def execute(argv, timeout):
@@ -195,7 +195,7 @@ def test_quota_uses_longer_bounded_timeout(monkeypatch):
 
 def test_callback_waits_on_scheduler_and_exits_on_failed_gate(tmp_path, monkeypatch):
     import json
-    import advance_curnagl_tcs as callback
+    from scripts.curnagl import advance_curnagl_tcs as callback
     state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active', 'slurm_state': 'RUNNING'}
     (tmp_path / 'supervision.json').write_text(json.dumps(state))
     monkeypatch.setattr(callback, 'tick', lambda root: state)
@@ -214,7 +214,7 @@ def test_callback_waits_on_scheduler_and_exits_on_failed_gate(tmp_path, monkeypa
 def test_gpfs_quota_is_bound_to_fileset_and_reserves_in_doubt_blocks(tmp_path, monkeypatch):
     import shutil
     from types import SimpleNamespace
-    import supervise_curnagl_tcs as supervisor
+    from scripts.curnagl import supervise_curnagl_tcs as supervisor
     monkeypatch.setattr(supervisor.os, 'access', lambda *args: True)
     monkeypatch.setattr(shutil, 'disk_usage', lambda root: SimpleNamespace(free=10**12))
     response = [
@@ -233,7 +233,7 @@ def test_gpfs_quota_is_bound_to_fileset_and_reserves_in_doubt_blocks(tmp_path, m
 
 def test_callback_advances_to_full_only_through_existing_gates(tmp_path, monkeypatch):
     import json
-    import advance_curnagl_tcs as callback
+    from scripts.curnagl import advance_curnagl_tcs as callback
     state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active'}
     (tmp_path / 'supervision.json').write_text(json.dumps(state))
     calls = []
@@ -257,7 +257,7 @@ def test_callback_advances_to_full_only_through_existing_gates(tmp_path, monkeyp
 
 def test_callback_accounting_wait_is_delayed_and_bounded(tmp_path, monkeypatch):
     import json
-    import advance_curnagl_tcs as callback
+    from scripts.curnagl import advance_curnagl_tcs as callback
     state = {'phase': 'pilot', 'jobs': {'pilot': '123'}, 'status': 'active',
              'slurm_state': 'WAITING_FOR_PEAK_MEMORY_ACCOUNTING'}
     (tmp_path / 'supervision.json').write_text(json.dumps(state))
@@ -280,7 +280,7 @@ def test_inventory_checks_domain_sequences_taxonomy_and_complete_cohort(tmp_path
     import re
     import sqlite3
     from types import SimpleNamespace
-    from curnagl_tcs import family_record
+    from scripts.curnagl.curnagl_tcs import family_record
     structs = tmp_path / 'structs'
     structs.mkdir()
     rows = []
@@ -315,7 +315,7 @@ def test_inventory_checks_domain_sequences_taxonomy_and_complete_cohort(tmp_path
 
 def test_runtime_check_rejects_a_wrapper_with_a_missing_binary(tmp_path, monkeypatch):
     import subprocess
-    from check_curnagl_tcs import check_native_tools
+    from scripts.curnagl.check_curnagl_tcs import check_native_tools
     wrapper = tmp_path / 'raxml-ng'
     wrapper.write_text('#!/bin/sh\necho "Error: Executable raxml-ng not found"\nexit 1\n')
     wrapper.chmod(0o755)
@@ -328,7 +328,7 @@ def test_cluster_archive_includes_and_hashes_the_native_raxml_binary(tmp_path, m
     import hashlib
     import json
     import tarfile
-    import stage_curnagl_tcs as stage
+    from scripts.curnagl import stage_curnagl_tcs as stage
     root = tmp_path / 'source'
     resources = [
         'foldtree2/__init__.py', 'foldtree2/config/aaindex1.csv',
@@ -364,7 +364,7 @@ def test_cluster_archive_includes_and_hashes_the_native_raxml_binary(tmp_path, m
 
 
 def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypatch):
-    import configure_curnagl_tcs as configure
+    from scripts.curnagl import configure_curnagl_tcs as configure
     root = tmp_path / 'run'
     source = root / 'foldtree2/scripts/supervise_curnagl_tcs.py'
     source.parent.mkdir(parents=True)
@@ -403,7 +403,7 @@ def test_configuration_snapshots_only_the_legacy_subdirectory(tmp_path, monkeypa
 def test_isolated_workflow_preserves_science_and_records_both_hashes(tmp_path):
     import hashlib
     import json
-    from isolate_curnagl_tcs import install, render
+    from scripts.curnagl.isolate_curnagl_tcs import install, render
     source = tmp_path / 'foldtree2/workflow/curnagl_tcs.smk'
     source.parent.mkdir(parents=True)
     original = (Path(__file__).resolve().parents[2] / 'workflow/curnagl_tcs.smk').read_bytes()
@@ -450,7 +450,7 @@ def test_isolated_workflow_preserves_science_and_records_both_hashes(tmp_path):
 
 
 def test_physical_affinity_groups_smt_siblings_and_distinguishes_sockets(tmp_path, monkeypatch):
-    import curnagl_physical_step as step
+    from scripts.curnagl import curnagl_physical_step as step
     for cpu, package, core in [(0, 0, 0), (1, 0, 0), (2, 0, 1), (3, 0, 1), (4, 1, 0)]:
         directory = tmp_path / f'cpu{cpu}/topology'
         directory.mkdir(parents=True)
@@ -472,7 +472,7 @@ def test_physical_affinity_groups_smt_siblings_and_distinguishes_sockets(tmp_pat
 
 
 def test_affinity_release_requires_successful_accounting_for_every_step(monkeypatch):
-    import resume_curnagl_affinity as release
+    from scripts.curnagl import resume_curnagl_affinity as release
     monkeypatch.setattr(release.subprocess, 'check_output', lambda *args, **kwargs:
                         '123|COMPLETED|0:0|\n123.0|FAILED|1:0|\n')
     with pytest.raises(ValueError, match='did not finish successfully'):
@@ -484,7 +484,7 @@ def test_affinity_release_requires_successful_accounting_for_every_step(monkeypa
 
 def test_single_thread_recovery_preserves_unfinished_ml_only(tmp_path):
     import json
-    from prepare_curnagl_step_recovery import preserve_incomplete_ml
+    from scripts.curnagl.prepare_curnagl_step_recovery import preserve_incomplete_ml
     output = tmp_path / 'results'
     (tmp_path / 'plan.json').write_text(json.dumps({
         'config': {'output_dir': str(output)}, 'families': {'CATH__1': {}},
@@ -508,7 +508,7 @@ def test_single_thread_recovery_preserves_unfinished_ml_only(tmp_path):
 
 def test_recovery_preserves_incomplete_native_outputs_without_touching_complete_ones(tmp_path):
     import json
-    from prepare_curnagl_step_recovery import preserve_incomplete
+    from scripts.curnagl.prepare_curnagl_step_recovery import preserve_incomplete
     output = tmp_path / 'results/full'
     families = output / 'families'
     (tmp_path / 'plan.json').write_text(json.dumps({

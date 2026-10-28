@@ -6,7 +6,7 @@ from foldtree2.src.contact_dot_experiments import PairAdjustedDotHead, Symmetric
 from foldtree2.src.contact_cross_dot_perturbed import PerturbedCrossDotHead
 from foldtree2.src.distance_restraints import PairwiseDistanceHead, eligible_pairs
 from foldtree2.tests.test_distance_restraints import example
-from scripts.export_contact_operating_point import shifted_checkpoint
+from scripts.contact.export_contact_operating_point import shifted_checkpoint
 
 
 def test_global_logit_shift_changes_cutoff_but_preserves_ranking():

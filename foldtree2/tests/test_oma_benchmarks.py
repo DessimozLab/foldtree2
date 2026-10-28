@@ -8,10 +8,10 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-import benchmark_cohort as cohort
-import alphabet_information_metrics as metrics
+import scripts.benchmarks.benchmark_cohort as cohort
+import scripts.alphabets.alphabet_information_metrics as metrics
 from benchmark_common import read_fasta, write_fasta
-from compare_oma_representations import controlled_alignments, shared_occupancy
+from scripts.benchmarks.compare_oma_representations import controlled_alignments, shared_occupancy
 
 
 @pytest.mark.parametrize('representation,key', [('AA', 'AA_1'), ('3Di', '3Di_1'), ('FT2_20', 'native_20_1')])

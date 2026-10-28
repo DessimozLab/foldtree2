@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from benchmark_species_supermatrix import concatenate, species_labels, paired_family_comparison
+from scripts.benchmarks.benchmark_species_supermatrix import concatenate, species_labels, paired_family_comparison
 
 
 def test_concatenation_pads_missing_species_and_tracks_exact_blocks():

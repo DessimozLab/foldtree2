@@ -14,7 +14,7 @@ if [[ -e "$out" ]]; then
     printf 'Refusing to overwrite %s\n' "$out" >&2
     exit 1
 fi
-python scripts/train_contact_levers.py --output "$out" --model "$model" --device "cuda:$1" --hidden 256 --batch-size 32
+python scripts/contact/train_contact_levers.py --output "$out" --model "$model" --device "cuda:$1" --hidden 256 --batch-size 32
 status=$?
 if (( status != 0 )); then
     mkdir -p "$out"

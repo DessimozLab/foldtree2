@@ -43,7 +43,7 @@ chain. Matching names/lengths alone does not prove scientific correspondence.
 For the sequential local queue (CPU encoding, at most eight threads), use:
 
 ```bash
-python scripts/run_local_benchmark_queue.py \
+python scripts/benchmarks/run_local_benchmark_queue.py \
   --outdir runs/local_benchmarks/your_run \
   --training-pid YOUR_TRAINING_SUPERVISOR_PID \
   --training-dir runs/production_alphabets/notebook_heldout_20260930
@@ -60,7 +60,7 @@ notebook analysis or the integrated seven-representation comparisons.
 To benchmark ready bundles without rebuilding matrices or waiting for training:
 
 ```bash
-python scripts/run_local_benchmark_queue.py --benchmark-only --sizes 30 40 \
+python scripts/benchmarks/run_local_benchmark_queue.py --benchmark-only --sizes 30 40 \
   --max-families 5 --threads 8 --outdir runs/local_benchmarks/ready_models \
   --wait-for-service foldtree2-benchmark20-20261001.service
 ```
@@ -74,7 +74,7 @@ for ancestral reconstruction. The limited scope is recorded and is not a full
 For the full native-tree/ancestral sweep across the ready FT2 models and AA/3Di:
 
 ```bash
-python scripts/run_local_benchmark_queue.py --benchmark-only \
+python scripts/benchmarks/run_local_benchmark_queue.py --benchmark-only \
   --trees-and-ancestral-only --sizes 20 30 40 --threads 8 \
   --alignment-root runs/local_benchmarks/notebook_frobenius_20260930/experiments \
   --reuse-native-root runs/local_benchmarks/complete_models_20261001 \
@@ -106,7 +106,7 @@ encoder matches production. The manual notebook imports the same monitor.
 Previously promoted matrices retain their original single-update convergence
 reports; this code change does not retroactively certify them under the EMA rule.
 
-For additional independent references, `scripts/extend_matrix_references.py`
+For additional independent references, `scripts/alphabets/extend_matrix_references.py`
 excludes the original AFDB cluster IDs, deterministically samples five members
 per new cluster, reuses/downloads their PDBs, stores mk2 graphs in a separate
 HDF5 file, encodes them with the production checkpoint and runs Foldseek
@@ -120,7 +120,7 @@ To rebuild using references already downloaded and encoded, without downloading,
 converting graphs, or retraining, use a new staging directory:
 
 ```bash
-python scripts/rebuild_downloaded_matrix_references.py --size 50 \
+python scripts/alphabets/rebuild_downloaded_matrix_references.py --size 50 \
   --reference-root /mnt/data2/datasets/ft2_matrix_extension_20261003 \
   --outdir /mnt/data2/datasets/ft2_matrix_readerfix_20261004 --threads 8
 ```
@@ -135,7 +135,7 @@ remaining family benchmarks and both all-alphabet supermatrix modes after
 successful promotion. Failed rebuilds remain staged for inspection.
 
 An explicitly approved exception can be recorded with
-`scripts/promote_nonconverged_matrix.py --accept-nonconverged`, using a size,
+`scripts/alphabets/promote_nonconverged_matrix.py --accept-nonconverged`, using a size,
 staging directory, and nonempty reason. This validates all artifacts and full
 state-pair coverage before recording a hash-bound acceptance sidecar. It never
 changes `is_converged` or the convergence threshold. FT2-50 was accepted this way
@@ -145,7 +145,7 @@ Its benchmark provenance must retain and disclose this exception.
 Validate the selected bundle first. Use separate output directories:
 
 ```bash
-python scripts/production_alphabet_experiments.py \
+python scripts/alphabets/production_alphabet_experiments.py \
   --size 30 --families /path/to/families \
   --outdir results/smoke/30 --device cpu --threads 4 --max-families 1
 ```
@@ -153,7 +153,7 @@ python scripts/production_alphabet_experiments.py \
 For the full sweep, omit the limit:
 
 ```bash
-python scripts/production_alphabet_experiments.py \
+python scripts/alphabets/production_alphabet_experiments.py \
   --size 30 --families /path/to/families \
   --outdir results/full/30 --device cpu --threads 4
 ```
@@ -181,13 +181,13 @@ posterior heatmaps. It reads existing artifact pointers without rerunning ASR.
 The default is 50 common completed families; set `MAX_FAMILIES=None` for the
 full available cohort. Missing models and partial baseline coverage are explicit.
 
-`scripts/ancestral_state_uncertainty.py` uses the same shared RAxML-NG
+`scripts/ancestral/ancestral_state_uncertainty.py` uses the same shared RAxML-NG
 `--ancestral` implementation and ancestral-table-to-FASTA conversion as the
 FT2 treebuilder. Run it separately for AA, 3Di, and each FT2 alphabet, supplying
 that strategy's **own alignment, ML tree, fitted model, and ML log**:
 
 ```bash
-python scripts/ancestral_state_uncertainty.py \
+python scripts/ancestral/ancestral_state_uncertainty.py \
   --alignment results/strategy/aligned.fasta \
   --tree results/strategy/ml.raxml.bestTree \
   --model results/strategy/ml.raxml.bestModel \
@@ -222,7 +222,7 @@ Use new output directories when the reconstruction protocol changes.
 For the integrated comparison (3Di is required, not an optional baseline):
 
 ```bash
-python scripts/compare_oma_representations.py --sizes 20 30 40 \
+python scripts/benchmarks/compare_oma_representations.py --sizes 20 30 40 \
   --cohort configs/oma_benchmark_cohort.json \
   --experiment-root runs/local_benchmarks/notebook_frobenius_20260930/experiments \
   --native-root runs/local_benchmarks/full_native_ancestral_20261001 \
@@ -250,7 +250,7 @@ fixed-species-tree comparison below. Do not label it as a species-supermatrix re
 
 ### Concatenated OMA alignment on a fixed species topology
 
-`scripts/benchmark_species_supermatrix.py` extracts the notebook's supermatrix
+`scripts/benchmarks/benchmark_species_supermatrix.py` extracts the notebook's supermatrix
 padding, species mapping and IID-relative phylogenetic information workflow.
 Its default fixed tree is `configs/oma_fixed_species_tree.nwk`, copied from the
 notebook's historical `Information_benchmark/aa_astral_tree.nwk` (21 species).
@@ -260,7 +260,7 @@ parameters are fitted separately and frozen for site likelihoods. AA retains
 LG+G+I, 3Di the published Q.3Di.AF+G+I, and FT2 its size-specific GTR+I model.
 
 ```bash
-python scripts/benchmark_species_supermatrix.py --sizes 10 20 30 40 \
+python scripts/benchmarks/benchmark_species_supermatrix.py --sizes 10 20 30 40 \
   --experiment-root runs/local_benchmarks/notebook_frobenius_20260930/experiments \
   --native-root runs/local_benchmarks/full_native_ancestral_20261001 \
   --species-tree configs/oma_fixed_species_tree.nwk \
@@ -316,7 +316,7 @@ common-column comparison; they do not require another native tree search.
 The lower-level information script can also consume native 3Di directly:
 
 ```bash
-python scripts/alphabet_information_benchmark.py \
+python scripts/benchmarks/alphabet_information_benchmark.py \
   --experiment-dirs results/full/20 results/full/30 results/full/40 \
   --native-root results/native_sweep --cohort configs/oma_benchmark_cohort.json \
   --outdir results/information_comparison --permutation-controls
@@ -356,11 +356,11 @@ must not be treated as corresponding sites for cross-alphabet MI.
 
 ## Other prepared alignments and trees
 
-Create a specification using the [gain analysis CLI](../scripts/phylogenetic_information_gain.py)
+Create a specification using the [gain analysis CLI](../scripts/benchmarks/phylogenetic_information_gain.py)
 and supply your dataset paths/model details:
 
 ```bash
-python scripts/phylogenetic_information_gain.py \
+python scripts/benchmarks/phylogenetic_information_gain.py \
   --spec /path/to/experiment.json --outdir results/phylo_gain \
   --threads 4 --skip-cross-mi
 ```

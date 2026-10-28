@@ -98,7 +98,7 @@ class PairwiseDistanceHead(nn.Module):
     """Symmetric pair MLP with optional residue context; no geometry inputs."""
     def __init__(self, feature_dim, contact_dim=30, hidden=64, mode='decoder',
                  edges=DISTANCE_EDGES, context_layers=0, context_heads=8,
-                 contact_bias=False, dropout=0., spherical_dim=0):
+                 contact_bias=False, dropout=0., spherical_dim=0, pair_bilinear_dim=0):
         super().__init__()
         if (any(isinstance(x, bool) or not isinstance(x, int) or x < 1
                 for x in (feature_dim, contact_dim, hidden))
@@ -113,6 +113,9 @@ class PairwiseDistanceHead(nn.Module):
             raise ValueError('Expected boolean contact_bias')
         if isinstance(dropout, bool) or not isinstance(dropout, (int, float)) or not 0. <= dropout < 1.:
             raise ValueError('Expected dropout probability in [0, 1)')
+        if (isinstance(pair_bilinear_dim, bool) or not isinstance(pair_bilinear_dim, int)
+                or pair_bilinear_dim < 0):
+            raise ValueError('Expected nonnegative integer pair bilinear dimension')
         self.dropout = float(dropout)
         edges = torch.tensor(edges, dtype=torch.float32)
         validate_edges(edges)
@@ -129,8 +132,16 @@ class PairwiseDistanceHead(nn.Module):
             nn.Linear(feature_dim + contact_dim + 20, hidden), nn.GELU(),
             input_drop,
             nn.Linear(hidden, hidden), nn.GELU())
+        self.pair_bilinear_dim = int(pair_bilinear_dim)
+        pair_input_dim = 3 * hidden + 2
+        if self.pair_bilinear_dim:
+            # Symmetric low-rank bilinear term: (p_i x p_j + p_j x p_i) / 2,
+            # projected back to hidden so pair features grow by exactly hidden.
+            self.pair_proj = nn.Linear(hidden, self.pair_bilinear_dim, bias=False)
+            self.pair_bilin = nn.Linear(self.pair_bilinear_dim * self.pair_bilinear_dim, hidden, bias=False)
+            pair_input_dim += hidden
         self.pair = nn.Sequential(
-            nn.Linear(3 * hidden + 2, hidden), nn.GELU(),
+            nn.Linear(pair_input_dim, hidden), nn.GELU(),
             nn.Linear(hidden, hidden), nn.GELU(), nn.Linear(hidden, len(edges) + 1))
         self.context_layers, self.context_heads = context_layers, context_heads
         self.contact_bias = contact_bias
@@ -158,6 +169,8 @@ class PairwiseDistanceHead(nn.Module):
             config.update(dropout=self.dropout)
         if self.spherical_dim:
             config.update(spherical_dim=self.spherical_dim)
+        if self.pair_bilinear_dim:
+            config.update(pair_bilinear_dim=self.pair_bilinear_dim)
         return config
 
     def _contact_dot(self, entry, mask):
@@ -210,8 +223,17 @@ class PairwiseDistanceHead(nn.Module):
             contact = (entry['contact_z'][i].detach() * entry['contact_z'][j].detach()).sum(-1, keepdim=True)
             if self.mode == 'sequence':
                 contact = torch.zeros_like(contact)
-            result.append(self.pair(torch.cat(
-                [a + b, (a - b).abs(), a * b, separation, contact], dim=-1)))
+            features = [a + b, (a - b).abs(), a * b, separation, contact]
+            if self.pair_bilinear_dim:
+                # Symmetric low-rank outer product with a learned projection.
+                # (p_i x p_j + p_j x p_i) / 2 is invariant to pair order, so
+                # logits stay symmetric without a separate symmetry constraint.
+                pa = self.pair_proj(a)
+                pb = self.pair_proj(b)
+                outer = (pa.unsqueeze(-1) * pb.unsqueeze(-2)
+                         + pb.unsqueeze(-1) * pa.unsqueeze(-2)) * .5
+                features.append(self.pair_bilin(outer.reshape(len(a), -1)))
+            result.append(self.pair(torch.cat(features, dim=-1)))
         logits = torch.cat(result)
         if self.spherical_dim:
             unit = F.normalize(self.contact_projection(nodes), dim=-1, eps=1e-6)

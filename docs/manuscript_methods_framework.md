@@ -132,7 +132,7 @@ Independently aligned representations require explicit site correspondence
 before any cross-alphabet column MI is interpreted.
 
 ### 10.2 Scripted phylogenetic information gain analysis
-The command-line benchmark script [scripts/phylogenetic_information_gain.py](../scripts/phylogenetic_information_gain.py) computes, per alignment column:
+The command-line benchmark script [scripts/benchmarks/phylogenetic_information_gain.py](../scripts/benchmarks/phylogenetic_information_gain.py) computes, per alignment column:
 - tree-based site log-likelihood,
 - IID baseline log-likelihood from global state frequencies,
 - phylogenetic information gain:

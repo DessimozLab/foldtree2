@@ -30,6 +30,6 @@ the same base head: pick one only for an ablation study and do not stack them.
 Note that `contact_lever_metrics` imports the top-level `train_distance_restraints`
 driver directly, so it is not a standalone loss layer. The main entry point is
 [train_distance_restraints](../../train_distance_restraints.py); the
-`scripts/train_contact_levers.py` and `scripts/report_contact_objectives.py`
+`scripts/contact/train_contact_levers.py` and `scripts/contact/report_contact_objectives.py`
 helpers drive the lever ablations. See the [training guide](../../../docs/training.md)
 and [experiments](../../../docs/experiments.md) for configured runs.

@@ -75,6 +75,32 @@ def pair_metrics(model, probabilities, labels, distances, top_count, prior):
     }
 
 
+def sample_pairs(entry, all_pairs, count, generator, balanced=False, contact_cutoff=8.):
+    """Uniform subsample, or a 50/50 contact/non-contact balanced subsample.
+
+    The balanced branch samples with replacement from each class, so batch
+    composition stays exactly half contacts even when contacts are rare (the
+    default uniform draw gives the model almost no contact supervision).
+    """
+    if not balanced or count < 2:
+        indices = torch.randperm(len(all_pairs), generator=generator)[:count]
+        return all_pairs[indices]
+    target = entry['target']
+    distances = (target[all_pairs[:, 0]] - target[all_pairs[:, 1]]).norm(dim=-1)
+    contact = distances < contact_cutoff
+    contact_idx = contact.nonzero().view(-1)
+    noncontact_idx = (~contact).nonzero().view(-1)
+    half = count // 2
+    if len(contact_idx) == 0 or len(noncontact_idx) == 0 or half < 1:
+        indices = torch.randperm(len(all_pairs), generator=generator)[:count]
+        return all_pairs[indices]
+    chosen = torch.cat([
+        contact_idx[torch.randint(len(contact_idx), (half,), generator=generator)],
+        noncontact_idx[torch.randint(len(noncontact_idx), (count - half,), generator=generator)],
+    ])
+    return all_pairs[chosen[torch.randperm(count, generator=generator)]]
+
+
 def evaluate(model, records, device, prior, export=False):
     model.eval()
     rows, exports = [], []
@@ -158,6 +184,16 @@ def train(args):
                 'mask': 'invalid residues excluded as attention keys and supervised endpoints',
                 'dropout': 0.,
             },
+            'pair_representation': {
+                'bilinear_dim': getattr(args, 'pair_bilinear_dim', 0),
+                'symmetric': 'outer product symmetrized by averaging both orderings',
+            },
+            'contact_head': {
+                'spherical_dim': getattr(args, 'spherical_dim', 0),
+                'hierarchical': 'sphere fixes contact mass; pair MLP conditions distance on contact',
+            },
+            'pair_sampling': ('balanced 50/50 contact/noncontact (with replacement per class)'
+                              if getattr(args, 'balanced', False) else 'uniform draws'),
             'lr_schedule': 'cosine-to-zero over the epoch budget' if args.cosine_lr else 'constant',
             'regularization': {'dropout': getattr(args, 'dropout', 0.),
                                'weight_decay': args.weight_decay,
@@ -165,7 +201,9 @@ def train(args):
                                'best_checkpoint': 'selection score = val NLL - 2 x contact AP'},
             'scope': 'Reused refiner development holdout; production pretraining independence unverified',
             'cache_scope': manifest.get('scope'),
-            'objective': 'unweighted distance-bin cross entropy, uniformly sampled nonlocal pairs',
+            'objective': ('distance-bin cross entropy on balanced 50/50 contact/noncontact sampled pairs'
+              if getattr(args, 'balanced', False)
+              else 'unweighted distance-bin cross entropy, uniformly sampled nonlocal pairs'),
             'selection_metric': 'none; final fixed-budget weights, not validation-selected',
             'contact_definition': 'CA distance <8A; frozen decoder trained on CB contacts',
             'capped_mae': 'midpoint expectation with overflow represented by 32A; native distances capped at 32A',
@@ -188,7 +226,9 @@ def train(args):
                 context_layers=getattr(args, 'context_layers', 0),
                 context_heads=getattr(args, 'context_heads', 8),
                 contact_bias=getattr(args, 'contact_bias', False),
-                dropout=getattr(args, 'dropout', 0.)).to(device)
+                dropout=getattr(args, 'dropout', 0.),
+                spherical_dim=getattr(args, 'spherical_dim', 0),
+                pair_bilinear_dim=getattr(args, 'pair_bilinear_dim', 0)).to(device)
             histogram = torch.ones(len(model.edges) + 1, dtype=torch.float64)
             for entry, pairs in records['train']:
                 labels, _ = distance_labels(entry['target'], pairs, model.edges.cpu())
@@ -222,8 +262,8 @@ def train(args):
                 order = torch.randperm(len(records['train']), generator=sampling)
                 for index in order.tolist():
                     entry, all_pairs = records['train'][index]
-                    indices = torch.randperm(len(all_pairs), generator=sampling)[:args.pairs]
-                    pairs = all_pairs[indices].to(device)
+                    pairs = sample_pairs(entry, all_pairs, args.pairs, sampling,
+                                         balanced=getattr(args, 'balanced', False)).to(device)
                     inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v
                               for k, v in entry.items()}
                     labels, _ = distance_labels(inputs['target'], pairs, model.edges)
@@ -361,6 +401,14 @@ def main():
                              'dot product inside residue context attention')
     parser.add_argument('--cosine-lr', action='store_true',
                         help='Cosine-anneal the learning rate to zero over the epoch budget')
+    parser.add_argument('--balanced', action='store_true',
+                        help='Sample each batch 50/50 from contact and non-contact pairs '
+                             '(with replacement per class) instead of uniform pair draws')
+    parser.add_argument('--spherical-dim', type=int, default=0,
+                        help='Enable the hierarchical spherical contact head with this '
+                             'sphere dimension (0 disables it)')
+    parser.add_argument('--pair-bilinear-dim', type=int, default=0,
+                        help='Symmetrized low-rank bilinear pair term width (0 disables it)')
     parser.add_argument('--dropout', type=float, default=0.,
                         help='Residual/hidden dropout probability applied inside the '
                              'node MLP and context layers (0 disables)')

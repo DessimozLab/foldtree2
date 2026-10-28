@@ -39,7 +39,7 @@ Activate the `foldtree2` conda environment, then run from the repository root:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 MPLCONFIGDIR=/tmp/foldtree2-matplotlib \
-python -u scripts/prepare_production_alphabets.py --sizes 10 50 --stages train \
+python -u scripts/alphabets/prepare_production_alphabets.py --sizes 10 50 --stages train \
   --outdir runs/production_alphabets/notebook_heldout_20260930
 ```
 
@@ -104,7 +104,7 @@ gain and own-alignment/own-tree native gain tables. The native ancestral sweep
 remains strategy-specific. The older per-model tables below are preparatory
 results; AA/FT2-only wider analyses must be explicitly marked legacy.
 
-`scripts/production_alphabet_experiments.py` runs all local marker families with
+`scripts/alphabets/production_alphabet_experiments.py` runs all local marker families with
 at least four structures. It uses the numerical functions from
 `alphabet_Information_content_benchmark.ipynb` for the discrete description:
 state usage, Shannon entropy, effective state count, AA/token mutual information,
@@ -124,11 +124,11 @@ There are 499 eligible local families. Fifteen contain one extra PDB absent
 from their reference AA alignment/tree; both analyses use the reference sample
 and record those excluded PDBs. No reference AA structures are missing.
 
-The reusable numerical methods are in `scripts/alphabet_information_metrics.py`;
+The reusable numerical methods are in `scripts/alphabets/alphabet_information_metrics.py`;
 scripts do not import or execute notebook files.
 
 ```bash
-python scripts/prepare_production_alphabets.py \
+python scripts/alphabets/prepare_production_alphabets.py \
   --sizes 20 30 40 --stages matrices validate experiments \
   --rebuild-matrices --device cpu --threads 8
 ```
@@ -139,7 +139,7 @@ restart. The aggregate outputs are `alphabet_description.csv`,
 finished alphabet sweep. A different encoder/matrix checksum requires a new
 output directory. `--max-families 1` is for smoke tests, not full results.
 
-`scripts/alphabet_information_benchmark.py` runs the notebook's wider information
+`scripts/benchmarks/alphabet_information_benchmark.py` runs the notebook's wider information
 benchmarks from completed family outputs: AA baselines, optional within-sequence
 shuffle controls, unweighted and weighted k-mer discrimination, protein-held-out
 backoff entropy rates, cross-family MDL proxies, Henikoff-weighted positional
@@ -148,7 +148,7 @@ It writes CSV tables and a completion/provenance record. Orders default to 0–3
 use `--orders 0 1 2 3 4 5` for the notebook's larger MDL sweep.
 
 ```bash
-python scripts/alphabet_information_benchmark.py \
+python scripts/benchmarks/alphabet_information_benchmark.py \
   --experiment-dirs runs/production_alphabets/20/experiments \
                     runs/production_alphabets/30/experiments \
                     runs/production_alphabets/40/experiments \
@@ -160,7 +160,7 @@ For already prepared alignments and trees, use the separate phylogenetic-gain
 CLI with `scripts/phylogenetic_information_gain.spec.example.json` as a template:
 
 ```bash
-python scripts/phylogenetic_information_gain.py \
+python scripts/benchmarks/phylogenetic_information_gain.py \
   --spec experiment.json --outdir results/phylo_gain --threads 8 --skip-cross-mi
 ```
 
