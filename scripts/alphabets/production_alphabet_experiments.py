@@ -90,6 +90,7 @@ def main():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--threads', type=int, default=8)
     parser.add_argument('--max-families', type=int)
+    parser.add_argument('--family', type=str, help='Process a single specific family (overrides --max-families)')
     parser.add_argument('--cohort', type=Path, help='Frozen OMA cohort; used automatically for the notebook family root')
     args = parser.parse_args()
     import torch
@@ -135,6 +136,10 @@ def main():
         record.write_text(json.dumps(cohort_record, indent=2) + '\n')
     if not families:
         raise ValueError('No families with at least four structures')
+    if args.family is not None:
+        families = [f for f in families if f.name == args.family]
+        if not families:
+            raise ValueError(f'Family {args.family!r} not found in families directory {args.families}')
     summaries, markov_rows, phylo_rows = [], [], []
     for family in families:
         output = args.outdir / family.name
