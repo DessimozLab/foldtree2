@@ -6,6 +6,7 @@ fresh Trainer loop processes exactly the remaining stream.
 """
 import argparse
 from datetime import timedelta
+import hashlib
 import json
 import math
 import os
@@ -31,6 +32,8 @@ from foldtree2.se3_gradient_accumulation import GradientAccumulator
 from foldtree2.src.losses.se3_balanced import build_loss
 from foldtree2.src.models.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
                                             enable_tensor_ff_input_norm)
+from foldtree2.src.distance.distance_restraints import (
+    PairwiseDistanceHead, distribution_restraint_loss, eligible_pairs)
 
 
 def calibrated(entry, scale):
@@ -66,7 +69,8 @@ def provenance(config, manifest):
     return {'protocol': 'se3-lightning-v1', 'bundle': manifest['bundle_sha256'],
             'training': training, 'sources': source_identity(),
             'feature_dim': manifest['feature_dim'], 'input_identity':manifest['input_identity'],
-            'preprocessing':{'scale':manifest['scale'],'lift_fraction':.1,'gain':32.}}
+            'preprocessing':{'scale':manifest['scale'],'lift_fraction':.1,'gain':32.},
+            'restraint_head': config.get('restraint_head') is not None}
 
 
 def check_resume(saved, current, topology, allow_change=False):
@@ -151,6 +155,7 @@ class Refiner(pl.LightningModule):
         self.scheduler = None
         self.validation_rows = []
         self.epoch_train = []
+        self.epoch_restraint_train = []
         self.timing = []
         self.bn_stats = []
         self.bn_start = None
@@ -162,10 +167,58 @@ class Refiner(pl.LightningModule):
         self.gradient_accumulator = None
         if config.get('gradient_accumulation_dtype', 'float32') not in ('float32','float64'):
             raise ValueError('gradient_accumulation_dtype must be float32 or float64')
+        # Optional frozen distance head for distribution-restraint auxiliary loss.
+        self.restraint_head = self._maybe_load_restraint_head(
+            config.get('restraint_head'), manifest)
         if resume:
             self.load_state_dict(resume['state_dict'])
             self.stream.update(resume['se3']['stream'])
             self.best, self.bad = resume['se3']['best'], resume['se3']['bad']
+
+    @staticmethod
+    def _maybe_load_restraint_head(spec, manifest):
+        """Load a frozen PairwiseDistanceHead for auxiliary restraint loss."""
+        if spec is None:
+            return None
+        path = Path(spec['checkpoint'])
+        if not path.exists():
+            raise FileNotFoundError(f'Restraint head not found: {path}')
+        state = torch.load(path, map_location='cpu', weights_only=False)
+        model = PairwiseDistanceHead(**state['model_config'])
+        model.load_state_dict(state['model'])
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad = False
+        head_sha = hashlib.sha256()
+        head_sha.update(open(path, 'rb').read())
+        if 'provenance' in spec:
+            spec_prov = spec['provenance']
+            if spec_prov.get('bundle_sha256') and spec_prov['bundle_sha256'] != manifest['bundle_sha256']:
+                raise ValueError('Restraint head was trained on a different cache bundle')
+        print(f'Loaded frozen distance restraint head from {path} '
+              f'(weight={spec.get("weight", 1.0)})')
+        return {'model': model, 'weight': float(spec.get('weight', 1.0)),
+                'sha256': head_sha.hexdigest()}
+
+    def _restraint_loss(self, coords, entry):
+        """Compute auxiliary distribution-restraint loss if a head is loaded."""
+        if self.restraint_head is None:
+            return None
+        mask = entry['mask']
+        if mask.sum() < 3:
+            return None
+        head = self.restraint_head['model']
+        dev = coords.device
+        pairs = eligible_pairs(mask).to(dev)
+        # Lazy-initialize the edges buffer on the right device.
+        edges = head.edges.to(dev)
+        with torch.no_grad():
+            entry_dev = {k: v.to(dev) if isinstance(v, torch.Tensor) else v
+                         for k, v in entry.items()}
+            logits = head(entry_dev, pairs)
+            probs = logits.softmax(-1).detach()
+        loss = distribution_restraint_loss(coords, pairs, probs, edges)
+        return self.restraint_head['weight'] * loss
 
     def event(self, kind, **values):
         if self.global_rank == 0:
@@ -226,9 +279,16 @@ class Refiner(pl.LightningModule):
         with optimizer.toggle_model(sync_grad=boundary and not high_precision):
             pred, angle = forward(self.model, e, self.config.get('contact_policy', 'normal'))
             values = self.loss_fn(pred, angle, e)
+            restraint = self._restraint_loss(pred, e)
+            if restraint is not None:
+                total = values[0] + restraint
+                self.epoch_restraint_train.append(float(restraint.detach()))
+                loss_for_backward = total
+            else:
+                loss_for_backward = values[0]
             if not all(torch.isfinite(v) for v in values):
                 raise FloatingPointError(f'Nonfinite loss: {batch["id"]}')
-            self.manual_backward(values[0] if high_precision else values[0] / accumulation)
+            self.manual_backward(loss_for_backward if high_precision else loss_for_backward / accumulation)
             if high_precision:
                 if self.gradient_accumulator is None:
                     self.gradient_accumulator = GradientAccumulator(self.model.parameters())
@@ -296,10 +356,13 @@ class Refiner(pl.LightningModule):
                              'length':len(batch['coords']), 'batch_idx':batch_idx}
         e = calibrated(batch, self.manifest['scale'])
         p, a = forward(self.model, e, self.config.get('contact_policy', 'normal'))
+        restraint = self._restraint_loss(p, e)
         values = self.loss_fn(p, a, e)
         if not all(torch.isfinite(v) for v in values):
             raise FloatingPointError(f'Nonfinite validation: {batch["id"]}')
         row = {'id': batch['id'], 'geometry': float(values[1]), 'evaluation_fape': float(values[2])}
+        if restraint is not None:
+            row['restraint'] = float(restraint.detach())
         if self.config.get('loss'):
             row['loss_components']={k:float(v) for k,v in self.loss_fn.last_components.items()}
         if self.config.get('structural_metrics', True):

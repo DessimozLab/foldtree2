@@ -1,0 +1,53 @@
+# Restraint-augmented SE3 refiner training.
+# Loads the frozen epoch-30 calibrated distance head and adds a
+# distribution_restraint_loss term (weight 0.05) to the SE3 objective.
+#
+# Run from the repo root:
+#   python -m foldtree2.train_se3_lightning \
+#     --config configs/se3_restraint_augmented_20261029.yaml
+cache: runs/se3_distance_data_scaling_5120_20261022/comparison/bundle_5120
+output: runs/se3_restraint_augmented_20261029
+seed: 42
+devices: 4
+nodes: 1
+accelerator: cuda
+strategy: ddp
+precision: 32-true
+global_batch: 16
+train_count: 8192
+val_count: 256
+max_residues: 256
+learning_rate: 5.0e-4
+epochs: 64
+checkpoint_every: 32
+contact_policy: normal
+tensor_ff_input_norm: true
+gradient_accumulation_dtype: float64
+structural_metrics: true
+input_baseline_metrics: false
+checkpoint_metric: evaluation_fape
+
+model:
+  hidden: 64
+  depth: 4
+  heads: 4
+  input_normalization: per_structure
+
+loss:
+  protocol: balanced_geometry_v1
+  weights:
+    distance: 1.0
+    training_fape: 1.0
+    bond: 1.0
+    angle: 0.1
+    local_distance: 0.0
+    bend: 0.5
+    torsion: 0.0
+
+# Frozen distance head for auxiliary distribution restraint loss.
+# Points to the epoch-30 best checkpoint from the calibrated run.
+restraint_head:
+  checkpoint: runs/se3_distance_context_calibrated_20261029/decoder/best.pt
+  weight: 0.05
+  provenance:
+    bundle_sha256: d13ae5884711ad8ab09ae48d09e5c8c9cad4a106574e844b4448bdaaab99efb6
