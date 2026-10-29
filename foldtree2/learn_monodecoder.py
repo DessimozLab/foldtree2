@@ -10,12 +10,12 @@ os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np
-from foldtree2.src import pdbgraph
-from foldtree2.src.training_protocol import held_out_split
-from foldtree2.src import encoder as ecdr
+from foldtree2.src.graphs import pdbgraph
+from foldtree2.src.training.training_protocol import held_out_split
+from foldtree2.src.models import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, recon_loss_diag_with_regs, aa_reconstruction_loss, angles_reconstruction_loss, ss_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss, quaternion_geodesic_loss, quaternion_angle_loss
-from foldtree2.src.mono_decoders import MultiMonoDecoder
-from foldtree2.src.visualization import create_reconstruction_figure
+from foldtree2.src.models.mono_decoders import MultiMonoDecoder
+from foldtree2.src.training.visualization import create_reconstruction_figure
 
 import os
 import tqdm
@@ -158,7 +158,7 @@ except ImportError:
 
 # Try to import Lion optimizer
 try:
-	from foldtree2.src.lion_optimizer import Lion
+	from foldtree2.src.training.lion_optimizer import Lion
 	LION_AVAILABLE = True
 except ImportError:
 	print("Warning: Lion optimizer not available. Lion option will fall back to AdamW.")
@@ -2290,7 +2290,7 @@ for epoch in range(args.epochs):
 				print(f"Generating batched reconstruction visualization for {len(viz_samples)} samples...")
 				os.makedirs('figures', exist_ok=True)
 				
-				from foldtree2.src.visualization import visualize_batch_reconstructions
+				from foldtree2.src.training.visualization import visualize_batch_reconstructions
 				figs_and_metrics = visualize_batch_reconstructions(
 					encoder, decoder, viz_samples, device, args.num_embeddings,
 					converter, epoch=epoch+1, save_dir=f'figures/epoch_{epoch+1}'

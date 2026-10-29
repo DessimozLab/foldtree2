@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from foldtree2.src.ancestral import ancestral_command, ancestral_states_to_fasta, run_ancestral
+from foldtree2.src.trees.ancestral import ancestral_command, ancestral_states_to_fasta, run_ancestral
 
 
 def test_fitted_command_preserves_paths_and_freezes_parameters():

@@ -118,7 +118,7 @@ installation and small inference checks are recorded in the
 [documentation validation log](documentation_maintenance.md#validation-log).
 Windows/macOS execution and GPU installation on other hardware are unverified.
 
-Graph conversion uses `foldtree2.src.pdbgraphmk2.PDB2PyG` for PDB and
+Graph conversion uses `foldtree2.src.graphs.pdbgraphmk2.PDB2PyG` for PDB and
 Foldcomp inputs. The `pdbs-to-graphs` entry point is identical in pip and conda;
 its `--mp` option uses the mk2 multiprocessing pool. Legacy FoldX/ProDy and
 custom-distance options are not supported for PDB conversion via `encode_pdbs`.

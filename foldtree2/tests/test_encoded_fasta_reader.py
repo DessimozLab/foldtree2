@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from foldtree2.src.encoder import load_encoded_fasta
+from foldtree2.src.models.encoder import load_encoded_fasta
 from foldtree2.makesubmat import build_char_set
 
 

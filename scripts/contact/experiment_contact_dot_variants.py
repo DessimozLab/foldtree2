@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from foldtree2.se3_cache import digest
-from foldtree2.src.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
+from foldtree2.src.distance.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
 import scripts.contact.experiment_contact_objectives as trainer
 
 
@@ -31,7 +31,7 @@ def main():
     root = Path(args.output)
     if root.exists():
         raise FileExistsError(root)
-    sources = [Path(__file__), Path('foldtree2/src/contact_dot_experiments.py')]
+    sources = [Path(__file__), Path('foldtree2/src/distance/contact_dot_experiments.py')]
     source_hashes = {str(p): digest(p) for p in sources}
     model_class = {'cross_dot': SymmetricCrossDotHead, 'pair_bias': PairAdjustedDotHead}[args.variant]
     trainer.PairwiseDistanceHead = model_class

@@ -2,9 +2,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from foldtree2.src.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
-from foldtree2.src.contact_cross_dot_perturbed import PerturbedCrossDotHead
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, eligible_pairs
+from foldtree2.src.distance.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
+from foldtree2.src.distance.contact_cross_dot_perturbed import PerturbedCrossDotHead
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, eligible_pairs
 from foldtree2.tests.test_distance_restraints import example
 from scripts.contact.export_contact_operating_point import shifted_checkpoint
 

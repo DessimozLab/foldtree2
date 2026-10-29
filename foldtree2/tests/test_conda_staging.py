@@ -15,7 +15,7 @@ class CondaStagingTests(unittest.TestCase):
         source.mkdir()
         for name in TOP_FILES:
             (source / name).write_text('fixture\n')
-        for name in (*TOOLS, '__init__.py', 'src/encoder.py', 'config/aaindex1.csv'):
+        for name in (*TOOLS, '__init__.py', 'src/models/encoder.py', 'config/aaindex1.csv'):
             path = source / 'foldtree2' / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('fixture\n')
@@ -46,7 +46,7 @@ class CondaStagingTests(unittest.TestCase):
             self.assertFalse((destination / 'foldtree2/tests').exists())
             self.assertFalse((destination / 'foldtree2/scaling_experiment.py').exists())
             self.assertEqual((destination / 'foldtree2/mafft_tools/hex2maffttext').stat().st_mode & 0o777, 0o755)
-            self.assertTrue((destination / 'foldtree2/src/encoder.py').exists())
+            self.assertTrue((destination / 'foldtree2/src/models/encoder.py').exists())
 
     def test_dry_run_and_oversize_preflight_do_not_copy(self):
         with tempfile.TemporaryDirectory() as directory:

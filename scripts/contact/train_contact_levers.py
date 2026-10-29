@@ -16,9 +16,9 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
-from foldtree2.src.contact_levers import InspectablePairHead, XSAPairHead
-from foldtree2.src.contact_lever_metrics import per_protein_range_metrics, summarize_ranges
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
+from foldtree2.src.distance.contact_levers import InspectablePairHead, XSAPairHead
+from foldtree2.src.distance.contact_lever_metrics import per_protein_range_metrics, summarize_ranges
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
 from foldtree2.train_distance_restraints import evaluate, load_records
 from scripts.contact.experiment_contact_objectives import balanced_contact_loss, contact_logit
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
@@ -126,8 +126,8 @@ def range_evaluate(model, records, device):
 
 
 def source_hashes(optimizer='adamw'):
-    paths = [__file__, 'foldtree2/src/contact_levers.py', 'foldtree2/src/contact_lever_metrics.py', 'foldtree2/src/xsatransformer.py',
-             'foldtree2/src/distance_restraints.py', 'foldtree2/train_distance_restraints.py',
+    paths = [__file__, 'foldtree2/src/distance/contact_levers.py', 'foldtree2/src/distance/contact_lever_metrics.py', 'foldtree2/src/models/xsatransformer.py',
+             'foldtree2/src/distance/distance_restraints.py', 'foldtree2/train_distance_restraints.py',
              'foldtree2/se3_cache.py', 'scripts/contact/experiment_contact_objectives.py']
     if optimizer == 'muon':
         import muon

@@ -19,7 +19,7 @@ import yaml
 from foldtree2.se3_cache import FrozenDataset, digest, identity_hash, open_bundle
 from foldtree2.train_se3_lightning import build_model, calibrated, source_identity
 from foldtree2.se3_validation import contact_inputs, forward
-from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
 from scripts.se3.diagnose_se3_reconstruction import atomic_json, select_panel
 
 

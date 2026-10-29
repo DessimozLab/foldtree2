@@ -6,15 +6,15 @@ FoldTree2 performs phylogenetic tree inference from protein 3D structures using 
 ## Architecture Components
 
 ### Core Neural Network Stack
-- **Encoder** ([foldtree2/src/encoder.py](../foldtree2/src/encoder.py)): `mk1_Encoder` converts protein graphs to discrete embeddings via VQ-VAE
+- **Encoder** ([foldtree2/src/models/encoder.py](../foldtree2/src/models/encoder.py)): `mk1_Encoder` converts protein graphs to discrete embeddings via VQ-VAE
   - Modular architecture: `input` (MLPs), `body` (graph convolutions), `head` (quantization)
   - Supports multiple GNN flavors: `sage`, `gat`, `transformer`
   - Vector quantization with optional EMA codebook updates
-- **Decoders** ([foldtree2/src/mono_decoders.py](../foldtree2/src/mono_decoders.py)): 
+- **Decoders** ([foldtree2/src/models/mono_decoders.py](../foldtree2/src/models/mono_decoders.py)): 
   - `MultiMonoDecoder`: Combined AA sequence, geometry, angles, secondary structure prediction
   - `HeteroGAE_geo_Decoder`: Heterogeneous graph autoencoder for pairwise distances
   - `Transformer_AA_Decoder`: Sequence reconstruction with attention
-- **Graph Conversion** ([foldtree2/src/pdbgraph.py](../foldtree2/src/pdbgraph.py)): `PDB2PyG` converts PDB files to PyTorch Geometric graphs
+- **Graph Conversion** ([foldtree2/src/graphs/pdbgraph.py](../foldtree2/src/graphs/pdbgraph.py)): `PDB2PyG` converts PDB files to PyTorch Geometric graphs
   - Uses ProDy for interaction matrices and DSSP for secondary structure
   - Node features from the packaged amino-acid properties CSV resolved at runtime
   - Edge features: distances, angles, contact maps (default 15Å threshold)
@@ -106,7 +106,7 @@ Training data stored as HDF5 with keys:
 ## Key Files Reference
 - Entry points: [encode_pdbs.py](../foldtree2/encode_pdbs.py), [ft2treebuilder.py](../foldtree2/ft2treebuilder.py)
 - Loss functions: [foldtree2/src/losses/](../foldtree2/src/losses/)
-- Quantizers: [foldtree2/src/quantizers.py](../foldtree2/src/quantizers.py) (VQ-VAE implementation)
+- Quantizers: [foldtree2/src/models/quantizers.py](../foldtree2/src/models/quantizers.py) (VQ-VAE implementation)
 - External tools bundled: `raxml-ng/`, `madroot/`, MAFFT wrappers in `mafft_tools/`
 
 ## Development Notes

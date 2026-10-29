@@ -130,7 +130,7 @@ def test_queue_requires_successful_parent_and_preserves_bounds(
 def test_model_audit_restores_buffers_and_does_not_accumulate_gradients(monkeypatch):
     import scripts.se3.diagnose_se3_reconstruction as runner
     from foldtree2.train_se3_lightning import build_model
-    from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+    from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
     entry = {**example(), 'id': 'synthetic', 'features': torch.randn(20, 8),
              'tokens': torch.arange(20), 'dot': torch.eye(20, dtype=torch.bool)}
     model = enable_tensor_ff_input_norm(build_model(8, {'hidden': 32, 'depth': 2, 'heads': 2}))

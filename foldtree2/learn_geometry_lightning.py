@@ -33,8 +33,8 @@ import torch.nn.functional as F
 from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader
 
-from foldtree2.src import encoder as ecdr
-from foldtree2.src import pdbgraphmk2
+from foldtree2.src.models import encoder as ecdr
+from foldtree2.src.graphs import pdbgraphmk2
 from foldtree2.src.losses.fape import (
     coarse_backbone_dihedrals_from_ca_frames,
     coarse_backbone_atoms_from_ca_frames,
@@ -49,10 +49,10 @@ from foldtree2.src.losses.fape import (
     shift_prev_valid,
 )
 from foldtree2.src.losses.losses import quaternion_fape_loss, quaternion_geodesic_loss
-from foldtree2.src.mono_decoders import Transformer_Geometry_Decoder
+from foldtree2.src.models.mono_decoders import Transformer_Geometry_Decoder
 
 try:
-    from foldtree2.src.se3_struct_decoder import se3_denoiser
+    from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 
     SE3_AVAILABLE = True
 except Exception as exc:  # pragma: no cover - import availability is environment dependent

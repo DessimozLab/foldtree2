@@ -16,7 +16,7 @@ import torch
 import yaml
 
 from foldtree2.se3_cache import digest, open_bundle
-from foldtree2.src.decoder_feature_fusion import MODES
+from foldtree2.src.models.decoder_feature_fusion import MODES
 from foldtree2.train_se3_decoder_fusion import fusion_sources
 from scripts.se3.diagnose_se3_reconstruction import atomic_json
 

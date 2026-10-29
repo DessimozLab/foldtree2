@@ -12,12 +12,12 @@ import unittest
 
 import torch
 
-from foldtree2.src.encoder import mk1_Encoder
+from foldtree2.src.models.encoder import mk1_Encoder
 
 try:
     from foldtree2.src.pdbgraphmkII import PDB2PyG
 except ModuleNotFoundError:
-    from foldtree2.src.pdbgraphmk2 import PDB2PyG
+    from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
 
 
 class TestEncoderIntegration(unittest.TestCase):

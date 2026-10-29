@@ -7,11 +7,11 @@ os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np
-from foldtree2.src import pdbgraph
-from foldtree2.src import encoder as ecdr
-from foldtree2.src.config_paths import resolve_aapropcsv_path
+from foldtree2.src.graphs import pdbgraph
+from foldtree2.src.models import encoder as ecdr
+from foldtree2.src.graphs.config_paths import resolve_aapropcsv_path
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss, angles_reconstruction_loss
-from foldtree2.src.mono_decoders import MultiMonoDecoder
+from foldtree2.src.models.mono_decoders import MultiMonoDecoder
 import os
 import tqdm
 import random
@@ -800,7 +800,7 @@ else:
     # Encoder
     if args.se3_transformer:
         raise NotImplementedError(
-            "--se3-transformer is not supported in learn_lightning.py because no se3_Encoder implementation is available in foldtree2.src.encoder."
+            "--se3-transformer is not supported in learn_lightning.py because no se3_Encoder implementation is available in foldtree2.src.models.encoder."
         )
     else:
         print("Using standard mk1_Encoder with dd.ipynb configuration")

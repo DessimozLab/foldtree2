@@ -95,7 +95,7 @@ def main():
     args = parser.parse_args()
     import torch
     torch.set_num_threads(args.threads)
-    from foldtree2.src.pdbgraphmk2 import PDB2PyG
+    from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
     from ete3 import Tree
     entry = next(x for x in json.loads((ROOT / 'configs/production_models.yaml').read_text())['models'] if x['size'] == args.size)
     from scripts.alphabets.prepare_production_alphabets import validate_bundle

@@ -31,7 +31,7 @@ def frozen_aa(aa_decoder, latent, positions):
 
 
 def enrichment_sources():
-    files = ['scripts/se3/enrich_se3_decoder_cache.py', 'foldtree2/src/mono_decoders.py',
+    files = ['scripts/se3/enrich_se3_decoder_cache.py', 'foldtree2/src/models/mono_decoders.py',
              'foldtree2/se3_cache.py']
     return {name: digest(name) for name in files}
 

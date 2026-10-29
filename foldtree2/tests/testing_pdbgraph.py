@@ -9,12 +9,12 @@ import tempfile
 import shutil
 from importlib import import_module
 import numpy as np
-from foldtree2.src.config_paths import resolve_aapropcsv_path
+from foldtree2.src.graphs.config_paths import resolve_aapropcsv_path
 
 try:
     PDB2PyG = import_module('foldtree2.src.pdbgraphmkII').PDB2PyG
 except ModuleNotFoundError:
-    PDB2PyG = import_module('foldtree2.src.pdbgraphmk2').PDB2PyG
+    PDB2PyG = import_module('foldtree2.src.graphs.pdbgraphmk2').PDB2PyG
 
 
 class TestPDB2PyGInit(unittest.TestCase):

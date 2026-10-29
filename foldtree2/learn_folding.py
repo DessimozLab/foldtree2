@@ -65,8 +65,8 @@ except ImportError:
 # ── project imports ─────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from foldtree2.src import pdbgraph
-from foldtree2.src.folding_refiner import QuaternionFoldingRefiner
+from foldtree2.src.graphs import pdbgraph
+from foldtree2.src.models.folding_refiner import QuaternionFoldingRefiner
 from foldtree2.src.losses.fape import (
     fape_loss,
     quaternion_to_rotation_matrix,

@@ -14,7 +14,7 @@ import statistics
 import torch
 import yaml
 from foldtree2.se3_validation import sha256, forward, metrics, length_bucket_batches, restore_training_state
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 from foldtree2.src.losses.se3_ablation import AblationLoss
 from scripts.se3.investigate_se3_scale import load_entries, load_cohort_entries, calibrated_entry, evaluate
 
@@ -45,8 +45,8 @@ def run(args):
         spec={'scale':scale,'lift_fraction':.1,'gain':32.,'angles':'sincos','update':'residual',
               'normalization':'rms_radius','hidden':32,'depth':2,'heads':2,'dim_head':16}
         files=['scripts/se3/train_se3_revised_pilot.py','scripts/se3/investigate_se3_scale.py',
-               'foldtree2/se3_validation.py','foldtree2/src/se3_struct_decoder.py',
-               'foldtree2/src/geometry_seeds.py','foldtree2/src/losses/se3_ablation.py','foldtree2/src/losses/fape.py']
+               'foldtree2/se3_validation.py','foldtree2/src/models/se3_struct_decoder.py',
+               'foldtree2/src/models/geometry_seeds.py','foldtree2/src/losses/se3_ablation.py','foldtree2/src/losses/fape.py']
         if config.get('cohort_provenance'):files.append('scripts/se3/prepare_se3_larger_cohort.py')
         provenance={'protocol':'se3-larger-local-v1' if config.get('cohort_provenance') else 'se3-revised-pilot-v1','config':config,'input_identity':source['identity'],
                     'train_ids':ids,'val_ids':val_ids,'spec':spec,
@@ -85,7 +85,7 @@ def run(args):
             warm=torch.load(config['warm_start'],map_location=device,weights_only=False)
             if warm['provenance']['spec']!=spec or warm['provenance']['input_identity']!=source['identity']:
                 raise ValueError('Warm-start model or input identity differs')
-            for name in ['foldtree2/src/se3_struct_decoder.py','foldtree2/src/losses/se3_ablation.py']:
+            for name in ['foldtree2/src/models/se3_struct_decoder.py','foldtree2/src/losses/se3_ablation.py']:
                 if warm['provenance']['sources'][name]!=sha256(name):raise ValueError('Warm-start implementation differs')
             model.load_state_dict(warm['model'])
             event('warm_start',checkpoint=config['warm_start'],source_epoch=warm['epoch'],optimizer_reset=True)

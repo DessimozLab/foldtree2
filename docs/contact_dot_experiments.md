@@ -15,8 +15,8 @@ The trained checkpoint is `runs/contact_objective_pair_bias_large_20261026/spher
 import json
 import torch
 from pathlib import Path
-from foldtree2.src.contact_dot_experiments import PairAdjustedDotHead
-from foldtree2.src.distance_restraints import eligible_pairs
+from foldtree2.src.distance.contact_dot_experiments import PairAdjustedDotHead
+from foldtree2.src.distance.distance_restraints import eligible_pairs
 
 checkpoint = torch.load(
     'runs/contact_objective_pair_bias_large_20261026/sphere64_w0p3/last.pt',
@@ -51,4 +51,4 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 python -m pytest -q foldtree2/tests/test_contact_dot_experiments.py foldtree2/tests/test_contact_residue_bias.py foldtree2/tests/test_contact_objectives.py
 ```
 
-The scorer implementations are in `foldtree2/src/contact_dot_experiments.py` and `foldtree2/src/contact_cross_dot_perturbed.py`. Each experiment directory contains its source snapshot, provenance, training history, final validation metrics, and checkpoint. The local MLflow geometry watcher records training progress; comparison plots, calibration reports, and new checkpoints are attached to each corresponding run.
+The scorer implementations are in `foldtree2/src/distance/contact_dot_experiments.py` and `foldtree2/src/distance/contact_cross_dot_perturbed.py`. Each experiment directory contains its source snapshot, provenance, training history, final validation metrics, and checkpoint. The local MLflow geometry watcher records training progress; comparison plots, calibration reports, and new checkpoints are attached to each corresponding run.

@@ -1,8 +1,8 @@
 import torch
 import torch.nn.functional as F
 
-from foldtree2.src.contact_bias_experiment import ResidueBiasDistanceHead
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, eligible_pairs
+from foldtree2.src.distance.contact_bias_experiment import ResidueBiasDistanceHead
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, eligible_pairs
 from foldtree2.tests.test_distance_restraints import example
 
 

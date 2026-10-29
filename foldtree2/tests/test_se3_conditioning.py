@@ -9,7 +9,7 @@ from foldtree2.se3_validation import CONTACT_POLICIES, contact_inputs, forward
 from foldtree2.train_se3_lightning import (
     Refiner, build_model, check_warm_start_normalization,
 )
-from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
 
 
 def entry():

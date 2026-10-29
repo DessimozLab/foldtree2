@@ -17,7 +17,7 @@ import torch
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
 from foldtree2.se3_validation import forward, frame_point_errors, metrics
 from foldtree2.src.losses.se3_balanced import BalancedGeometryLoss
-from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
 from foldtree2.train_se3_lightning import build_model, calibrated, source_identity
 
 

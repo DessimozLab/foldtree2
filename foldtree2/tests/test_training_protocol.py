@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from foldtree2.src.training_protocol import held_out_split
+from foldtree2.src.training.training_protocol import held_out_split
 
 
 class TrainingProtocolTests(unittest.TestCase):

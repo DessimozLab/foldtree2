@@ -18,9 +18,9 @@ from foldtree2.src.losses.fape import (
     integrate_local_ca_steps,
     shift_prev_valid,
 )
-from foldtree2.src.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
+from foldtree2.src.models.mono_decoders import MultiMonoDecoder, Transformer_Geometry_Decoder
 from foldtree2.learn_geometry_lightning import GeometryFocusedModule
-from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner, se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import StagedTransformerRefiner, se3_denoiser
 
 
 class TestCoarseCALoss(unittest.TestCase):

@@ -7,8 +7,8 @@ import zipfile
 
 RESOURCES = {
     "foldtree2/__init__.py",
-    "foldtree2/src/encoder.py",
-    "foldtree2/src/pdbgraphmk2.py",
+    "foldtree2/src/models/encoder.py",
+    "foldtree2/src/graphs/pdbgraphmk2.py",
     "foldtree2/config/aaindex1.csv",
     "foldtree2/config/3diphy_submats/Q.3Di.AF",
     "foldtree2/raxml-ng/raxml-ng",
@@ -48,7 +48,9 @@ def check_archive(path, release=False):
     missing = RESOURCES - names
     unwanted = sorted(n for n in names if (
         PurePosixPath(n).suffix in FORBIDDEN_SUFFIXES
-        or FORBIDDEN_DIRS.intersection(PurePosixPath(n).parts)
+        or "__pycache__" in PurePosixPath(n).parts
+        or (len(PurePosixPath(n).parts) > 1
+            and PurePosixPath(n).parts[1] in FORBIDDEN_DIRS)
         or n.endswith(("/scaling_experiment.py", "/test_chebconv_rework.py"))
     ))
     if missing or unwanted:

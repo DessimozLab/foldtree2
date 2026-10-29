@@ -3,7 +3,7 @@
 This is the taxonomic consistency score benchmark, not SE3/TCS model training.
 The isolated deployment extends the existing `ft2_benchmark` Snakemake workflow.
 It imports native-tree inference from `src/topology_benchmark.py` and extracts the
-four pure TCS functions from a snapshot of the cluster's `src/treescore.py`.
+four pure TCS functions from a snapshot of the cluster's `src/trees/treescore.py`.
 The live cluster checkouts, their edits, environments and other jobs stay intact.
 
 Current submission/accounting review:

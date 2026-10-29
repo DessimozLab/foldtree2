@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import torch
 
-from foldtree2.src.distance_restraints import eligible_pairs
+from foldtree2.src.distance.distance_restraints import eligible_pairs
 from scripts.se3.compare_distance_capacity import train_width
 
 

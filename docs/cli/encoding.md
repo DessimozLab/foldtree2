@@ -9,7 +9,7 @@
 pdbs-to-graphs /path/to/pdbs /path/to/training.h5 --verbose
 ```
 
-Uses [pdbgraphmk2](../../foldtree2/src/pdbgraphmk2.py), not the legacy ProDy
+Uses [pdbgraphmk2](../../foldtree2/src/graphs/pdbgraphmk2.py), not the legacy ProDy
 converter. The properties CSV is packaged and resolved independently of the
 working directory. Consult `pdbs-to-graphs --help` for multiprocessing controls.
 Inspect conversion errors and populated HDF5 groups; a nonempty file alone does

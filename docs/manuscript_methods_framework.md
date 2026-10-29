@@ -24,7 +24,7 @@ Implemented in the treebuilder workflow in [foldtree2/ft2treebuilder.py](../fold
 
 ## 3. Structural Data Representation
 ### 3.1 Graph construction
-Protein structures are transformed into graph objects using PDB2PyG in [foldtree2/src/pdbgraph.py](../foldtree2/src/pdbgraph.py). Residues are represented as nodes; edge sets include at least backbone connectivity and contact relations, with additional geometric and secondary-structure-derived information depending on preprocessing mode.
+Protein structures are transformed into graph objects using PDB2PyG in [foldtree2/src/graphs/pdbgraph.py](../foldtree2/src/graphs/pdbgraph.py). Residues are represented as nodes; edge sets include at least backbone connectivity and contact relations, with additional geometric and secondary-structure-derived information depending on preprocessing mode.
 
 The representation includes:
 - residue-level physicochemical descriptors from aaindex-style features,
@@ -39,7 +39,7 @@ Internal conversion workflows explicitly track transformations between coordinat
 
 ## 4. Neural Encoder and Discrete Structural Alphabet
 ### 4.1 Encoder architecture
-The default encoder (mk1_Encoder) is implemented in [foldtree2/src/encoder.py](../foldtree2/src/encoder.py). It is organized into:
+The default encoder (mk1_Encoder) is implemented in [foldtree2/src/models/encoder.py](../foldtree2/src/models/encoder.py). It is organized into:
 - input module (feature normalization, projection),
 - body module (graph message passing; SAGE/GAT/Transformer options),
 - head module (projection to latent space and quantization interface).
@@ -47,7 +47,7 @@ The default encoder (mk1_Encoder) is implemented in [foldtree2/src/encoder.py](.
 This split is intentional to support optimizer partitioning and ablation of message-passing variants.
 
 ### 4.2 Vector quantization and codebook dynamics
-FoldTree2 uses vector quantization to map latent residue embeddings to discrete tokens, enabling downstream alignment and likelihood modeling in a finite alphabet. The EMA quantizer implementation is in [foldtree2/src/quantizers.py](../foldtree2/src/quantizers.py).
+FoldTree2 uses vector quantization to map latent residue embeddings to discrete tokens, enabling downstream alignment and likelihood modeling in a finite alphabet. The EMA quantizer implementation is in [foldtree2/src/models/quantizers.py](../foldtree2/src/models/quantizers.py).
 
 Key design choices include:
 - configurable codebook size (num_embeddings) as a controllable phylogenetic granularity parameter,
@@ -63,7 +63,7 @@ Training uses a multi-head decoder stack (notably MultiMonoDecoder) to supervise
 - optional secondary-structure and angular terms,
 - optional edge/contact-related objectives.
 
-Implementation details are in [foldtree2/src/mono_decoders.py](../foldtree2/src/mono_decoders.py) and training orchestration in [foldtree2/learn_lightning.py](../foldtree2/learn_lightning.py).
+Implementation details are in [foldtree2/src/models/mono_decoders.py](../foldtree2/src/models/mono_decoders.py) and training orchestration in [foldtree2/learn_lightning.py](../foldtree2/learn_lightning.py).
 
 Multi-task supervision was used as an inductive bias to avoid a token space that only reconstructs one narrow signal, thereby encouraging biologically meaningful latent partitions (#REF_MULTITASK_LEARNING).
 

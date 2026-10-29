@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from foldtree2.src.decoder_feature_fusion import (
+from foldtree2.src.models.decoder_feature_fusion import (
     DecoderFeatureFusion, DecoderFusionRefiner, MODES, soft_contact_context,
 )
 from foldtree2.train_se3_lightning import build_model
-from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
 from foldtree2.se3_validation import forward
 from scripts.se3.enrich_se3_decoder_cache import frozen_aa
 

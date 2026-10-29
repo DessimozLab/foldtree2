@@ -13,7 +13,7 @@ from pathlib import Path
 import torch
 
 from foldtree2.se3_cache import open_bundle
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels
 from foldtree2.train_distance_restraints import contact_metrics, load_records
 from scripts.se3.diagnose_se3_reconstruction import atomic_json
 
@@ -76,17 +76,17 @@ def main():
         metadata = json.loads((root / 'provenance.json').read_text())
         model_class = PairwiseDistanceHead
         variant = metadata.get('variant', {}).get('model_class')
-        if variant == 'foldtree2.src.contact_bias_experiment.ResidueBiasDistanceHead':
-            from foldtree2.src.contact_bias_experiment import ResidueBiasDistanceHead
+        if variant == 'foldtree2.src.distance.contact_bias_experiment.ResidueBiasDistanceHead':
+            from foldtree2.src.distance.contact_bias_experiment import ResidueBiasDistanceHead
             model_class = ResidueBiasDistanceHead
-        elif variant == 'foldtree2.src.contact_cross_dot_perturbed.PerturbedCrossDotHead':
-            from foldtree2.src.contact_cross_dot_perturbed import PerturbedCrossDotHead
+        elif variant == 'foldtree2.src.distance.contact_cross_dot_perturbed.PerturbedCrossDotHead':
+            from foldtree2.src.distance.contact_cross_dot_perturbed import PerturbedCrossDotHead
             model_class = PerturbedCrossDotHead
-        elif variant in ('foldtree2.src.contact_dot_experiments.SymmetricCrossDotHead',
-                         'foldtree2.src.contact_dot_experiments.PairAdjustedDotHead'):
-            from foldtree2.src.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
-            model_class = {'foldtree2.src.contact_dot_experiments.SymmetricCrossDotHead': SymmetricCrossDotHead,
-                           'foldtree2.src.contact_dot_experiments.PairAdjustedDotHead': PairAdjustedDotHead}[variant]
+        elif variant in ('foldtree2.src.distance.contact_dot_experiments.SymmetricCrossDotHead',
+                         'foldtree2.src.distance.contact_dot_experiments.PairAdjustedDotHead'):
+            from foldtree2.src.distance.contact_dot_experiments import PairAdjustedDotHead, SymmetricCrossDotHead
+            model_class = {'foldtree2.src.distance.contact_dot_experiments.SymmetricCrossDotHead': SymmetricCrossDotHead,
+                           'foldtree2.src.distance.contact_dot_experiments.PairAdjustedDotHead': PairAdjustedDotHead}[variant]
         elif variant:
             raise ValueError('Unsupported comparison model class: ' + variant)
         summary = json.loads((root / 'summary.json').read_text())[name]

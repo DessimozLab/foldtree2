@@ -32,7 +32,7 @@ from foldtree2.src.losses.fape import (
     select_valid_frame_rows,
 )
 from foldtree2.src.losses.losses import quaternion_fape_loss, quaternion_geodesic_loss
-from foldtree2.src.se3_struct_decoder import StagedTransformerRefiner
+from foldtree2.src.models.se3_struct_decoder import StagedTransformerRefiner
 
 
 class ProductionStagedTransformerModule(base.GeometryFocusedModule):

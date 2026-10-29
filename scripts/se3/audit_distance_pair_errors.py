@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
-from foldtree2.src.distance_restraints import distance_labels
+from foldtree2.src.distance.distance_restraints import distance_labels
 from foldtree2.train_distance_restraints import contact_metrics
 from scripts.se3.diagnose_se3_reconstruction import atomic_json
 from scripts.se3.reconstruct_distance_restraints import reconstruction_objective, validate_export

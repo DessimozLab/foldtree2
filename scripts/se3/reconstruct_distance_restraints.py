@@ -15,7 +15,7 @@ os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
 import torch
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
-from foldtree2.src.distance_restraints import distribution_restraint_loss, eligible_pairs, validate_edges
+from foldtree2.src.distance.distance_restraints import distribution_restraint_loss, eligible_pairs, validate_edges
 from foldtree2.train_se3_lightning import calibrated
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json, select_panel
 from scripts.se3.diagnose_se3_restraints import evaluate, objective, sources as diagnostic_sources
@@ -26,7 +26,7 @@ MODES = ('local_only', 'sequence', 'decoder')
 
 def sources():
     names = ('scripts/se3/reconstruct_distance_restraints.py',
-             'foldtree2/src/distance_restraints.py')
+             'foldtree2/src/distance/distance_restraints.py')
     return {**diagnostic_sources(), **{name: digest(name) for name in names}}
 
 

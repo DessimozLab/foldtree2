@@ -10,7 +10,7 @@ from pathlib import Path
 import torch
 from foldtree2.se3_validation import frame_fape, losses, forward
 from foldtree2.src.losses.fape import equivariant_ca_frame_rotmat
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 from scripts.se3.investigate_se3_scale import load_entries, calibrated_entry
 
 

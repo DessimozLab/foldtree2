@@ -22,8 +22,8 @@ os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
 import torch
 from foldtree2.se3_validation import (production_pair, sha256, frozen_entry,
     forward, losses, metrics, length_bucket_batches)
-from foldtree2.src.se3_struct_decoder import se3_denoiser
-from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.geometry_seeds import lift_seed_with_local_normals
 
 
 def calibrated_entry(entry, scale, lift_fraction=0.):
@@ -132,7 +132,7 @@ def train_case(spec, ids, entries, epochs, output, event, loss_fn=losses):
         history.append(record);event('epoch',**record)
         checkpoint={'model':model.state_dict(),'optimizer':optimizer.state_dict(),'scheduler':scheduler.state_dict(),
             'epoch':epoch,'step':step,'spec':spec,'ids':ids,
-            'implementation_sha256':sha256('foldtree2/src/se3_struct_decoder.py')}
+            'implementation_sha256':sha256('foldtree2/src/models/se3_struct_decoder.py')}
         if geometry<best:
             best=geometry;torch.save(checkpoint,output/(spec['name']+'_best.pt'))
         torch.save(checkpoint,output/(spec['name']+'_last.pt'))
@@ -188,7 +188,7 @@ def main():
         protocol='se3-scale-residual-investigation-v4-full-dimensional-seed' if args.screen_suite=='spatial' else 'se3-scale-residual-investigation-v3-parameterization'
         record={'protocol':protocol,'device':args.device,'seed':42,'seed_applied_per_case':True,
             'train_ids':ids,'heldout_ids':val_ids,'calibration_scale':scale,'fit':'equal-structure pair-distance least squares',
-            'source_identity':provenance['identity'],'refiner_sha256':sha256('foldtree2/src/se3_struct_decoder.py'),
+            'source_identity':provenance['identity'],'refiner_sha256':sha256('foldtree2/src/models/se3_struct_decoder.py'),
             'script_sha256':sha256(__file__),'args':vars(args),'static':static,
             'loss_sha256':hashlib.sha256(inspect.getsource(losses).encode()).hexdigest(),
             'metrics_sha256':hashlib.sha256(inspect.getsource(metrics).encode()).hexdigest(),

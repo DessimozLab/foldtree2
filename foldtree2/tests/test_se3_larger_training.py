@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import torch
 import yaml
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 from scripts.se3 import train_se3_revised_pilot as trainer
 
 
@@ -27,7 +27,7 @@ def test_warm_started_training_records_real_baseline_and_resumes(tmp_path, monke
     warm=tmp_path/'warm.pt'
     torch.save({'model':model.state_dict(),'epoch':8,'provenance':{'spec':spec,
         'input_identity':source['identity'],'sources':{name:trainer.sha256(name) for name in
-        ['foldtree2/src/se3_struct_decoder.py','foldtree2/src/losses/se3_ablation.py']}}},warm)
+        ['foldtree2/src/models/se3_struct_decoder.py','foldtree2/src/losses/se3_ablation.py']}}},warm)
     calibration=tmp_path/'calibration.json';calibration.write_text(json.dumps({'train_ids':['old'],'scale':1.}))
     cohort=tmp_path/'cohort.json';cohort.write_text('{}')
     output=tmp_path/'run';config={'output':str(output),'seed':42,'device':'cpu','epochs':1,

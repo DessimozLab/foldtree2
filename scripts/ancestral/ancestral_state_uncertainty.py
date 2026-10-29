@@ -20,7 +20,7 @@ import numpy as np
 from scripts.benchmark_common import (begin_stage, complete_stage, digest, read_fasta, run,
     stationary_from_log, tool_version, write_json)
 from scripts.alphabets.alphabet_information_metrics import compute_henikoff_weights
-from foldtree2.src.ancestral import run_ancestral, ancestral_states_to_fasta
+from foldtree2.src.trees.ancestral import run_ancestral, ancestral_states_to_fasta
 
 
 def uncertainty(probabilities, prior):

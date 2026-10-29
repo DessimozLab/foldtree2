@@ -176,6 +176,19 @@ class PairwiseDistanceHead(nn.Module):
     def _contact_dot(self, entry, mask):
         if not self.contact_bias:
             return None
+        if self.contact_bias_source == 'calibrated':
+            # Calibrated production contact probabilities from the enriched
+            # cache: sigmoid(temp * z@z.T + bias), symmetric in [0,1].  These
+            # are better calibrated than the raw cosine for attention logits.
+            values = entry['contact_probs']
+            if (values.shape != (len(mask), len(mask))
+                    or not values.is_floating_point()
+                    or values.device != mask.device
+                    or not torch.isfinite(values).all()
+                    or (values < 0.).any() or (values > 1.).any()
+                    or not torch.allclose(values, values.T, atol=1e-6, rtol=1e-6)):
+                raise ValueError('Invalid calibrated contact probabilities for attention bias')
+            return torch.where(mask[:, None] & mask[None], values, torch.zeros_like(values))
         values = entry['contact_z']
         if (values.shape != (len(mask), self.contact_dim) or not values.is_floating_point()
                 or values.device != mask.device or not torch.isfinite(values[mask]).all()):

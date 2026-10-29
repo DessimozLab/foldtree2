@@ -95,7 +95,7 @@ def main():
     if args.stable_products:
         enable_stable_tensor_products(model)
     if args.normalize_ff:
-        from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+        from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
         enable_tensor_ff_input_norm(model)
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=.01)
     loss = AblationLoss(True, True)

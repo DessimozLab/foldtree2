@@ -9,11 +9,11 @@ import multiprocessing as mp
 import argparse
 import numpy as np
 
-from foldtree2.src import encoder as ecdr
-from foldtree2.src import mono_decoders
-from foldtree2.src.pdbgraphmk2 import PDB2PyG
-from foldtree2.src.config_paths import resolve_aapropcsv_path
-from foldtree2.src.ancestral import run_ancestral, ancestral_states_to_fasta
+from foldtree2.src.models import encoder as ecdr
+from foldtree2.src.models import mono_decoders
+from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
+from foldtree2.src.graphs.config_paths import resolve_aapropcsv_path
+from foldtree2.src.trees.ancestral import run_ancestral, ancestral_states_to_fasta
 from torch_geometric.data import HeteroData
 
 import traceback

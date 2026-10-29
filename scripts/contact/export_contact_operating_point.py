@@ -60,7 +60,7 @@ def main():
     shifted = shifted_checkpoint(model, row)
     provenance = json.loads((Path(row['source']) / 'provenance.json').read_text())
     model_class = provenance.get('variant', {}).get(
-        'model_class', 'foldtree2.src.distance_restraints.PairwiseDistanceHead')
+        'model_class', 'foldtree2.src.distance.distance_restraints.PairwiseDistanceHead')
     shifted['operating_point'].update({
         'source_checkpoint': str(source), 'source_sha256': digest(source),
         'model_class': model_class,

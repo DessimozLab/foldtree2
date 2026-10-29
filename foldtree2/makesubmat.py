@@ -36,11 +36,12 @@ import random
 from matplotlib import pyplot as plt
 
 # Optional: import custom modules if available
-from foldtree2.src import AFDB_tools, foldseek2tree
-from foldtree2.src.pdbgraph import StructureDataset
-from foldtree2.src.pdbgraphmk2 import PDB2PyG
-from foldtree2.src.download_utils import download_structures, verify_downloads
-import foldtree2.src.encoder as ft2
+from foldtree2.src.data import AFDB_tools
+from foldtree2.src.trees import foldseek2tree
+from foldtree2.src.graphs.pdbgraph import StructureDataset
+from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
+from foldtree2.src.data.download_utils import download_structures, verify_downloads
+import foldtree2.src.models.encoder as ft2
 
 def print_about():
 	ascii_art = r'''

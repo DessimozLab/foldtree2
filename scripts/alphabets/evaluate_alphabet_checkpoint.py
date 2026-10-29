@@ -28,8 +28,8 @@ def main():
     args = parser.parse_args()
     import torch
     from torch_geometric.loader import DataLoader
-    from foldtree2.src.pdbgraph import StructureDataset
-    from foldtree2.src.training_protocol import held_out_split
+    from foldtree2.src.graphs.pdbgraph import StructureDataset
+    from foldtree2.src.training.training_protocol import held_out_split
     torch.set_num_threads(args.threads)
     dataset = StructureDataset(args.dataset)
     _, validation = held_out_split(dataset, args.val_split, args.val_seed)

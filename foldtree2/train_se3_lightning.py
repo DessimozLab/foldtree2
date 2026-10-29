@@ -26,10 +26,10 @@ import yaml
 from foldtree2.se3_cache import (FrozenDataset, GlobalBatchSampler, digest,
                                identity_hash, open_bundle, single_entry)
 from foldtree2.se3_validation import CONTACT_POLICIES, forward, metrics
-from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+from foldtree2.src.models.geometry_seeds import lift_seed_with_local_normals
 from foldtree2.se3_gradient_accumulation import GradientAccumulator
 from foldtree2.src.losses.se3_balanced import build_loss
-from foldtree2.src.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
+from foldtree2.src.models.se3_struct_decoder import (se3_denoiser, enable_stable_tensor_norm,
                                             enable_tensor_ff_input_norm)
 
 
@@ -55,9 +55,9 @@ def build_model(feature_dim, architecture):
 
 def source_identity():
     files = ['train_se3_lightning.py', 'se3_cache.py', 'se3_validation.py', 'se3_gradient_accumulation.py',
-             'src/se3_struct_decoder.py', 'src/geometry_seeds.py',
-             'src/losses/se3_ablation.py', 'src/losses/se3_balanced.py', 'src/losses/fape.py', 'src/dynamictan.py',
-             'src/quantizers.py', 'src/folding_refiner.py', 'src/manifold_hyper_connections.py']
+             'src/models/se3_struct_decoder.py', 'src/models/geometry_seeds.py',
+             'src/losses/se3_ablation.py', 'src/losses/se3_balanced.py', 'src/losses/fape.py', 'src/models/dynamictan.py',
+             'src/models/quantizers.py', 'src/models/folding_refiner.py', 'src/models/manifold_hyper_connections.py']
     return {name: digest(Path(__file__).parent / name) for name in files}
 
 

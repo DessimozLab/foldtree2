@@ -10,8 +10,8 @@ import torch
 from torch_geometric.loader import DataLoader
 
 from foldtree2.src.losses import coarse_ca_loss
-from foldtree2.src.mono_decoders import MultiMonoDecoder
-from foldtree2.src.pdbgraphmk2 import StructureDataset
+from foldtree2.src.models.mono_decoders import MultiMonoDecoder
+from foldtree2.src.graphs.pdbgraphmk2 import StructureDataset
 
 
 class IndexedSubset(torch.utils.data.Dataset):

@@ -88,8 +88,8 @@ def main():
             time.sleep(30)
     import torch
     torch.set_num_threads(args.threads)
-    from foldtree2.src.pdbgraphmk2 import PDB2PyG
-    from foldtree2.src.download_utils import download_pdb_subprocess
+    from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
+    from foldtree2.src.data.download_utils import download_pdb_subprocess
     from foldtree2.makesubmat import encode_structures
     entries = {e['size']: e for e in json.loads((ROOT / 'configs/production_models.yaml').read_text())['models']}
     entry = entries[args.size]
@@ -172,7 +172,7 @@ def main():
         if not graph_file.exists():
             raise RuntimeError('No additional graph input was successfully generated')
         new_fasta = Path(encode_structures(model, str(out), 'additional', 'cpu', str(graph_file)))
-        from foldtree2.src.encoder import load_encoded_fasta
+        from foldtree2.src.models.encoder import load_encoded_fasta
         old = load_encoded_fasta(str(original_fasta), replace=False)
         new = load_encoded_fasta(str(new_fasta), replace=False)
         if set(old.index) & set(new.index):

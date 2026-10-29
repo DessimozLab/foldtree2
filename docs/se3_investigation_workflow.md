@@ -68,7 +68,7 @@ are retained for comparison:
 | `device='cpu'` | Avoids constructing a CUDA backend when the requested run is on CPU |
 
 The normal-lift prototype is
-`foldtree2.src.geometry_seeds.lift_seed_with_local_normals`. It uses a centered,
+`foldtree2.src.models.geometry_seeds.lift_seed_with_local_normals`. It uses a centered,
 standardized invariant feature and oriented neighboring-bond normals, scaled
 by a fixed fraction of seed RMS radius. Its construction transforms under
 proper rotations and translations and masks incomplete/undefined stencils.

@@ -217,9 +217,9 @@ CLI failure as a width-80 numerical failure or rerun either submission command.
 | `foldtree2/train_se3_lightning.py` | CLI, Lightning training, provenance, stream/RNG/optimizer recovery |
 | `foldtree2/se3_cache.py`, `se3_validation.py` | Frozen entries, matched masks, physical geometry and metrics |
 | `foldtree2/se3_gradient_accumulation.py` | Float64 accumulation |
-| `foldtree2/src/se3_struct_decoder.py`, `pair_gotennet.py` | Equivariant refiner and dense pair adapter |
+| `foldtree2/src/models/se3_struct_decoder.py`, `pair_gotennet.py` | Equivariant refiner and dense pair adapter |
 | `foldtree2/src/pair_features.py`, `recycled_refiner.py` | Invariant pairs and shared two-pass refinement |
-| `foldtree2/src/geometry_seeds.py`, `learned_geometry_seed.py` | Fixed and experimental learned seeds |
+| `foldtree2/src/models/geometry_seeds.py`, `learned_geometry_seed.py` | Fixed and experimental learned seeds |
 | `foldtree2/src/losses/se3_ablation.py`, `se3_balanced.py` | Smooth training FAPE and weighted geometry terms |
 | `scripts/se3/se3_capacity_gate.py` | Corrected paired comparison and declared-schedule checks |
 | *(bend-recycle gate: ran on Clariden; results in `docs/se3_clariden_evidence/bend_recycle_v2/` — the `scripts/gate_se3_bend_recycle.py` file was never committed to this tree)* | Incumbent selection and conditional scale-up gate |

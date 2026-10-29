@@ -4,13 +4,13 @@ import tempfile
 import types
 import unittest
 
-pdbgraph_stub = types.ModuleType('foldtree2.src.pdbgraph')
+pdbgraph_stub = types.ModuleType('foldtree2.src.graphs.pdbgraph')
 pdbgraph_stub.PDB2PyG = object
-sys.modules.setdefault('foldtree2.src.pdbgraph', pdbgraph_stub)
+sys.modules.setdefault('foldtree2.src.graphs.pdbgraph', pdbgraph_stub)
 
-pdbgraphmk2_stub = types.ModuleType('foldtree2.src.pdbgraphmk2')
+pdbgraphmk2_stub = types.ModuleType('foldtree2.src.graphs.pdbgraphmk2')
 pdbgraphmk2_stub.PDB2PyG = object
-sys.modules.setdefault('foldtree2.src.pdbgraphmk2', pdbgraphmk2_stub)
+sys.modules.setdefault('foldtree2.src.graphs.pdbgraphmk2', pdbgraphmk2_stub)
 
 from foldtree2.encode_pdbs import (
     _checkpoint_manifest_path,

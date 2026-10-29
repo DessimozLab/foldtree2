@@ -104,10 +104,10 @@ import torch
 import pytorch_lightning as pl
 import torch_geometric
 from foldtree2.learn_geometry_lightning import GeometryFocusedModule
-from foldtree2.src.encoder import mk1_Encoder
-from foldtree2.src.mono_decoders import Transformer_Geometry_Decoder
-from foldtree2.src.pdbgraphmk2 import FoldcompStructureDataset, StructureDataset
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.encoder import mk1_Encoder
+from foldtree2.src.models.mono_decoders import Transformer_Geometry_Decoder
+from foldtree2.src.graphs.pdbgraphmk2 import FoldcompStructureDataset, StructureDataset
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 print('torch', torch.__version__, 'cuda', torch.version.cuda)
 print('lightning', pl.__version__)
 print('pyg', torch_geometric.__version__)

@@ -7,7 +7,7 @@ import gotennet_pytorch.gotennet as backend
 
 original_harmonics = backend.spherical_harmonics
 original_dtype = torch.get_default_dtype()
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 
 
 def model():
@@ -37,7 +37,7 @@ def test_endpoint_frames_mask_third_neighbors():
 
 
 def test_import_has_no_global_side_effects():
-    import foldtree2.src.se3_struct_decoder as module
+    import foldtree2.src.models.se3_struct_decoder as module
     importlib.reload(module)
     assert torch.get_default_dtype() == original_dtype
     assert backend.spherical_harmonics is original_harmonics

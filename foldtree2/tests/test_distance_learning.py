@@ -6,10 +6,10 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import digest, identity_hash
-from foldtree2.src.distance_energy import (
+from foldtree2.src.distance.distance_energy import (
     distance_energy, fit_reference, interval_log_weights, sample_contact_strata, separation_groups,
 )
-from foldtree2.src.distance_restraints import DISTANCE_EDGES, eligible_pairs
+from foldtree2.src.distance.distance_restraints import DISTANCE_EDGES, eligible_pairs
 from scripts.se3.diagnose_distance_learning import memorization_pass, run, sampling_pilot
 
 

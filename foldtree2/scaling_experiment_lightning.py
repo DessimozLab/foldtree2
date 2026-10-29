@@ -1,4 +1,4 @@
-import foldtree2.src.encoder as ecdr
+import foldtree2.src.models.encoder as ecdr
 from converter import pdbgraph
 import numpy as np
 import torch

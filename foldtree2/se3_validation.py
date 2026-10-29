@@ -38,7 +38,7 @@ base = _LazyGeometryModule()
 def load_production_decoder(*args, **kwargs):
     from foldtree2.learn_production_geometry_se3_lightning import load_production_decoder as load
     return load(*args, **kwargs)
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 from foldtree2.src.losses.fape import equivariant_ca_frame_rotmat
 
 
@@ -367,7 +367,7 @@ def run(args):
                   'model': {'hidden': 32, 'depth': 2, 'heads': 2, 'dim_head': 16},
                   'optimizer': {'learning_rate': 5e-4, 'effective_batch_size': 8, 'clip': 1.},
                   'seed': config['seed'],
-                  'implementation_sha256': sha256('foldtree2/src/se3_struct_decoder.py'),
+                  'implementation_sha256': sha256('foldtree2/src/models/se3_struct_decoder.py'),
                   'selection_sha256': hashlib.sha256(inspect.getsource(split_structures).encode()).hexdigest(),
                   'loss_sha256': hashlib.sha256((inspect.getsource(losses)+inspect.getsource(frame_fape)+inspect.getsource(frame_point_errors)).encode()).hexdigest()}
     # Validate before replacing a run's audit record or doing expensive extraction.
