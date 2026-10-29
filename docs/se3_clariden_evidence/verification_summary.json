@@ -1,0 +1,14 @@
+{
+  "serial_ddp_max_difference": 3.091336111538112e-07,
+  "serial_restart_max_difference": 0.0,
+  "ddp_restart_max_difference": 0.0,
+  "optimizer_updates": 2,
+  "global_batch": 16,
+  "validation_ids_count": 3,
+  "cpu_tests_passed": 86,
+  "cpu_cuda_skipped": 1,
+  "cuda_equivariance_tests_passed": 1,
+  "strict_expected_failures": 1,
+  "clariden_jobs": [],
+  "blocked": "Project credit pending; depth-six model fails numerical gate"
+}

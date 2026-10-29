@@ -1,0 +1,84 @@
+.....................................F................................   [100%]
+=================================== FAILURES ===================================
+_____________ test_lddt_excludes_nonzero_numerical_self_distances ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f813e30ac70>
+
+    def test_lddt_excludes_nonzero_numerical_self_distances(monkeypatch):
+        from foldtree2.se3_validation import metrics
+        torch.manual_seed(31)
+        target=torch.randn(64,3)*4;pred=torch.randn(64,3)
+        real_cdist=torch.cdist
+        p=pred-pred.mean(0);t=target-target.mean(0)
+        pd,td=real_cdist(p,p),real_cdist(t,t)
+        neighbors=(td<15)&(td>0)&~torch.eye(64,dtype=torch.bool)
+        expected=torch.stack([((pd-td).abs()[neighbors]<cutoff).float().mean() for cutoff in (.5,1.,2.,4.)]).mean()
+        def nonzero_diagonal(x,y,*args,**kwargs):
+            result=real_cdist(x,y,*args,**kwargs)
+            result.fill_diagonal_(1.)
+            return result
+        monkeypatch.setattr(torch,'cdist',nonzero_diagonal)
+        entry={'target':target,'mask':torch.ones(64,dtype=torch.bool),'angles':torch.zeros(64,3)}
+>       torch.testing.assert_close(torch.tensor(metrics(pred,None,entry)['lddt']),expected)
+
+foldtree2/tests/test_se3_validation.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pred = tensor([[ 6.3708e-01,  5.6377e-01, -1.4833e+00],
+        [ 9.6020e-01,  6.7025e-01,  3.5887e-01],
+        [ 6.9355e-01...2e-01,  5.3746e-01],
+        [ 7.6314e-01,  1.5548e+00, -1.8745e-01],
+        [-1.0028e+00,  1.2018e+00, -1.1938e+00]])
+angles = None
+entry = {'angles': tensor([[0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0.],
+        [0., 0., 0....e-01, -1.8075e+00],
+        [ 3.9604e+00, -1.0096e+00,  1.9314e+00],
+        [ 5.9030e-01,  7.0692e+00,  2.4972e+00]])}
+
+    def metrics(pred, angles, entry):
+        mask = entry['mask']
+        p, t = pred[mask], entry['target'][mask]
+        pc, tc = p - p.mean(0), t - t.mean(0)
+        u, _, vh = torch.linalg.svd(pc.T @ tc)
+        sign = torch.ones(3, device=p.device)
+        sign[-1] = torch.linalg.det(u @ vh)
+        aligned = pc @ u @ torch.diag(sign) @ vh
+        err = (aligned - tc).norm(dim=-1)
+        pd, td = torch.cdist(pc, pc), torch.cdist(tc, tc)
+        # Float32 cdist can return nonzero self-distances. Exclude the diagonal
+        # explicitly rather than assuming td > 0 excludes self-pairs.
+        off_diagonal = ~torch.eye(len(p), device=p.device, dtype=torch.bool)
+        neighbors = (td < 15.) & (td > 0.) & off_diagonal
+        delta = (pd - td).abs()
+        if not neighbors.any():
+            raise ValueError('No lDDT pairs')
+        lddt = torch.stack([(delta[neighbors] < cutoff).float().mean() for cutoff in (.5, 1., 2., 4.)]).mean()
+        bond_mask = mask[1:] & mask[:-1]
+        pb = (pred[1:] - pred[:-1]).norm(dim=-1)[bond_mask]
+        tb = (entry['target'][1:] - entry['target'][:-1]).norm(dim=-1)[bond_mask]
+        amask = torch.isfinite(entry['angles'][..., :3]) & mask[:, None]
+        angle_error = None
+        if angles is not None and amask.any():
+            diff = angles[..., :3][amask] - entry['angles'][..., :3][amask]
+            angle_error = float(torch.atan2(diff.sin(), diff.cos()).abs().mean())
+        # tmtools performs TM-score optimized alignment, not a Kabsch approximation.
+>       from tmtools import tm_align
+E       ModuleNotFoundError: No module named 'tmtools'
+
+foldtree2/se3_validation.py:255: ModuleNotFoundError
+=============================== warnings summary ===============================
+foldtree2/tests/testing_coarse_ca.py::TestCoarseCALoss::test_multi_decoder_coarse_ca_outputs_are_finite
+  /home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/transformer.py:392: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+    warnings.warn(
+
+foldtree2/tests/testing_coarse_ca.py::TestCoarseCALoss::test_transformer_geometry_decoder_has_separate_geometry_heads
+  /home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/nn/modules/transformer.py:392: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED foldtree2/tests/test_se3_validation.py::test_lddt_excludes_nonzero_numerical_self_distances
+1 failed, 69 passed, 2 warnings in 18.69s

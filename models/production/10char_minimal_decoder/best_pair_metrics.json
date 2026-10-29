@@ -1,0 +1,24 @@
+{
+  "encoder": "/home/dmoi/projects/foldtree2/runs/production_alphabets/notebook_heldout_persistent_restart_20261001/10/checkpoints/production_10char_best_encoder.pt",
+  "decoder": "/home/dmoi/projects/foldtree2/runs/production_alphabets/notebook_heldout_persistent_restart_20261001/10/checkpoints/production_10char_best_decoder.pt",
+  "dataset": "/mnt/data2/datasets/ft2_train_final.h5",
+  "split_protocol": "notebook_permutation_prefix_rounded_v1",
+  "val_seed": 7,
+  "val_split": 0.1,
+  "n_structures": 2009,
+  "n_residues": 567921,
+  "aa_accuracy": 0.6154236240603886,
+  "observed_states": 10,
+  "state_counts": [
+    59362,
+    77593,
+    47576,
+    59701,
+    76035,
+    73981,
+    35667,
+    71859,
+    62424,
+    3723
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "passed": false,
+  "error": "model.gotennet.node_init.atom_embed.weight: Tensor-likes are not close!\n\nMismatched elements: 3906 / 4096 (95.4%)\nGreatest absolute difference: 0.006825793534517288 at index (25, 51) (up to 0.0001 allowed)\nGreatest relative difference: 514.9072265625 at index (43, 58) (up to 0.0001 allowed)",
+  "candidate": "runs/se3_clariden/normalized_cluster_checkpoints/normalized_debug_two",
+  "control": "runs/se3_clariden/normalized_cluster_checkpoints/normalized_debug_one",
+  "exact_resume": false
+}

@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""Train an SE3 coordinate refiner from a frozen production encoder/decoder pair.
+
+The production geometry decoder supplies two complementary inputs:
+
+* ``z`` is normalized per residue and used for the dot-product contact graph.
+* its 3D translation output is used as the initial residue coordinate sketch.
+
+The SE3 module and its atom-level refinement path use the loss stack from
+``learn_geometry_lightning.py``.  All options, including YAML/JSON config files,
+are shared with that trainer.
+"""
+
+from __future__ import annotations
+
+import copy
+import inspect
+import json
+import sys
+from pathlib import Path
+
+import torch
+try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:  # Visualization is optional for normal training.
+    matplotlib = None
+    plt = None
+
+# Make direct ``python foldtree2/<script>.py`` invocation behave like the
+# installed-package invocation used by the Alps launcher.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from foldtree2 import learn_geometry_lightning as base
+
+
+class EpochReconstructionVisualizer(base.pl.Callback):
+    """Save fixed-sample true/coarse/SE3 reconstruction panels per epoch."""
+
+    def __init__(self, sample_batch, output_dir: str, max_residues: int = 0):
+        super().__init__()
+        if plt is None:
+            raise RuntimeError("Epoch visualizations require matplotlib to be installed")
+        self.sample_batch = sample_batch
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_residues = max(0, int(max_residues))
+        self._saved_epoch = None
+
+    @staticmethod
+    def _node_x(batch, name):
+        if name in batch.node_types and hasattr(batch[name], "x"):
+            return batch[name].x.detach().float().cpu()
+        return None
+
+    def _atom_stack(self, batch, prefix):
+        if prefix == "true":
+            keys = ("coords", "ccoords", "cbcoords", "ncoords")
+        elif prefix == "coarse":
+            keys = ("coarse_ca_pred", "coarse_c_pred", "coarse_cb_pred", "coarse_n_pred")
+        else:
+            keys = ("se3_ca_pred", "se3_c_pred", "se3_cb_pred", "se3_n_pred")
+        values = [self._node_x(batch, key) for key in keys]
+        if any(value is None for value in values):
+            return None
+        atoms = torch.stack(values, dim=1)
+        if self.max_residues > 0:
+            atoms = atoms[:self.max_residues]
+        return atoms
+
+    @staticmethod
+    def _center(atoms):
+        return atoms - atoms.reshape(-1, 3).mean(dim=0)
+
+    def _plot_atoms(self, axis, atoms, title):
+        atoms = self._center(atoms)
+        colors = ("black", "tab:blue", "tab:green", "tab:red")
+        names = ("CA", "C", "CB", "N")
+        ca = atoms[:, 0]
+        axis.plot(ca[:, 0], ca[:, 1], ca[:, 2], color="0.35", linewidth=1.0, alpha=0.8)
+        for index, name in enumerate(names):
+            points = atoms[:, index]
+            axis.scatter(points[:, 0], points[:, 1], points[:, 2], s=18, color=colors[index], label=name)
+        axis.set_title(title)
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_zlabel("z")
+        axis.legend(loc="upper right", fontsize=7)
+
+    def _plot_residues(self, axis, coords, title, color):
+        coords = self._center(coords)
+        axis.plot(coords[:, 0], coords[:, 1], coords[:, 2], color=color, linewidth=1.2, alpha=0.85)
+        axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=18, color=color)
+        axis.set_title(title)
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_zlabel("z")
+
+    def _save(self, trainer, module):
+        epoch = int(module.current_epoch)
+        if self._saved_epoch == epoch:
+            return
+        self._saved_epoch = epoch
+
+        batch = copy.deepcopy(self.sample_batch).to(module.device)
+        batch = base.ensure_edge_attrs_inplace(base.ensure_float32_inplace(batch), edge_dim=1)
+        was_training = module.training
+        module.eval()
+        with torch.no_grad():
+            total, raw_terms, _weighted_terms, _se3_skip, _batch_idx = module._compute_total_loss(
+                batch, debug_label=f"visualization epoch={epoch + 1}"
+            )
+        if was_training:
+            module.train()
+
+        true_atoms = self._atom_stack(batch, "true")
+        coarse_atoms = self._atom_stack(batch, "coarse")
+        se3_atoms = self._atom_stack(batch, "se3")
+        if true_atoms is None or coarse_atoms is None or se3_atoms is None:
+            residue_panels = (
+                (self._node_x(batch, "coords"), "Ground truth CA", "black"),
+                (self._node_x(batch, "se3_seed_coords"), "Initial 3D seed", "tab:orange"),
+                (self._node_x(batch, "se3_coords_pred"), "SE3 refined CA", "tab:blue"),
+            )
+        else:
+            residue_panels = None
+        panels = ((true_atoms, "Ground truth"), (coarse_atoms, "Initial coarse"), (se3_atoms, "SE3 refined"))
+        figure = plt.figure(figsize=(15, 5))
+        for index, (atoms, title) in enumerate(panels, start=1):
+            axis = figure.add_subplot(1, 3, index, projection="3d")
+            if residue_panels is not None:
+                coords, residue_title, color = residue_panels[index - 1]
+                if coords is None:
+                    axis.set_title(f"{residue_title} unavailable")
+                    axis.axis("off")
+                else:
+                    self._plot_residues(axis, coords[: self.max_residues or None], residue_title, color)
+            elif atoms is None:
+                axis.set_title(f"{title} unavailable")
+                axis.axis("off")
+            else:
+                self._plot_atoms(axis, atoms, title)
+        figure.suptitle(f"Epoch {epoch + 1} reconstruction | loss={float(total):.4f}")
+        figure.tight_layout()
+        figure.savefig(self.output_dir / f"epoch_{epoch + 1:04d}.png", dpi=140)
+        plt.close(figure)
+
+        summary = {
+            "epoch": epoch + 1,
+            "total": float(total.detach().cpu()),
+            "raw_terms": {name: float(value.detach().cpu()) for name, value in raw_terms.items()},
+        }
+        (self.output_dir / f"epoch_{epoch + 1:04d}.json").write_text(json.dumps(summary, indent=2) + "\n")
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if not trainer.sanity_checking:
+            self._save(trainer, pl_module)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        if not trainer.val_dataloaders:
+            self._save(trainer, pl_module)
+
+
+class ProductionGeometrySE3Module(base.GeometryFocusedModule):
+    """GeometryFocusedModule with a frozen production geometry source."""
+
+    def __init__(self, *args, production_coordinate_source="auto", production_coordinate_scale=1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.production_coordinate_source = str(production_coordinate_source)
+        self.production_coordinate_scale = float(production_coordinate_scale)
+        self._production_bottleneck = None
+
+        def capture_bottleneck(_module, inputs):
+            self._production_bottleneck = inputs[0].detach()
+
+        self._production_bottleneck_hook = self.transformer_geom_decoder.body["lin"].register_forward_pre_hook(
+            capture_bottleneck
+        )
+
+        for parameter in self.transformer_geom_decoder.parameters():
+            parameter.requires_grad = False
+        self.transformer_geom_decoder.eval()
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['production_provenance'] = self.provenance
+
+    def on_load_checkpoint(self, checkpoint):
+        if checkpoint.get('production_provenance') != self.provenance:
+            raise ValueError('Resume rejected: incompatible production model, dataset, split or configuration')
+
+    def on_before_optimizer_step(self, optimizer):
+        grads = [p.grad for p in self.se3_decoder.parameters() if p.grad is not None]
+        if not grads or not all(torch.isfinite(g).all() for g in grads):
+            raise FloatingPointError('Missing or nonfinite SE3 gradients')
+        if any(p.grad is not None for m in (self.encoder, self.transformer_geom_decoder) for p in m.parameters()):
+            raise RuntimeError('Frozen production parameters received gradients')
+        self.log('train/gradient_norm', torch.stack([g.norm() for g in grads]).norm(), on_step=True)
+
+    def _prepare_geometry_outputs(self, data_batch):
+        with torch.no_grad():
+            output = self.transformer_geom_decoder(data_batch, contact_pred_index=None)
+
+        contact_embedding = output.get("z")
+        if contact_embedding is None or contact_embedding.ndim != 2:
+            raise RuntimeError("Production geometry decoder must return z with shape [N,D]")
+
+        candidates = {
+            "bottleneck": self._production_bottleneck,
+            "z": contact_embedding,
+            "trans_pred": output.get("trans_pred"),
+            "trans_local_pred": output.get("trans_local_pred"),
+        }
+        source = self.production_coordinate_source
+        if source == "auto":
+            source = next(
+                (candidate for candidate in ("bottleneck", "z", "trans_pred", "trans_local_pred")
+                 if candidates.get(candidate) is not None
+                 and candidates[candidate].ndim == 2
+                 and candidates[candidate].shape[-1] == 3),
+                "bottleneck",
+            )
+
+        seed = candidates.get(source)
+        if seed is None or seed.ndim != 2 or seed.shape[-1] != 3:
+            shapes = {name: (None if value is None else tuple(value.shape)) for name, value in candidates.items()}
+            raise RuntimeError(
+                f"Production coordinate source '{source}' is not [N,3]; available decoder outputs: {shapes}"
+            )
+
+        # Production contact decoders do not necessarily include the optional
+        # RT head. Derive frame-compatible local CA steps from the 3D seed so
+        # the shared coarse-backbone and atom loss stack remains usable.
+        if output.get("rt_pred") is None:
+            batch_idx = getattr(data_batch["res"], "batch", None)
+            q_parts = []
+            step_parts = []
+            twist_parts = []
+            groups = [torch.arange(seed.shape[0], device=seed.device)] if batch_idx is None else [
+                torch.where(batch_idx == value)[0] for value in torch.unique(batch_idx, sorted=True)
+            ]
+            for indices in groups:
+                seed_i = seed[indices]
+                R_i, _t_i, q_i, twist_i = self._frames_from_ca_only(seed_i)
+                steps_i = torch.zeros_like(seed_i)
+                if seed_i.shape[0] > 1:
+                    delta_i = seed_i[1:] - seed_i[:-1]
+                    steps_i[:-1] = torch.einsum("nij,nj->ni", R_i[:-1].transpose(-1, -2), delta_i)
+                q_parts.append(q_i)
+                step_parts.append(steps_i)
+                twist_parts.append(twist_i)
+            pseudo_q = torch.cat(q_parts, dim=0)
+            pseudo_steps = torch.cat(step_parts, dim=0)
+            output["rt_pred"] = torch.cat([pseudo_q, pseudo_steps], dim=-1)
+            output["ca_step_pred"] = pseudo_steps
+            # CA-only pseudo-frames cannot fix twist at collinear residues; the
+            # shared loss stack must mask orientation losses for these rows.
+            output["twist_undefined"] = torch.cat(twist_parts, dim=0)
+
+        # The shared SE3 path applies se3_contact_coord_scale. Normalize that
+        # factor here so production-coordinate-scale remains an independent flag.
+        output = dict(output)
+        output["se3_contact_z"] = contact_embedding
+        output["se3_seed_coords"] = seed * (self.production_coordinate_scale / max(self.se3_contact_coord_scale, 1e-8))
+        return output
+
+
+def load_production_decoder(path: str, device: torch.device) -> torch.nn.Module:
+    checkpoint = Path(path)
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Production geometry decoder not found: {checkpoint}")
+
+    loaded = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    if isinstance(loaded, torch.nn.Module):
+        decoder = loaded
+    elif isinstance(loaded, dict):
+        decoder = loaded.get("model") or loaded.get("decoder") or loaded.get("geometry_decoder")
+        if not isinstance(decoder, torch.nn.Module):
+            raise RuntimeError(f"{checkpoint} does not contain a serialized geometry decoder module")
+    else:
+        raise RuntimeError(f"Unsupported production decoder checkpoint type: {type(loaded)!r}")
+
+    if not hasattr(decoder, "decoders") or "geometry_cnn" not in decoder.decoders:
+        raise RuntimeError(f"{checkpoint} is not a MultiMonoDecoder with a geometry_cnn decoder")
+
+    # Production checkpoints bundle several mono decoders. Only the geometry
+    # branch is part of this experiment; invoking the bundle would also run
+    # legacy auxiliary decoders that are unrelated to the SE3 input.
+    decoder = decoder.decoders["geometry_cnn"]
+
+    decoder = decoder.to(device)
+    decoder.eval()
+    for parameter in decoder.parameters():
+        parameter.requires_grad = False
+    print(f"Loaded frozen production geometry decoder from {checkpoint}")
+    return decoder
+
+
+def main():
+    args = base.parse_args()
+    from foldtree2.se3_validation import production_pair, sha256
+    pair = production_pair(args.production_manifest)
+    args.pretrained_encoder_path = args.pretrained_encoder_full_path = pair['encoder']
+    args.pretrained_geometry_decoder_path = pair['decoder']
+
+    # Reuse the established data split, encoder compatibility checks, SE3
+    # construction, trainer setup, and all loss-related command-line options.
+    base.pl.seed_everything(args.seed, workers=True)
+    data_module = base.GeometryOnlyDataModule(
+        dataset_path=args.dataset,
+        batch_size=args.batch_size,
+        val_batch_size=args.val_batch_size,
+        num_workers=args.num_workers,
+        val_fraction=args.val_fraction,
+        val_count=args.val_count,
+        split_seed=args.split_seed,
+    )
+    data_module.setup("fit")
+    print(f"Dataset split: train={len(data_module.train_dataset)} val={len(data_module.val_dataset or [])}")
+
+    probe_loader = base.DataLoader(data_module.train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    data_sample = next(iter(probe_loader))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    encoder, latent_dim = base.build_encoder(args, data_sample.to(device), device)
+    production_decoder = load_production_decoder(args.pretrained_geometry_decoder_path, device)
+
+    se3_num_atom_types = max(4, int(args.se3_num_atom_types or getattr(encoder, "num_embeddings", 20)))
+    se3_input_dim = latent_dim * (2 if args.se3_use_codebook_vectors else 1)
+    residue_se3_decoder = base.build_se3_decoder(
+        se3_input_dim,
+        data_sample,
+        device,
+        args,
+        se3_num_atom_types,
+        hidden=args.se3_residue_hidden,
+        depth=args.se3_residue_depth,
+        heads=args.se3_residue_heads,
+        dim_head=args.se3_residue_dim_head,
+    ) if args.use_se3 else None
+    atom_se3_decoder = base.build_se3_decoder(
+        se3_input_dim,
+        data_sample,
+        device,
+        args,
+        se3_num_atom_types,
+        hidden=args.se3_atom_hidden,
+        depth=args.se3_atom_depth,
+        heads=args.se3_atom_heads,
+        dim_head=args.se3_atom_dim_head,
+    ) if args.use_se3 and args.use_se3_atom_refine else None
+    if residue_se3_decoder is not None:
+        print(
+            "Residue SE3 decoder: "
+            f"hidden={args.se3_residue_hidden or args.se3_hidden} "
+            f"depth={args.se3_residue_depth or args.se3_depth} "
+            f"heads={args.se3_residue_heads or args.se3_heads}"
+        )
+    if atom_se3_decoder is not None:
+        print(
+            "Atom SE3 decoder: "
+            f"hidden={args.se3_atom_hidden or args.se3_hidden} "
+            f"depth={args.se3_atom_depth or args.se3_depth} "
+            f"heads={args.se3_atom_heads or args.se3_heads}"
+        )
+
+    constructor = inspect.signature(base.GeometryFocusedModule.__init__)
+    argument_aliases = {
+        "lr_scheduler_name": "lr_scheduler",
+        "max_epochs": "epochs",
+        "clip_grad_norm": "clip_grad",
+    }
+    module_kwargs = {}
+    for name in constructor.parameters:
+        if name in {"self", "encoder", "transformer_geom_decoder", "se3_decoder", "se3_atom_decoder"}:
+            continue
+        source_name = argument_aliases.get(name, name)
+        if hasattr(args, source_name):
+            module_kwargs[name] = getattr(args, source_name)
+    module_kwargs.update(
+        encoder=encoder,
+        transformer_geom_decoder=production_decoder,
+        se3_decoder=residue_se3_decoder,
+        se3_atom_decoder=atom_se3_decoder,
+        production_coordinate_source=args.production_coordinate_source,
+        production_coordinate_scale=args.production_coordinate_scale,
+    )
+    module = ProductionGeometrySE3Module(**module_kwargs)
+    if isinstance(encoder, base.FrozenProjectionEncoder) or residue_se3_decoder is None:
+        raise RuntimeError("Canonical production SE3 training requires the production encoder and SE3 decoder")
+    module.provenance = {
+        "encoder_sha256": sha256(pair['encoder']), "decoder_sha256": sha256(pair['decoder']),
+        "dataset_sha256": sha256(args.dataset),
+        "train_indices": getattr(data_module.train_dataset, 'indices', list(range(len(data_module.train_dataset)))),
+        "val_indices": getattr(data_module.val_dataset, 'indices', []),
+        "config": {k: v for k, v in vars(args).items() if k not in {'resume_from', 'epochs', 'checkpoint_dir', 'config'}},
+    }
+
+    callbacks = []
+    if args.enable_epoch_visualizations:
+        sample_index = max(0, min(int(args.visualization_sample_index), len(data_module.struct_dat) - 1))
+        sample_batch = next(
+            iter(base.DataLoader([data_module.struct_dat[sample_index]], batch_size=1, shuffle=False, num_workers=0))
+        )
+        visualization_dir = args.visualization_dir or str(Path(args.checkpoint_dir) / "visualizations")
+        callbacks.append(
+            EpochReconstructionVisualizer(
+                sample_batch=sample_batch,
+                output_dir=visualization_dir,
+                max_residues=args.visualization_max_residues,
+            )
+        )
+        print(f"Epoch visualizations enabled: sample={sample_index} dir={visualization_dir}")
+
+    accum_steps = max(1, (args.target_effective_batch_size + args.batch_size - 1) // args.batch_size)
+    checkpoint_dir = Path(args.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    monitor = "val/loss" if data_module.val_dataset is not None else "train/loss_epoch"
+    checkpoint_callback = base.pl.callbacks.ModelCheckpoint(
+        dirpath=str(checkpoint_dir),
+        filename="production-se3-{epoch:02d}-{step}",
+        monitor=monitor,
+        mode="min",
+        save_top_k=args.save_top_k,
+        save_last=True,
+    )
+
+    parsed_devices = base.parse_devices(args.devices)
+    strategy = base.infer_strategy(args.accelerator, parsed_devices, args.strategy)
+    trainer = base.pl.Trainer(
+        max_epochs=args.epochs,
+        accelerator=args.accelerator,
+        devices=parsed_devices,
+        strategy=strategy,
+        precision=args.precision,
+        accumulate_grad_batches=accum_steps,
+        gradient_clip_val=args.clip_grad,
+        gradient_clip_algorithm="norm",
+        log_every_n_steps=args.log_every_n_steps,
+        limit_train_batches=args.limit_train_batches if args.limit_train_batches is not None else 1.0,
+        limit_val_batches=args.limit_val_batches if args.limit_val_batches is not None else 1.0,
+        callbacks=[checkpoint_callback, *callbacks],
+    )
+    print(
+        f"Production SE3 training: coordinate_source={module.production_coordinate_source} "
+        f"coordinate_scale={module.production_coordinate_scale} "
+        f"micro_batch_size={args.batch_size} accumulation={accum_steps}"
+    )
+    trainer.fit(module, datamodule=data_module, ckpt_path=args.resume_from)
+
+
+if __name__ == "__main__":
+    main()

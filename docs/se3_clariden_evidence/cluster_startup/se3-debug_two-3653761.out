@@ -1,0 +1,1541 @@
+[rank: 1] Seed set to 42
+[rank: 2] Seed set to 42
+[rank: 0] Seed set to 42
+[rank: 4] Seed set to 42
+[rank: 5] Seed set to 42
+[rank: 6] Seed set to 42
+[rank: 3] Seed set to 42
+[rank: 7] Seed set to 42
+[rank: 1] Seed set to 42
+[rank: 2] Seed set to 42
+[rank: 0] Seed set to 42
+[rank: 3] Seed set to 42
+[rank: 5] Seed set to 42
+[rank: 7] Seed set to 42
+[rank: 6] Seed set to 42
+[rank: 4] Seed set to 42
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+You are using a CUDA device ('NVIDIA GH200 120GB') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+Initializing distributed: GLOBAL_RANK: 4, MEMBER: 5/8
+Initializing distributed: GLOBAL_RANK: 6, MEMBER: 7/8
+Initializing distributed: GLOBAL_RANK: 5, MEMBER: 6/8
+Initializing distributed: GLOBAL_RANK: 7, MEMBER: 8/8
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/8
+Initializing distributed: GLOBAL_RANK: 1, MEMBER: 2/8
+Initializing distributed: GLOBAL_RANK: 2, MEMBER: 3/8
+Initializing distributed: GLOBAL_RANK: 3, MEMBER: 4/8
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007649:177622:177622 [0] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007649:177622:177622 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177622:177622 [0] NCCL INFO Bootstrap: Using hsn0:172.28.46.140<0>
+nid007649:177622:177902 [0] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177622:177622 [0] NCCL INFO cudaDriverVersion 13020
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007649:177624:177624 [2] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007649:177624:177624 [2] NCCL INFO cudaDriverVersion 13020
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO cudaDriverVersion 13020
+nid007649:177623:177623 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007649:177623:177623 [1] NCCL INFO cudaDriverVersion 13020
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No suchnid007652:84424:84424 [0] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No suchnid007652:84428:84428 [1] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No suchnid007652:84430:84430 [2] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+ file or directory
+ file or directory
+ file or directory
+nid007652:84431:84431 [3] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007652:84424:84424 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007652:84428:84428 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007652:84430:84430 [2] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007652:84431:84431 [3] NCCL INFO cudaDriverVersion 13020
+nid007652:84430:84430 [2] NCCL INFO cudaDriverVersion 13020
+nid007652:84428:84428 [1] NCCL INFO cudaDriverVersion 13020
+nid007652:84424:84424 [0] NCCL INFO cudaDriverVersion 13020
+nid007649:177624:177624 [2] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007649:177624:177624 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177623:177623 [1] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007649:177623:177623 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177625:177625 [3] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007649:177625:177625 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177622:177622 [0] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007649:177622:177622 [0] NCCL INFO NCCL git version unknown unknown
+nid007652:84431:84431 [3] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007652:84431:84431 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84430:84430 [2] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007652:84430:84430 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84428:84428 [1] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007652:84428:84428 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84424:84424 [0] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007652:84424:84424 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177622:177622 [0] NCCL INFO Comm config Blocking set to 1
+nid007649:177622:177622 [0] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007649:177625:177625 [3] NCCL INFO Bootstrap: Using hsn0:172.28.46.140<0>
+nid007649:177623:177623 [1] NCCL INFO Bootstrap: Using hsn0:172.28.46.140<0>
+nid007649:177625:177625 [3] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007649:177623:177623 [1] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007649:177624:177624 [2] NCCL INFO Bootstrap: Using hsn0:172.28.46.140<0>
+nid007649:177625:177625 [3] NCCL INFO NCCL git version unknown unknown
+nid007649:177623:177623 [1] NCCL INFO NCCL git version unknown unknown
+nid007649:177624:177624 [2] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007649:177624:177624 [2] NCCL INFO NCCL git version unknown unknown
+nid007649:177623:177623 [1] NCCL INFO Comm config Blocking set to 1
+nid007649:177625:177625 [3] NCCL INFO Comm config Blocking set to 1
+nid007649:177624:177624 [2] NCCL INFO Comm config Blocking set to 1
+nid007649:177625:177625 [3] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007649:177624:177624 [2] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007649:177623:177623 [1] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007652:84428:84428 [1] NCCL INFO Bootstrap: Using hsn0:172.28.46.152<0>
+nid007652:84431:84431 [3] NCCL INFO Bootstrap: Using hsn0:172.28.46.152<0>
+nid007652:84430:84430 [2] NCCL INFO Bootstrap: Using hsn0:172.28.46.152<0>
+nid007652:84428:84428 [1] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007652:84431:84431 [3] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007652:84424:84424 [0] NCCL INFO Bootstrap: Using hsn0:172.28.46.152<0>
+nid007652:84430:84430 [2] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007652:84431:84431 [3] NCCL INFO NCCL git version unknown unknown
+nid007652:84428:84428 [1] NCCL INFO NCCL git version unknown unknown
+nid007652:84430:84430 [2] NCCL INFO NCCL git version unknown unknown
+nid007652:84424:84424 [0] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007652:84424:84424 [0] NCCL INFO NCCL git version unknown unknown
+nid007652:84431:84431 [3] NCCL INFO Comm config Blocking set to 1
+nid007652:84428:84428 [1] NCCL INFO Comm config Blocking set to 1
+nid007652:84424:84424 [0] NCCL INFO Comm config Blocking set to 1
+nid007652:84430:84430 [2] NCCL INFO Comm config Blocking set to 1
+nid007652:84431:84431 [3] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007652:84428:84428 [1] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007652:84424:84424 [0] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007652:84430:84430 [2] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007649:177624:177624 [2] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007649:177623:177623 [1] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007649:177625:177625 [3] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007649:177622:177622 [0] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollnid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollnid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollnid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v11
+NetPlugin_v11
+NetPlugin_v11
+NetPlugin_v11
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollnid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v10
+NetPlugin_v10
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollnid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v10
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNNetPlugin_v10
+etPlugin_v9
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+etPlugin_v9
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+etPlugin_v8
+etPlugin_v8
+etPlugin_v8
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v7
+etPlugin_v7
+etPlugin_v7
+etPlugin_v7
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNnid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v6
+etPlugin_v6
+etPlugin_v6
+etPlugin_v6
+nid007649:177622:177622 [0] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007649:177623:177623 [1] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007649:177624:177624 [2] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007649:177625:177625 [3] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007652:84431:84431 [3] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007652:84424:84424 [0] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007652:84428:84428 [1] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007652:84430:84430 [2] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v11
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v11
+tPlugin_v11
+tPlugin_v11
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v10
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v10
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNettPlugin_v10
+tPlugin_v10
+Plugin_v9
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+Plugin_v9
+Plugin_v8
+Plugin_v8
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+Plugin_v7
+Plugin_v7
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v7
+Plugin_v7
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v6
+Plugin_v6
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v6
+nid007652:84424:84424 [0] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+Plugin_v6
+nid007652:84431:84431 [3] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007652:84428:84428 [1] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007652:84430:84430 [2] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84430:84430 [2] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007652:84430:84430 [2] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007652:84430:84430 [2] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007652:84430:84430 [2] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84424:84424 [0] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007652:84424:84424 [0] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007652:84424:84424 [0] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007652:84424:84424 [0] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84428:84428 [1] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007652:84428:84428 [1] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007652:84428:84428 [1] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007652:84428:84428 [1] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84431:84431 [3] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007652:84431:84431 [3] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007652:84431:84431 [3] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007652:84431:84431 [3] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177624:177624 [2] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007649:177624:177624 [2] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007649:177624:177624 [2] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007649:177624:177624 [2] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177625:177625 [3] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007649:177625:177625 [3] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007649:177625:177625 [3] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007649:177625:177625 [3] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177622:177622 [0] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007649:177622:177622 [0] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007649:177622:177622 [0] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007649:177622:177622 [0] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177623:177623 [1] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007649:177623:177623 [1] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007649:177623:177623 [1] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007649:177623:177623 [1] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Support for global registrations: false
+nid007652:84424:84424 [0] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Support for global registrations: false
+nid007652:84431:84431 [3] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Support for global registrations: false
+nid007652:84428:84428 [1] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Support for global registrations: false
+nid007652:84430:84430 [2] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007652:84424:84424 [0] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007652:84424:84424 [0] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007652:84424:84424 [0] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007652:84424:84424 [0] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007652:84424:84424 [0] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007652:84424:84424 [0] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84424:84424 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007652:84424:84424 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84424:84424 [0] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007652:84424:84424 [0] NCCL INFO Count not open libibverbs.so
+nid007652:84428:84428 [1] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007652:84428:84428 [1] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007652:84430:84430 [2] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007652:84431:84431 [3] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007652:84430:84430 [2] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007652:84428:84428 [1] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007652:84428:84428 [1] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007652:84431:84431 [3] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007652:84428:84428 [1] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007652:84428:84428 [1] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84428:84428 [1] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007652:84428:84428 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84428:84428 [1] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007652:84428:84428 [1] NCCL INFO Count not open libibverbs.so
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007652:84431:84431 [3] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007652:84431:84431 [3] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007652:84431:84431 [3] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007652:84431:84431 [3] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84431:84431 [3] NCCL INFO NET/OFI gin: Initializing
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such
+[2026-10-13 15:20:43] nid007652:84431:84431 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84431:84431 [3] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+ file or directory
+nid007652:84430:84430 [2] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007652:84430:84430 [2] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007652:84430:84430 [2] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007652:84430:84430 [2] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84430:84430 [2] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007652:84430:84430 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84430:84430 [2] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Support for global registrations: false
+nid007649:177624:177624 [2] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007652:84431:84431 [3] NCCL INFO Count not open libibverbs.so
+nid007652:84430:84430 [2] NCCL INFO Count not open libibverbs.so
+nid007652:84424:84424 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84424:84424 [0] NCCL INFO NET/IB : No device found.
+nid007652:84424:84424 [0] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.152<0>
+nid007652:84424:84424 [0] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007652:84428:84428 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007652:84424:84424 [0] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007652:84424:84424 [0] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007652:84424:84424 [0] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007652:84424:84424 [0] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84424:84424 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007652:84424:84424 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84424:84424 [0] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007652:84424:84424 [0] NCCL INFO Using network AWS Libfabric
+nid007652:84431:84431 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84430:84430 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007652:84424:84424 [0] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007652:84428:84428 [1] NCCL INFO NET/IB : No device found.
+nid007652:84431:84431 [3] NCCL INFO NET/IB : No device found.
+nid007652:84430:84430 [2] NCCL INFO NET/IB : No device found.
+nid007652:84428:84428 [1] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.152<0>
+nid007652:84428:84428 [1] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007652:84431:84431 [3] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.152<0>
+nid007652:84430:84430 [2] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.152<0>
+nid007652:84431:84431 [3] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007652:84430:84430 [2] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007652:84428:84428 [1] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No suchnid007652:84428:84428 [1] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (n file or directory
+il)
+nid007652:84430:84430 [2] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007652:84430:84430 [2] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nnid007652:84428:84428 [1] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+il)
+nid007652:84428:84428 [1] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No suchnid007652:84428:84428 [1] NCCL INFO NET/OFI gin: Initializing
+ file or directory
+nid007652:84431:84431 [3] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+
+[2026-10-13 15:20:43] nid007652:84428:84428 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARnid007652:84431:84431 [3] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nN NET/OFI GIN only supports RDMA transport protocol.
+il)
+nid007652:84428:84428 [1] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007652:84428:84428 [1] NCCL INFO Using network AWS Libfabric
+nid007652:84431:84431 [3] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007652:84431:84431 [3] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007652:84431:84431 [3] NCCL INFO NET/OFI gin: Initializing
+nid007652:84430:84430 [2] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007652:84430:84430 [2] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+
+[2026-10-13 15:20:43] nid007652:84431:84431 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARnid007652:84430:84430 [2] NCCL INFO NET/OFI gin: Initializing
+N NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84431:84431 [3] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007652:84431:84431 [3] NCCL INFO Using network AWS Libfabric
+
+[2026-10-13 15:20:43] nid007652:84430:84430 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007652:84430:84430 [2] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007652:84430:84430 [2] NCCL INFO Using network AWS Libfabric
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Support for global registrations: false
+nid007649:177622:177622 [0] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Support for global registrations: false
+nid007649:177625:177625 [3] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Support for global registrations: false
+nid007649:177623:177623 [1] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007649:177624:177624 [2] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007649:177624:177624 [2] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007649:177624:177624 [2] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007649:177624:177624 [2] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007649:177624:177624 [2] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007649:177624:177624 [2] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177624:177624 [2] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177624:177624 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177624:177624 [2] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007649:177624:177624 [2] NCCL INFO Count not open libibverbs.so
+nid007649:177624:177624 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177624:177624 [2] NCCL INFO NET/IB : No device found.
+nid007649:177624:177624 [2] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.140<0>
+nid007649:177624:177624 [2] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007649:177624:177624 [2] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007649:177624:177624 [2] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007649:177624:177624 [2] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007649:177624:177624 [2] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177624:177624 [2] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177624:177624 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177624:177624 [2] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007649:177624:177624 [2] NCCL INFO Using network AWS Libfabric
+nid007649:177624:177624 [2] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007649:177622:177622 [0] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007649:177622:177622 [0] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007649:177622:177622 [0] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007649:177622:177622 [0] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007649:177622:177622 [0] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177622:177622 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177622:177622 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177622:177622 [0] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007649:177622:177622 [0] NCCL INFO Count not open libibverbs.so
+nid007649:177625:177625 [3] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007649:177625:177625 [3] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007649:177625:177625 [3] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007649:177625:177625 [3] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007649:177625:177625 [3] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177625:177625 [3] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177625:177625 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177625:177625 [3] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007649:177623:177623 [1] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007649:177623:177623 [1] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007649:177625:177625 [3] NCCL INFO Count not open libibverbs.so
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007649:177623:177623 [1] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007649:177623:177623 [1] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007649:177623:177623 [1] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007649:177623:177623 [1] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177623:177623 [1] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177623:177623 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177623:177623 [1] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007649:177622:177622 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177623:177623 [1] NCCL INFO Count not open libibverbs.so
+nid007649:177622:177622 [0] NCCL INFO NET/IB : No device found.
+nid007649:177622:177622 [0] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.140<0>
+nid007649:177622:177622 [0] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007649:177622:177622 [0] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007649:177622:177622 [0] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007649:177622:177622 [0] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177622:177622 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177622:177622 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177622:177622 [0] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007649:177622:177622 [0] NCCL INFO Using network AWS Libfabric
+nid007649:177625:177625 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177623:177623 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007649:177623:177623 [1] NCCL INFO NET/IB : No device found.
+nid007649:177625:177625 [3] NCCL INFO NET/IB : No device found.
+nid007649:177623:177623 [1] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.140<0>
+nid007649:177625:177625 [3] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.46.140<0>
+nid007649:177623:177623 [1] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007649:177625:177625 [3] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007649:177625:177625 [3] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007649:177625:177625 [3] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007649:177625:177625 [3] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177625:177625 [3] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177625:177625 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177625:177625 [3] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No sunid007649:177625:177625 [3] NCCL INFO Using network AWS Libfabric
+ch file or directory
+nid007649:177623:177623 [1] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007649:177623:177623 [1] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007649:177623:177623 [1] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007649:177623:177623 [1] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007649:177623:177623 [1] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:20:43] nid007649:177623:177623 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007649:177623:177623 [1] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007649:177623:177623 [1] NCCL INFO Using network AWS Libfabric
+nid007649:177622:177622 [0] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007649:177625:177625 [3] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007652:84431:84431 [3] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007652:84428:84428 [1] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007652:84430:84430 [2] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007649:177623:177623 [1] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007649:177624:177624 [2] NCCL INFO DMA-BUF is available on GPU device 2
+nid007649:177624:177624 [2] NCCL INFO [Rank 2] ncclCommInitRankConfig comm 0x21d3fad0 rank 2 nranks 8 cudaDev 2 nvmlDev 2 busId 2901000 commId 0x6c2b5ae4f35539af - Init START
+nid007649:177624:177624 [2] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177622:177622 [0] NCCL INFO DMA-BUF is available on GPU device 0
+nid007649:177622:177622 [0] NCCL INFO [Rank 0] ncclCommInitRankConfig comm 0x31d33f70 rank 0 nranks 8 cudaDev 0 nvmlDev 0 busId 901000 commId 0x6c2b5ae4f35539af - Init START
+nid007649:177625:177625 [3] NCCL INFO DMA-BUF is available on GPU device 3
+nid007649:177625:177625 [3] NCCL INFO [Rank 3] ncclCommInitRankConfig comm 0x27aafb50 rank 3 nranks 8 cudaDev 3 nvmlDev 3 busId 3901000 commId 0x6c2b5ae4f35539af - Init START
+nid007649:177625:177625 [3] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177623:177623 [1] NCCL INFO DMA-BUF is available on GPU device 1
+nid007649:177623:177623 [1] NCCL INFO [Rank 1] ncclCommInitRankConfig comm 0x3170f630 rank 1 nranks 8 cudaDev 1 nvmlDev 1 busId 1901000 commId 0x6c2b5ae4f35539af - Init START
+nid007649:177623:177623 [1] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177623:177623 [1] NCCL INFO RAS client listening socket at ::1<28028>
+nid007649:177624:177624 [2] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84424:84424 [0] NCCL INFO DMA-BUF is available on GPU device 0
+nid007652:84424:84424 [0] NCCL INFO [Rank 4] ncclCommInitRankConfig comm 0x1560eba0 rank 4 nranks 8 cudaDev 0 nvmlDev 0 busId 901000 commId 0x6c2b5ae4f35539af - Init START
+nid007652:84424:84424 [0] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177625:177625 [3] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84431:84431 [3] NCCL INFO DMA-BUF is available on GPU device 3
+nid007652:84431:84431 [3] NCCL INFO [Rank 7] ncclCommInitRankConfig comm 0x4c45f580 rank 7 nranks 8 cudaDev 3 nvmlDev 3 busId 3901000 commId 0x6c2b5ae4f35539af - Init START
+nid007652:84431:84431 [3] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007649:177622:177622 [0] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84428:84428 [1] NCCL INFO DMA-BUF is available on GPU device 1
+nid007652:84428:84428 [1] NCCL INFO [Rank 5] ncclCommInitRankConfig comm 0x4a8d05d0 rank 5 nranks 8 cudaDev 1 nvmlDev 1 busId 1901000 commId 0x6c2b5ae4f35539af - Init START
+nid007652:84428:84428 [1] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007652:84424:84424 [0] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84430:84430 [2] NCCL INFO DMA-BUF is available on GPU device 2
+nid007652:84430:84430 [2] NCCL INFO [Rank 6] ncclCommInitRankConfig comm 0xf89fb50 rank 6 nranks 8 cudaDev 2 nvmlDev 2 busId 2901000 commId 0x6c2b5ae4f35539af - Init START
+nid007652:84430:84430 [2] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007652:84428:84428 [1] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84431:84431 [3] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84430:84430 [2] NCCL INFO RAS client listening socket at ::1<28028>
+nid007652:84424:84424 [0] NCCL INFO Bootstrap timings total 0.160683 (create 0.000048, send 0.000145, recv 0.145325, ring 0.0143nid007652:84428:84428 [1] NCCL INFO Bootstrap timings total 0.015460 (create 0.000038, send 0.000097, recv 0.014736, ring 0.0001nid007652:84431:84431 [3] NCCL INFO Bootstrap timings total 0.029282 (create 0.000043, send 0.000117, recv 0.000197, ring 0.000163, delay 0.000001)
+57, delay 0.000001)
+nid007652:84430:84430 [2] NCCL INFO Bootstrap timings total 0.000865 (create 0.000039, send 0.000101, recv 0.000191, ring 0.000143, delay 0.000001)
+50, delay 0.000001)
+nid007649:177624:177624 [2] NCCL INFO Bootstrap timings total 0.761770 (create 0.000047, send 0.000122, recv 0.167775, ring 0.58nid007649:177625:177625 [3] NCCL INFO Bootstrap timings total 0.594056 (create 0.000038, send 0.000093, recv 0.433597, ring 0.15nid007649:177622:177622 [0] NCCL INFO Bootstrap timings total 0.604622 (create 0.000036, send 0.000105, recv 0.020684, ring 0.022936, delay 0.000001)
+8432, delay 0.000001)
+nid007649:177623:177623 [1] NCCL INFO Bootstrap timings total 0.584008 (create 0.000036, send 0.000090, recv 0.000108, ring 0.589713, delay 0.000001)
+2949, delay 0.000000)
+nid007652:84431:84431 [3] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007652:84424:84424 [0] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007652:84430:84430 [2] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007652:84428:84428 [1] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007649:177623:177623 [1] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007649:177624:177624 [2] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007649:177622:177622 [0] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007649:177625:177625 [3] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007652:84431:84431 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007652:84430:84430 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007649:177623:177623 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007649:177622:177622 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007649:177624:177624 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007649:177625:177625 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007652:84424:84424 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007652:84428:84428 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007649:177623:177623 [1] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007649:177624:177624 [2] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007649:177622:177622 [0] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007649:177625:177625 [3] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007649:177623:177623 [1] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007649:177624:177624 [2] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007649:177622:177622 [0] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007649:177625:177625 [3] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007649:177623:177623 [1] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007649:177624:177624 [2] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007649:177622:177622 [0] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007649:177625:177625 [3] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007649:177624:177624 [2] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 2 is empty, ignoring. (GPU affinity = 144-215 ; Cnid007649:177622:177622 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0-7. (GPU affinity = 0-71 ; CPU affinity = 0nid007649:177623:177623 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is empty, ignoring. (GPU affinity = 72-143 ; CPnid007649:177625:177625 [3] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 3 is empty, ignoring. (GPU affinity = 216-287 ; CPU affinity = 0-7).
+-7).
+U affinity = 0-7).
+PU affinity = 0-7).
+nid007649:177624:177624 [2] NCCL INFO NVLS multicast support is not available on dev 2
+nid007649:177625:177625 [3] NCCL INFO NVLS multicast support is not available on dev 3
+nid007649:177623:177623 [1] NCCL INFO NVLS multicast support is not available on dev 1
+nid007649:177622:177622 [0] NCCL INFO NVLS multicast support is not available on dev 0
+nid007652:84430:84430 [2] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007652:84430:84430 [2] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007652:84430:84430 [2] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007652:84424:84424 [0] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007652:84424:84424 [0] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007652:84424:84424 [0] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007652:84428:84428 [1] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007652:84428:84428 [1] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007652:84428:84428 [1] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007652:84431:84431 [3] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007652:84431:84431 [3] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007652:84431:84431 [3] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007652:84430:84430 [2] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 2 is empty, ignoring. (GPU affinity = 144-215 ; CPU affinity = 0-7).
+nid007652:84430:84430 [2] NCCL INFO NVLS multicast support is not available on dev 2
+nid007652:84424:84424 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0-7. (GPU affinity = 0-71 ; CPU affinity = 0-7).
+nid007652:84428:84428 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is empty, ignoring. (GPU affinity = 72-143 ; CPU affinity = 0-7).
+nid007652:84428:84428 [1] NCCL INFO NVLS multicast support is not available on dev 1
+nid007652:84424:84424 [0] NCCL INFO NVLS multicast support is not available on dev 0
+nid007652:84431:84431 [3] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 3 is empty, ignoring. (GPU affinity = 216-287 ; CPU affinity = 0-7).
+nid007652:84431:84431 [3] NCCL INFO NVLS multicast support is not available on dev 3
+nid007649:177623:177623 [1] NCCL INFO Rank 1: 4 Net devices
+nid007649:177623:177623 [1] NCCL INFO Rank 1: 0 CollNet devices
+nid007649:177625:177625 [3] NCCL INFO Rank 3: 4 Net devices
+nid007649:177625:177625 [3] NCCL INFO Rank 3: 0 CollNet devices
+nid007649:177622:177622 [0] NCCL INFO Rank 0: 4 Net devices
+nid007649:177622:177622 [0] NCCL INFO Rank 0: 0 CollNet devices
+nid007649:177624:177624 [2] NCCL INFO Rank 2: 4 Net devices
+nid007649:177624:177624 [2] NCCL INFO Rank 2: 0 CollNet devices
+nid007652:84431:84431 [3] NCCL INFO Rank 7: 4 Net devices
+nid007652:84431:84431 [3] NCCL INFO Rank 7: 0 CollNet devices
+nid007652:84424:84424 [0] NCCL INFO Rank 4: 4 Net devices
+nid007652:84424:84424 [0] NCCL INFO Rank 4: 0 CollNet devices
+nid007652:84430:84430 [2] NCCL INFO Rank 6: 4 Net devices
+nid007652:84430:84430 [2] NCCL INFO Rank 6: 0 CollNet devices
+nid007652:84428:84428 [1] NCCL INFO Rank 5: 4 Net devices
+nid007652:84428:84428 [1] NCCL INFO Rank 5: 0 CollNet devices
+nid007652:84431:84431 [3] NCCL INFO comm 0x4c45f580 rank 7 nRanks 8 nNodes 2 localRanks 4 localRank 3 MNNVL 0
+nid007649:177625:177625 [3] NCCL INFO comm 0x27aafb50 rank 3 nRanks 8 nNodes 2 localRanks 4 localRank 3 MNNVL 0
+nid007649:177624:177624 [2] NCCL INFO comm 0x21d3fad0 rank 2 nRanks 8 nNodes 2 localRanks 4 localRank 2 MNNVL 0
+nid007652:84431:84431 [3] NCCL INFO Trees [0] -1/-1/-1->7->6 [1] 4/-1/-1->7->6 [2] 5/-1/-1->7->6 [3] 5/-1/-1->7->3 [4] -1/-1/-1-nid007652:84430:84430 [2] NCCL INFO comm 0xf89fb50 rank 6 nRanks 8 nNodes 2 localRanks 4 localRank 2 MNNVL 0
+>7->6 [5] 4/-1/-1->7->6 [6] 5/-1/-1->7->6 [7] 5/-1/-1->7->3 [8] -1/-1/-1->7->6 [9] 4/-1/-1->7->6 [10] 5/-1/-1->7->6 [11] 5/-1/-1->7->3 [12] -1/-1/-1->7->6 [13] 4/-1/-1->7->6 [14] 5/-1/-1->7->6 [15] 5/3/-1->7->-1 [16] -1/-1/-1->7->6 [17] 4/-1/-1->7->6 [18] 5/-1/-1->7->6 [19] 5/3/-1->7->-1 [20] -1/-1/-1->7->6 [21] 4/-1/-1->7->6 [22] 5/-1/-1->7->6 [23] 5/3/-1->7->-1
+nid007652:84431:84431 [3] NCCL INFO P2P Chunksize set to 131072
+nid007652:84430:84430 [2] NCCL INFO Trees [0] 7/-1/-1->6->5 [1] 7/-1/-1->6->5 [2] 7/-1/-1->6->2 [3] 4/-1/-1->6->5 [4] 7/-1/-1->6->5 [5] 7/-1/-1->6->5 [6] 7/-1/-1->6->2 [7] 4/-1/-1->6->5 [8] 7/-1/-1->6->5 [9] 7/-1/-1->6->5 [10] 7/-1/-1->6->2 [11] 4/-1/-1->6->5 [12] 7/-1/-1->6->5 [13] 7/-1/-1->6->5 [14] 7/2/-1->6->-1 [15] 4/-1/-1->6->5 [16] 7/-1/-1->6->5 [17] 7/-1/-1->6->5 [18] 7/2/-1->6->-1 [19] 4/-1/-1->6->5 [20] 7/-1/-1->6->5 [21] 7/-1/-1->6->5 [22] 7/2/-1->6->-1 [23] 4/-1/-1->6->5
+nid007652:84430:84430 [2] NCCL INFO P2P Chunksize set to 131072
+nid007649:177625:177625 [3] NCCL INFO Trees [0] -1/-1/-1->3->2 [1] 0/-1/-1->3->2 [2] 0/-1/-1->3->2 [3] 0/7/-1->3->-1 [4] -1/-1/-1->3->2 [5] 0/-1/-1->3->2 [6] 0/-1/-1->3->2 [7] 0/7/-1->3->-1 [8] -1/-1/-1->3->2 [9] 0/-1/-1->3->2 [10] 0/-1/-1->3->2 [11] 0/7/-1->3->-1 [12] -1/-1/-1->3->2 [13] 0/-1/-1->3->2 [14] 0/-1/-1->3->2 [15] 0/-1/-1->3->7 [16] -1/-1/-1->3->2 [17] 0/-1/-1->3->2 [18] 0/-1/-1->3->2 [19] 0/-1/-1->3->7 [20] -1/-1/-1->3->2 [21] 0/-1/-1->3->2 [22] 0/-1/-1->3->2 [23] 0/-1/-1->3->7
+nid007649:177622:177622 [0] NCCL INFO Local Net device counts across ranks: min 4 max 4
+nid007649:177623:177623 [1] NCCL INFO comm 0x3170f630 rank 1 nRanks 8 nNodes 2 localRanks 4 localRank 1 MNNVL 0
+nid007649:177622:177622 [0] NCCL INFO Local CollNet device counts across ranks: min 0 max 0
+nid007649:177624:177624 [2] NCCL INFO Trees [0] 3/-1/-1->2->1 [1] 3/-1/-1->2->1 [2] 3/6/-1->2->-1 [3] -1/-1/-1->2->1 [4] 3/-1/-1nid007649:177625:177625 [3] NCCL INFO P2P Chunksize set to 131072
+nid007652:84424:84424 [0] NCCL INFO comm 0x1560eba0 rank 4 nRanks 8 nNodes 2 localRanks 4 localRank 0 MNNVL 0
+nid007652:84428:84428 [1] NCCL INFO comm 0x4a8d05d0 rank 5 nRanks 8 nNodes 2 localRanks 4 localRank 1 MNNVL 0
+->2->1 [5] 3/-1/-1->2->1 [6] 3/6/-1->2->-1 [7] -1/-1/-1->2->1 [8] 3/-1/-1->2->1 [9] 3/-1/-1->2->1 [10] 3/6/-1->2->-1 [11] -1/-1/nid007649:177622:177622 [0] NCCL INFO comm 0x31d33f70 rank 0 nRanks 8 nNodes 2 localRanks 4 localRank 0 MNNVL 0
+-1->2->1 [12] 3/-1/-1->2->1 [13] 3/-1/-1->2->1 [14] 3/-1/-1->2->6 [15] -1/-1/-1->2->1 [16] 3/-1/-1->2->1 [17] 3/-1/-1->2->1 [18] 3/-1/-1->2->6 [19] -1/-1/-1->2->1 [20] 3/-1/-1->2->1 [21] 3/-1/-1->2->1 [22] 3/-1/-1->2->6 [23] -1/-1/-1->2->1
+nid007649:177624:177624 [2] NCCL INFO P2P Chunksize set to 131072
+nid007652:84424:84424 [0] NCCL INFO Trees [0] 5/-1/-1->4->0 [1] -1/-1/-1->4->7 [2] -1/-1/-1->4->5 [3] -1/-1/-1->4->6 [4] 5/-1/-1->4->0 [5] -1/-1/-1->4->7 [6] -1/-1/-1->4->5 [7] -1/-1/-1->4->6 [8] 5/-1/-1->4->0 [9] -1/-1/-1->4->7 [10] -1/-1/-1->4->5 [11] -1/-1/-1->4->6 [12] 5/0/-1->4->-1 [13] -1/-1/-1->4->7 [14] -1/-1/-1->4->5 [15] -1/-1/-1->4->6 [16] 5/0/-1->4->-1 [17] -1/-1/-1->4-nid007652:84428:84428 [1] NCCL INFO Trees [0] 6/-1/-1->5->4 [1] 6/-1/-1->5->1 [2] 4/-1/-1->5->7 [3] 6/-1/-1->5->7 [4] 6/-1/-1->5>7 [18] -1/-1/-1->4->5 [19] -1/-1/-1->4->6 [20] 5/0/-1->4->-1 [21] -1/-1/-1->4->7 [22] -1/-1/-1->4->5 [23] -1/-1/-1->4->6
+->4 [5] 6/-1/-1->5->1 [6] 4/-1/-1->5->7 [7] 6/-1/-1->5->7 [8] 6/-1/-1->5->4 [9] 6/-1/-1->5->1 [10] 4/-1/-1->5->7 [11] 6/-1/-1->5->7 [12] 6/-1/-1->5->4 [13] 6/1/-1->5->-1 [14] 4/-1/-1->5->7 [15] 6/-1/-1->5->7 [16] 6/-1/-1->5->4 [17] 6/1/-1->5->-1 [18] 4/-1/-1->5->7 [19] 6/-1/-1->5->7 [20] 6/-1/-1->5->4 [21] 6/1/-1->5->-1 [22] 4/-1/-1->5->7 [23] 6/-1/-1->5->7
+nid007649:177623:177623 [1] NCCL INFO Trees [0] 2/-1/-1->1->0 [1] 2/5/-1->1->-1 [2] -1/-1/-1->1->0 [3] 2/-1/-1->1->0 [4] 2/-1/-1nid007649:177622:177622 [0] NCCL INFO Channel 00/24 : 0 1 2 3 4 5 6 7
+->1->0 [5] 2/5/-1->1->-1 [6] -1/-1/-1->1->0 [7] 2/-1/-1->1->0 [8] 2/-1/-1->1->0 [9] 2/5/-1->1->-1 [10] -1/-1/-1->1->0 [11] 2/-1/-1->1->0 [12] 2/-1/-1->1->0 [13] 2/-1/-1->1->5 [14] -1/-1/-1->1->0 [15] 2/-1/-1->1->0 [16] 2/-1/-1->1->0 [17] 2/-1/-1->1->5 [18]nid007649:177622:177622 [0] NCCL INFO Channel 01/24 : 0 3 2 5 4 6 7 1
+ -1/-1/-1->1->0 [19] 2/-1/-1->1->0 [20] 2/-1/-1->1->0 [21] 2/-1/-1->1->5 [22] -1/-1/-1->1->0 [23] 2/-1/-1->1->0
+nid007649:177622:177622 [0] NCCL INFO Channel 02/24 : 0 3 6 5 4 7 2 1
+nid007649:177623:177623 [1] NCCL INFO P2P Chunksize set to 131072
+nid007649:177622:177622 [0] NCCL INFO Channel 03/24 : 0 7 5 4 6 3 2 1
+nid007649:177622:177622 [0] NCCL INFO Channel 04/24 : 0 3 2 1 4 5 7 6
+nid007652:84424:84424 [0] NCCL INFO P2P Chunksize set to 131072
+nid007649:177622:177622 [0] NCCL INFO Channel 05/24 : 0 2 3 5 4 7 6 1
+nid007649:177622:177622 [0] NCCL INFO Channel 06/24 : 0 6 5 7 4 2 1 3
+nid007649:177622:177622 [0] NCCL INFO Channel 07/24 : 0 1 7 5 6 4 3 2
+nid007649:177622:177622 [0] NCCL INFO Channel 08/24 : 0 3 1 2 4 6 7 5
+nid007649:177622:177622 [0] NCCL INFO Channel 09/24 : 0 5 7 6 4 1 3 2
+nid007649:177622:177622 [0] NCCL INFO Channel 10/24 : 0 3 1 6 4 7 5 2
+nid007649:177622:177622 [0] NCCL INFO Channel 11/24 : 0 2 7 6 4 5 3 1
+nid007649:177622:177622 [0] NCCL INFO Channel 12/24 : 0 1 2 3 4 5 6 7
+nid007649:177622:177622 [0] NCCL INFO Channel 13/24 : 0 3 2 5 4 6 7 1
+nid007649:177622:177622 [0] NCCL INFO Channel 14/24 : 0 3 6 5 4 7 2 1
+nid007652:84428:84428 [1] NCCL INFO P2P Chunksize set to 131072
+nid007649:177622:177622 [0] NCCL INFO Channel 15/24 : 0 7 5 4 6 3 2 1
+nid007649:177622:177622 [0] NCCL INFO Channel 16/24 : 0 3 2 1 4 5 7 6
+nid007649:177622:177622 [0] NCCL INFO Channel 17/24 : 0 2 3 5 4 7 6 1
+nid007649:177622:177622 [0] NCCL INFO Channel 18/24 : 0 6 5 7 4 2 1 3
+nid007649:177622:177622 [0] NCCL INFO Channel 19/24 : 0 1 7 5 6 4 3 2
+nid007649:177622:177622 [0] NCCL INFO Channel 20/24 : 0 3 1 2 4 6 7 5
+nid007649:177622:177622 [0] NCCL INFO Channel 21/24 : 0 5 7 6 4 1 3 2
+nid007649:177622:177622 [0] NCCL INFO Channel 22/24 : 0 3 1 6 4 7 5 2
+nid007649:177622:177622 [0] NCCL INFO Channel 23/24 : 0 2 7 6 4 5 3 1
+nid007649:177622:177622 [0] NCCL INFO Trees [0] 1/4/-1->0->-1 [1] -1/-1/-1->0->3 [2] 1/-1/-1->0->3 [3] 1/-1/-1->0->3 [4] 1/4/-1->0->-1 [5] -1/-1/-1->0->3 [6] 1/-1/-1->0->3 [7] 1/-1/-1->0->3 [8] 1/4/-1->0->-1 [9] -1/-1/-1->0->3 [10] 1/-1/-1->0->3 [11] 1/-1/-1->0->3 [12] 1/-1/-1->0->4 [13] -1/-1/-1->0->3 [14] 1/-1/-1->0->3 [15] 1/-1/-1->0->3 [16] 1/-1/-1->0->4 [17] -1/-1/-1->0->3 [18] 1/-1/-1->0->3 [19] 1/-1/-1->0->3 [20] 1/-1/-1->0->4 [21] -1/-1/-1->0->3 [22] 1/-1/-1->0->3 [23] 1/-1/-1->0->3
+nid007649:177622:177622 [0] NCCL INFO P2P Chunksize set to 131072
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007652:84431:84431 [3] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007652:84431:84431 [3] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_vnid007649:177623:177623 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+6
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007649:177622:177622 [0] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007649:177623:177623 [1] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177622:177923 [0] NCCL INFO [Proxy Service] Device 0 CPU core 3
+nid007649:177622:177923 [0] NCCL INFO proxy listening socket at 172.28.46.140<58367>
+nid007652:84431:84718 [0] NCCL INFO [Proxy Service] Device 3 CPU core 6
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007652:84428:84428 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007652:84431:84718 [3] NCCL INFO proxy listening socket at 172.28.46.152<50927>
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007652:84431:84719 [0] NCCL INFO [Proxy Service UDS] Device 3 CPU core 1
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177623:177925 [0] NCCL INFO [Proxy Service] Device 1 CPU core 4
+nid007649:177623:177925 [1] NCCL INFO proxy listening socket at 172.28.46.140<44001>
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007652:84428:84428 [1] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177623:177926 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 3
+nid007649:177622:177924 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 5
+nid007652:84428:84720 [0] NCCL INFO [Proxy Service] Device 1 CPU core 4
+nid007652:84428:84720 [1] NCCL INFO proxy listening socket at 172.28.46.152<36707>
+nid007652:84428:84721 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 0
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007649:177624:177624 [2] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007649:177624:177624 [2] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007649:177625:177625 [3] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007649:177624:177927 [0] NCCL INFO [Proxy Service] Device 2 CPU core 6
+nid007649:177624:177927 [2] NCCL INFO proxy listening socket at 172.28.46.140<36881>
+nid007649:177624:177928 [0] NCCL INFO [Proxy Service UDS] Device 2 CPU core 4
+nid007649:177625:177929 [0] NCCL INFO [Proxy Service] Device 3 CPU core 6
+nid007649:177625:177929 [3] NCCL INFO proxy listening socket at 172.28.46.140<38589>
+nid007649:177625:177930 [0] NCCL INFO [Proxy Service UDS] Device 3 CPU core 5
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007652:84424:84424 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007652:84424:84424 [0] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007652:84424:84722 [0] NCCL INFO [Proxy Service] Device 0 CPU core 6
+nid007652:84424:84722 [0] NCCL INFO proxy listening socket at 172.28.46.152<46941>
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007652:84430:84430 [2] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007652:84424:84723 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 0
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007652:84430:84430 [2] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007652:84430:84724 [0] NCCL INFO [Proxy Service] Device 2 CPU core 4
+nid007652:84430:84724 [2] NCCL INFO proxy listening socket at 172.28.46.152<60731>
+nid007652:84430:84725 [0] NCCL INFO [Proxy Service UDS] Device 2 CPU core 1
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007649:177622:177622 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007649:177622:177622 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007649:177622:177622 [0] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007649:177622:177622 [0] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007649:177622:177622 [0] NCCL INFO Enabled NCCL Func/Proto/Algo Matrix:
+     Function |       LL     LL128    Simple   |          Tree           Ring  CollNetDirect   CollNetChain           NVLS       NVLSTree            PAT  
+    Broadcast |        1         0         1   |             1              1              1              1              0              1              1  
+       Reduce |        1         0         1   |             1              1              1              1              0              1              1  
+    AllGather |        1         0         1   |             1              1              1              1              0              1              1  
+ReduceScatter |        1         0         1   |             1              1              1              1              0              1              1  
+    AllReduce |        1         0         1   |             1              1              1              1              0              1              1  
+
+nid007649:177622:177622 [0] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007649:177622:177622 [0] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007649:177622:177622 [0] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007652:84424:84424 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007652:84424:84424 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007652:84424:84424 [0] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007652:84424:84424 [0] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007652:84424:84424 [0] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007652:84424:84424 [0] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007652:84424:84424 [0] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007649:177622:177622 [0] NCCL INFO CC Off, workFifoBytes 1048576
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007652:84428:84428 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007652:84428:84428 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007652:84428:84428 [1] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007652:84428:84428 [1] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007652:84428:84428 [1] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007652:84428:84428 [1] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007652:84428:84428 [1] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007652:84431:84431 [3] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007649:177623:177623 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007652:84431:84431 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007652:84431:84431 [3] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007649:177623:177623 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007652:84431:84431 [3] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007652:84431:84431 [3] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007652:84431:84431 [3] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007649:177623:177623 [1] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007649:177623:177623 [1] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007649:177623:177623 [1] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007649:177623:177623 [1] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007649:177623:177623 [1] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007652:84431:84431 [3] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007649:177624:177624 [2] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007649:177624:177624 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007649:177624:177624 [2] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007649:177624:177624 [2] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007649:177624:177624 [2] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007649:177624:177624 [2] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007649:177624:177624 [2] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007649:177625:177625 [3] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007649:177625:177625 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007649:177625:177625 [3] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007649:177625:177625 [3] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007649:177625:177625 [3] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007649:177625:177625 [3] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007649:177625:177625 [3] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007652:84430:84430 [2] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007652:84430:84430 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007652:84430:84430 [2] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007652:84430:84430 [2] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007652:84430:84430 [2] NCCL INFO threadThresholds 8/8/64 | 64/8/64 | 512 | 512
+nid007652:84430:84430 [2] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 4 p2p channels per peer
+nid007652:84430:84430 [2] NCCL INFO Symmetric memory is not supported. cuMemEnable 1, globalGinSupport 0, cuMemGdrSupport 1
+nid007649:177624:177624 [2] NCCL INFO ncclCommInitRankConfig comm 0x21d3fad0 rank 2 nranks 8 cudaDev 2 nvmlDev 2 busId 2901000 cnid007649:177623:177623 [1] NCCL INFO ncclCommInitRankConfig comm 0x3170f630 rank 1 nranks 8 cudaDev 1 nvmlDev 1 busId 1901000 cnid007649:177622:177622 [0] NCCL INFO ncclCommInitRankConfig comm 0x31d33f70 rank 0 nranks 8 cudaDev 0 nvmlDev 0 busId 901000 coommId 0x6c2b5ae4f35539af - Init COMPLETE
+nid007649:177625:177625 [3] NCCL INFO ncclCommInitRankConfig comm 0x27aafb50 rank 3 nranks 8 cudaDev 3 nvmlDev 3 busId 3901000 commId 0x6c2b5ae4f35539af - Init COMPLETE
+mmId 0x6c2b5ae4f35539af - Init COMPLETE
+ommId 0x6c2b5ae4f35539af - Init COMPLETE
+nid007649:177623:177623 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 8 total 3.45 (kernels 0.15, alloc 2.2nid007649:177624:177624 [2] NCCL INFO Init timings - ncclCommInitRankConfig: rank 2 nranks 8 total 3.45 (kernels 0.15, alloc 2.0nid007649:177622:177622 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 8 total 3.45 (kernels 0.15, alloc 2.1nid007649:177625:177625 [3] NCCL INFO Init timings - ncclCommInitRankConfig: rank 3 nranks 8 total 3.45 (kernels 0.15, alloc 2.13, bootstrap 0.76, allgathers 0.01, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+0, bootstrap 0.58, allgathers 0.01, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+9, bootstrap 0.59, allgathers 0.01, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+8, bootstrap 0.60, allgathers 0.01, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+nid007652:84431:84431 [3] NCCL INFO ncclCommInitRankConfig comm 0x4c45f580 rank 7 nranks 8 cudaDev 3 nvmlDev 3 busId 3901000 comnid007652:84428:84428 [1] NCCL INFO ncclCommInitRankConfig comm 0x4a8d05d0 rank 5 nranks 8 cudaDev 1 nvmlDev 1 busId 1901000 commId 0x6c2b5ae4f35539af - Init COMPLETE
+mId 0x6c2b5ae4f35539af - Init COMPLETE
+nid007652:84431:84431 [3] NCCL INFO Init timings - ncclCommInitRankConfig: rank 7 nranks 8 total 3.45 (kernels 0.15, alloc 2.76,nid007652:84428:84428 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 5 nranks 8 total 3.45 (kernels 0.15, alloc 2.77, bootstrap 0.03, allgathers 0.01, topo 0.03, graphs 0.43, connections 0.03, rest 0.01)
+ bootstrap 0.02, allgathers 0.00, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+nid007652:84430:84430 [2] NCCL INFO ncclCommInitRankConfig comm 0xf89fb50 rank 6 nranks 8 cudaDev 2 nvmlDev 2 busId 2901000 commId 0x6c2b5ae4f35539af - Init COMPLETE
+nid007652:84424:84424 [0] NCCL INFO ncclCommInitRankConfig comm 0x1560eba0 rank 4 nranks 8 cudaDev 0 nvmlDev 0 busId 901000 commId 0x6c2b5ae4f35539af - Init COMPLETE
+nid007652:84430:84430 [2] NCCL INFO Init timings - ncclCommInitRankConfig: rank 6 nranks 8 total 3.45 (kernels 0.15, alloc 2.79, bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+nid007652:84424:84424 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 4 nranks 8 total 3.45 (kernels 0.15, alloc 2.63, bootstrap 0.16, allgathers 0.00, topo 0.03, graphs 0.44, connections 0.03, rest 0.01)
+----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 8 processes
+----------------------------------------------------------------------------------------------------
+
+nid007649:177624:177624 [2] NCCL INFO Channel 00/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 00/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007649:177623:177623 [1] NCCL INFO Channel 08/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 05/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 12/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 12/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 17/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 20/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177622:177931 [0] NCCL INFO [Proxy Progress] Device 0 CPU core 5
+nid007652:84430:84430 [2] NCCL INFO Channel 00/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84424:84726 [0] NCCL INFO [Proxy Progress] Device 0 CPU core 1
+nid007652:84430:84430 [2] NCCL INFO Channel 01/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007649:177625:177932 [0] NCCL INFO [Proxy Progress] Device 3 CPU core 2
+nid007649:177625:177625 [3] NCCL INFO Channel 00/0 : 3[3] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007652:84428:84428 [1] NCCL INFO Channel 00/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 12/0 : 3[3] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007652:84431:84431 [3] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007652:84428:84428 [1] NCCL INFO Channel 07/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 08/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 12/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 19/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007652:84430:84430 [2] NCCL INFO Channel 12/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 13/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 20/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84431:84728 [0] NCCL INFO [Proxy Progress] Device 3 CPU core 6
+nid007652:84431:84431 [3] NCCL INFO Channel 00/0 : 7[3] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007652:84431:84431 [3] NCCL INFO Channel 12/0 : 7[3] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007649:177624:177934 [0] NCCL INFO [Proxy Progress] Device 2 CPU core 2
+nid007649:177624:177624 [2] NCCL INFO Channel 08/0 : 2[2] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007649:177624:177624 [2] NCCL INFO Channel 20/0 : 2[2] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007652:84430:84430 [2] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007652:84430:84729 [0] NCCL INFO [Proxy Progress] Device 2 CPU core 0
+nid007652:84430:84430 [2] NCCL INFO Channel 04/0 : 6[2] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007652:84430:84430 [2] NCCL INFO Channel 16/0 : 6[2] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007652:84424:84424 [0] NCCL INFO Channel 00/0 : 3[3] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 12/0 : 3[3] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 00/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 04/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 11/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 12/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 16/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 23/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 00/0 : 7[3] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 12/0 : 7[3] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 00/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 08/0 : 2[2] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 20/0 : 2[2] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 01/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 03/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 08/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 07/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 13/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 15/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 12/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 20/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 19/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 04/0 : 1[1] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 05/0 : 3[3] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007652:84424:84424 [0] NCCL INFO Channel 16/0 : 1[1] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 02/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 17/0 : 3[3] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007649:177622:177622 [0] NCCL INFO Channel 04/0 : 6[2] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 05/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 16/0 : 6[2] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 05/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 10/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84428:84730 [0] NCCL INFO [Proxy Progress] Device 1 CPU core 0
+nid007649:177622:177622 [0] NCCL INFO Channel 11/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 14/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 17/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 23/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 17/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 22/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 08/0 : 5[1] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 20/0 : 5[1] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 01/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 01/0 : 7[3] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007649:177622:177622 [0] NCCL INFO Channel 02/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 13/0 : 7[3] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007649:177622:177622 [0] NCCL INFO Channel 04/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177623:177936 [0] NCCL INFO [Proxy Progress] Device 1 CPU core 5
+nid007649:177622:177622 [0] NCCL INFO Channel 08/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 10/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 13/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 14/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 16/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 20/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 22/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 05/0 : 3[3] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 17/0 : 3[3] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 04/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 06/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 09/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 16/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 18/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 21/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 01/0 : 2[2] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 13/0 : 2[2] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007652:84428:84428 [1] NCCL INFO Channel 08/0 : 5[1] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007652:84428:84428 [1] NCCL INFO Channel 20/0 : 5[1] -> 0[0] [send] via NET/AWS Libfabric/0
+nid007652:84430:84430 [2] NCCL INFO Channel 02/0 : 3[3] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 14/0 : 3[3] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 05/0 : 6[2] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007652:84430:84430 [2] NCCL INFO Channel 17/0 : 6[2] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007649:177623:177623 [1] NCCL INFO Channel 01/0 : 7[3] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 13/0 : 7[3] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 06/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 09/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 02/0 : 7[3] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 18/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 14/0 : 7[3] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 21/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 01/0 : 2[2] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007649:177624:177624 [2] NCCL INFO Channel 13/0 : 2[2] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007652:84428:84428 [1] NCCL INFO Channel 09/0 : 0[0] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 05/0 : 6[2] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 21/0 : 0[0] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 10/0 : 5[1] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007649:177623:177623 [1] NCCL INFO Channel 17/0 : 6[2] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007652:84428:84428 [1] NCCL INFO Channel 22/0 : 5[1] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007649:177623:177623 [1] NCCL INFO Channel 04/0 : 1[1] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007649:177623:177623 [1] NCCL INFO Channel 16/0 : 1[1] -> 4[0] [send] via NET/AWS Libfabric/0
+nid007649:177623:177623 [1] NCCL INFO Channel 09/0 : 4[0] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 21/0 : 4[0] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 10/0 : 1[1] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007649:177623:177623 [1] NCCL INFO Channel 22/0 : 1[1] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007652:84431:84431 [3] NCCL INFO Channel 02/0 : 7[3] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007652:84431:84431 [3] NCCL INFO Channel 14/0 : 7[3] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007649:177624:177624 [2] NCCL INFO Channel 10/0 : 5[1] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 22/0 : 5[1] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 11/0 : 2[2] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007652:84424:84424 [0] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007649:177624:177624 [2] NCCL INFO Channel 23/0 : 2[2] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007652:84424:84424 [0] NCCL INFO Channel 09/0 : 4[0] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007652:84424:84424 [0] NCCL INFO Channel 21/0 : 4[0] -> 1[1] [send] via NET/AWS Libfabric/1
+nid007649:177625:177625 [3] NCCL INFO Channel 02/0 : 3[3] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007649:177625:177625 [3] NCCL INFO Channel 14/0 : 3[3] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007652:84430:84430 [2] NCCL INFO Channel 10/0 : 1[1] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 22/0 : 1[1] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 03/0 : 6[2] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007652:84430:84430 [2] NCCL INFO Channel 15/0 : 6[2] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007649:177622:177622 [0] NCCL INFO NCCL_NET_GDR_READ set by environment to 1.
+nid007649:177622:177622 [0] NCCL INFO Channel 09/0 : 0[0] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007649:177622:177622 [0] NCCL INFO Channel 21/0 : 0[0] -> 5[1] [send] via NET/AWS Libfabric/1
+nid007649:177623:177623 [1] NCCL INFO Channel 07/0 : 1[1] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007649:177623:177623 [1] NCCL INFO Channel 19/0 : 1[1] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007652:84428:84428 [1] NCCL INFO Channel 11/0 : 5[1] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007652:84428:84428 [1] NCCL INFO Channel 23/0 : 5[1] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007652:84431:84431 [3] NCCL INFO Channel 11/0 : 2[2] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 23/0 : 2[2] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 06/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 18/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 07/0 : 1[1] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 06/0 : 4[0] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 19/0 : 1[1] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 03/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 18/0 : 4[0] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 07/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 07/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 03/0 : 6[2] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 15/0 : 6[2] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 06/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 09/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 08/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 10/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 10/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 18/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 19/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 15/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 21/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 19/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 22/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 06/0 : 0[0] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 11/0 : 5[1] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 18/0 : 0[0] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 07/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 23/0 : 5[1] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 08/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 20/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 10/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 09/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 22/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 06/0 : 4[0] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007649:177625:177625 [3] NCCL INFO Channel 11/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 18/0 : 4[0] -> 2[2] [send] via NET/AWS Libfabric/2
+nid007652:84430:84430 [2] NCCL INFO Channel 10/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 20/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 11/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 22/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 19/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 21/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 23/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 06/0 : 0[0] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007649:177622:177622 [0] NCCL INFO Channel 18/0 : 0[0] -> 6[2] [send] via NET/AWS Libfabric/2
+nid007652:84430:84430 [2] NCCL INFO Channel 22/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 23/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 03/0 : 0[0] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007649:177622:177622 [0] NCCL INFO Channel 15/0 : 0[0] -> 7[3] [send] via NET/AWS Libfabric/3
+nid007652:84431:84431 [3] NCCL INFO Channel 03/0 : 0[0] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 15/0 : 0[0] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 04/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 05/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 09/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 11/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 07/0 : 4[0] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 16/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 19/0 : 4[0] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 01/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 17/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 03/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 04/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 02/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 21/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 07/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 03/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 23/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 07/0 : 4[0] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007652:84428:84428 [1] NCCL INFO Channel 01/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 19/0 : 4[0] -> 3[3] [send] via NET/AWS Libfabric/3
+nid007649:177625:177625 [3] NCCL INFO Channel 09/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 04/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 02/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 13/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 06/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 03/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 15/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 05/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 14/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 02/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 06/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 13/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 16/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 01/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 15/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 14/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 14/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 16/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 19/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 02/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 18/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 15/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 17/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 21/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 18/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 03/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 05/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 11/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 13/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 14/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 15/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 17/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 23/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007652:84430:84430 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007652:84424:84424 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007649:177622:177622 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007649:177623:177623 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007649:177624:177624 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007649:177625:177625 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007652:84428:84428 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 0
+nid007649:177622:177622 [0] NCCL INFO Channel 02/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 03/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 04/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 06/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 08/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 10/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 11/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 14/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 15/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 16/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 18/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 20/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 22/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 23/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 02/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 06/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 08/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 10/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 14/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 18/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 20/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 01/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 03/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 04/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 22/0 : 4[0] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 05/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 08/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 09/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 11/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 02/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 04/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 13/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 15/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 05/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 06/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 16/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 09/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 10/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 14/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 16/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 17/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 18/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 21/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 22/0 : 6[2] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 17/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 20/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 21/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 23/0 : 5[1] -> 6[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 07/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 02/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 11/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 03/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 19/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 07/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 23/0 : 4[0] -> 6[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 10/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 11/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 01/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 14/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 09/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 02/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 06/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 15/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 13/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 10/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 19/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 14/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 21/0 : 4[0] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 18/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 22/0 : 2[2] -> 6[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 22/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 02/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 06/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 23/0 : 5[1] -> 7[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 10/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 14/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 18/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 22/0 : 6[2] -> 2[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 01/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 02/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 04/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 06/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 01/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 00/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 03/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 01/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 03/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 07/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 08/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 04/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 05/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 11/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 08/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 09/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 09/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 04/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 15/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 12/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 13/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 19/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 16/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 17/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 05/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 10/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 20/0 : 0[0] -> 4[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 23/0 : 3[3] -> 7[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 21/0 : 1[1] -> 5[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 00/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 01/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 03/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 04/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 13/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 07/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 05/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 07/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 08/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 09/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 11/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 12/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 13/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84424:84424 [0] NCCL INFO Channel 16/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 15/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 17/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 14/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 09/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007652:84424:84424 [0] NCCL INFO Channel 20/0 : 4[0] -> 0[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 19/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007652:84428:84428 [1] NCCL INFO Channel 21/0 : 5[1] -> 1[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84431:84431 [3] NCCL INFO Channel 23/0 : 7[3] -> 3[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 16/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 11/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 18/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 13/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 20/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 15/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 21/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 16/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 22/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 17/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 19/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 21/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 23/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 03/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 02/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 06/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 05/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 10/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 14/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 06/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 18/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 07/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 01/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 05/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 09/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 09/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 13/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 17/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 11/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 22/0 : 6[2] -> 2[2] [receive] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 21/0 : 5[1] -> 1[1] [receive] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 02/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 01/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 06/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 05/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 15/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 10/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 09/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 14/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 13/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177624:177624 [2] NCCL INFO Channel 18/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 17/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 17/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 22/0 : 2[2] -> 6[2] [send] via NET/AWS Libfabric/2/GDRDMA
+nid007649:177623:177623 [1] NCCL INFO Channel 21/0 : 1[1] -> 5[1] [send] via NET/AWS Libfabric/1/GDRDMA
+nid007652:84430:84430 [2] NCCL INFO Channel 03/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 18/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 15/0 : 6[2] -> 4[0] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 19/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 21/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177622:177622 [0] NCCL INFO Channel 23/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 03/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 00/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 04/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 07/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 08/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 11/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 12/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 15/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 16/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 19/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 20/0 : 4[0] -> 0[0] [receive] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 23/0 : 7[3] -> 3[3] [receive] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 03/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 00/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 07/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 04/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 11/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 08/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 15/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 12/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 19/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 16/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 23/0 : 3[3] -> 7[3] [send] via NET/AWS Libfabric/3/GDRDMA
+nid007649:177622:177622 [0] NCCL INFO Channel 20/0 : 0[0] -> 4[0] [send] via NET/AWS Libfabric/0/GDRDMA
+nid007649:177625:177625 [3] NCCL INFO Channel 01/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 01/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 05/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 02/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 09/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 03/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 13/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 17/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 05/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 21/0 : 7[3] -> 4[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 00/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 07/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 00/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 02/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 01/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 09/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 06/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 04/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 10/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 11/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 05/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 06/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 11/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 14/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 07/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 18/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 07/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 23/0 : 7[3] -> 5[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 08/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 09/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 00/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 11/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 12/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 13/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 01/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 13/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 08/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 17/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 14/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 02/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 10/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 19/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 15/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 12/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 06/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 17/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 20/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 16/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 19/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 21/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 08/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 21/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177624:177624 [2] NCCL INFO Channel 23/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 18/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 10/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 19/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 22/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 12/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 20/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 23/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007649:177623:177623 [1] NCCL INFO Channel 22/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 13/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 00/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 00/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 14/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 02/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 01/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 18/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 05/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 03/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 20/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 06/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 04/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84431:84431 [3] NCCL INFO Channel 22/0 : 7[3] -> 6[2] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 08/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 05/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 10/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 07/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 12/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 08/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 09/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 14/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 11/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 17/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 12/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 18/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 00/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 13/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 20/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 15/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 04/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Channel 22/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 06/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 16/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 17/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 08/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 10/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 19/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 12/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 20/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 16/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 21/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 18/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84430:84430 [2] NCCL INFO Channel 23/0 : 6[2] -> 5[1] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 20/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007652:84428:84428 [1] NCCL INFO Channel 22/0 : 5[1] -> 4[0] via P2P/CUMEM
+nid007649:177625:177625 [3] NCCL INFO Connected all trees
+nid007649:177624:177624 [2] NCCL INFO Connected all trees
+nid007649:177622:177622 [0] NCCL INFO Connected all trees
+nid007649:177623:177623 [1] NCCL INFO Connected all trees
+nid007652:84424:84424 [0] NCCL INFO Connected all trees
+nid007652:84431:84431 [3] NCCL INFO Connected all trees
+nid007652:84430:84430 [2] NCCL INFO Connected all trees
+nid007652:84428:84428 [1] NCCL INFO Connected all trees
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 2 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 2 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 3 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 3 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+nid007652:84424:84424 [0] NCCL INFO Symmetric VA size=96GB
+nid007652:84428:84428 [1] NCCL INFO Symmetric VA size=96GB
+nid007652:84430:84430 [2] NCCL INFO Symmetric VA size=96GB
+nid007652:84431:84431 [3] NCCL INFO Symmetric VA size=96GB
+nid007649:177624:177624 [2] NCCL INFO Symmetric VA size=96GB
+nid007649:177623:177623 [1] NCCL INFO Symmetric VA size=96GB
+nid007649:177622:177622 [0] NCCL INFO Symmetric VA size=96GB
+nid007649:177625:177625 [3] NCCL INFO Symmetric VA size=96GB
+┏━━━┳━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃   ┃ Name  ┃ Type         ┃ Params ┃ Mode  ┃ FLOPs ┃
+┡━━━╇━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ 0 │ model │ se3_denoiser │  283 K │ train │     0 │
+└───┴───────┴──────────────┴────────┴───────┴───────┘
+Trainable params: 283 K                                                         
+Non-trainable params: 0                                                         
+Total params: 283 K                                                             
+Total estimated model params size (MB): 1                                       
+Modules in train mode: 214                                                      
+Modules in eval mode: 0                                                         
+Total FLOPs: 0                                                                  
+{"event": "ready", "time": 1791897648.2788606, "epoch": 0, "global_step": 0, "topology": {"world_size": 8, "nodes": 2}, "bundle": "0250c8b94e10884553794470f2035355eb044e327feff3e66a72553f0e37e290", "frozen_production_calls": 0, "initialization": {"kind": "fresh"}, "parameters": 283770}
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "update", "time": 1791897649.8036277, "epoch": 0, "global_step": 1, "loss": 4.172883033752441, "gradient_norm": 4.387155055999756, "data_wait_seconds": 0.0037799749989062548, "compute_seconds": 0.4251222650054842, "length": 230, "update_seconds": 1.494399064045865, "structures_per_second": 10.706644821285126, "peak_host_memory_bytes": 3581018112, "peak_memory_bytes": 1142164992}
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791897649.945728, "epoch": 0, "global_step": 1, "path": "last.ckpt", "seconds": 0.14086394000332803, "cursor": 1}
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "update", "time": 1791897650.6085017, "epoch": 0, "global_step": 2, "loss": 3.20745849609375, "gradient_norm": 2.660479784011841, "data_wait_seconds": 0.0034540649503469467, "compute_seconds": 0.4100926050450653, "length": 57, "update_seconds": 0.6573634520173073, "structures_per_second": 24.33965556025276, "peak_host_memory_bytes": 3581018112, "peak_memory_bytes": 1142164992}
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791897650.6506245, "epoch": 0, "global_step": 2, "path": "last.ckpt", "seconds": 0.04117732896702364, "cursor": 2}
+{"event": "validation", "time": 1791897663.3541863, "epoch": 0, "global_step": 2, "complete_epoch": false, "metrics": {"geometry": 4.835154631640762, "evaluation_fape": 0.9408452219795436}, "counts": {"geometry": 512, "evaluation_fape": 512}}
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "train_epoch", "time": 1791897663.3610322, "epoch": 0, "global_step": 2, "geometry": 4.910929389297962, "effective_structures": 32}
+`weights_only` was not set, defaulting to `False`.
+`weights_only` was not set, defaulting to `False`.
+{"event": "checkpoint", "time": 1791897663.4039645, "epoch": 0, "global_step": 2, "path": "last.ckpt", "seconds": 0.04118679999373853, "cursor": 2}

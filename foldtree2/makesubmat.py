@@ -32,11 +32,14 @@ import numpy as np
 import tqdm
 import torch
 import importlib
+import random
 from matplotlib import pyplot as plt
 
 # Optional: import custom modules if available
 from foldtree2.src import AFDB_tools, foldseek2tree
-from foldtree2.src.pdbgraph import PDB2PyG, StructureDataset
+from foldtree2.src.pdbgraph import StructureDataset
+from foldtree2.src.pdbgraphmk2 import PDB2PyG
+from foldtree2.src.download_utils import download_structures, verify_downloads
 import foldtree2.src.encoder as ft2
 
 def print_about():
@@ -143,6 +146,7 @@ makesubmat --modelname my_model --encode_alns
 	# Processing parameters
 	parser.add_argument('--dataset', type=str, default='structalignmk4.h5', 
 						help='HDF5 dataset filename for storing PyG-converted structures')
+	parser.add_argument('--device', default=None, help='Encoding device, e.g. cpu or cuda:0 (default: auto)')
 	parser.add_argument('--fident_thresh', type=float, default=0.3, 
 						help='Sequence identity threshold for including alignment pairs in matrix computation (default: 0.3)')
 	parser.add_argument('--monitor-convergence', action='store_true',
@@ -151,8 +155,21 @@ makesubmat --modelname my_model --encode_alns
 						help='Update interval (in alignment files) for convergence snapshots (default: 5)')
 	parser.add_argument('--aln-limit', type=int, default=None,
 						help='Optional limit on number of alignment files to process (default: all)')
-	parser.add_argument('--convergence-threshold', type=float, default=0.01,
-						help='Gradient-norm threshold used to label convergence (default: 0.01)')
+	parser.add_argument('--convergence-threshold', type=float, default=0.025,
+						help='Frobenius-change threshold used to label convergence (default: 0.025)')
+	parser.add_argument('--relative-convergence-threshold', type=float, default=None,
+						help='Optional relative Frobenius-change threshold; replaces the absolute criterion')
+	parser.add_argument('--convergence-patience', type=int, default=5,
+						help='Required consecutive eligible updates with EMA below threshold (default: 5)')
+	parser.add_argument('--convergence-ema-span', type=int, default=5,
+						help='EMA span in informative updates; alpha=2/(span+1), with span-update warmup (default: 5)')
+	parser.add_argument('--convergence-min-files', type=int, default=100)
+	parser.add_argument('--convergence-min-pairs', type=int, default=10000)
+	parser.add_argument('--alignment-seed', type=int, default=42)
+	parser.add_argument('--additional-alignments-root', default=None,
+						help='Additional AFDB family root containing FAMILY/allvall.csv; append after original references')
+	parser.add_argument('--require-convergence', action='store_true',
+						help='Exit nonzero if reference alignments do not establish convergence')
 	parser.add_argument('--live-plot', action='store_true',
 						help='Render live convergence plots while processing alignments')
 	parser.add_argument('--rawcounts', action='store_true', 
@@ -218,40 +235,50 @@ def read_reps(datadir):
 	)
 	return reps
 
-def download_structs_fn(reps, datadir, n=5):
+def download_structs_fn(reps, datadir, structdir=None, ncpu=20, timeout=30):
 	"""
-	Download protein structures for cluster representatives and their members.
+	Download protein structures for cluster representatives using robust multiprocessing.
 	
-	This function downloads a random subset of structures for each cluster
-	representative to create diverse training data for the substitution matrix.
-	Structures are organized by cluster representative in separate directories.
+	This function downloads structures for each cluster representative using the
+	download_structures utility, which handles multiprocessing safely with proper
+	pickling of subprocess calls instead of file objects.
+	
+	Structures are organized by cluster representative in separate directories
+	for compatibility with downstream alignment steps.
 	
 	Args:
-		reps (pd.DataFrame): DataFrame with protein cluster information
+		reps (pd.DataFrame): DataFrame with protein cluster information (must have 'repId' column)
 		datadir (str): Base directory for storing structures
-		n (int): Maximum number of structures to download per cluster
+		structdir (str): Optional override for output directory structure
+		ncpu (int): Number of parallel processes for downloads
+		timeout (int): Timeout per download in seconds
 	"""
-	if AFDB_tools is None:
-		print("AFDB_tools not available. Skipping download.")
-		return
+	if structdir is None:
+		structdir = os.path.join(datadir, 'struct_align')
 	
-	# Process each cluster representative
-	for rep in tqdm.tqdm(reps.repId.unique()):
-		subdf = reps[reps['repId'] == rep]
-		
-		# Adjust sample size if cluster is smaller than requested
-		if len(subdf) < n:
-			n = len(subdf)
-		
-		# Sample random subset of proteins from this cluster
-		subdf = subdf.sample(n=n)
-		
-		# Download structures for sampled proteins
-		for uniID in subdf['entryId']:
-			AFDB_tools.grab_struct(
-				uniID, 
-				structfolder=os.path.join(datadir, 'struct_align', rep, 'structs')
-			)
+	# Ensure base directory exists
+	os.makedirs(structdir, exist_ok=True)
+	
+	# Use the robust download_structures function
+	print(f"Downloading {len(reps)} structures using multiprocessing...")
+	successful, failed = download_structures(
+		reps,
+		nreps=None,  # Download all provided reps
+		structdir=structdir,
+		ncpu=ncpu,
+		method='subprocess',
+		timeout=timeout,
+		verbose=False
+	)
+	
+	print(f"\nDownload complete:")
+	print(f"  Successfully downloaded: {len(successful)} structures")
+	if failed:
+		print(f"  Failed to download: {len(failed)} structures")
+		if len(failed) <= 10:
+			print(f"  Failed IDs: {failed}")
+	
+	return successful, failed
 
 def align_structs_fn(reps, datadir):
 	"""
@@ -306,6 +333,8 @@ def convert_to_pyg(dataset, out_h5, foldxdir=None):
 		out_h5 (str): Output HDF5 file path for converted data
 		foldxdir (str, optional): Directory containing FoldX energy data
 	"""
+	if foldxdir is not None:
+		raise ValueError('FoldX features are not supported by pdbgraphmk2 conversion')
 	converter = PDB2PyG()
 	pdbfiles = find_recursive_pdbs(dataset)
 	print(f"Found {len(pdbfiles)} PDB files for conversion.")
@@ -314,7 +343,7 @@ def convert_to_pyg(dataset, out_h5, foldxdir=None):
 		print("No PDB files found. Please check the dataset path.")
 		sys.exit(1)
 	
-	converter.store_pyg(pdbfiles, filename=out_h5, foldxdir=foldxdir,
+	converter.store_pyg(pdbfiles, filename=out_h5,
 						verbose=False)
 
 def encode_structures(encoder, modeldir, modelname, device, dataset):
@@ -362,11 +391,12 @@ def encode_structures(encoder, modeldir, modelname, device, dataset):
 	
 	# Encode structures and save as FASTA
 	output_path = os.path.join(modeldir, modelname + '_aln_encoded.fasta')
-	encoder.encode_structures_fasta(encoder_loader, output_path, replace=True)
+	with torch.no_grad():
+		encoder.encode_structures_fasta(encoder_loader, output_path, replace=True)
 	print("Encoding complete. Encoded FASTA saved.")
 	return output_path
 
-def build_char_set(encoded_df):
+def build_char_set(encoded_df, expected_size=None):
 	"""
 	Build the set of all structural tokens in the encoded sequences.
 	
@@ -387,6 +417,13 @@ def build_char_set(encoded_df):
 		char_set = char_set.union(set(seq))
 	char_set = list(char_set)
 	char_set.sort()  # Sort to ensure consistent order
+	if expected_size is not None:
+		replacements = {'"': chr(248), '#': chr(247), '>': chr(249), '=': chr(250),
+			'<': chr(251), '-': chr(252), ' ': chr(253), '\r': chr(254), '\n': chr(255)}
+		expected = {replacements.get(chr(i + 1), chr(i + 1)) for i in range(expected_size)}
+		if set(char_set) != expected:
+			raise ValueError(f'Encoded alphabet differs from the {expected_size}-state codebook: '
+				f'missing={sorted(expected - set(char_set))!r}, extra={sorted(set(char_set) - expected)!r}')
 	
 	print(f"Character set: {char_set}")
 	print('ord', [ord(c) for c in char_set])
@@ -457,8 +494,7 @@ def compute_pair_counts_and_bg(
 
 		submat_chunk = np.zeros((len(char_set), len(char_set)))
 		try:
-			aln_df = pd.read_table(rep)
-			aln_df.columns = cols
+			aln_df = pd.read_table(rep, header=None, names=cols)
 		except Exception as exc:
 			print(f"Warning: Could not read {rep}: {exc}")
 			continue
@@ -504,7 +540,8 @@ def compute_pair_counts_and_bg(
 								alnzip = [[a, b] for a, b in zip(qaln_ft2, taln_ft2) if a is not None and b is not None]
 								alnzip = np.array(alnzip)
 								if alnzip.size > 0:
-									submat_chunk[alnzip[:, 0], alnzip[:, 1]] += 1
+									# Repeated state pairs must each contribute a count.
+									np.add.at(submat_chunk, (alnzip[:, 0], alnzip[:, 1]), 1)
 
 		submat += submat_chunk
 		files_processed += 1
@@ -518,7 +555,8 @@ def compute_pair_counts_and_bg(
 					current_log_odds = compute_log_odds_from_counts(submat, bg_norm)
 				else:
 					current_log_odds = np.zeros_like(submat)
-				monitor.update(files_processed, current_log_odds)
+				monitor.update(files_processed, current_log_odds, pair_count=float(submat.sum()),
+					state_coverage=bool(np.all(background_freq > 0)))
 				if live_plot:
 					fig = monitor.plot_convergence(figsize=plot_figsize)
 					if show_plots:
@@ -538,13 +576,30 @@ def compute_pair_counts_and_bg(
 class MatrixConvergenceMonitor:
 	"""Track and visualize matrix convergence during iterative compilation."""
 
-	def __init__(self, matrix_size, convergence_threshold=0.01):
+	def __init__(self, matrix_size, convergence_threshold=0.025, patience=5,
+			min_files=100, min_pairs=10000, relative_threshold=None, ema_span=5):
+		if patience < 1 or ema_span < 1:
+			raise ValueError('Patience and EMA span must be positive')
+		self.ema_span = ema_span
+		self.ema_alpha = 2.0 / (ema_span + 1)
+		self.ema_change = None
+		self.ema_updates = 0
 		self.matrix_size = matrix_size
 		self.convergence_threshold = convergence_threshold
+		self.patience = patience
+		self.min_files = min_files
+		self.min_pairs = min_pairs
+		self.relative_threshold = relative_threshold
+		self.stable_updates = 0
+		self.prev_pair_count = None
 		self.history = {
 			'iteration': [],
 			'frobenius_norm': [],
 			'gradient_norm': [],
+			'ema_change': [],
+			'relative_change': [],
+			'pair_count': [],
+			'stable_updates': [],
 			'max_change': [],
 			'mean_change': [],
 			'nonzero_elements': [],
@@ -552,7 +607,7 @@ class MatrixConvergenceMonitor:
 		}
 		self.prev_matrix = None
 
-	def update(self, iteration, current_matrix):
+	def update(self, iteration, current_matrix, pair_count=None, state_coverage=True):
 		"""Update convergence metrics with a new matrix snapshot."""
 		frob_norm = float(np.linalg.norm(current_matrix, 'fro'))
 		if self.prev_matrix is not None:
@@ -564,18 +619,38 @@ class MatrixConvergenceMonitor:
 			grad_norm = 0.0
 			max_change = 0.0
 			mean_change = 0.0
+		relative_change = grad_norm / max(float(np.linalg.norm(self.prev_matrix, 'fro')), 1e-12) if self.prev_matrix is not None else float('inf')
+		informative = pair_count is not None and self.prev_pair_count is not None and pair_count > self.prev_pair_count
+		finite = bool(np.isfinite(current_matrix).all() and np.isfinite(relative_change))
+		change = relative_change if self.relative_threshold is not None else grad_norm
+		if informative and finite:
+			self.ema_change = change if self.ema_change is None else self.ema_alpha * change + (1 - self.ema_alpha) * self.ema_change
+			self.ema_updates += 1
+		else:
+			# Missing information must not make a stale EMA look converged.
+			self.ema_change = None
+			self.ema_updates = 0
+		threshold = self.relative_threshold if self.relative_threshold is not None else self.convergence_threshold
+		stable = self.ema_change is not None and self.ema_updates >= self.ema_span and self.ema_change < threshold
+		eligible = iteration >= self.min_files and pair_count is not None and pair_count >= self.min_pairs and state_coverage
+		self.stable_updates = self.stable_updates + 1 if informative and finite and stable and eligible else 0
 
 		nonzero = int(np.count_nonzero(current_matrix))
 
 		self.history['iteration'].append(int(iteration))
 		self.history['frobenius_norm'].append(frob_norm)
 		self.history['gradient_norm'].append(grad_norm)
+		self.history['ema_change'].append(self.ema_change)
+		self.history['relative_change'].append(relative_change if np.isfinite(relative_change) else None)
+		self.history['pair_count'].append(pair_count)
+		self.history['stable_updates'].append(self.stable_updates)
 		self.history['max_change'].append(max_change)
 		self.history['mean_change'].append(mean_change)
 		self.history['nonzero_elements'].append(nonzero)
 		self.history['snapshots'].append(current_matrix.copy())
 
 		self.prev_matrix = current_matrix.copy()
+		self.prev_pair_count = pair_count
 
 	def plot_convergence(self, figsize=(18, 12)):
 		"""Generate notebook-style convergence visualization."""
@@ -595,6 +670,9 @@ class MatrixConvergenceMonitor:
 		axes[0, 0].grid(True, alpha=0.3)
 
 		axes[0, 1].plot(iterations, self.history['gradient_norm'], 'r-', linewidth=2)
+		axes[0, 1].plot(iterations, self.history['ema_change'], color='navy', label='EMA convergence statistic')
+		axes[0, 1].axhline(self.relative_threshold if self.relative_threshold is not None else self.convergence_threshold, color='black', linestyle='--', label='Threshold')
+		axes[0, 1].legend()
 		axes[0, 1].set_xlabel('Iteration (Alignment Files)')
 		axes[0, 1].set_ylabel('Gradient Norm')
 		axes[0, 1].set_title('Rate of Change (Matrix Gradient)')
@@ -679,9 +757,21 @@ class MatrixConvergenceMonitor:
 			'total_iterations': len(self.history['iteration']),
 			'final_frobenius_norm': float(self.history['frobenius_norm'][-1]),
 			'final_gradient_norm': float(self.history['gradient_norm'][-1]),
+			'criterion': 'sustained_ema_frobenius_v1',
+			'ema_span': self.ema_span,
+			'ema_alpha': self.ema_alpha,
+			'ema_updates': self.ema_updates,
+			'final_ema_change': self.ema_change,
 			'mean_gradient_norm': mean_grad,
 			'max_gradient_norm': float(np.max(self.history['gradient_norm'])),
-			'is_converged': bool(self.history['gradient_norm'][-1] < self.convergence_threshold),
+			'is_converged': bool(self.stable_updates >= self.patience),
+			'final_relative_change': self.history['relative_change'][-1],
+			'stable_updates': self.stable_updates,
+			'required_stable_updates': self.patience,
+			'minimum_files': self.min_files,
+			'minimum_pairs': self.min_pairs,
+			'absolute_threshold': self.convergence_threshold,
+			'relative_threshold': self.relative_threshold,
 			'sparsity': float(sparsity),
 		}
 
@@ -988,6 +1078,12 @@ def main():
 		sys.exit(0)
 		
 	args = parse_args()
+	if args.require_convergence:
+		args.monitor_convergence = True
+	if args.convergence_ema_span < 1 or args.convergence_patience < 1 or args.convergence_min_files < 1 or args.convergence_min_pairs < 1:
+		raise ValueError('Convergence patience and minimum evidence must be positive')
+	if args.convergence_threshold <= 0 or (args.relative_convergence_threshold is not None and args.relative_convergence_threshold <= 0):
+		raise ValueError('Convergence thresholds must be positive')
 
 	if args.plot and not args.monitor_convergence:
 		args.monitor_convergence = True
@@ -1023,7 +1119,7 @@ def main():
 	model = os.path.join(args.modeldir, args.modelname)
 	encoder = torch.load(model + '.pt', map_location=torch.device('cpu'),
 						weights_only=False)
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 	encoder = encoder.to(device)
 	encoder.device = device
 
@@ -1044,7 +1140,8 @@ def main():
 		print("Downloading structure representatives...")
 		reps = read_reps(args.datadir)
 		print('reps', reps.head())
-		download_structs_fn(reps, args.datadir)
+		successful, failed = download_structs_fn(reps, args.datadir)
+		print(f"Download summary: {len(successful)} successful, {len(failed)} failed")
 	if args.convert_to_pyg:
 		print("Converting PDB files to PyG format...")
 		convert_to_pyg(os.path.join(args.datadir, 'struct_align'), args.dataset)
@@ -1056,7 +1153,6 @@ def main():
 	if not os.path.exists(os.path.join(args.datadir, 'struct_align')):
 		print("No structure alignments found. Please run --download_structs and --align_structs first.")
 		sys.exit(1)
-	device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 	encoder = encoder.to(device)
 	encoder.device = device
 	encoder.eval()
@@ -1071,8 +1167,17 @@ def main():
 		print(f"Encoded FASTA file {encoded_fasta} not found. Please run encoding first.")
 		sys.exit(1)
 	encoded_df = ft2.load_encoded_fasta(encoded_fasta, alphabet=None, replace=False)
-	char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df)
+	char_set , char_position_map , raxml_charset, raxml_char_position_map = build_char_set(encoded_df, expected_size=encoder.num_embeddings)
 	alnfiles = glob.glob(os.path.join(args.datadir, 'struct_align/*/allvall.csv'))
+	alnfiles.sort()
+	random.Random(args.alignment_seed).shuffle(alnfiles)
+	if args.additional_alignments_root:
+		extra = sorted(glob.glob(os.path.join(args.additional_alignments_root, '*/allvall.csv')))
+		original_ids = {os.path.basename(os.path.dirname(path)) for path in alnfiles}
+		if any(os.path.basename(os.path.dirname(path)) in original_ids for path in extra):
+			raise ValueError('Additional reference families overlap the original family set')
+		random.Random(args.alignment_seed).shuffle(extra)
+		alnfiles.extend(extra)
 	print(f"Found {len(alnfiles)} alignment files.")
 	if len(alnfiles) == 0:
 		print("No alignment files found. Please run --align_structs first.")
@@ -1082,7 +1187,10 @@ def main():
 	print(f"Processing up to {max_files} alignment files...")
 	monitor = None
 	if args.monitor_convergence:
-		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold)
+		monitor = MatrixConvergenceMonitor(len(char_set), convergence_threshold=args.convergence_threshold,
+			patience=args.convergence_patience, min_files=args.convergence_min_files,
+			min_pairs=args.convergence_min_pairs, relative_threshold=args.relative_convergence_threshold,
+			ema_span=args.convergence_ema_span)
 
 	pair_counts, background_freq, processing_stats = compute_pair_counts_and_bg(
 		alnfiles,
@@ -1187,6 +1295,9 @@ def main():
 		processing_stats=processing_stats,
 		fident_thresh=args.fident_thresh,
 	)
+	metrics_payload['counting_method'] = 'headerless_all_pair_occurrences_v2'
+	metrics_payload['alignment_seed'] = args.alignment_seed
+	metrics_payload['available_alignment_files'] = len(alnfiles)
 
 	if args.metrics_json is not None:
 		metrics_dir = os.path.dirname(args.metrics_json)
@@ -1204,6 +1315,9 @@ def main():
 	if metrics_payload['convergence'] is not None:
 		print(f"  Final gradient norm: {metrics_payload['convergence']['final_gradient_norm']:.6f}")
 		print(f"  Converged: {metrics_payload['convergence']['is_converged']}")
+	if args.require_convergence and not metrics_payload['convergence']['is_converged']:
+		print('Matrix convergence was not established. Add more independent reference alignments or inspect the saved convergence history; production promotion is blocked.')
+		sys.exit(2)
 
 if __name__ == "__main__":
 	main()

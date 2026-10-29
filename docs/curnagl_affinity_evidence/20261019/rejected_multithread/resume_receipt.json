@@ -1,0 +1,21 @@
+{
+  "source": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/foldtree2/workflow/curnagl_tcs.smk",
+  "source_sha256": "f2cc85c57d886188b0e6e06be66fd6851c2bb70dad35ead0cc6cc2fb3fd0f29d",
+  "workflow": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/slurm-steps.smk",
+  "workflow_sha256": "f111eb3ac0ab6eb100fe77f51a0a59b0f1038162ce0686cab7f00b94b47d7686",
+  "worker": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/curnagl_physical_step.py",
+  "worker_sha256": "7d097d379d06a2394d26c3cd95dc3a8f81c92cea82500b7c1d2cb30295e0fa6b",
+  "probe_jobs": [
+    66226303,
+    66226375
+  ],
+  "probe_nodes": [
+    "dna003",
+    "dna006"
+  ],
+  "workflow_job": 66226386,
+  "policy": "two reserved CPUs per tool thread; topology-verified physical affinity; two simultaneous eight-thread searches in 32-CPU allocation",
+  "activation_job": "66226548",
+  "previous_full_job": "66157528",
+  "user_authorization": "2026-10-19: queue TCS after RAxML verification succeeds"
+}

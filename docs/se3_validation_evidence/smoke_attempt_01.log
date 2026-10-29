@@ -1,0 +1,21 @@
+Seed set to 42
+{"event": "hashing_dataset", "time": 1791465905.803672, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+Loaded pretrained encoder via torch.load(module) from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt epoch=None
+latent_dim: 20 vq_probe: 0.15517465770244598
+Loaded frozen production geometry decoder from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt
+Traceback (most recent call last):
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/dmoi/projects/foldtree2/foldtree2/se3_validation.py", line 373, in <module>
+    event('epoch', epoch=epoch, global_step=step, train_loss=mean_train[0], train_geometry=mean_train[1],
+  File "/home/dmoi/projects/foldtree2/foldtree2/se3_validation.py", line 266, in main
+    'torch': torch.__version__, 'cuda': torch.version.cuda, 'lightning': base.pl.__version__}}, indent=2))
+  File "/home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/testing/_comparison.py", line 1587, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 125 / 633 (19.7%)
+Greatest absolute difference: 0.00018531084060668945 at index (105, 2) (up to 1e-06 allowed)
+Greatest relative difference: 0.0014134402154013515 at index (144, 2) (up to 1e-06 allowed)

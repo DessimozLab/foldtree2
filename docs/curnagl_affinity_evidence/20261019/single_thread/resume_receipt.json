@@ -1,0 +1,21 @@
+{
+  "source": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/foldtree2/workflow/curnagl_tcs.smk",
+  "source_sha256": "f2cc85c57d886188b0e6e06be66fd6851c2bb70dad35ead0cc6cc2fb3fd0f29d",
+  "workflow": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/slurm-steps.smk",
+  "workflow_sha256": "69674d801822eacf637328eeebeb4cd5efa621452b9f9b5ee5bc478052569802",
+  "worker": "/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261016-genus-tcs-v10/curnagl_physical_step.py",
+  "worker_sha256": "7d097d379d06a2394d26c3cd95dc3a8f81c92cea82500b7c1d2cb30295e0fa6b",
+  "probe_jobs": [
+    66226638,
+    66226639
+  ],
+  "probe_nodes": [
+    "dna003",
+    "dna006"
+  ],
+  "workflow_job": 66226705,
+  "policy": "single-thread ML inference for unfinished methods; retain completed methods with their original thread signature; two reserved CPUs per tool thread; topology-verified affinity",
+  "activation_job": "66226755",
+  "previous_full_job": "66226560",
+  "user_authorization": "2026-10-19: queue TCS after RAxML verification succeeds"
+}

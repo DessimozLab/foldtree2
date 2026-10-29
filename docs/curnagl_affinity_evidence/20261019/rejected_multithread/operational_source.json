@@ -1,0 +1,21 @@
+{
+  "supervisor.py": "995eb199660fa0cb1fdc900fd49260bc2313c6d820c2952736135c8c96c62de8",
+  "gate_inventory.py": "cfd54e45654593638351ab61565407cdb64c403df71a34402487e4dffc036f5f",
+  "runtime-check.sbatch": "c904175be3110a7b17a237d4e1c961abcd869a8d1a197dab62339fd000d7c53c",
+  "inventory.sbatch": "9ac094c0239f52ae2c91bc4966d45fb0e51032ecff8f681599207113fe972992",
+  "full.sbatch": "9e3c7b3a20b03a2e8b9d2e0520f53bf2a124b15904e22932a8a9a37c6927e832",
+  "pilot.sbatch": "dbb236b78dde1b567587abbb5bf58a9032f9d3608f0fc7dc5606438002cb1a47",
+  "advance.py": "525353224ae8831dc29f2d1185bdb814d97d1cc5f1509cdd6e279dd9bb06dfdb",
+  "advance.sbatch": "bba8f0537fbfa2a7b3daf6f9a694e8d4bb664777cd091c8bb5e9b291a5c58bc6",
+  "supervise_curnagl_tcs.py": "995eb199660fa0cb1fdc900fd49260bc2313c6d820c2952736135c8c96c62de8",
+  "slurm-steps.smk": "f111eb3ac0ab6eb100fe77f51a0a59b0f1038162ce0686cab7f00b94b47d7686",
+  "slurm-step-workflow.json": "31f4f70b48a0ef45f5e41c28689a79d73706f31560d93cd1159bea2441e49bc0",
+  "isolate_workflow.py": "445e1ab60e675277a43b28cd5dee1b540c5c4944b04dcd1a8a4b0fd2ff8250ba",
+  "preserve_incomplete.py": "05289bb1b18599c7c86da3bb6abbd6f19b323b7982b18143cdc68480c4c7653a",
+  "isolated-probe.sbatch": "dee1943a47253bf7e21b87189a885a25287cb6f40fa54e364f7c5ba47fd7377b",
+  "curnagl_physical_step.py": "7d097d379d06a2394d26c3cd95dc3a8f81c92cea82500b7c1d2cb30295e0fa6b",
+  "ops-20261019-affinity-v2/assert_release.py": "2e3fac4f34c8fc38664040081a311b443851fecc462f6228d65e847b4a023b6d",
+  "ops-20261019-affinity-v2/workflow-gate.json": "ec2ad4270e540fb0e06769552dfa204c3013a4db127828c8e3b24485db0903a6",
+  "ops-20261019-affinity-v2/check_curnagl_raxml_affinity.py": "5179de654546a496d3c58e1e838b881b5d55cbde19841c8aeef0d0fac0cf212c",
+  "ops-20261019-affinity-v2/curnagl_physical_step.py": "7d097d379d06a2394d26c3cd95dc3a8f81c92cea82500b7c1d2cb30295e0fa6b"
+}

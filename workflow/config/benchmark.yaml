@@ -1,0 +1,49 @@
+# Benchmark workflow configuration
+# Run with: snakemake --snakefile workflow/benchmark.smk --configfile workflow/config/benchmark.yaml -c <cores>
+
+# Project root (foldtree2 repository root)
+root: /home/dmoi/projects/foldtree2
+
+# Python interpreter (conda environment with foldtree2 installed)
+python: /home/dmoi/miniforge3/envs/foldtree2/bin/python3
+
+# Output directory for all benchmark results
+output_dir: /home/dmoi/projects/foldtree2/output/benchmark
+
+# Families directory (marker gene families from the OMA benchmark cohort)
+families_dir: families/Information_benchmark/marker_genes
+
+# Frozen OMA cohort definition (relative to root)
+cohort_path: configs/oma_benchmark_cohort.json
+
+# Limit families for testing; omit or set null for full sweep
+max_families: null
+
+# Alphabets to benchmark (AA, 3Di, FT2_* sizes)
+alphabets:
+  - AA
+  - 3Di
+  - FT2_10
+  - FT2_20
+  - FT2_30
+  - FT2_40
+  - FT2_50
+
+# Thread limits
+threads: 8
+raxml_threads: 4
+
+# Stages to run: information, controlled-gain, native-gain, ancestral
+stages:
+  - information
+  - controlled-gain
+  - native-gain
+  - ancestral
+
+# Benchmarked analyses within the information stage
+analyses:
+  - entropy
+  - mdl
+  - mi
+  - position
+  - kmer

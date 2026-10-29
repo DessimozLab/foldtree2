@@ -1,0 +1,114 @@
+{
+  "metrics": {
+    "control": {
+      "fape": {
+        "input": 0.9478593836538494,
+        "refined": 0.9582753209397197,
+        "delta": 0.010415937285870314,
+        "improved": 6,
+        "material_regression": false
+      },
+      "ca_rmsd": {
+        "input": 18.40328325331211,
+        "refined": 19.561936013400555,
+        "delta": 1.1586527600884438,
+        "improved": 44,
+        "material_regression": true
+      },
+      "tm_score": {
+        "input": 0.19222074393425248,
+        "refined": 0.19391592577412245,
+        "delta": 0.0016951818398699692,
+        "improved": 72,
+        "material_regression": false
+      },
+      "lddt": {
+        "input": 0.1958122099749744,
+        "refined": 0.1950244074105285,
+        "delta": -0.000787802564445883,
+        "improved": 68,
+        "material_regression": false
+      },
+      "ca_bond_mae": {
+        "input": 1.7628455581143498,
+        "refined": 3.8962380262091756,
+        "delta": 2.1333924680948257,
+        "improved": 4,
+        "material_regression": true
+      },
+      "ca_bend_mae_radians": {
+        "input": 0.8435609587468207,
+        "refined": 0.8282371228560805,
+        "delta": -0.015323835890740156,
+        "improved": 77,
+        "material_regression": false
+      },
+      "ca_torsion_mae_radians": {
+        "input": 1.566215993836522,
+        "refined": 1.5477217631414533,
+        "delta": -0.018494230695068836,
+        "improved": 77,
+        "material_regression": false
+      }
+    },
+    "soft_fape_bond": {
+      "fape": {
+        "input": 0.9478593836538494,
+        "refined": 0.9432823569513857,
+        "delta": -0.004577026702463627,
+        "improved": 111,
+        "material_regression": false
+      },
+      "ca_rmsd": {
+        "input": 18.40328325331211,
+        "refined": 17.869355864822865,
+        "delta": -0.5339273884892464,
+        "improved": 83,
+        "material_regression": false
+      },
+      "tm_score": {
+        "input": 0.19222074393425248,
+        "refined": 0.19702020459487504,
+        "delta": 0.004799460660622562,
+        "improved": 66,
+        "material_regression": false
+      },
+      "lddt": {
+        "input": 0.1958122099749744,
+        "refined": 0.2118523411336355,
+        "delta": 0.016040131158661097,
+        "improved": 89,
+        "material_regression": false
+      },
+      "ca_bond_mae": {
+        "input": 1.7628455581143498,
+        "refined": 1.6293350998312235,
+        "delta": -0.13351045828312635,
+        "improved": 98,
+        "material_regression": false
+      },
+      "ca_bend_mae_radians": {
+        "input": 0.8435609587468207,
+        "refined": 0.7822182695381343,
+        "delta": -0.06134268920868635,
+        "improved": 109,
+        "material_regression": false
+      },
+      "ca_torsion_mae_radians": {
+        "input": 1.566215993836522,
+        "refined": 1.5617944719269872,
+        "delta": -0.004421521909534931,
+        "improved": 75,
+        "material_regression": false
+      }
+    }
+  },
+  "gates": {
+    "training_reduction_20_percent": true,
+    "heldout_fape": true,
+    "no_material_regression": true
+  },
+  "eligible_for_revised_pilot": true,
+  "ready_for_larger_run": false,
+  "failures": 0
+}

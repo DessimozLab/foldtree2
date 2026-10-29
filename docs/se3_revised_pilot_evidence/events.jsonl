@@ -1,0 +1,130 @@
+{"event": "ready", "time": 1791566315.1961045, "train_count": 512, "val_count": 128, "device": "cuda:0", "scale": 10.92841422532637, "frozen_production_calls": 0}
+{"event": "progress", "time": 1791566370.4499726, "epoch": 0, "samples": 64, "global_step": 8, "loss": 7.326580047607422}
+{"event": "progress", "time": 1791566415.4217365, "epoch": 0, "samples": 128, "global_step": 16, "loss": 4.701440334320068}
+{"event": "progress", "time": 1791566452.5514646, "epoch": 0, "samples": 192, "global_step": 24, "loss": 7.168386459350586}
+{"event": "progress", "time": 1791566482.8617504, "epoch": 0, "samples": 256, "global_step": 32, "loss": 5.578066825866699}
+{"event": "progress", "time": 1791566511.1645842, "epoch": 0, "samples": 320, "global_step": 40, "loss": 6.739209175109863}
+{"event": "progress", "time": 1791566538.1560876, "epoch": 0, "samples": 384, "global_step": 48, "loss": 4.009638786315918}
+{"event": "progress", "time": 1791566563.490063, "epoch": 0, "samples": 448, "global_step": 56, "loss": 3.660423517227173}
+{"event": "progress", "time": 1791566587.538126, "epoch": 0, "samples": 512, "global_step": 64, "loss": 3.857353687286377}
+{"event": "epoch", "time": 1791566609.8223588, "epoch": 0, "global_step": 64, "train_geometry": 4.987153770867735, "train_fape": 0.9455085006193258, "val_geometry": 4.839666334912181, "val_fape": 0.9449319206178188, "gradient_norm": 4.349387854337692, "seconds": 294.6241739119869, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3547653632, "peak_host_memory_bytes": 2438946816}
+{"event": "progress", "time": 1791566625.7551742, "epoch": 1, "samples": 64, "global_step": 72, "loss": 6.198060989379883}
+{"event": "progress", "time": 1791566641.3883722, "epoch": 1, "samples": 128, "global_step": 80, "loss": 3.9722163677215576}
+{"event": "progress", "time": 1791566658.6559713, "epoch": 1, "samples": 192, "global_step": 88, "loss": 6.5844879150390625}
+{"event": "progress", "time": 1791566678.5447285, "epoch": 1, "samples": 256, "global_step": 96, "loss": 7.74504280090332}
+{"event": "progress", "time": 1791566696.52311, "epoch": 1, "samples": 320, "global_step": 104, "loss": 4.926538467407227}
+{"event": "progress", "time": 1791566713.918704, "epoch": 1, "samples": 384, "global_step": 112, "loss": 3.6948580741882324}
+{"event": "progress", "time": 1791566730.3164992, "epoch": 1, "samples": 448, "global_step": 120, "loss": 3.2082133293151855}
+{"event": "progress", "time": 1791566748.8912272, "epoch": 1, "samples": 512, "global_step": 128, "loss": 2.859588384628296}
+{"event": "epoch", "time": 1791566763.9927268, "epoch": 1, "global_step": 128, "train_geometry": 4.770693358732387, "train_fape": 0.9434323710738681, "val_geometry": 4.728318575769663, "val_fape": 0.9439841997809708, "gradient_norm": 3.362248780205846, "seconds": 153.9613032080233, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548797440, "peak_host_memory_bytes": 2440138752}
+{"event": "progress", "time": 1791566781.7905974, "epoch": 2, "samples": 64, "global_step": 136, "loss": 3.077338695526123}
+{"event": "progress", "time": 1791566799.1493742, "epoch": 2, "samples": 128, "global_step": 144, "loss": 3.784054756164551}
+{"event": "progress", "time": 1791566816.48578, "epoch": 2, "samples": 192, "global_step": 152, "loss": 3.0548300743103027}
+{"event": "progress", "time": 1791566835.4548821, "epoch": 2, "samples": 256, "global_step": 160, "loss": 7.8315582275390625}
+{"event": "progress", "time": 1791566852.2011507, "epoch": 2, "samples": 320, "global_step": 168, "loss": 5.466124057769775}
+{"event": "progress", "time": 1791566869.0852928, "epoch": 2, "samples": 384, "global_step": 176, "loss": 5.126568794250488}
+{"event": "progress", "time": 1791566886.1494431, "epoch": 2, "samples": 448, "global_step": 184, "loss": 8.171143531799316}
+{"event": "progress", "time": 1791566902.839176, "epoch": 2, "samples": 512, "global_step": 192, "loss": 4.639873027801514}
+{"event": "epoch", "time": 1791566917.5776622, "epoch": 2, "global_step": 192, "train_geometry": 4.615598932141438, "train_fape": 0.9420674194116145, "val_geometry": 4.622517790645361, "val_fape": 0.9424699349328876, "gradient_norm": 3.485999396070838, "seconds": 153.33639682992361, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548801536, "peak_host_memory_bytes": 2440527872}
+{"event": "progress", "time": 1791566936.6852207, "epoch": 3, "samples": 64, "global_step": 200, "loss": 2.7219531536102295}
+{"event": "progress", "time": 1791566952.7711816, "epoch": 3, "samples": 128, "global_step": 208, "loss": 5.920915126800537}
+{"event": "progress", "time": 1791566969.998042, "epoch": 3, "samples": 192, "global_step": 216, "loss": 3.048417568206787}
+{"event": "progress", "time": 1791566988.117816, "epoch": 3, "samples": 256, "global_step": 224, "loss": 6.177462577819824}
+{"event": "progress", "time": 1791567005.9047515, "epoch": 3, "samples": 320, "global_step": 232, "loss": 3.467024564743042}
+{"event": "progress", "time": 1791567024.896953, "epoch": 3, "samples": 384, "global_step": 240, "loss": 2.8328897953033447}
+{"event": "progress", "time": 1791567041.7140713, "epoch": 3, "samples": 448, "global_step": 248, "loss": 3.457949638366699}
+{"event": "progress", "time": 1791567059.2536838, "epoch": 3, "samples": 512, "global_step": 256, "loss": 4.435914516448975}
+{"event": "epoch", "time": 1791567075.06645, "epoch": 3, "global_step": 256, "train_geometry": 4.506510213948786, "train_fape": 0.9411691520945169, "val_geometry": 4.54770614951849, "val_fape": 0.9429087406024337, "gradient_norm": 3.4177964981645346, "seconds": 157.16167047503404, "train_count": 512, "val_count": 128, "patience_used": 1, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548801536, "peak_host_memory_bytes": 2440622080}
+{"event": "progress", "time": 1791567094.639711, "epoch": 4, "samples": 64, "global_step": 264, "loss": 4.726750373840332}
+{"event": "progress", "time": 1791567116.8944376, "epoch": 4, "samples": 128, "global_step": 272, "loss": 4.411635875701904}
+{"event": "progress", "time": 1791567137.437912, "epoch": 4, "samples": 192, "global_step": 280, "loss": 4.908501625061035}
+{"event": "progress", "time": 1791567154.9459944, "epoch": 4, "samples": 256, "global_step": 288, "loss": 4.028205871582031}
+{"event": "progress", "time": 1791567173.2639744, "epoch": 4, "samples": 320, "global_step": 296, "loss": 1.7289936542510986}
+{"event": "progress", "time": 1791567190.1590593, "epoch": 4, "samples": 384, "global_step": 304, "loss": 5.397651195526123}
+{"event": "progress", "time": 1791567210.1146271, "epoch": 4, "samples": 448, "global_step": 312, "loss": 4.707298278808594}
+{"event": "progress", "time": 1791567229.1703742, "epoch": 4, "samples": 512, "global_step": 320, "loss": 2.3511264324188232}
+{"event": "epoch", "time": 1791567243.7922425, "epoch": 4, "global_step": 320, "train_geometry": 4.437474429607391, "train_fape": 0.9407503696274944, "val_geometry": 4.46776781603694, "val_fape": 0.9418961736373603, "gradient_norm": 3.310641160234809, "seconds": 168.57986693200655, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548801536, "peak_host_memory_bytes": 2440638464}
+{"event": "progress", "time": 1791567261.5224774, "epoch": 5, "samples": 64, "global_step": 328, "loss": 5.097870826721191}
+{"event": "progress", "time": 1791567278.7408855, "epoch": 5, "samples": 128, "global_step": 336, "loss": 2.9191696643829346}
+{"event": "progress", "time": 1791567296.7447376, "epoch": 5, "samples": 192, "global_step": 344, "loss": 8.46398639678955}
+{"event": "progress", "time": 1791567316.5680404, "epoch": 5, "samples": 256, "global_step": 352, "loss": 4.086427211761475}
+{"event": "progress", "time": 1791567333.901621, "epoch": 5, "samples": 320, "global_step": 360, "loss": 4.048321723937988}
+{"event": "progress", "time": 1791567356.7751849, "epoch": 5, "samples": 384, "global_step": 368, "loss": 2.448096513748169}
+{"event": "progress", "time": 1791567379.8244107, "epoch": 5, "samples": 448, "global_step": 376, "loss": 4.758853435516357}
+{"event": "progress", "time": 1791567402.8859956, "epoch": 5, "samples": 512, "global_step": 384, "loss": 4.827933311462402}
+{"event": "epoch", "time": 1791567418.566755, "epoch": 5, "global_step": 384, "train_geometry": 4.391107501694933, "train_fape": 0.9403984977980144, "val_geometry": 4.4408663753420115, "val_fape": 0.9416764909401536, "gradient_norm": 3.274595234543085, "seconds": 174.5032123401761, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548801536, "peak_host_memory_bytes": 2440687616}
+{"event": "progress", "time": 1791567436.1258812, "epoch": 6, "samples": 64, "global_step": 392, "loss": 3.776764392852783}
+{"event": "progress", "time": 1791567455.3826544, "epoch": 6, "samples": 128, "global_step": 400, "loss": 2.1446452140808105}
+{"event": "progress", "time": 1791567474.739982, "epoch": 6, "samples": 192, "global_step": 408, "loss": 3.824035167694092}
+{"event": "progress", "time": 1791567493.0214367, "epoch": 6, "samples": 256, "global_step": 416, "loss": 4.769366264343262}
+{"event": "progress", "time": 1791567511.2920053, "epoch": 6, "samples": 320, "global_step": 424, "loss": 3.7197699546813965}
+{"event": "progress", "time": 1791567528.7374132, "epoch": 6, "samples": 384, "global_step": 432, "loss": 3.7806198596954346}
+{"event": "progress", "time": 1791567546.1646671, "epoch": 6, "samples": 448, "global_step": 440, "loss": 3.0795834064483643}
+{"event": "progress", "time": 1791567563.883415, "epoch": 6, "samples": 512, "global_step": 448, "loss": 5.093809604644775}
+{"event": "epoch", "time": 1791567578.685954, "epoch": 6, "global_step": 448, "train_geometry": 4.361046245321631, "train_fape": 0.9400812761159614, "val_geometry": 4.421069884672761, "val_fape": 0.9418176617473364, "gradient_norm": 3.296475375071168, "seconds": 159.86572090606205, "train_count": 512, "val_count": 128, "patience_used": 1, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548801536, "peak_host_memory_bytes": 2440826880}
+{"event": "progress", "time": 1791567597.0401127, "epoch": 7, "samples": 64, "global_step": 456, "loss": 3.731297492980957}
+{"event": "progress", "time": 1791567615.4214292, "epoch": 7, "samples": 128, "global_step": 464, "loss": 4.576762676239014}
+{"event": "progress", "time": 1791567634.60664, "epoch": 7, "samples": 192, "global_step": 472, "loss": 4.791316509246826}
+{"event": "progress", "time": 1791567654.3619833, "epoch": 7, "samples": 256, "global_step": 480, "loss": 4.9252142906188965}
+{"event": "progress", "time": 1791567671.956808, "epoch": 7, "samples": 320, "global_step": 488, "loss": 3.050825357437134}
+{"event": "progress", "time": 1791567690.2766974, "epoch": 7, "samples": 384, "global_step": 496, "loss": 4.819520473480225}
+{"event": "progress", "time": 1791567706.7712538, "epoch": 7, "samples": 448, "global_step": 504, "loss": 3.5443115234375}
+{"event": "progress", "time": 1791567726.354748, "epoch": 7, "samples": 512, "global_step": 512, "loss": 4.179499626159668}
+{"event": "epoch", "time": 1791567741.6805966, "epoch": 7, "global_step": 512, "train_geometry": 4.322217141627334, "train_fape": 0.9397114962921478, "val_geometry": 4.397832192480564, "val_fape": 0.9418939952738583, "gradient_norm": 3.044156163930893, "seconds": 162.88558396790177, "train_count": 512, "val_count": 128, "patience_used": 2, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3548803584, "peak_host_memory_bytes": 2440888320}
+{"event": "resume", "time": 1791840523.9204297, "epoch": 8, "global_step": 512}
+{"event": "ready", "time": 1791840523.9207516, "train_count": 512, "val_count": 128, "device": "cuda:0", "scale": 10.92841422532637, "frozen_production_calls": 0}
+{"event": "progress", "time": 1791840550.2568889, "epoch": 8, "samples": 64, "global_step": 520, "loss": 3.243884325027466}
+{"event": "progress", "time": 1791840569.2359536, "epoch": 8, "samples": 128, "global_step": 528, "loss": 3.495436906814575}
+{"event": "progress", "time": 1791840586.65992, "epoch": 8, "samples": 192, "global_step": 536, "loss": 3.445221185684204}
+{"event": "progress", "time": 1791840601.1638987, "epoch": 8, "samples": 256, "global_step": 544, "loss": 2.9118447303771973}
+{"event": "progress", "time": 1791840615.4682827, "epoch": 8, "samples": 320, "global_step": 552, "loss": 2.5016911029815674}
+{"event": "progress", "time": 1791840628.4449701, "epoch": 8, "samples": 384, "global_step": 560, "loss": 4.900155067443848}
+{"event": "progress", "time": 1791840639.1683302, "epoch": 8, "samples": 448, "global_step": 568, "loss": 3.739083766937256}
+{"event": "progress", "time": 1791840651.9722192, "epoch": 8, "samples": 512, "global_step": 576, "loss": 4.5111870765686035}
+{"event": "epoch", "time": 1791840662.4286091, "epoch": 8, "global_step": 576, "train_geometry": 4.302383068250492, "train_fape": 0.9396518082357943, "val_geometry": 4.425286052748561, "val_fape": 0.9410358527675271, "gradient_norm": 3.000284807756543, "seconds": 138.50346961198375, "train_count": 512, "val_count": 128, "patience_used": 0, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2448261120}
+{"event": "progress", "time": 1791840671.2801223, "epoch": 9, "samples": 64, "global_step": 584, "loss": 2.7593095302581787}
+{"event": "progress", "time": 1791840680.4020927, "epoch": 9, "samples": 128, "global_step": 592, "loss": 3.879161834716797}
+{"event": "progress", "time": 1791840690.0567038, "epoch": 9, "samples": 192, "global_step": 600, "loss": 2.177685260772705}
+{"event": "progress", "time": 1791840699.6693041, "epoch": 9, "samples": 256, "global_step": 608, "loss": 3.9580326080322266}
+{"event": "progress", "time": 1791840708.1700125, "epoch": 9, "samples": 320, "global_step": 616, "loss": 3.3220736980438232}
+{"event": "progress", "time": 1791840717.4844887, "epoch": 9, "samples": 384, "global_step": 624, "loss": 4.411519527435303}
+{"event": "progress", "time": 1791840727.0886734, "epoch": 9, "samples": 448, "global_step": 632, "loss": 7.085205554962158}
+{"event": "progress", "time": 1791840737.379077, "epoch": 9, "samples": 512, "global_step": 640, "loss": 3.5571916103363037}
+{"event": "epoch", "time": 1791840744.273462, "epoch": 9, "global_step": 640, "train_geometry": 4.288595869904384, "train_fape": 0.9391649147146381, "val_geometry": 4.381272844970226, "val_fape": 0.9412120073102415, "gradient_norm": 3.0011256355792284, "seconds": 81.71380401519127, "train_count": 512, "val_count": 128, "patience_used": 1, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2449985536}
+{"event": "progress", "time": 1791840754.1470132, "epoch": 10, "samples": 64, "global_step": 648, "loss": 3.2349603176116943}
+{"event": "progress", "time": 1791840762.929872, "epoch": 10, "samples": 128, "global_step": 656, "loss": 3.1604390144348145}
+{"event": "progress", "time": 1791840771.4213774, "epoch": 10, "samples": 192, "global_step": 664, "loss": 2.607353687286377}
+{"event": "progress", "time": 1791840778.6160507, "epoch": 10, "samples": 256, "global_step": 672, "loss": 3.296515703201294}
+{"event": "progress", "time": 1791840785.8199792, "epoch": 10, "samples": 320, "global_step": 680, "loss": 4.548757553100586}
+{"event": "progress", "time": 1791840793.063323, "epoch": 10, "samples": 384, "global_step": 688, "loss": 3.4249002933502197}
+{"event": "progress", "time": 1791840801.172725, "epoch": 10, "samples": 448, "global_step": 696, "loss": 2.624197006225586}
+{"event": "progress", "time": 1791840811.0609858, "epoch": 10, "samples": 512, "global_step": 704, "loss": 2.9918689727783203}
+{"event": "epoch", "time": 1791840817.9585116, "epoch": 10, "global_step": 704, "train_geometry": 4.272592005785555, "train_fape": 0.9394804065232165, "val_geometry": 4.372456533834338, "val_fape": 0.941497846506536, "gradient_norm": 3.0927877854555845, "seconds": 73.61982879391871, "train_count": 512, "val_count": 128, "patience_used": 2, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2450706432}
+{"event": "progress", "time": 1791840826.9013581, "epoch": 11, "samples": 64, "global_step": 712, "loss": 5.134142875671387}
+{"event": "progress", "time": 1791840835.64389, "epoch": 11, "samples": 128, "global_step": 720, "loss": 4.659391403198242}
+{"event": "progress", "time": 1791840844.4177206, "epoch": 11, "samples": 192, "global_step": 728, "loss": 6.874260425567627}
+{"event": "progress", "time": 1791840852.7372694, "epoch": 11, "samples": 256, "global_step": 736, "loss": 4.249114513397217}
+{"event": "progress", "time": 1791840860.9973435, "epoch": 11, "samples": 320, "global_step": 744, "loss": 4.503946781158447}
+{"event": "progress", "time": 1791840869.542641, "epoch": 11, "samples": 384, "global_step": 752, "loss": 3.5530283451080322}
+{"event": "progress", "time": 1791840878.3142688, "epoch": 11, "samples": 448, "global_step": 760, "loss": 3.0066561698913574}
+{"event": "progress", "time": 1791840886.8107133, "epoch": 11, "samples": 512, "global_step": 768, "loss": 3.5359857082366943}
+{"event": "epoch", "time": 1791840893.6459575, "epoch": 11, "global_step": 768, "train_geometry": 4.267525831237435, "train_fape": 0.9393779009697028, "val_geometry": 4.386872049421072, "val_fape": 0.9421832924708724, "gradient_norm": 3.3582141250371933, "seconds": 75.62675896007568, "train_count": 512, "val_count": 128, "patience_used": 3, "learning_rate": 0.0005, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2450714624}
+{"event": "progress", "time": 1791840902.4365702, "epoch": 12, "samples": 64, "global_step": 776, "loss": 5.122514724731445}
+{"event": "progress", "time": 1791840910.9729624, "epoch": 12, "samples": 128, "global_step": 784, "loss": 2.829066276550293}
+{"event": "progress", "time": 1791840919.7393947, "epoch": 12, "samples": 192, "global_step": 792, "loss": 6.049029350280762}
+{"event": "progress", "time": 1791840928.0520988, "epoch": 12, "samples": 256, "global_step": 800, "loss": 3.5180740356445312}
+{"event": "progress", "time": 1791840936.7868936, "epoch": 12, "samples": 320, "global_step": 808, "loss": 3.5412485599517822}
+{"event": "progress", "time": 1791840945.4512172, "epoch": 12, "samples": 384, "global_step": 816, "loss": 5.414721488952637}
+{"event": "progress", "time": 1791840954.5134325, "epoch": 12, "samples": 448, "global_step": 824, "loss": 5.675316333770752}
+{"event": "progress", "time": 1791840965.9623866, "epoch": 12, "samples": 512, "global_step": 832, "loss": 2.598083972930908}
+{"event": "epoch", "time": 1791840973.4450274, "epoch": 12, "global_step": 832, "train_geometry": 4.246323654660955, "train_fape": 0.939151706174016, "val_geometry": 4.364591501653194, "val_fape": 0.9415387804619968, "gradient_norm": 2.8302844911813736, "seconds": 79.73813645611517, "train_count": 512, "val_count": 128, "patience_used": 4, "learning_rate": 5e-05, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2450714624}
+{"event": "progress", "time": 1791840982.1893213, "epoch": 13, "samples": 64, "global_step": 840, "loss": 3.671144723892212}
+{"event": "progress", "time": 1791840990.771742, "epoch": 13, "samples": 128, "global_step": 848, "loss": 6.08474063873291}
+{"event": "progress", "time": 1791840999.7417207, "epoch": 13, "samples": 192, "global_step": 856, "loss": 4.524672985076904}
+{"event": "progress", "time": 1791841009.379419, "epoch": 13, "samples": 256, "global_step": 864, "loss": 4.095109462738037}
+{"event": "progress", "time": 1791841019.0754511, "epoch": 13, "samples": 320, "global_step": 872, "loss": 4.2593674659729}
+{"event": "progress", "time": 1791841028.356713, "epoch": 13, "samples": 384, "global_step": 880, "loss": 2.587416410446167}
+{"event": "progress", "time": 1791841037.8843753, "epoch": 13, "samples": 448, "global_step": 888, "loss": 3.683926582336426}
+{"event": "progress", "time": 1791841047.6191084, "epoch": 13, "samples": 512, "global_step": 896, "loss": 2.7895724773406982}
+{"event": "epoch", "time": 1791841056.2640874, "epoch": 13, "global_step": 896, "train_geometry": 4.207473286194727, "train_fape": 0.938670996169094, "val_geometry": 4.349240003153682, "val_fape": 0.9411328928545117, "gradient_norm": 2.5037438981235027, "seconds": 82.7590234039817, "train_count": 512, "val_count": 128, "patience_used": 5, "learning_rate": 5e-05, "peak_gpu_memory_bytes": 3550376448, "peak_host_memory_bytes": 2450714624}
+{"event": "complete", "time": 1791841083.7996902, "epochs": 14, "best_fape": 0.9410358527675271, "frozen_production_calls": 0}

@@ -1,0 +1,21 @@
+accelerator: cpu
+cache: /home/dmoi/projects/foldtree2/runs/se3_clariden/verification_release/cache
+checkpoint_every: 1
+devices: 2
+epochs: 1
+global_batch: 16
+gradient_accumulation_dtype: float64
+learning_rate: 0.0005
+max_residues: 256
+model:
+  depth: 2
+  heads: 2
+  hidden: 32
+nodes: 1
+output: /home/dmoi/projects/foldtree2/runs/se3_clariden/gradient_ddp_20261014/ddp
+scheduler: true
+seed: 42
+structural_metrics: true
+tensor_ff_input_norm: true
+train_count: 32
+val_count: 3

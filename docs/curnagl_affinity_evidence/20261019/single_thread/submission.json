@@ -1,0 +1,11 @@
+{
+  "probe_jobs": [
+    "66226638",
+    "66226639"
+  ],
+  "workflow_job": "66226705",
+  "release_controller": "66226706",
+  "superseded_workflow": "66226640",
+  "superseded_release": "66226641",
+  "reason": "Validation subset contains only CATH; restrict its dataset list for aggregation and use fresh output/plan"
+}

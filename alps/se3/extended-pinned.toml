@@ -1,0 +1,12 @@
+image = "ghcr.io/eth-cscs/alps-extended-images/ngc-pytorch@sha256:3dd0d01a02e58d3c78e4222ce252bd8d177c14392b3d1a05a1f4c9a92454ae40"
+mounts = ["/capstor", "/iopsstor"]
+workdir = "${TRAIN_WORKDIR}"
+writable = true
+entrypoint = true
+[annotations]
+com.hooks.cxi.enabled = "false"
+[env]
+OMP_NUM_THREADS = "2"
+MKL_NUM_THREADS = "2"
+CUBLAS_WORKSPACE_CONFIG = ":4096:8"
+NCCL_DEBUG = "INFO"

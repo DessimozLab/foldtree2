@@ -1,0 +1,38 @@
+{
+  "fident_threshold": 0.3,
+  "matrix_size": 20,
+  "total_pair_counts": 13280556.0,
+  "nonzero_pairs": 400,
+  "sparsity": 0.0,
+  "log_odds_min": -1.9430688741151714,
+  "log_odds_max": 2.2006231401079632,
+  "mean_diagonal_score": 1.3923690499320944,
+  "mean_off_diagonal_score": -0.2803418258549475,
+  "std_diagonal_score": 0.3379139112849982,
+  "std_off_diagonal_score": 0.49268361271918526,
+  "background_sum": 0.9999999999999999,
+  "processing": {
+    "files_processed": 20349,
+    "processed_sequences": 32113,
+    "total_sequence_positions": 8778347
+  },
+  "convergence": {
+    "total_iterations": 814,
+    "final_frobenius_norm": 12.773505652245426,
+    "final_gradient_norm": 0.004648429388224124,
+    "mean_gradient_norm": 0.065443200459527,
+    "max_gradient_norm": 6.507504959605889,
+    "is_converged": true,
+    "final_relative_change": 0.0003639210619828028,
+    "stable_updates": 4,
+    "required_stable_updates": 1,
+    "minimum_files": 100,
+    "minimum_pairs": 10000,
+    "absolute_threshold": 0.01,
+    "relative_threshold": null,
+    "sparsity": 0.0
+  },
+  "counting_method": "headerless_all_pair_occurrences_v2",
+  "alignment_seed": 42,
+  "available_alignment_files": 20349
+}

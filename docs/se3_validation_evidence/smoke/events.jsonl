@@ -1,0 +1,6 @@
+{"event": "hashing_dataset", "time": 1791491215.355739, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+{"event": "cache_verified", "time": 1791491217.0386055, "id": "A0A0W7X8K2"}
+{"event": "cache_progress", "time": 1791491217.0389056, "count": 1, "total": 2}
+{"event": "cache_forward_verified", "time": 1791491218.5735931}
+{"event": "epoch", "time": 1791491219.3172624, "epoch": 0, "global_step": 1, "train_loss": 3.477463483810425, "train_geometry": 3.3598275184631348, "train_fape": 0.9680346846580505, "train_angle": 1.1763602495193481, "val_loss": 2.731977701187134, "val_geometry": 2.623366117477417, "val_fape": 0.947198212146759, "val_angle": 1.086114764213562, "gradient_norm_mean": 0.14181731641292572, "effective_train_count": 1, "effective_val_count": 1, "seconds": 0.6684642559848726, "structures_per_second": 2.991932600873816, "peak_memory_bytes": 794980864, "peak_host_memory_bytes": 2586972160}
+{"event": "complete", "time": 1791491219.6368098, "seconds": 0.9899426740594208, "frozen_unchanged": true, "best_epoch": 0, "nonfinite_events": 0, "failures": 0}

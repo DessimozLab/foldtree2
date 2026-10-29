@@ -1,0 +1,80 @@
+{
+  "loss_v1_debug_one": {
+    "passed": true,
+    "exact_resume": true,
+    "updates": 2,
+    "maximum_parameter_buffer_difference": 0.0,
+    "validation_structures": 512,
+    "validation": {
+      "geometry": 5.0533300139941275,
+      "evaluation_fape": 0.9300312541890889,
+      "refined.angle_mae_radians": 0.5152031563338824,
+      "refined.ca_bend_mae_radians": 0.7199503358569928,
+      "refined.ca_bond_deviation_3_8": 0.9355473917676136,
+      "refined.ca_bond_mae": 0.9362710482091643,
+      "refined.ca_rmsd": 16.07715827971697,
+      "refined.ca_torsion_mae_radians": 1.520229158219526,
+      "refined.fape": 0.9300312541890889,
+      "refined.lddt": 0.27110372550669126,
+      "refined.tm_score": 0.21279165254205654,
+      "refined.valid_residues": 114.6171875,
+      "loss.angle": 0.26337545698334,
+      "loss.bend": 0.27281025709817186,
+      "loss.bond": 0.5583137585781515,
+      "loss.distance": 1.284867346752435,
+      "loss.local_distance": 0.7602132624015212,
+      "loss.torsion": 0.9602548339753412,
+      "loss.training_fape": 1.833403100259602,
+      "loss.control_geometry": 3.676584205124527
+    },
+    "topologies": [
+      {
+        "world_size": 4,
+        "nodes": 1
+      },
+      {
+        "world_size": 4,
+        "nodes": 1
+      }
+    ]
+  },
+  "loss_v1_debug_two": {
+    "passed": true,
+    "exact_resume": false,
+    "updates": 2,
+    "maximum_parameter_buffer_difference": 0.0,
+    "validation_structures": 512,
+    "validation": {
+      "geometry": 5.0533300139941275,
+      "evaluation_fape": 0.9300312541890889,
+      "refined.angle_mae_radians": 0.5152031563338824,
+      "refined.ca_bend_mae_radians": 0.7199503358569928,
+      "refined.ca_bond_deviation_3_8": 0.9355473917676136,
+      "refined.ca_bond_mae": 0.9362710482091643,
+      "refined.ca_rmsd": 16.07715827971697,
+      "refined.ca_torsion_mae_radians": 1.520229158219526,
+      "refined.fape": 0.9300312541890889,
+      "refined.lddt": 0.27110372550669126,
+      "refined.tm_score": 0.21279165254205654,
+      "refined.valid_residues": 114.6171875,
+      "loss.angle": 0.26337545698334,
+      "loss.bend": 0.27281025709817186,
+      "loss.bond": 0.5583137585781515,
+      "loss.distance": 1.284867346752435,
+      "loss.local_distance": 0.7602132624015212,
+      "loss.torsion": 0.9602548339753412,
+      "loss.training_fape": 1.833403100259602,
+      "loss.control_geometry": 3.676584205124527
+    },
+    "topologies": [
+      {
+        "world_size": 8,
+        "nodes": 2
+      },
+      {
+        "world_size": 4,
+        "nodes": 1
+      }
+    ]
+  }
+}

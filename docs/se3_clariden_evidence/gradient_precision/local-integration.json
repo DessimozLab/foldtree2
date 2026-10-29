@@ -1,0 +1,10 @@
+{
+  "ddp": {
+    "model_and_optimizer_exact": true,
+    "updates": 2
+  },
+  "restart": {
+    "model_and_optimizer_exact": true,
+    "updates": 2
+  }
+}

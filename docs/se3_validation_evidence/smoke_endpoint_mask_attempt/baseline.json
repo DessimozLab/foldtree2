@@ -1,0 +1,15 @@
+[
+  {
+    "id": "A0A518IXF4",
+    "ca_bend_mae_radians": 1.4183273315429688,
+    "ca_torsion_mae_radians": 1.5402363538742065,
+    "fape": 0.9444600939750671,
+    "ca_rmsd": 12.893136978149414,
+    "tm_score": 0.09024163278621049,
+    "lddt": 0.018808411434292793,
+    "ca_bond_mae": 3.6147561073303223,
+    "ca_bond_deviation_3_8": 3.568047046661377,
+    "angle_mae_radians": null,
+    "valid_residues": 104
+  }
+]

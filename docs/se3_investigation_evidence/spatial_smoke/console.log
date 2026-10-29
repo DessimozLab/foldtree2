@@ -1,0 +1,15 @@
+{"event": "calibration", "time": 1791540526.7973044, "scale": 10.92841422532637, "fit_count": 32, "heldout_count": 128}
+{"event": "static", "time": 1791540529.373903, "raw_fape_mean": 0.9444813150912523, "angle_outside_fraction": 0.7711415886878967, "angle_loss_floor": 0.6344005465507507}
+Seed set to 42
+{"event": "initial", "time": 1791540530.897995, "case": "planar_control", "geometry": 2.0761988162994385, "fape": 0.9264470934867859}
+{"event": "epoch", "time": 1791540531.3240733, "epoch": 0, "case": "planar_control", "samples": 1, "step": 1, "train_geometry": 2.0761988162994385, "eval_geometry": 2.0726637840270996, "eval_fape": 0.9262779951095581, "gradient_norm": 2.3238401412963867, "seconds": 0.42562713101506233, "learning_rate": 0.0005}
+{"event": "screen_complete", "time": 1791540531.5828857, "case": "planar_control", "reduction": 0.001702646319122536, "geometry": 2.0726637840270996}
+Seed set to 42
+{"event": "initial", "time": 1791540531.6974847, "case": "lifted_residual", "geometry": 2.0579214096069336, "fape": 0.9221894145011902}
+{"event": "epoch", "time": 1791540532.1205246, "epoch": 0, "case": "lifted_residual", "samples": 1, "step": 1, "train_geometry": 2.0579214096069336, "eval_geometry": 2.0546364784240723, "eval_fape": 0.9218496084213257, "gradient_norm": 2.292461395263672, "seconds": 0.4227424869313836, "learning_rate": 0.0005}
+{"event": "screen_complete", "time": 1791540532.3764257, "case": "lifted_residual", "reduction": 0.0015962374304122617, "geometry": 2.0546364784240723}
+Seed set to 42
+{"event": "initial", "time": 1791540532.4921207, "case": "lifted_circular", "geometry": 2.0579214096069336, "fape": 0.9221894145011902}
+{"event": "epoch", "time": 1791540532.8887534, "epoch": 0, "case": "lifted_circular", "samples": 1, "step": 1, "train_geometry": 2.0579214096069336, "eval_geometry": 2.0539095401763916, "eval_fape": 0.9218557476997375, "gradient_norm": 2.294001817703247, "seconds": 0.396268580108881, "learning_rate": 0.0005}
+{"event": "screen_complete", "time": 1791540533.1397147, "case": "lifted_circular", "reduction": 0.0019494765017815663, "geometry": 2.0539095401763916}
+{"event": "complete", "time": 1791540533.1409214, "winner": "overfit_lifted_circular", "frozen_production_calls": 0}

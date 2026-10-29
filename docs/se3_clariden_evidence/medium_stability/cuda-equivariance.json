@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "structure": "A0A543CTK2",
+  "length": 255,
+  "valid_residues": 210,
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "coordinate_max_abs_error": 3.814697265625e-06,
+  "angle_max_abs_error": 2.384185791015625e-07,
+  "gradients_finite_and_nonzero": true
+}

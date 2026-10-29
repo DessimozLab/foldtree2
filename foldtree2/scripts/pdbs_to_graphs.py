@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import torch
 from tqdm import tqdm
-from foldtree2.src.pdbgraph import PDB2PyG
+from foldtree2.src.pdbgraphmk2 import PDB2PyG
 from foldtree2.src.config_paths import resolve_aapropcsv_path
 
 def find_pdbs_recursive(root_dir):
@@ -18,7 +18,7 @@ def find_pdbs_recursive(root_dir):
     return pdb_files
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert PDB files to graph HDF5 dataset using PDB2PyG.")
+    parser = argparse.ArgumentParser(description="Convert PDB files to graph HDF5 dataset using pdbgraphmk2.PDB2PyG.")
     parser.add_argument("input_dir", help="Root directory to search for PDB files recursively")
     parser.add_argument("output_h5", help="Output HDF5 filename")
     parser.add_argument("--aapropcsv", default=None, help="Amino acid property CSV (default: packaged foldtree2/config/aaindex1.csv)")
@@ -38,7 +38,7 @@ def main():
 
     converter = PDB2PyG(aapropcsv=args.aapropcsv)
     if args.mp:
-        converter.store_pyg_mp(pdb_files, args.output_h5, verbose=args.verbose, ncpu=args.ncpu)
+        converter.store_pyg_mp_pool(pdb_files, args.output_h5, verbose=args.verbose, ncpu=args.ncpu)
     else:
         converter.store_pyg(pdb_files, args.output_h5, verbose=args.verbose)
 

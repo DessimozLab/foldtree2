@@ -1,0 +1,12 @@
+{"event": "hashing_dataset", "time": 1791466471.1189132, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+{"event": "cache_verified", "time": 1791466472.8178394, "id": "A0A0W7X8K2"}
+{"event": "cache_progress", "time": 1791466472.8181028, "count": 1, "total": 2}
+{"event": "cache_forward_verified", "time": 1791466474.6294022}
+{"event": "epoch", "time": 1791466480.8837018, "epoch": 0, "global_step": 1, "train_loss": 3.477463483810425, "train_geometry": 3.3598275184631348, "train_fape": 0.9680346846580505, "train_angle": 1.1763602495193481, "val_loss": 2.732346773147583, "val_geometry": 2.623735189437866, "val_fape": 0.9475672841072083, "val_angle": 1.086114764213562, "gradient_norm_mean": 0.14181731641292572, "effective_train_count": 1, "effective_val_count": 1, "seconds": 2.1121865869499743, "structures_per_second": 0.9468860432865577, "peak_memory_bytes": 794980864, "peak_host_memory_bytes": 2585006080}
+{"event": "complete", "time": 1791466481.3973806, "seconds": 2.6483222900424153, "frozen_unchanged": true, "best_epoch": 0, "nonfinite_events": 0, "failures": 0}
+{"event": "hashing_dataset", "time": 1791467522.161101, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+{"event": "cache_verified", "time": 1791467527.5124588, "id": "A0A0W7X8K2"}
+{"event": "cache_progress", "time": 1791467527.5133514, "count": 1, "total": 2}
+{"event": "cache_forward_verified", "time": 1791467534.6629486}
+{"event": "epoch", "time": 1791467536.5228262, "epoch": 0, "global_step": 1, "train_loss": 3.477463483810425, "train_geometry": 3.3598275184631348, "train_fape": 0.9680346846580505, "train_angle": 1.1763602495193481, "val_loss": 2.732346773147583, "val_geometry": 2.623735189437866, "val_fape": 0.9475672841072083, "val_angle": 1.086114764213562, "gradient_norm_mean": 0.14181731641292572, "effective_train_count": 1, "effective_val_count": 1, "seconds": 1.6660825950093567, "structures_per_second": 1.2004206790172776, "peak_memory_bytes": 794980864, "peak_host_memory_bytes": 2564677632}
+{"event": "complete", "time": 1791467537.611969, "seconds": 2.761215507052839, "frozen_unchanged": true, "best_epoch": 0, "nonfinite_events": 0, "failures": 0}

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "A0A1J1CXQ6",
+    "length": 58,
+    "degree1_rms": 0.018042195588350296,
+    "degree1_max": 0.0889277309179306,
+    "geometry_projection_gradient": 0.06796445697546005,
+    "geometry_gradient_norm": 0.06796445697546005,
+    "weighted_angle_gradient_norm": 0.05617489665746689
+  },
+  {
+    "id": "A0A388Q026",
+    "length": 97,
+    "degree1_rms": 0.018042195588350296,
+    "degree1_max": 0.09020689874887466,
+    "geometry_projection_gradient": 0.03963517025113106,
+    "geometry_gradient_norm": 0.03963517025113106,
+    "weighted_angle_gradient_norm": 0.06360107660293579
+  },
+  {
+    "id": "A0A6N7V3G6",
+    "length": 125,
+    "degree1_rms": 0.018042195588350296,
+    "degree1_max": 0.08718166500329971,
+    "geometry_projection_gradient": 0.10169640928506851,
+    "geometry_gradient_norm": 0.10169640928506851,
+    "weighted_angle_gradient_norm": 0.08899043500423431
+  },
+  {
+    "id": "E4X664",
+    "length": 173,
+    "degree1_rms": 0.018042195588350296,
+    "degree1_max": 0.07981296628713608,
+    "geometry_projection_gradient": 0.14349694550037384,
+    "geometry_gradient_norm": 0.14349694550037384,
+    "weighted_angle_gradient_norm": 0.056277502328157425
+  }
+]

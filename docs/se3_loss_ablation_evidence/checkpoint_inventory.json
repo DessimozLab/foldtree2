@@ -1,0 +1,62 @@
+[
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_bond_only_last.pt",
+    "sha256": "fdf594efe17e079880ce6f716455fe0c9bab549f11bb4f9e2ff099579647c06a",
+    "bytes": 3551259
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_bond_only_best.pt",
+    "sha256": "fb09306a103d5484cea4e05332a1140d21684d03fa142dcab9385de78a7bbd48",
+    "bytes": 3551259
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_soft_only_best.pt",
+    "sha256": "4595b6162a6e929df5a9ea73991bb70be2587dc377b825acbb2d517150acf4b0",
+    "bytes": 3551259
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/overfit_control_best.pt",
+    "sha256": "e20ee33a58d5aeb9d6fc4239faaac7858353fc5563eb88ab4177dc5c0d2695e4",
+    "bytes": 3551103
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/overfit_soft_fape_bond_best.pt",
+    "sha256": "1f3bb4232b3a650ce0d8a4ec3db0ff7f299e4f6970f05ba3095cb48db76c4f3a",
+    "bytes": 3555395
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_soft_fape_bond_last.pt",
+    "sha256": "2dc62c405d4fab43af4aab2557d8e5c98554345c9bb576030b70b782b83a5d7b",
+    "bytes": 3554343
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_control_best.pt",
+    "sha256": "9aec335d92834f1c383bf03cfb503030e49f38dc4dcae35b1c7115e9ce93480d",
+    "bytes": 3550051
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/overfit_soft_fape_bond_last.pt",
+    "sha256": "5028bb20d5a6b663e1a3159ca419d5990d5b674b12214114e1ff6ea4e4803818",
+    "bytes": 3555395
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_control_last.pt",
+    "sha256": "ca9dd252a36c300f471b6e90f539a405d273d4079d8fb145e2b675d8a2290959",
+    "bytes": 3550051
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_soft_only_last.pt",
+    "sha256": "4040371e161c4a58fcebd2df4bc669bd4c706291bf08fa1f54bfde167b3c67ac",
+    "bytes": 3551259
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/screen_soft_fape_bond_best.pt",
+    "sha256": "67d4702a289db322fea484a2dc6c22017801b408225ddb9f602d8459adcc4404",
+    "bytes": 3554343
+  },
+  {
+    "path": "runs/se3_loss_ablation_20261009/overfit_control_last.pt",
+    "sha256": "a5ba95c55332c0f544cb62153d567b33ccfaec901d1491e127b96de0d7c73fd6",
+    "bytes": 3551103
+  }
+]

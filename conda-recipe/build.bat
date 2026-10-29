@@ -37,8 +37,4 @@ if exist foldtree2\config (
     xcopy /E /I foldtree2\config %PREFIX%\share\foldtree2\config
 )
 
-:: Always create production models directory; copy files when present
-mkdir %PREFIX%\share\foldtree2\models\production 2>nul
-if exist models\production (
-    xcopy /E /I models\production %PREFIX%\share\foldtree2\models\production
-)
+:: Model bundles are distributed separately; staging never includes them.

@@ -1,0 +1,12 @@
+[
+  {
+    "path": "runs/se3_revised_pilot_20261009/best.pt",
+    "sha256": "c01564e06e76ce820a1dd358df5e88b65acbe124d6df01e68d7b2b8efd5fb75a",
+    "bytes": 3539381
+  },
+  {
+    "path": "runs/se3_revised_pilot_20261009/last.pt",
+    "sha256": "e9614a6d610823cf7f403c1883e8aadb7e58527eae0fbfd5df85b7c0d7791d82",
+    "bytes": 3539381
+  }
+]

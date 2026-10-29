@@ -1,0 +1,11 @@
+Seed set to 42
+{"event": "hashing_dataset", "time": 1791467522.161101, "path": "foldtree2/notebooks/structs_training_mk2.h5"}
+Loaded pretrained encoder via torch.load(module) from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt epoch=None
+latent_dim: 20 vq_probe: 0.15517465770244598
+Loaded frozen production geometry decoder from models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt
+{"event": "cache_verified", "time": 1791467527.5124588, "id": "A0A0W7X8K2"}
+{"event": "cache_progress", "time": 1791467527.5133514, "count": 1, "total": 2}
+Seed set to 42
+{"event": "cache_forward_verified", "time": 1791467534.6629486}
+{"event": "epoch", "time": 1791467536.5228262, "epoch": 0, "global_step": 1, "train_loss": 3.477463483810425, "train_geometry": 3.3598275184631348, "train_fape": 0.9680346846580505, "train_angle": 1.1763602495193481, "val_loss": 2.732346773147583, "val_geometry": 2.623735189437866, "val_fape": 0.9475672841072083, "val_angle": 1.086114764213562, "gradient_norm_mean": 0.14181731641292572, "effective_train_count": 1, "effective_val_count": 1, "seconds": 1.6660825950093567, "structures_per_second": 1.2004206790172776, "peak_memory_bytes": 794980864, "peak_host_memory_bytes": 2564677632}
+{"event": "complete", "time": 1791467537.611969, "seconds": 2.761215507052839, "frozen_unchanged": true, "best_epoch": 0, "nonfinite_events": 0, "failures": 0}

@@ -1,0 +1,43 @@
+{
+  "fident_threshold": 0.3,
+  "matrix_size": 50,
+  "total_pair_counts": 26709596.0,
+  "nonzero_pairs": 2500,
+  "sparsity": 0.0,
+  "log_odds_min": -3.177320896745764,
+  "log_odds_max": 3.761113352175383,
+  "mean_diagonal_score": 2.026587494025988,
+  "mean_off_diagonal_score": -0.37818254944800367,
+  "std_diagonal_score": 0.4685959149917633,
+  "std_off_diagonal_score": 0.8479973033932807,
+  "background_sum": 1.0,
+  "processing": {
+    "files_processed": 25325,
+    "processed_sequences": 51406,
+    "total_sequence_positions": 14070075
+  },
+  "convergence": {
+    "total_iterations": 1013,
+    "final_frobenius_norm": 48.2548396011652,
+    "final_gradient_norm": 0.10260920698999762,
+    "criterion": "sustained_ema_frobenius_v1",
+    "ema_span": 5,
+    "ema_alpha": 0.3333333333333333,
+    "ema_updates": 1012,
+    "final_ema_change": 0.08645587397139744,
+    "mean_gradient_norm": 4.106945225284448,
+    "max_gradient_norm": 821.5264321137826,
+    "is_converged": false,
+    "final_relative_change": 0.0021251788966873894,
+    "stable_updates": 0,
+    "required_stable_updates": 5,
+    "minimum_files": 100,
+    "minimum_pairs": 10000,
+    "absolute_threshold": 0.025,
+    "relative_threshold": null,
+    "sparsity": 0.0
+  },
+  "counting_method": "headerless_all_pair_occurrences_v2",
+  "alignment_seed": 42,
+  "available_alignment_files": 25325
+}

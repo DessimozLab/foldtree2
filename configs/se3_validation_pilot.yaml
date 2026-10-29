@@ -1,0 +1,12 @@
+dataset: foldtree2/notebooks/structs_training_mk2.h5
+manifest: configs/production_models.yaml
+seed: 42
+device: cuda:0
+train_count: 512
+val_count: 128
+max_residues: 384
+epochs: 20
+early_stopping: true
+cache: runs/se3_validation/cache
+output: runs/se3_validation/pilot
+early_stopping_min_delta: 0.0001

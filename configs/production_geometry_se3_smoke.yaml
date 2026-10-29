@@ -1,0 +1,91 @@
+# Local smoke test. Keep this bounded so it cannot fan out CPU threads or
+# allocate a large atom-level tensor accidentally.
+dataset: foldtree2/notebooks/structs_training_mk2.h5
+epochs: 1
+batch_size: 1
+val_batch_size: 1
+target_effective_batch_size: 8
+num_workers: 0
+allow_hdf5_multiprocessing: false
+val_count: 1
+val_fraction: 0.1
+split_seed: 42
+limit_train_batches: 1
+limit_val_batches: 1
+
+accelerator: auto
+devices: 1
+strategy: auto
+precision: 32-true
+log_every_n_steps: 1
+checkpoint_dir: /tmp/foldtree2_prod_se3_smoke
+save_top_k: 0
+
+production_coordinate_source: bottleneck
+production_coordinate_scale: 1.0
+
+# Smallest useful geometry/SE3 model for a local forward/backward check.
+transformer_width: 1
+transformer_layers: 1
+transformer_nheads: 1
+transformer_dropout: 0.0
+se3_hidden: 32
+se3_out_channels: 3
+se3_depth: 2
+se3_heads: 2
+se3_dim_head: 16
+se3_residue_hidden: 32
+se3_residue_depth: 2
+se3_residue_heads: 2
+se3_residue_dim_head: 16
+se3_atom_hidden: 1
+se3_atom_depth: 1
+se3_atom_heads: 1
+se3_atom_dim_head: 4
+se3_num_atom_types: 40
+se3_contact_sketch_top_k: 2
+se3_contact_sketch_threshold: .inf
+se3_contact_sketch_min_seq_sep: 3
+se3_contact_local_window: 1
+se3_contact_coord_scale: 1.0
+se3_max_nodes: 0
+
+use_se3: true
+train_se3_only: true
+se3_input_source: geometry_dot_contacts
+se3_use_codebook_vectors: true
+se3_use_distance_contacts: true
+se3_distance_contact_cutoff: 8.0
+
+# Residue-level losses; atom refinement is deferred.
+use_frame_fape_loss: false
+use_quat_geodesic_loss: false
+use_decoder_angle_loss: false
+use_coarse_ca_loss: false
+use_coarse_backbone_loss: false
+use_coarse_backbone_atom_loss: false
+use_coarse_c_loss: false
+use_coarse_cb_loss: false
+use_coarse_n_loss: false
+use_coarse_backbone_fape_loss: false
+use_coarse_backbone_angle_loss: false
+use_se3_residue_loss: true
+use_se3_angle_loss: true
+use_se3_atom_refine: false
+use_se3_atom_loss: false
+use_se3_atom_fape_loss: false
+se3_atom_weight: 0.05
+se3_atom_fape_weight: 0.25
+use_uncertainty_weighting: false
+nan_guard: true
+sanitize_nonfinite_grads: false
+skip_empty_loss_batches: false
+
+# Avoid CPU oversubscription on a workstation.
+clip_grad: 1.0
+cache_flush_interval: 0
+gc_collect_interval: 1
+use_cuda_ipc_collect: false
+production_manifest: configs/production_models.yaml
+learning_rate: 0.0005
+seed: 42

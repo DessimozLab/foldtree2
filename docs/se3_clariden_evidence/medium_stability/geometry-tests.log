@@ -1,0 +1,10 @@
+...........................s...................                          [100%]
+=============================== warnings summary ===============================
+../../miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/cuda/__init__.py:829: 1 warning
+foldtree2/tests/test_se3_refiner.py: 25 warnings
+foldtree2/tests/test_se3_validation.py: 2 warnings
+  /home/dmoi/miniforge3/envs/foldtree2/lib/python3.9/site-packages/torch/cuda/__init__.py:829: UserWarning: Can't initialize NVML
+    warnings.warn("Can't initialize NVML")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+46 passed, 1 skipped, 28 warnings in 21.89s

@@ -1,0 +1,4 @@
+Seed set to 42
+/home/dmoi/projects/foldtree2/scripts/audit_se3_loss.py:36: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:835.)
+  return {'fape': float(fape), 'distance_loss': float(distances),

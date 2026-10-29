@@ -1,0 +1,14 @@
+device: cuda:0
+seed: 42
+epochs: 20
+patience: 5
+min_delta: 0.0001
+batch_size: 1
+effective_batch_size: 8
+learning_rate: 0.0005
+gradient_clip: 1.0
+train_count: 512
+val_count: 128
+max_residues: 384
+calibration_provenance: runs/se3_loss_ablation_20261009/provenance.json
+output: runs/se3_revised_pilot_20261009

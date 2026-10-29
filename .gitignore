@@ -62,6 +62,8 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv-mlflow/
+.mlflow/
 env/
 venv/
 ENV/
@@ -92,11 +94,11 @@ Thumbs.db
 runs/
 logs/
 checkpoints/
-models/
+/models/
 wandb/
 lightning_logs/
 tmp/
-models/
+/models/
 **/checkpoints/
 ***/logs/
 **/**__pycache__/
@@ -150,3 +152,42 @@ models/
 *.tar.gz
 *.rar
 *.7z
+
+# Canonical benchmark cohort and published 3Di model provenance.
+!configs/oma_benchmark_cohort.json
+!configs/oma_fixed_species_tree.nwk
+!foldtree2/config/3diphy_submats/Q.3Di.AF.provenance.json
+
+# Compact SE(3) validation evidence; datasets, caches and checkpoints stay local.
+!docs/se3_validation_evidence/**/*.json
+!docs/se3_validation_evidence/**/*.jsonl
+!docs/se3_validation_evidence/**/*.png
+
+# Bounded follow-up investigation evidence and experimental seed diagnostics.
+!docs/se3_investigation_evidence/**/*.json
+!docs/se3_investigation_evidence/**/*.jsonl
+!docs/se3_investigation_evidence/**/*.png
+
+!docs/se3_spatial_learning_evidence/**/*.json
+!docs/se3_spatial_learning_evidence/**/*.jsonl
+!docs/se3_spatial_learning_evidence/**/*.png
+
+!docs/se3_loss_ablation_evidence/**/*.json
+!docs/se3_loss_ablation_evidence/**/*.jsonl
+!docs/se3_loss_ablation_evidence/**/*.png
+
+!docs/se3_revised_pilot_evidence/**/*.json
+!docs/se3_revised_pilot_evidence/**/*.jsonl
+!docs/se3_revised_pilot_evidence/**/*.png
+
+!docs/se3_larger_local_evidence/**/*.json
+!docs/se3_larger_local_evidence/**/*.jsonl
+!docs/se3_larger_local_evidence/**/*.png
+
+!docs/se3_clariden_evidence/**/*.json
+!docs/se3_clariden_evidence/**/*.jsonl
+!configs/clariden_se3/budget.json
+!alps/se3/requirements.txt
+
+# Playwright CLI temp artifacts
+.playwright-cli/

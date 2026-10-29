@@ -1,0 +1,13 @@
+[
+  {
+    "id": "A0A518IXF4",
+    "unique_tokens": 33,
+    "baseline_radius_rms": 1.5148568153381348,
+    "baseline_bond_mean": 0.23195287585258484,
+    "refined_radius_rms": 0.02056468091905117,
+    "refined_bond_mean": 0.004206378478556871,
+    "target_radius_rms": 13.37161636352539,
+    "target_bond_mean": 3.8467092514038086,
+    "distance_contact_density": 1.0
+  }
+]

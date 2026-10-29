@@ -1,0 +1,79 @@
+{
+  "epochs": 30,
+  "optimizer_steps": 15360,
+  "best_epoch": 27,
+  "initial_val_geometry": 4.031336345244199,
+  "best_val_geometry": 3.711433097603731,
+  "val_reduction": 0.07935414469146462,
+  "metrics": {
+    "fape": {
+      "warm_start": 0.9322493498912081,
+      "refined": 0.9300577660324052,
+      "count": 512,
+      "delta": -0.0021915838588029146,
+      "improved": 378,
+      "material_regression": false
+    },
+    "ca_rmsd": {
+      "warm_start": 16.304992430843413,
+      "refined": 15.775894280523062,
+      "count": 512,
+      "delta": -0.5290981503203511,
+      "improved": 331,
+      "material_regression": false
+    },
+    "tm_score": {
+      "warm_start": 0.20764394135487588,
+      "refined": 0.21488783607689133,
+      "count": 512,
+      "delta": 0.007243894722015448,
+      "improved": 317,
+      "material_regression": false
+    },
+    "lddt": {
+      "warm_start": 0.24857464650995098,
+      "refined": 0.2557211977255065,
+      "count": 512,
+      "delta": 0.007146551215555519,
+      "improved": 298,
+      "material_regression": false
+    },
+    "ca_bond_mae": {
+      "warm_start": 1.2718965962994844,
+      "refined": 1.0114617241779342,
+      "count": 512,
+      "delta": -0.26043487212155014,
+      "improved": 504,
+      "material_regression": false
+    },
+    "ca_bend_mae_radians": {
+      "warm_start": 0.7468484157579951,
+      "refined": 0.7110768359270878,
+      "count": 512,
+      "delta": -0.035771579830907285,
+      "improved": 386,
+      "material_regression": false
+    },
+    "ca_torsion_mae_radians": {
+      "warm_start": 1.5374285858088044,
+      "refined": 1.518288048746068,
+      "count": 511,
+      "delta": -0.01914053706273644,
+      "improved": 305,
+      "material_regression": false
+    },
+    "angle_mae_radians": {
+      "warm_start": 0.5801293183467351,
+      "refined": 0.5412898235954344,
+      "count": 512,
+      "delta": -0.03883949475130066,
+      "improved": 346,
+      "material_regression": false
+    }
+  },
+  "failure_events": 0,
+  "training_hours": 5.221823451209865,
+  "peak_gpu_gib": 1.5857977867126465,
+  "fape_improves": true,
+  "no_material_regression": true
+}

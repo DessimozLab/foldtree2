@@ -1,0 +1,8 @@
+{
+  "device": "cpu",
+  "configured_torch_threads": 2,
+  "pid": 923130,
+  "VmHWM": "3527868 kB",
+  "VmRSS": "2571724 kB",
+  "Threads": "6"
+}

@@ -13,6 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Upstream-style OpenFold losses retained for optional research workflows.
+
+Requires OpenFold and ml_collections, not installed by the base tree-inference
+package. Active lightweight geometry training uses the local fape module.
+"""
 import ml_collections
 import numpy as np
 import torch

@@ -1,0 +1,252 @@
+{
+  "identity": {
+    "format": 1,
+    "dataset_sha256": "2c970702701a5bf789dd46974ff689f02c0805dcf146746db8d1eba07a2b3673",
+    "encoder_sha256": "75d176f4dd11fa1e676c536be953b78a767c40c405b425a49182192fbb6a7fc6",
+    "decoder_sha256": "b9642afd20db829a5ce2dd1c908c86df0c351319347fccd2ad1d335b3aa9089d",
+    "preprocessing": {
+      "extractor_sha256": "ad5494de73bad022a80e47a75a0790d7d52aaab9f90867d7068f1175babdb36a",
+      "coordinate_source": "bottleneck",
+      "max_residues": 256,
+      "contact_top_k": 8,
+      "contact_min_sep": 3,
+      "contact_cutoff": 8.0,
+      "plddt_threshold": 0.5,
+      "features": "latent+codebook"
+    }
+  },
+  "train_ids": [
+    "A0A0W7X8K2",
+    "A0A518IXF4",
+    "T1XI41",
+    "A0A552Q9F5",
+    "A0A6M0S7I9",
+    "A0A0N4UQQ1",
+    "A0A1G3R0V7",
+    "A0A2W5KC43",
+    "A0A5D2C3K6",
+    "A0A0G1IXS9",
+    "A0A1X7UZW2",
+    "A0A7W1W0E0",
+    "A0A4V1LZW6",
+    "A0A1I6M2U8",
+    "A0A6H0ACP5",
+    "A0A7S3RFH6",
+    "A0A2E2EUC0",
+    "A0A2N7VJ36",
+    "A0A7V9IY55",
+    "A0A7V0UDR5",
+    "E5BHY7",
+    "D0VWQ8",
+    "A0A1Y0ISQ8",
+    "A0A1C0U6B9",
+    "A0A819IRJ0",
+    "A0A388Q026",
+    "A0A1J1CXQ6",
+    "E4X664",
+    "A0A532CPA4",
+    "A0A5F4C6F5",
+    "A0A6N7V3G6",
+    "A0A0C3F3X7"
+  ],
+  "val_ids": [
+    "A0A0W7X8K2",
+    "A0A518IXF4",
+    "T1XI41",
+    "A0A552Q9F5",
+    "A0A6M0S7I9",
+    "A0A0N4UQQ1",
+    "A0A1G3R0V7",
+    "A0A2W5KC43",
+    "A0A5D2C3K6",
+    "A0A0G1IXS9",
+    "A0A1X7UZW2",
+    "A0A7W1W0E0",
+    "A0A4V1LZW6",
+    "A0A1I6M2U8",
+    "A0A6H0ACP5",
+    "A0A7S3RFH6",
+    "A0A2E2EUC0",
+    "A0A2N7VJ36",
+    "A0A7V9IY55",
+    "A0A7V0UDR5",
+    "E5BHY7",
+    "D0VWQ8",
+    "A0A1Y0ISQ8",
+    "A0A1C0U6B9",
+    "A0A819IRJ0",
+    "A0A388Q026",
+    "A0A1J1CXQ6",
+    "E4X664",
+    "A0A532CPA4",
+    "A0A5F4C6F5",
+    "A0A6N7V3G6",
+    "A0A0C3F3X7"
+  ],
+  "model": {
+    "hidden": 32,
+    "depth": 2,
+    "heads": 2,
+    "dim_head": 16
+  },
+  "optimizer": {
+    "learning_rate": 0.0005,
+    "effective_batch_size": 8,
+    "clip": 1.0
+  },
+  "seed": 42,
+  "implementation_sha256": "4d81b2565423ce55cdc918f17fc091b9f06e684581612b4c68489b006000b933",
+  "selection_sha256": "159c6155149b15522e73afd00de6ba196390b0fc6dda57c791e35ce2da40dc3b",
+  "loss_sha256": "bd7376ddb53965ee09fc3cd6f06ab6add30dc269422ce0a5c704a44da2293b64",
+  "config": {
+    "dataset": "foldtree2/notebooks/structs_training_mk2.h5",
+    "manifest": "configs/production_models.yaml",
+    "seed": 42,
+    "device": "cuda:0",
+    "train_count": 32,
+    "val_count": 0,
+    "max_residues": 256,
+    "epochs": 30,
+    "early_stopping": false,
+    "cache": "runs/se3_validation/cache",
+    "output": "runs/se3_validation/overfit",
+    "overfit": true
+  },
+  "checkpoints": {
+    "encoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt",
+    "decoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt"
+  },
+  "skipped": [
+    {
+      "id": "A0A1S2MTV8",
+      "length": 294,
+      "reason": "length"
+    },
+    {
+      "id": "addH_F2ANL2",
+      "length": 619,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5B8U3L0",
+      "length": 457,
+      "reason": "length"
+    },
+    {
+      "id": "X6MLV4",
+      "length": 529,
+      "reason": "length"
+    },
+    {
+      "id": "A0A094ZST1",
+      "length": 375,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7U4P760",
+      "length": 414,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1G2PZ97",
+      "length": 514,
+      "reason": "length"
+    },
+    {
+      "id": "A0A8B6HLN9",
+      "length": 186,
+      "reason": "fewer_than_three_valid_residues"
+    },
+    {
+      "id": "A0A078AW49",
+      "length": 274,
+      "reason": "length"
+    },
+    {
+      "id": "A0A7J8G6X6",
+      "length": 534,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1A8WAD6",
+      "length": 713,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0L0DF95",
+      "length": 553,
+      "reason": "length"
+    },
+    {
+      "id": "A0A1I7UZB1",
+      "length": 353,
+      "reason": "length"
+    },
+    {
+      "id": "A0A178CKD4",
+      "length": 770,
+      "reason": "length"
+    },
+    {
+      "id": "A0A662QR95",
+      "length": 633,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2V1D9F9",
+      "length": 107,
+      "reason": "no_valid_defined_frames"
+    },
+    {
+      "id": "A0A0L1I650",
+      "length": 335,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0C2TWA0",
+      "length": 724,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6V7TQG4",
+      "length": 793,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2W1BLI9",
+      "length": 286,
+      "reason": "length"
+    },
+    {
+      "id": "A0A812IVK1",
+      "length": 560,
+      "reason": "length"
+    },
+    {
+      "id": "A0A2Z7DB88",
+      "length": 298,
+      "reason": "length"
+    },
+    {
+      "id": "A0A6J8DR86",
+      "length": 365,
+      "reason": "length"
+    },
+    {
+      "id": "A0A139NH06",
+      "length": 644,
+      "reason": "length"
+    },
+    {
+      "id": "A0A0C9SQ96",
+      "length": 263,
+      "reason": "length"
+    }
+  ],
+  "versions": {
+    "python": "3.9.23",
+    "torch": "2.8.0+cu128",
+    "cuda": "12.8",
+    "lightning": "2.6.0"
+  }
+}

@@ -1,0 +1,885 @@
+[rank: 2] Seed set to 42
+[rank: 0] Seed set to 42
+[rank: 3] Seed set to 42
+[rank: 1] Seed set to 42
+[rank: 2] Seed set to 42
+[rank: 0] Seed set to 42
+[rank: 3] Seed set to 42
+[rank: 1] Seed set to 42
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+You are using a CUDA device ('NVIDIA GH200 120GB') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/4
+Initializing distributed: GLOBAL_RANK: 2, MEMBER: 3/4
+Initializing distributed: GLOBAL_RANK: 3, MEMBER: 4/4
+Initializing distributed: GLOBAL_RANK: 1, MEMBER: 2/4
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007381:84203:84203 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007381:84203:84203 [0] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007381:84203:84203 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84203:84203 [0] NCCL INFO Bootstrap: Using hsn0:172.28.42.244<0>
+nid007381:84203:84601 [0] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007381:84203:84203 [0] NCCL INFO cudaDriverVersion 13020
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No suchnid007381:84205:84205 [2] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+ file or directory
+nid007381:84205:84205 [2] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007381:84204:84204 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlopen(libnccl-env.so) failed: libnccl-env.so: cannot open shared object file: No such file or directory
+nid007381:84205:84205 [2] NCCL INFO cudaDriverVersion 13020
+nid007381:84206:84206 [3] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+nid007381:84204:84204 [1] NCCL INFO cudaDriverVersion 13020
+nid007381:84206:84206 [3] NCCL INFO cudaDriverVersion 13020
+nid007381:84203:84203 [0] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007381:84203:84203 [0] NCCL INFO NCCL git version unknown unknown
+nid007381:84205:84205 [2] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007381:84205:84205 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84204:84204 [1] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007381:84204:84204 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84206:84206 [3] NCCL INFO Stack size limit (unlimited) is unsafe; will use 8192KB for newly launched threads
+nid007381:84206:84206 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84203:84203 [0] NCCL INFO Comm config Blocking set to 1
+nid007381:84203:84203 [0] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007381:84205:84205 [2] NCCL INFO Bootstrap: Using hsn0:172.28.42.244<0>
+nid007381:84204:84204 [1] NCCL INFO Bootstrap: Using hsn0:172.28.42.244<0>
+nid007381:84205:84205 [2] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007381:84204:84204 [1] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007381:84205:84205 [2] NCCL INFO NCCL git version unknown unknown
+nid007381:84206:84206 [3] NCCL INFO Bootstrap: Using hsn0:172.28.42.244<0>
+nid007381:84204:84204 [1] NCCL INFO NCCL git version unknown unknown
+nid007381:84206:84206 [3] NCCL INFO NCCL version 2.30.7+cuda13.1
+nid007381:84206:84206 [3] NCCL INFO NCCL git version unknown unknown
+nid007381:84205:84205 [2] NCCL INFO Comm config Blocking set to 1
+nid007381:84204:84204 [1] NCCL INFO Comm config Blocking set to 1
+nid007381:84206:84206 [3] NCCL INFO Comm config Blocking set to 1
+nid007381:84205:84205 [2] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007381:84204:84204 [1] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007381:84206:84206 [3] NCCL INFO NCCL_NCHANNELS_PER_NET_PEER set by environment to 4.
+nid007381:84206:84206 [3] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007381:84203:84203 [0] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007381:84205:84205 [2] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007381:84204:84204 [1] NCCL INFO NET/Plugin: Loaded net plugin AWS Libfabric (v12)
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v11) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v11
+tPlugin_v11
+tPlugin_v11
+tPlugin_v11
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v10
+tPlugin_v10
+tPlugin_v10
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v10) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNenid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNettPlugin_v10
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+Plugin_v9
+Plugin_v9
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v9) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v9
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+Plugin_v8
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v8) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v8
+Plugin_v7
+Plugin_v7
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v7) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetPlugin_v7
+Plugin_v6
+Plugin_v7
+Plugin_v6
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84205:84205 [2] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+Plugin_v6
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclCollNetPlugin_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclCollNetnid007381:84204:84204 [1] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007381:84206:84206 [3] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+Plugin_v6
+nid007381:84203:84203 [0] NCCL INFO Successfully loaded external network plugin /lib/libnccl-net.so
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Initializing aws-ofi-nccl git-423a007
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Using Libfabric version 2.6
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Using CUDA driver version 13020 with runtime 13010
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Plugin selected platform: Default
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84206:84206 [3] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007381:84206:84206 [3] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007381:84206:84206 [3] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007381:84206:84206 [3] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84203:84203 [0] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007381:84203:84203 [0] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007381:84203:84203 [0] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007381:84203:84203 [0] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007381:84204:84204 [1] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007381:84204:84204 [1] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007381:84204:84204 [1] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007381:84204:84204 [1] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84205:84205 [2] NCCL INFO NET/OFI NIC group 0 device #0 0002:01:00.0
+nid007381:84205:84205 [2] NCCL INFO NET/OFI NIC group 1 device #0 0010:01:00.0
+nid007381:84205:84205 [2] NCCL INFO NET/OFI NIC group 2 device #0 0020:01:00.0
+nid007381:84205:84205 [2] NCCL INFO NET/OFI NIC group 3 device #0 0030:01:00.0
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Selected provider is cxi, fabric is cxi (found 4 nics)
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Using transport protocol SENDRECV
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Support for global registrations: false
+nid007381:84206:84206 [3] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Support for global registrations: false
+nid007381:84204:84204 [1] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007381:84206:84206 [3] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007381:84206:84206 [3] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007381:84206:84206 [3] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007381:84206:84206 [3] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007381:84206:84206 [3] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007381:84206:84206 [3] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84206:84206 [3] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84206:84206 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84206:84206 [3] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Support for global registrations: false
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Support for global registrations: false
+nid007381:84203:84203 [0] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007381:84205:84205 [2] NCCL INFO NET/OFI Support for DMA-BUF registrations: true
+nid007381:84206:84206 [3] NCCL INFO Count not open libibverbs.so
+nid007381:84206:84206 [3] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84206:84206 [3] NCCL INFO NET/IB : No device found.
+nid007381:84206:84206 [3] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.42.244<0>
+nid007381:84206:84206 [3] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007381:84206:84206 [3] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007381:84206:84206 [3] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007381:84206:84206 [3] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007381:84206:84206 [3] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84206:84206 [3] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84206:84206 [3] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84206:84206 [3] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007381:84206:84206 [3] NCCL INFO Using network AWS Libfabric
+nid007381:84206:84206 [3] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007381:84204:84204 [1] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007381:84204:84204 [1] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007381:84204:84204 [1] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007381:84204:84204 [1] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007381:84204:84204 [1] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007381:84204:84204 [1] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84204:84204 [1] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84204:84204 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84204:84204 [1] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007381:84204:84204 [1] NCCL INFO Count not open libibverbs.so
+nid007381:84203:84203 [0] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007381:84203:84203 [0] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007381:84205:84205 [2] NCCL INFO Initialized NET plugin AWS Libfabric
+nid007381:84205:84205 [2] NCCL INFO Assigned NET plugin AWS Libfabric to comm
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007381:84203:84203 [0] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007381:84203:84203 [0] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007381:84203:84203 [0] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007381:84203:84203 [0] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84203:84203 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84203:84203 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84203:84203 [0] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlopen(libnccl-rma.so) failed: libnccl-rma.so: cannot open shared object file: No such file or directory
+nid007381:84205:84205 [2] NCCL INFO RMA/Plugin: Could not find: libnccl-rma.so
+nid007381:84205:84205 [2] NCCL INFO RMA/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclRma: (nil)
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclRmaPlugin_v13) failed: /lib/libnccl-net.so: undefined symbol: ncclRmaPlugin_v13
+nid007381:84205:84205 [2] NCCL INFO RMA/Plugin: Loaded rma plugin Libfabric (v13)
+nid007381:84205:84205 [2] NCCL INFO RMA/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84205:84205 [2] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84205:84205 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84205:84205 [2] NCCL INFO plugin/rma/rma_v13.cc:18 (ncclRma_init) -> 3
+nid007381:84204:84204 [1] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84203:84203 [0] NCCL INFO Count not open libibverbs.so
+nid007381:84205:84205 [2] NCCL INFO Count not open libibverbs.so
+nid007381:84204:84204 [1] NCCL INFO NET/IB : No device found.
+nid007381:84204:84204 [1] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.42.244<0>
+nid007381:84204:84204 [1] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007381:84204:84204 [1] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007381:84204:84204 [1] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007381:84204:84204 [1] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007381:84204:84204 [1] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84204:84204 [1] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84204:84204 [1] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84204:84204 [1] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007381:84204:84204 [1] NCCL INFO Using network AWS Libfabric
+nid007381:84205:84205 [2] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84203:84203 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to hsn
+nid007381:84205:84205 [2] NCCL INFO NET/IB : No device found.
+nid007381:84203:84203 [0] NCCL INFO NET/IB : No device found.
+nid007381:84205:84205 [2] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.42.244<0>
+nid007381:84205:84205 [2] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007381:84203:84203 [0] NCCL INFO NET/IB : Using [RO]; OOB hsn0:172.28.42.244<0>
+nid007381:84203:84203 [0] NCCL INFO RMA/Plugin: Failed to initialize any plugin
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No such file or directory
+nid007381:84205:84205 [2] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007381:84205:84205 [2] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007381:84205:84205 [2] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007381:84205:84205 [2] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84205:84205 [2] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84205:84205 [2] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARnid007381:84203:84203 [0] NCCL INFO ncclOsDlopen(libnccl-gin.so) failed: libnccl-gin.so: cannot open shared object file: No suchN NET/OFI GIN only supports RDMA transport protocol.
+ file or directory
+nid007381:84205:84205 [2] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007381:84203:84203 [0] NCCL INFO GIN/Plugin: Could not find: libnccl-gin.so
+nid007381:84205:84205 [2] NCCL INFO Using network AWS Libfabric
+nid007381:84203:84203 [0] NCCL INFO GIN/Plugin: Failed to load external plugin /lib/libnccl-net.so, dlHandle: (nil), ncclGin: (nil)
+nid007381:84203:84203 [0] NCCL INFO GIN/Plugin: Loaded gin plugin Libfabric (v13)
+nid007381:84203:84203 [0] NCCL INFO GIN/Plugin: Successfully loaded external plugin /lib/libnccl-net.so
+nid007381:84203:84203 [0] NCCL INFO NET/OFI gin: Initializing
+
+[2026-10-13 15:58:27] nid007381:84203:84203 [0] ncclResult_t nccl_ofi_gin_init(void**, uint64_t, ncclDebugLogger_t):55 NCCL WARN NET/OFI GIN only supports RDMA transport protocol.
+nid007381:84203:84203 [0] NCCL INFO GIN/Plugin: Failed to initialize any GIN plugin
+nid007381:84203:84203 [0] NCCL INFO Using network AWS Libfabric
+nid007381:84204:84204 [1] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007381:84203:84203 [0] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007381:84205:84205 [2] NCCL INFO Loaded NVML from libnvidia-ml.so.1
+nid007381:84206:84206 [3] NCCL INFO DMA-BUF is available on GPU device 3
+nid007381:84206:84206 [3] NCCL INFO [Rank 3] ncclCommInitRankConfig comm 0x3e54d8b0 rank 3 nranks 4 cudaDev 3 nvmlDev 3 busId 3901000 commId 0xd3b3dbd94beaa155 - Init START
+nid007381:84206:84206 [3] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007381:84204:84204 [1] NCCL INFO DMA-BUF is available on GPU device 1
+nid007381:84204:84204 [1] NCCL INFO [Rank 1] ncclCommInitRankConfig comm 0x23a7db30 rank 1 nranks 4 cudaDev 1 nvmlDev 1 busId 1901000 commId 0xd3b3dbd94beaa155 - Init START
+nid007381:84204:84204 [1] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007381:84203:84203 [0] NCCL INFO DMA-BUF is available on GPU device 0
+nid007381:84203:84203 [0] NCCL INFO [Rank 0] ncclCommInitRankConfig comm 0x2e311c00 rank 0 nranks 4 cudaDev 0 nvmlDev 0 busId 901000 commId 0xd3b3dbd94beaa155 - Init START
+nid007381:84203:84203 [0] NCCL INFO RAS client listening socket at ::1<28028>
+nid007381:84205:84205 [2] NCCL INFO DMA-BUF is available on GPU device 2
+nid007381:84205:84205 [2] NCCL INFO [Rank 2] ncclCommInitRankConfig comm 0x3355e400 rank 2 nranks 4 cudaDev 2 nvmlDev 2 busId 2901000 commId 0xd3b3dbd94beaa155 - Init START
+nid007381:84205:84205 [2] NCCL INFO Socket handshake magic 0x564ab9f2fc4b9d6c (built-in default)
+nid007381:84205:84205 [2] NCCL INFO RAS client listening socket at ::1<28028>
+nid007381:84204:84204 [1] NCCL INFO RAS client listening socket at ::1<28028>
+nid007381:84206:84206 [3] NCCL INFO RAS client listening socket at ::1<28028>
+nid007381:84205:84205 [2] NCCL INFO Bootstrap timings total 0.000794 (create 0.000034, send 0.000098, recv 0.000137, ring 0.0001nid007381:84206:84206 [3] NCCL INFO Bootstrap timings total 0.197819 (create 0.000058, send 0.000127, recv 0.157390, ring 0.0000nid007381:84204:84204 [1] NCCL INFO Bootstrap timings total 0.099447 (create 0.000037, send 0.000098, recv 0.098744, ring 0.000131, delay 0.000000)
+50, delay 0.000001)
+49, delay 0.000001)
+nid007381:84203:84203 [0] NCCL INFO Bootstrap timings total 0.040506 (create 0.000037, send 0.000090, recv 0.000148, ring 0.039430, delay 0.000001)
+nid007381:84205:84205 [2] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007381:84203:84203 [0] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007381:84206:84206 [3] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007381:84204:84204 [1] NCCL INFO NCCL_CROSS_NIC set by environment to 0.
+nid007381:84203:84203 [0] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007381:84204:84204 [1] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007381:84205:84205 [2] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007381:84206:84206 [3] NCCL INFO NCCL_P2P_LEVEL set by environment to NVL
+nid007381:84203:84203 [0] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007381:84206:84206 [3] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007381:84203:84203 [0] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007381:84206:84206 [3] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007381:84203:84203 [0] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007381:84206:84206 [3] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007381:84204:84204 [1] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007381:84204:84204 [1] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007381:84204:84204 [1] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007381:84205:84205 [2] NCCL INFO NCCL_PXN_DISABLE set by environment to 1.
+nid007381:84205:84205 [2] NCCL INFO NCCL_NET_GDR_C2C set by environment to 1.
+nid007381:84205:84205 [2] NCCL INFO NCCL_NET_GDR_LEVEL set by environment to PHB
+nid007381:84203:84203 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0-7. (GPU affinity = 0-71 ; CPU affinity = 0-7nid007381:84206:84206 [3] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 3 is empty, ignoring. (GPU affinity = 216-287 ; CPU).
+nid007381:84204:84204 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is empty, ignoring. (GPU affinity = 72-143 ; CPU  affinity = 0-7).
+affinity = 0-7).
+nid007381:84206:84206 [3] NCCL INFO NVLS multicast support is not available on dev 3
+nid007381:84204:84204 [1] NCCL INFO NVLS multicast support is not available on dev 1
+nid007381:84203:84203 [0] NCCL INFO NVLS multicast support is not available on dev 0
+nid007381:84205:84205 [2] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 2 is empty, ignoring. (GPU affinity = 144-215 ; CPU affinity = 0-7).
+nid007381:84205:84205 [2] NCCL INFO NVLS multicast support is not available on dev 2
+nid007381:84206:84206 [3] NCCL INFO Rank 3: 4 Net devices
+nid007381:84206:84206 [3] NCCL INFO Rank 3: 0 CollNet devices
+nid007381:84204:84204 [1] NCCL INFO Rank 1: 4 Net devices
+nid007381:84204:84204 [1] NCCL INFO Rank 1: 0 CollNet devices
+nid007381:84203:84203 [0] NCCL INFO Rank 0: 4 Net devices
+nid007381:84203:84203 [0] NCCL INFO Rank 0: 0 CollNet devices
+nid007381:84205:84205 [2] NCCL INFO Rank 2: 4 Net devices
+nid007381:84205:84205 [2] NCCL INFO Rank 2: 0 CollNet devices
+nid007381:84203:84203 [0] NCCL INFO Local Net device counts across ranks: min 4 max 4
+nid007381:84204:84204 [1] NCCL INFO comm 0x23a7db30 rank 1 nRanks 4 nNodes 1 localRanks 4 localRank 1 MNNVL 0
+nid007381:84206:84206 [3] NCCL INFO comm 0x3e54d8b0 rank 3 nRanks 4 nNodes 1 localRanks 4 localRank 3 MNNVL 0
+nid007381:84203:84203 [0] NCCL INFO Local CollNet device counts across ranks: min 0 max 0
+nid007381:84205:84205 [2] NCCL INFO comm 0x3355e400 rank 2 nRanks 4 nNodes 1 localRanks 4 localRank 2 MNNVL 0
+nid007381:84203:84203 [0] NCCL INFO comm 0x2e311c00 rank 0 nRanks 4 nNodes 1 localRanks 4 localRank 0 MNNVL 0
+nid007381:84203:84203 [0] NCCL INFO Channel 00/24 : 0 1 2 3
+nid007381:84203:84203 [0] NCCL INFO Channel 01/24 : 0 1 3 2
+nid007381:84206:84206 [3] NCCL INFO Trees [0] -1/-1/-1->3->2 [1] -1/-1/-1->3->2 [2] -1/-1/-1->3->2 [3] -1/-1/-1->3->2 [4] -1/-1/nid007381:84203:84203 [0] NCCL INFO Channel 02/24 : 0 2 3 1
+nid007381:84204:84204 [1] NCCL INFO Trees [0] 2/-1/-1->1->0 [1] 2/-1/-1->1->0 [2] 2/-1/-1->1->0 [3] 2/-1/-1->1->0 [4] 3/-1/-1->1nid007381:84205:84205 [2] NCCL INFO Trees [0] 3/-1/-1->2->1 [1] 3/-1/-1->2->1 [2] 3/-1/-1->2->1 [3] 3/-1/-1->2->1 [4] 1/-1/-1->2->2 [5] 3/-1/-1->1->2 [6] 3/-1/-1->1->2 [7] 3/-1/-1->1->2 [8] 0/-1/-1->1->-1 [9] 0/-1/-1->1->-1 [10] 0/-1/-1->1->-1 [11] 0/-1/-1-1->3->1 [5] -1/-1/-1->3->1 [6] -1/-1/-1->3->1 [7] -1/-1/-1->3->1 [8] 2/-1/-1->3->0 [9] 2/-1/-1->3->0 [10] 2/-1/-1->3->0 [11] 2/nid007381:84203:84203 [0] NCCL INFO Channel 03/24 : 0 2 1 3
+->0 [5] 1/-1/-1->2->0 [6] 1/-1/-1->2->0 [7] 1/-1/-1->2->0 [8] -1/-1/-1->2->3 [9] -1/-1/-1->2->3 [10] -1/-1/-1->2->3 [11] -1/-1/-->1->-1 [12] 2/-1/-1->1->0 [13] 2/-1/-1->1->0 [14] 2/-1/-1->1->0 [15] 2/-1/-1->1->0 [16] 3/-1/-1->1->2 [17] 3/-1/-1->1->2 [18] 31->2->3 [12] 3/-1/-1->2->1 [13] 3/-1/-1->2->1 [14] 3/-1/-1->2->1 [15] 3/-1/-1->2->1 [16] 1/-1/-1->2->0 [17] 1/-1/-1->2->0 [18] 1-1/-1->3->0 [12] -1/-1/-1->3->2 [13] -1/-1/-1->3->2 [14] -1/-1/-1->3->2 [15] -1/-1/-1->3->2 [16] -1/-1/-1->3->1 [17] -1/-1/-1->3/-1/-1->1->2 [19] 3/-1/-1->1->2 [20] 0/-1/-1->1->-1 [21] 0/-1/-1->1->-1 [22] 0/-1/-1->1->-1 [23] 0/-1/-1->1->-1
+nid007381:84203:84203 [0] NCCL INFO Channel 04/24 : 0 3 1 2
+nid007381:84204:84204 [1] NCCL INFO P2P Chunksize set to 524288
+/-1/-1->2->0 [19] 1/-1/-1->2->0 [20] -1/-1/-1->2->3 [21] -1/-1/-1->2->3 [22] -1/-1/-1->2->3 [23] -1/-1/-1->2->3
+->1 [18] -1/-1/-1->3->1 [19] -1/-1/-1->3->1 [20] 2/-1/-1->3->0 [21] 2/-1/-1->3->0 [22] 2/-1/-1->3->0 [23] 2/-1/-1->3->0
+nid007381:84203:84203 [0] NCCL INFO Channel 05/24 : 0 3 2 1
+nid007381:84205:84205 [2] NCCL INFO P2P Chunksize set to 524288
+nid007381:84203:84203 [0] NCCL INFO Channel 06/24 : 0 1 2 3
+nid007381:84206:84206 [3] NCCL INFO P2P Chunksize set to 524288
+nid007381:84203:84203 [0] NCCL INFO Channel 07/24 : 0 1 3 2
+nid007381:84203:84203 [0] NCCL INFO Channel 08/24 : 0 2 3 1
+nid007381:84203:84203 [0] NCCL INFO Channel 09/24 : 0 2 1 3
+nid007381:84203:84203 [0] NCCL INFO Channel 10/24 : 0 3 1 2
+nid007381:84203:84203 [0] NCCL INFO Channel 11/24 : 0 3 2 1
+nid007381:84203:84203 [0] NCCL INFO Channel 12/24 : 0 1 2 3
+nid007381:84203:84203 [0] NCCL INFO Channel 13/24 : 0 1 3 2
+nid007381:84203:84203 [0] NCCL INFO Channel 14/24 : 0 2 3 1
+nid007381:84203:84203 [0] NCCL INFO Channel 15/24 : 0 2 1 3
+nid007381:84203:84203 [0] NCCL INFO Channel 16/24 : 0 3 1 2
+nid007381:84203:84203 [0] NCCL INFO Channel 17/24 : 0 3 2 1
+nid007381:84203:84203 [0] NCCL INFO Channel 18/24 : 0 1 2 3
+nid007381:84203:84203 [0] NCCL INFO Channel 19/24 : 0 1 3 2
+nid007381:84203:84203 [0] NCCL INFO Channel 20/24 : 0 2 3 1
+nid007381:84203:84203 [0] NCCL INFO Channel 21/24 : 0 2 1 3
+nid007381:84203:84203 [0] NCCL INFO Channel 22/24 : 0 3 1 2
+nid007381:84203:84203 [0] NCCL INFO Channel 23/24 : 0 3 2 1
+nid007381:84203:84203 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1 [2] 1/-1/-1->0->-1 [3] 1/-1/-1->0->-1 [4] 2/-1/-1->0->-1 [5] 2/-1/-1->0->-1 [6] 2/-1/-1->0->-1 [7] 2/-1/-1->0->-1 [8] 3/-1/-1->0->1 [9] 3/-1/-1->0->1 [10] 3/-1/-1->0->1 [11] 3/-1/-1->0->1 [12] 1/-1/-1->0->-1 [13] 1/-1/-1->0->-1 [14] 1/-1/-1->0->-1 [15] 1/-1/-1->0->-1 [16] 2/-1/-1->0->-1 [17] 2/-1/-1->0->-1 [18] 2/-1/-1->0->-1 [19] 2/-1/-1->0->-1 [20] 3/-1/-1->0->1 [21] 3/-1/-1->0->1 [22] 3/-1/-1->0->1 [23] 3/-1/-1->0->1
+nid007381:84203:84203 [0] NCCL INFO P2P Chunksize set to 524288
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object filnid007381:84206:84206 [3] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+e: No such file or directory
+nid007381:84205:84205 [2] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007381:84206:84206 [3] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007381:84205:84205 [2] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007381:84206:84206 [3] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007381:84205:84618 [0] NCCL INFO [Proxy Service] Device 2 CPU core 1
+nid007381:84205:84618 [2] NCCL INFO proxy listening socket at 172.28.42.244<60649>
+nid007381:84206:84621 [0] NCCL INFO [Proxy Service UDS] Device 3 CPU core 2
+nid007381:84205:84620 [0] NCCL INFO [Proxy Service UDS] Device 2 CPU core 3
+nid007381:84206:84619 [0] NCCL INFO [Proxy Service] Device 3 CPU core 7
+nid007381:84206:84619 [3] NCCL INFO proxy listening socket at 172.28.42.244<47611>
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007381:84203:84203 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007381:84203:84203 [0] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlopen(libnccl-profiler.so) failed: libnccl-profiler.so: cannot open shared object file: No such file or directory
+nid007381:84204:84204 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+nid007381:84203:84622 [0] NCCL INFO [Proxy Service] Device 0 CPU core 3
+nid007381:84203:84622 [0] NCCL INFO proxy listening socket at 172.28.42.244<57879>
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v6) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v6
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v5
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v4
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v3
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v2
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclProfiler_v1) failed: /lib/libnccl-net.so: undefined symbol: ncclProfiler_v1
+nid007381:84204:84204 [1] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+nid007381:84203:84623 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 5
+nid007381:84204:84624 [0] NCCL INFO [Proxy Service] Device 1 CPU core 7
+nid007381:84204:84624 [1] NCCL INFO proxy listening socket at 172.28.42.244<54681>
+nid007381:84204:84625 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 3
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007381:84205:84205 [2] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007381:84205:84205 [2] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007381:84205:84205 [2] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007381:84205:84205 [2] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007381:84205:84205 [2] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
+nid007381:84205:84205 [2] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 16 p2p channels per peer
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007381:84203:84203 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007381:84203:84203 [0] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No nid007381:84203:84203 [0] NCCL INFO NCCL_PROTO set by environment to ^LL128
+such file or directory
+nid007381:84203:84203 [0] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007381:84206:84206 [3] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007381:84203:84203 [0] NCCL INFO Enabled NCCL Func/Proto/Algo Matrix:
+     Function |       LL     LL128    Simple   |          Tree           Ring  CollNetDirect   CollNetChain           NVLS       NVLSTree            PAT  
+    Broadcast |        1         0         1   |             1              1              1              1              0              1              1  
+       Reduce |        1         0         1   |             1              1              1              1              0              1              1  
+    AllGather |        1         0         1   |             1              1              1              1              0              1              1  
+ReduceScatter |        1         0         1   |             1              1              1              1              0              1              1  
+    AllReduce |        1         0         1   |             1              1              1              1              0              1              1  
+
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007381:84206:84206 [3] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007381:84206:84206 [3] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007381:84206:84206 [3] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007381:84206:84206 [3] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
+nid007381:84203:84203 [0] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
+nid007381:84206:84206 [3] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 16 p2p channels pernid007381:84203:84203 [0] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 16 p2p channels per peer
+ peer
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlopen(libnccl-tuner.so) failed: libnccl-tuner.so: cannot open shared object file: No such file or directory
+nid007381:84204:84204 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v5) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v5
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v4) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v4
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v3) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v3
+nid007381:84204:84204 [1] NCCL INFO ncclOsDlsym(ncclTunerPlugin_v2) failed: /lib/libnccl-net.so: undefined symbol: ncclTunerPlugin_v2
+nid007381:84204:84204 [1] NCCL INFO NCCL_PROTO set by environment to ^LL128
+nid007381:84204:84204 [1] NCCL INFO NCCL_ALGO set by environment to ^NVLS
+nid007381:84204:84204 [1] NCCL INFO threadThresholds 8/8/64 | 32/8/64 | 512 | 512
+nid007381:84204:84204 [1] NCCL INFO 24 coll channels, 24 collnet channels, 0 nvls channels, 32 p2p channels, 16 p2p channels per peer
+nid007381:84203:84203 [0] NCCL INFO CC Off, workFifoBytes 1048576
+nid007381:84205:84205 [2] NCCL INFO ncclCommInitRankConfig comm 0x3355e400 rank 2 nranks 4 cudaDev 2 nvmlDev 2 busId 2901000 commId 0xd3b3dbd94beaa155 - Init COMPLETE
+nid007381:84203:84203 [0] NCCL INFO ncclCommInitRankConfig comm 0x2e311c00 rank 0 nranks 4 cudaDev 0 nvmlDev 0 busId 901000 commId 0xd3b3dbd94beaa155 - Init COMPLETE
+nid007381:84205:84205 [2] NCCL INFO Init timings - ncclCommInitRankConfig: rank 2 nranks 4 total 2.40 (kernels 0.15, alloc 2.18,nid007381:84206:84206 [3] NCCL INFO ncclCommInitRankConfig comm 0x3e54d8b0 rank 3 nranks 4 cudaDev 3 nvmlDev 3 busId 3901000 com bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.01, connections 0.02, rest 0.01)
+nid007381:84203:84203 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 4 total 2.40 (kernels 0.15, alloc 2.14,mId 0xd3b3dbd94beaa155 - Init COMPLETE
+nid007381:84204:84204 [1] NCCL INFO ncclCommInitRankConfig comm 0x23a7db30 rank 1 nranks 4 cudaDev 1 nvmlDev 1 busId 1901000 com bootstrap 0.04, allgathers 0.00, topo 0.03, graphs 0.01, connections 0.02, rest 0.01)
+mId 0xd3b3dbd94beaa155 - Init COMPLETE
+nid007381:84206:84206 [3] NCCL INFO Init timings - ncclCommInitRankConfig: rank 3 nranks 4 total 2.40 (kernels 0.15, alloc 1.98, bootstrap 0.20, allgathers 0.00, topo 0.03, graphs 0.01, connections 0.02, rest 0.01)
+nid007381:84204:84204 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 4 total 2.40 (kernels 0.15, alloc 2.08, bootstrap 0.10, allgathers 0.00, topo 0.03, graphs 0.01, connections 0.02, rest 0.01)
+----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 4 processes
+----------------------------------------------------------------------------------------------------
+
+nid007381:84204:84204 [1] NCCL INFO Symmetric VA size=96GB
+nid007381:84205:84205 [2] NCCL INFO Symmetric VA size=96GB
+nid007381:84206:84206 [3] NCCL INFO Symmetric VA size=96GB
+nid007381:84203:84203 [0] NCCL INFO Symmetric VA size=96GB
+nid007381:84204:84204 [1] NCCL INFO Channel 00/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 00/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 00/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 00/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 04/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 03/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 02/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 01/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 06/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 06/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 06/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 06/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 10/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 09/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 08/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 12/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 07/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 12/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 12/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 16/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 12/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 15/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 13/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 14/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 18/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 18/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 18/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 18/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 22/0 : 1[1] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 21/0 : 3[3] -> 0[0] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 19/0 : 0[0] -> 1[1] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 20/0 : 2[2] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 02/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 01/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 02/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 01/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 03/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 04/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 04/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 03/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 08/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 07/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 08/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 07/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 09/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 10/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 10/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 09/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 14/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 14/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 13/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 13/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 16/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 15/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 16/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 15/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 20/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 20/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 19/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 19/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 22/0 : 3[3] -> 1[1] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 21/0 : 0[0] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 22/0 : 2[2] -> 0[0] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 21/0 : 1[1] -> 3[3] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 01/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 04/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 02/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 03/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 05/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 05/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 05/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 05/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 07/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 08/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 10/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 09/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 11/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 11/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 11/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 11/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 13/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 14/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 15/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 16/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 17/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 17/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 17/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 20/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 19/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 21/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84206:84206 [3] NCCL INFO Channel 23/0 : 3[3] -> 2[2] via P2P/CUMEM
+nid007381:84204:84204 [1] NCCL INFO Channel 23/0 : 1[1] -> 0[0] via P2P/CUMEM
+nid007381:84205:84205 [2] NCCL INFO Channel 23/0 : 2[2] -> 1[1] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 17/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 22/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Channel 23/0 : 0[0] -> 3[3] via P2P/CUMEM
+nid007381:84203:84203 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+nid007381:84206:84206 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+nid007381:84205:84205 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+nid007381:84204:84204 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 3 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 2 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+┏━━━┳━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃   ┃ Name  ┃ Type         ┃ Params ┃ Mode  ┃ FLOPs ┃
+┡━━━╇━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ 0 │ model │ se3_denoiser │  1.7 M │ train │     0 │
+└───┴───────┴──────────────┴────────┴───────┴───────┘
+Trainable params: 1.7 M                                                         
+Non-trainable params: 0                                                         
+Total params: 1.7 M                                                             
+Total estimated model params size (MB): 6                                       
+Modules in train mode: 346                                                      
+Modules in eval mode: 0                                                         
+Total FLOPs: 0                                                                  
+{"event": "ready", "time": 1791899909.8549402, "epoch": 0, "global_step": 0, "topology": {"world_size": 4, "nodes": 1}, "bundle": "0250c8b94e10884553794470f2035355eb044e327feff3e66a72553f0e37e290", "frozen_production_calls": 0, "initialization": {"kind": "fresh"}, "parameters": 1684514}
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: The AccumulateGrad node's stream does not match the stream of the node that produced the incoming gradient. This may incur unnecessary synchronization and break CUDA graph capture if the AccumulateGrad node's stream is the default stream. This mismatch is caused by an AccumulateGrad node created prior to the current iteration being kept alive. This can happen if the autograd graph is still being kept alive by tensors such as the loss, or if you are using DDP, which will stash a reference to the node. To resolve the mismatch, delete all references to the autograd graph or ensure that DDP initialization is performed under the same stream as subsequent forwards. If the mismatch is intentional, you can use torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False) to suppress this warning. (Triggered internally at /opt/pytorch/pytorch/torch/csrc/autograd/input_buffer.cpp:240.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+{"event": "update", "time": 1791899912.2333517, "epoch": 0, "global_step": 1, "loss": 6.3809075355529785, "gradient_norm": 2.4662513732910156, "data_wait_seconds": 0.0037199200014583766, "compute_seconds": 0.49439628500840627, "length": 230, "update_seconds": 2.3520870650245342, "structures_per_second": 6.802469278420655, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+{"event": "update", "time": 1791899913.416571, "epoch": 0, "global_step": 2, "loss": 4.175130844116211, "gradient_norm": 2.0316903591156006, "data_wait_seconds": 0.0031074259895831347, "compute_seconds": 0.4932934060052503, "length": 58, "update_seconds": 1.1772532079776283, "structures_per_second": 13.590958930140415, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+{"event": "update", "time": 1791899914.5896456, "epoch": 0, "global_step": 3, "loss": 4.2086896896362305, "gradient_norm": 4.095827102661133, "data_wait_seconds": 0.003054308006539941, "compute_seconds": 0.342633128981106, "length": 121, "update_seconds": 1.168036718008807, "structures_per_second": 13.698199511463784, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+{"event": "update", "time": 1791899915.7619147, "epoch": 0, "global_step": 4, "loss": 4.163821697235107, "gradient_norm": 5.465378284454346, "data_wait_seconds": 0.003169216011883691, "compute_seconds": 0.46595004099071957, "length": 94, "update_seconds": 1.1613933359913062, "structures_per_second": 13.776555714729682, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+{"event": "update", "time": 1791899916.8961031, "epoch": 0, "global_step": 5, "loss": 4.496330738067627, "gradient_norm": 3.6825172901153564, "data_wait_seconds": 0.002933896001195535, "compute_seconds": 0.5952280840137973, "length": 53, "update_seconds": 1.1254077669873368, "structures_per_second": 14.2170691098314, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+{"event": "update", "time": 1791899918.0671785, "epoch": 0, "global_step": 6, "loss": 4.195833206176758, "gradient_norm": 2.6057944297790527, "data_wait_seconds": 0.003290237014880404, "compute_seconds": 0.4831270259746816, "length": 105, "update_seconds": 1.1657566920039244, "structures_per_second": 13.724990909120287, "peak_host_memory_bytes": 3046178816, "peak_memory_bytes": 3135863808}
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "<frozen runpy>", line 198, in _run_module_as_main
+[rank0]:   File "<frozen runpy>", line 88, in _run_code
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/f625bf1948a1057e59a8013c8adb4b234d916437/foldtree2/train_se3_lightning.py", line 422, in <module>
+[rank0]:     main()
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/f625bf1948a1057e59a8013c8adb4b234d916437/foldtree2/train_se3_lightning.py", line 413, in main
+[rank0]:     trainer.fit(module, datamodule=CacheData(config['cache'], manifest, module.stream))
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 584, in fit
+[rank0]:     call._call_and_handle_interrupt(
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+[rank0]:     return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+[rank0]:     return function(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 630, in _fit_impl
+[rank0]:     self._run(model, ckpt_path=ckpt_path, weights_only=weights_only)
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1079, in _run
+[rank0]:     results = self._run_stage()
+[rank0]:               ^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/trainer.py", line 1123, in _run_stage
+[rank0]:     self.fit_loop.run()
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 217, in run
+[rank0]:     self.advance()
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/fit_loop.py", line 465, in advance
+[rank0]:     self.epoch_loop.run(self._data_fetcher)
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 153, in run
+[rank0]:     self.advance(data_fetcher)
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 354, in advance
+[rank0]:     batch_output = self.manual_optimization.run(kwargs)
+[rank0]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/manual.py", line 95, in run
+[rank0]:     self.advance(kwargs)
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/loops/optimization/manual.py", line 115, in advance
+[rank0]:     training_step_output = call._call_strategy_hook(trainer, "training_step", *kwargs.values())
+[rank0]:                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/trainer/call.py", line 329, in _call_strategy_hook
+[rank0]:     output = fn(*args, **kwargs)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 390, in training_step
+[rank0]:     return self._forward_redirection(self.model, self.lightning_module, "training_step", *args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+[rank0]:     wrapper_output = wrapper_module(*args, **kwargs)
+[rank0]:                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/parallel/distributed.py", line 1672, in forward
+[rank0]:     else self._run_ddp_forward(*inputs, **kwargs)
+[rank0]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/parallel/distributed.py", line 1497, in _run_ddp_forward
+[rank0]:     return self.module(*inputs, **kwargs)  # type: ignore[index]
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/lib/python3.12/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+[rank0]:     out = method(*_args, **_kwargs)
+[rank0]:           ^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/f625bf1948a1057e59a8013c8adb4b234d916437/foldtree2/train_se3_lightning.py", line 177, in training_step
+[rank0]:     pred, angle = forward(self.model, e)
+[rank0]:                   ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/f625bf1948a1057e59a8013c8adb4b234d916437/foldtree2/se3_validation.py", line 226, in forward
+[rank0]:     out = model(g, coords_pred=entry['coords'], ft2_token_ids=entry['tokens'],
+[rank0]:           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/capstor/store/cscs/swissai/a0117/foldtree2/se3/code/f625bf1948a1057e59a8013c8adb4b234d916437/foldtree2/src/se3_struct_decoder.py", line 1302, in forward
+[rank0]:     raise RuntimeError('GotenNet produced nonfinite valid invariant features')
+[rank0]: RuntimeError: GotenNet produced nonfinite valid invariant features
+[rank2]:[E1013 16:28:39.667873898 ProcessGroupNCCL.cpp:689] [Rank 2] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800090 milliseconds before timing out.
+[rank1]:[E1013 16:28:39.684332658 ProcessGroupNCCL.cpp:689] [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800097 milliseconds before timing out.
+[rank1]:[E1013 16:28:39.699491010 ProcessGroupNCCL.cpp:2293] [PG ID 0 PG GUID 0(default_pg) Rank 1]  failure detected by watchdog at work sequence id: 75 PG status: last enqueued work: 75, last completed work: 74
+[rank2]:[E1013 16:28:39.699492130 ProcessGroupNCCL.cpp:2293] [PG ID 0 PG GUID 0(default_pg) Rank 2]  failure detected by watchdog at work sequence id: 75 PG status: last enqueued work: 75, last completed work: 74
+[rank2]:[E1013 16:28:39.699509153 ProcessGroupNCCL.cpp:736] Stack trace of the failed collective not found, potentially because FlightRecorder is disabled. You can enable it by setting TORCH_NCCL_TRACE_BUFFER_SIZE to a non-zero value.
+[rank1]:[E1013 16:28:39.699509185 ProcessGroupNCCL.cpp:736] Stack trace of the failed collective not found, potentially because FlightRecorder is disabled. You can enable it by setting TORCH_NCCL_TRACE_BUFFER_SIZE to a non-zero value.
+[rank2]:[E1013 16:28:39.699546976 ProcessGroupNCCL.cpp:2626] [PG ID 0 PG GUID 0(default_pg) Rank 2] First PG on this rank to signal dumping.
+[rank1]:[E1013 16:28:39.699547136 ProcessGroupNCCL.cpp:2626] [PG ID 0 PG GUID 0(default_pg) Rank 1] First PG on this rank to signal dumping.
+[rank3]:[E1013 16:28:39.703903483 ProcessGroupNCCL.cpp:689] [Rank 3] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800023 milliseconds before timing out.
+[rank3]:[E1013 16:28:39.704046582 ProcessGroupNCCL.cpp:2293] [PG ID 0 PG GUID 0(default_pg) Rank 3]  failure detected by watchdog at work sequence id: 75 PG status: last enqueued work: 75, last completed work: 74
+[rank3]:[E1013 16:28:39.704055926 ProcessGroupNCCL.cpp:736] Stack trace of the failed collective not found, potentially because FlightRecorder is disabled. You can enable it by setting TORCH_NCCL_TRACE_BUFFER_SIZE to a non-zero value.
+[rank3]:[E1013 16:28:39.704090005 ProcessGroupNCCL.cpp:2626] [PG ID 0 PG GUID 0(default_pg) Rank 3] First PG on this rank to signal dumping.
+[rank1]:[E1013 16:28:39.405472749 ProcessGroupNCCL.cpp:1906] [PG ID 0 PG GUID 0(default_pg) Rank 1] Received a dump signal due to a collective timeout from this local rank and we will try our best to dump the debug info. Last enqueued NCCL work: 75, last completed NCCL work: 74.This is most likely caused by incorrect usages of collectives, e.g., wrong sizes used across ranks, the order of collectives is not same for all ranks or the scheduled collective, for some reason, didn't run. Additionally, this can be caused by GIL deadlock or other reasons such as network errors or bugs in the communications library (e.g. NCCL), etc. 
+[rank3]:[E1013 16:28:39.405490348 ProcessGroupNCCL.cpp:1906] [PG ID 0 PG GUID 0(default_pg) Rank 3] Received a dump signal due to a collective timeout from this local rank and we will try our best to dump the debug info. Last enqueued NCCL work: 75, last completed NCCL work: 74.This is most likely caused by incorrect usages of collectives, e.g., wrong sizes used across ranks, the order of collectives is not same for all ranks or the scheduled collective, for some reason, didn't run. Additionally, this can be caused by GIL deadlock or other reasons such as network errors or bugs in the communications library (e.g. NCCL), etc. 
+[rank2]:[E1013 16:28:39.405493708 ProcessGroupNCCL.cpp:1906] [PG ID 0 PG GUID 0(default_pg) Rank 2] Received a dump signal due to a collective timeout from this local rank and we will try our best to dump the debug info. Last enqueued NCCL work: 75, last completed NCCL work: 74.This is most likely caused by incorrect usages of collectives, e.g., wrong sizes used across ranks, the order of collectives is not same for all ranks or the scheduled collective, for some reason, didn't run. Additionally, this can be caused by GIL deadlock or other reasons such as network errors or bugs in the communications library (e.g. NCCL), etc. 
+[rank1]:[E1013 16:28:39.408757288 ProcessGroupNCCL.cpp:1622] [PG ID 0 PG GUID 0(default_pg) Rank 1] ProcessGroupNCCL preparing to dump debug info. Include stack trace: 1, only active collectives: 0
+[rank3]:[E1013 16:28:39.408767912 ProcessGroupNCCL.cpp:1622] [PG ID 0 PG GUID 0(default_pg) Rank 3] ProcessGroupNCCL preparing to dump debug info. Include stack trace: 1, only active collectives: 0
+[rank2]:[E1013 16:28:39.408770792 ProcessGroupNCCL.cpp:1622] [PG ID 0 PG GUID 0(default_pg) Rank 2] ProcessGroupNCCL preparing to dump debug info. Include stack trace: 1, only active collectives: 0
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84204:84624 [1] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84205:84618 [2] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84205:84596 [2] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84204:84624 [1] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84205:84618 [2] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84204:84592 [1] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84204:84624 [1] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:51 (socketProgress) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:68 (socketWait) -> 3
+nid007381:84206:84593 [3] NCCL INFO misc/socket.cc:632 (ncclSocketSend) -> 3
+nid007381:84206:84619 [3] NCCL INFO misc/socket.cc:707 (ncclSocketTryRecv) -> 3
+[rank1]:[E1013 16:29:39.722035580 ProcessGroupNCCL.cpp:750] [Rank 1] Some NCCL operations have failed or timed out. Due to the asynchronous nature of CUDA kernels, subsequent GPU operations might run on corrupted/incomplete data.
+[rank1]:[E1013 16:29:39.722054140 ProcessGroupNCCL.cpp:764] [Rank 1] To avoid data inconsistency, we are taking the entire process down.
+[rank1]:[E1013 16:29:39.723224312 ProcessGroupNCCL.cpp:2109] [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800097 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x40003d9839f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400040ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400040eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400040eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x40003de71ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x40002c47595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x40002c4dbb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+terminate called after throwing an instance of 'c10::DistBackendError'
+  what():  [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800097 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x40003d9839f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400040ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400040eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400040eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x40003de71ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x40002c47595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x40002c4dbb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+Exception raised from run at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:2115 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x40003d9839f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::Watchdog::run() + 0x668 (0x400040eb2a48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: <unknown function> + 0xe1ae0 (0x40003de71ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #3: <unknown function> + 0x8595c (0x40002c47595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #4: <unknown function> + 0xebb4c (0x40002c4dbb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+W1013 16:29:39.377000 83691 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 84203 closing signal SIGTERM
+W1013 16:29:39.378000 83691 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 84205 closing signal SIGTERM
+W1013 16:29:39.378000 83691 torch/distributed/elastic/multiprocessing/api.py:1010] Sending process 84206 closing signal SIGTERM
+[rank2]:[E1013 16:29:39.196573790 ProcessGroupNCCL.cpp:750] [Rank 2] Some NCCL operations have failed or timed out. Due to the asynchronous nature of CUDA kernels, subsequent GPU operations might run on corrupted/incomplete data.
+[rank2]:[E1013 16:29:39.196591869 ProcessGroupNCCL.cpp:764] [Rank 2] To avoid data inconsistency, we are taking the entire process down.
+[rank2]:[E1013 16:29:39.197065647 ProcessGroupNCCL.cpp:2109] [PG ID 0 PG GUID 0(default_pg) Rank 2] Process group watchdog thread terminated with exception: [Rank 2] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800090 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000123e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400020ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400020eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400020eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x4000128d1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x400000ed595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x400000f3bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+terminate called after throwing an instance of 'c10::DistBackendError'
+  what():  [PG ID 0 PG GUID 0(default_pg) Rank 2] Process group watchdog thread terminated with exception: [Rank 2] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800090 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000123e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400020ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400020eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400020eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x4000128d1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x400000ed595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x400000f3bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+Exception raised from run at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:2115 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000123e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::Watchdog::run() + 0x668 (0x400020eb2a48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: <unknown function> + 0xe1ae0 (0x4000128d1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #3: <unknown function> + 0x8595c (0x400000ed595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #4: <unknown function> + 0xebb4c (0x400000f3bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+[rank3]:[E1013 16:29:39.215361788 ProcessGroupNCCL.cpp:750] [Rank 3] Some NCCL operations have failed or timed out. Due to the asynchronous nature of CUDA kernels, subsequent GPU operations might run on corrupted/incomplete data.
+[rank3]:[E1013 16:29:39.215380283 ProcessGroupNCCL.cpp:764] [Rank 3] To avoid data inconsistency, we are taking the entire process down.
+[rank3]:[E1013 16:29:39.215841837 ProcessGroupNCCL.cpp:2109] [PG ID 0 PG GUID 0(default_pg) Rank 3] Process group watchdog thread terminated with exception: [Rank 3] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800023 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000328e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400040ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400040eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400040eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x400032dd1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x4000213d595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x40002143bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+terminate called after throwing an instance of 'c10::DistBackendError'
+  what():  [PG ID 0 PG GUID 0(default_pg) Rank 3] Process group watchdog thread terminated with exception: [Rank 3] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=75, OpType=BROADCAST, NumelIn=1, NumelOut=1, Timeout(ms)=1800000) ran for 1800023 milliseconds before timing out.
+Exception raised from checkTimeout at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000328e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x284 (0x400040ea7ae4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x114c (0x400040eb0d9c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0xec (0x400040eb24cc in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xe1ae0 (0x400032dd1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x8595c (0x4000213d595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0xebb4c (0x40002143bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+Exception raised from run at /opt/pytorch/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:2115 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xd4 (0x4000328e39f4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::Watchdog::run() + 0x668 (0x400040eb2a48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #2: <unknown function> + 0xe1ae0 (0x400032dd1ae0 in /usr/lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #3: <unknown function> + 0x8595c (0x4000213d595c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #4: <unknown function> + 0xebb4c (0x40002143bb4c in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+E1013 16:29:42.158000 83691 torch/distributed/elastic/multiprocessing/api.py:984] failed (exitcode: -6) local_rank: 1 (pid: 84204) of binary: /capstor/store/cscs/swissai/a0117/foldtree2/se3/environments/028cc752968f218de4e5837f75b2e7a8a004162a/bin/python
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 994, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 990, in main
+    run(args)
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+=======================================================
+foldtree2.train_se3_lightning FAILED
+-------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-10-13_16:29:42
+  host      : nid007381
+  rank      : 0 (local_rank: 0)
+  exitcode  : -15 (pid: 84203)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 84203
+[2]:
+  time      : 2026-10-13_16:29:42
+  host      : nid007381
+  rank      : 2 (local_rank: 2)
+  exitcode  : -6 (pid: 84205)
+  error_file: <N/A>
+  traceback : Signal 6 (SIGABRT) received by PID 84205
+[3]:
+  time      : 2026-10-13_16:29:42
+  host      : nid007381
+  rank      : 3 (local_rank: 3)
+  exitcode  : -6 (pid: 84206)
+  error_file: <N/A>
+  traceback : Signal 6 (SIGABRT) received by PID 84206
+-------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-10-13_16:29:39
+  host      : nid007381
+  rank      : 1 (local_rank: 1)
+  exitcode  : -6 (pid: 84204)
+  error_file: <N/A>
+  traceback : Signal 6 (SIGABRT) received by PID 84204
+=======================================================
+srun: error: nid007381: task 0: Exited with exit code 1
+srun: Terminating StepId=3653794.0
+Existing CSCS SSH certificate is ready; no login needed.

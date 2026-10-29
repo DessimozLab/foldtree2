@@ -1,0 +1,14 @@
+{
+  "base_revision": "e7954c38aff73ea0f2494f3b6d678719ff327d2f",
+  "record_date": "2026-10-09",
+  "source_sha256": {
+    "foldtree2/src/se3_struct_decoder.py": "47b41abd802f3f74e1a6a28913ad8119b5aca7255bbccfa1baf65ad1d8e621e1",
+    "foldtree2/src/geometry_seeds.py": "04679957b315db0ae30b7166e8415d873607a26f216e339eb77fbf33f5a98cc7",
+    "foldtree2/se3_validation.py": "f0f0bbc33bbf3a5f90781dccf6fd0999e05dce40c6e8c377103425d51ecf3dd4",
+    "foldtree2/tests/test_se3_refiner.py": "650b3f29c6d611657a8d2a14edfdc7f23863bdf63a1975c071f11544aa97457f",
+    "foldtree2/tests/test_se3_validation.py": "67e2a7f7a7aba621a17ab721b56a1ac78387dd4a2029dc1c86bf69445089c7e5",
+    "scripts/investigate_se3_scale.py": "4c905b64b9c7280f2df3f077c225bd99d5bc2ff8342e8292d9a844be6120464c",
+    "scripts/report_se3_investigation.py": "96a40a8ba7813dafca7d5339e75df225c17dfc31d6fd796a5a7816d460f236ec"
+  },
+  "note": "Current packaged source. Each recorded training phase has immutable executed source snapshots and its own analysis.json hashes; explicit CPU construction and the spatial-suite entrypoint were added after the 30-epoch run."
+}

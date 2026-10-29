@@ -1,0 +1,53 @@
+{
+  "observed_utc": "2026-10-14T10:13:26.618647+00:00",
+  "last_update": 1533,
+  "nonfinite_events": 0,
+  "first_validation": {
+    "event": "validation",
+    "time": 1791972461.494692,
+    "epoch": 0,
+    "global_step": 512,
+    "complete_epoch": true,
+    "metrics": {
+      "geometry": 3.9827579287812114,
+      "evaluation_fape": 0.9330016806488857,
+      "refined.angle_mae_radians": 0.5766128798131831,
+      "refined.ca_bend_mae_radians": 0.7413927460438572,
+      "refined.ca_bond_deviation_3_8": 1.2722841337090358,
+      "refined.ca_bond_mae": 1.2753808394772932,
+      "refined.ca_rmsd": 16.046307892538607,
+      "refined.ca_torsion_mae_radians": 1.5335266072222864,
+      "refined.fape": 0.9330016806488857,
+      "refined.lddt": 0.2479638702934608,
+      "refined.tm_score": 0.21186839167447363,
+      "refined.valid_residues": 114.6171875
+    },
+    "counts": {
+      "geometry": 512,
+      "evaluation_fape": 512,
+      "refined.angle_mae_radians": 512,
+      "refined.ca_bend_mae_radians": 512,
+      "refined.ca_bond_deviation_3_8": 512,
+      "refined.ca_bond_mae": 512,
+      "refined.ca_rmsd": 512,
+      "refined.ca_torsion_mae_radians": 511,
+      "refined.fape": 512,
+      "refined.lddt": 512,
+      "refined.tm_score": 512,
+      "refined.valid_residues": 512
+    }
+  },
+  "first_training_epoch": {
+    "event": "train_epoch",
+    "time": 1791972461.5111508,
+    "epoch": 0,
+    "global_step": 512,
+    "geometry": 4.220506678320817,
+    "effective_structures": 8192
+  },
+  "checkpoint_files": {
+    "best.ckpt": 20503219,
+    "last.ckpt": 20567731
+  },
+  "queue": "   JOBID USER     ACCOUNT           NAME EXEC_HOST ST     REASON   START_TIME     END_TIME  TIME_LEFT NODES   PRIORITY\n 3659891 dmoi     a0117   ft2-se3-growth nid006029  R       None     12:01:57     14:01:57    1:48:31     2     554444\n"
+}

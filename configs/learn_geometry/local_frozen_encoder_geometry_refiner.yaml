@@ -1,0 +1,97 @@
+# Local, bounded counterpart to
+# foldtree2/notebooks/experiments/train_frozen_encoder_geometry_refiner.ipynb.
+# Run from the repository root:
+# python foldtree2/learn_geometry_lightning.py --config configs/learn_geometry/local_frozen_encoder_geometry_refiner.yaml
+
+dataset: foldtree2/notebooks/structs_training_mk2.h5
+pretrained_encoder_path: models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt
+pretrained_encoder_full_path: models/production/30char_minimal_decoder/final_30char_contacts_aa_encoder_full_epoch_52.pt
+checkpoint_dir: /tmp/foldtree2_local_geometry_refiner
+
+epochs: 1
+limit_train_batches: 5
+limit_val_batches: 2
+batch_size: 1
+val_batch_size: 1
+target_effective_batch_size: 2
+num_workers: 0
+allow_hdf5_multiprocessing: false
+val_fraction: 0.1
+split_seed: 42
+seed: 42
+
+learning_rate: 5.0e-4
+weight_decay: 0.0
+lr_scheduler: cosine
+lr_scheduler_interval: epoch
+lr_scheduler_frequency: 1
+lr_scheduler_monitor: val/loss
+lr_warmup_epochs: 0
+lr_min: 1.0e-6
+lr_step_size: 10
+lr_gamma: 0.5
+clip_grad: 1.0
+
+accelerator: auto
+devices: 1
+strategy: auto
+precision: 32-true
+log_every_n_steps: 1
+save_top_k: -1
+nan_guard: true
+sanitize_nonfinite_grads: false
+skip_empty_loss_batches: false
+use_uncertainty_weighting: false
+
+# Geometry decoder architecture from the notebook.
+transformer_width: 256
+transformer_layers: 2
+transformer_nheads: 8
+transformer_dropout: 0.05
+rt_hidden: 64,32,16
+rotation_hidden: 64,32,16
+ca_step_hidden: 64,32,16
+angles_hidden: 64,32,16
+ss_hidden: 32,16,8
+
+# Coarse atom and angle profile: coarse_atoms_angle_from_geometry.
+use_frame_fape_loss: false
+use_quat_geodesic_loss: false
+use_decoder_angle_loss: false
+use_coarse_ca_loss: true
+use_coarse_ca_step_loss: true
+use_coarse_ca_bond_loss: true
+use_coarse_ca_pairwise_loss: true
+coarse_ca_weight: 1.0
+coarse_ca_step_weight: 1.0
+coarse_ca_bond_weight: 0.1
+coarse_ca_pairwise_weight: 0.1
+coarse_ca_step_frame: prev
+coarse_ca_pairwise_max_seq_sep: 64
+coarse_ca_pairwise_max_pairs: 4096
+rotation_target_frame: local
+
+use_coarse_backbone_loss: true
+use_coarse_backbone_atom_loss: false
+use_coarse_c_loss: true
+use_coarse_cb_loss: true
+use_coarse_n_loss: true
+use_coarse_backbone_fape_loss: false
+use_coarse_backbone_angle_loss: true
+coarse_backbone_atom_weight: 0.05
+coarse_c_weight: 0.05
+coarse_cb_weight: 0.05
+coarse_n_weight: 0.05
+coarse_backbone_fape_weight: 0.25
+coarse_backbone_angle_weight: 0.05
+
+# This notebook configuration trains the transformer geometry decoder only.
+use_se3: false
+use_se3_atom_refine: false
+
+cache_flush_interval: 0
+gc_collect_interval: 0
+use_cuda_ipc_collect: false
+enable_epoch_visualizations: false
+visualization_sample_index: 0
+visualization_max_residues: 0

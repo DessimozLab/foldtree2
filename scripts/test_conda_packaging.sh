@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 RECIPE_DIR="${ROOT_DIR}/conda-recipe"
 CROOT="${CROOT:-/tmp/cb}"
-MIN_SIZE_MB=10
+MIN_SIZE_MB=1
 MAX_SIZE_MB=50
 RUN_SMOKE_INSTALL=0
 RUN_CLI_SMOKE=0
@@ -120,6 +120,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_cmd conda
+require_cmd python
 require_cmd find
 require_cmd awk
 require_cmd stat
@@ -132,39 +133,34 @@ WORK_DIR="$(mktemp -d -t foldtree2-conda-test-XXXXXX)"
 STAGE_DIR="${WORK_DIR}/stage"
 mkdir -p "${STAGE_DIR}"
 
-# Conda copies source to its own work dir before build. Stage a slim source tree so
-# very large training data files are never copied in the first place.
-log "Preparing slim source tree"
-cp -a "${RECIPE_DIR}" "${STAGE_DIR}/"
-
-for path in foldtree2 models/production; do
-  if [[ -e "${ROOT_DIR}/${path}" ]]; then
-    mkdir -p "${STAGE_DIR}/$(dirname "${path}")"
-    cp -a "${ROOT_DIR}/${path}" "${STAGE_DIR}/${path}"
-  fi
-done
-
-# Keep this directory present even when no production model file exists yet.
-mkdir -p "${STAGE_DIR}/models/production"
-
-for file in README.md LICENSE.txt pyproject.toml setup.py MANIFEST.in .conda_build_ignore; do
-  if [[ -f "${ROOT_DIR}/${file}" ]]; then
-    cp -a "${ROOT_DIR}/${file}" "${STAGE_DIR}/"
-  fi
-done
+# Exclude datasets/models before copying, not after a potentially huge cp -a.
+log "Preparing code-only source tree"
+python "${ROOT_DIR}/scripts/stage_conda_source.py" \
+  --source "${ROOT_DIR}" --recipe-dir "${RECIPE_DIR}" --destination "${STAGE_DIR}"
 
 RECIPE_BASENAME="$(basename "${RECIPE_DIR}")"
 STAGED_RECIPE_DIR="${STAGE_DIR}/${RECIPE_BASENAME}"
 [[ -d "${STAGED_RECIPE_DIR}" ]] || fail "Staged recipe directory missing: ${STAGED_RECIPE_DIR}"
 
+log "Building PyDSSP companion dependency for the named channel"
+conda build "${STAGE_DIR}/conda-pydssp" \
+  --croot "${CROOT}" \
+  --output-folder "${CROOT}/output" \
+  --python "${CLI_SMOKE_PYTHON_VERSION}" \
+  --package-format 2 \
+  --override-channels -c conda-forge -c bioconda
+
 log "Building package with conda build"
 conda build "${STAGED_RECIPE_DIR}" \
   --croot "${CROOT}" \
+  --output-folder "${CROOT}/output" \
+  --python "${CLI_SMOKE_PYTHON_VERSION}" \
+  --package-format 2 \
   --prefix-length 80 \
-  --no-test
+  --override-channels -c "file://${CROOT}/output" -c conda-forge -c bioconda
 
-mapfile -t PKG_CANDIDATES < <(find "${CROOT}" -type f \( -name 'foldtree2-*.conda' -o -name 'foldtree2-*.tar.bz2' \) | sort)
-[[ ${#PKG_CANDIDATES[@]} -gt 0 ]] || fail "No foldtree2 package found under ${CROOT}"
+mapfile -t PKG_CANDIDATES < <(find "${CROOT}/output/linux-64" -maxdepth 1 -type f \( -name 'foldtree2-*.conda' -o -name 'foldtree2-*.tar.bz2' \) | sort)
+[[ ${#PKG_CANDIDATES[@]} -eq 1 ]] || fail "Expected exactly one package; use a fresh --croot"
 
 PACKAGE="${PKG_CANDIDATES[${#PKG_CANDIDATES[@]}-1]}"
 SIZE_BYTES="$(stat -c%s "${PACKAGE}")"
@@ -276,23 +272,28 @@ if ! find "${PAYLOAD_DIR}" -path '*/site-packages/foldtree2/src/encoder.py' | gr
   fail "Missing required file foldtree2/src/encoder.py in package payload"
 fi
 
-if ! find "${PAYLOAD_DIR}" -path '*/share/foldtree2/raxml-ng/raxml-ng' | grep -q .; then
+if ! find "${PAYLOAD_DIR}" -path '*/site-packages/foldtree2/raxml-ng/raxml-ng' | grep -q .; then
   fail "Missing required bundled binary raxml-ng"
 fi
 
-if ! find "${PAYLOAD_DIR}" -path '*/share/foldtree2/mafft_tools/hex2maffttext' | grep -q .; then
+if ! find "${PAYLOAD_DIR}" -path '*/site-packages/foldtree2/mafft_tools/hex2maffttext' | grep -q .; then
   fail "Missing required bundled MAFFT helper hex2maffttext"
 fi
 
-if ! find "${PAYLOAD_DIR}" -path '*/share/foldtree2/models/production*' | grep -q .; then
-  fail "Missing required production model directory under share/foldtree2/models/production"
+if find "${PAYLOAD_DIR}" -type f -path '*/models/*' | grep -q .; then
+  fail "Model bundles must be distributed separately, not included in the code package"
 fi
 
 if (( RUN_SMOKE_INSTALL == 1 )); then
   log "Running optional smoke install test"
   SMOKE_ENV="${WORK_DIR}/smoke-env"
-  conda create -y -p "${SMOKE_ENV}" python=3.10 >/dev/null
-  conda install -y -p "${SMOKE_ENV}" "${PACKAGE}" >/dev/null
+  PACKAGE_STEM="$(basename "${PACKAGE}")"
+  PACKAGE_STEM="${PACKAGE_STEM%.conda}"
+  PACKAGE_STEM="${PACKAGE_STEM%.tar.bz2}"
+  PACKAGE_STEM="${PACKAGE_STEM#foldtree2-}"
+  conda create -y -p "${SMOKE_ENV}" --override-channels \
+    -c "file://${CROOT}/output" -c conda-forge -c bioconda python=3.10 \
+    "foldtree2=${PACKAGE_STEM%-*}=${PACKAGE_STEM##*-}"
   "${SMOKE_ENV}/bin/python" - <<'PY'
 import foldtree2
 from foldtree2.src import encoder

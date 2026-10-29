@@ -1,51 +1,23 @@
-# Conda CI Workflows
+# Distribution and documentation workflows
 
-FoldTree2 now uses a two-workflow conda pipeline with clear responsibilities.
+[Project](../../README.md) | [Release procedure](../../docs/releasing.md) |
+[Installation](../../docs/installation.md)
 
-## 1) Validation Workflow (PR + Main)
+| Workflow | Triggers | Contract |
+| --- | --- | --- |
+| [Python Distribution](python-publish.yml) | PRs to main/dev, relevant dev pushes, published release. | Build staged-compatible sdist/wheel, validate archives/metadata, fresh CPU wheel install and CLI/native checks. Only release events enter protected `pypi` publishing. |
+| [Conda Validation](test-conda-build.yml) | PRs to main/dev, relevant main/dev pushes, manual. | Shared allowlisted stager, Linux-64 build, recipe tests, archive checks and fresh CLI install. No publishing. |
+| [Conda Release Build](build-conda-package.yml) | Published release or manual. | Validate version/build/install; save real Linux-64 artifact. Only release events enter protected `conda` publishing and attach artifacts. Manual dispatch is build-only. |
+| [Documentation](docs.yml) | See workflow path/branch filters. | Offline local links/CLI flags and Sphinx HTML. |
 
-- File: `test-conda-build.yml`
-- Name in Actions UI: `Conda Validation`
-- Triggers:
-  - Pull requests to `main` and `develop` (when conda/package files change)
-  - Pushes to `main` and `master` (same path filters)
-  - Manual dispatch
+Conda builds are platform-specific, never `noarch`: the runtime includes ELF
+executables. The shared [build helper](../../scripts/test_conda_packaging.sh)
+supports current `.conda` archives (ZIP containing compressed tar payloads) and
+legacy `.tar.bz2`; it does not treat `.conda` as gzip tar.
 
-### Purpose
-
-- Build the conda package and fail fast on packaging regressions.
-- Verify no large unwanted artifacts are included (`.h5`, `.ipynb`, `.pkl`, `.pt`, `.pth`).
-- Enforce expected package size bounds.
-- Check that essential package files are present.
-
-## 2) Release Workflow (Tags)
-
-- File: `build-conda-package.yml`
-- Name in Actions UI: `Conda Release Build`
-- Triggers:
-  - Version tag push (`v*`)
-  - Manual dispatch
-
-### Purpose
-
-- Build the release `.conda` package.
-- Upload package artifact to GitHub Actions.
-- Attach package to the GitHub release.
-- Optionally upload to Anaconda Cloud if `ANACONDA_TOKEN` is configured.
-
-## Why This Setup
-
-- Avoids duplicate conda builds across multiple workflows.
-- Keeps fast validation separate from release publishing.
-- Makes Actions history easier to read and troubleshoot.
-
-## Release Usage
-
-```bash
-git tag -a v0.1.0 -m "Release version 0.1.0"
-git push origin v0.1.0
-```
-
-## Optional Anaconda Upload
-
-Set repository secret `ANACONDA_TOKEN` to enable upload during release builds.
+Configure `ANACONDA_OWNER` and `ANACONDA_TOKEN` in the protected `conda`
+environment. Missing settings or failed uploads fail the job. Configure PyPI
+Trusted Publishing in the `pypi` environment. Neither workflow bypasses review,
+publishes on a dev push, or forces replacement of an existing registry artifact.
+See the [release gates](../../docs/releasing.md#final-go-no-go) before creating
+any release event.

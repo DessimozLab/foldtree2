@@ -1,0 +1,7 @@
+{
+  "unit": "foldtree2-se3-larger-local-20261013.service",
+  "initial_pid": 1031090,
+  "date": "2026-10-13",
+  "device": "cuda:0",
+  "stage": "cohort-cache-then-training"
+}

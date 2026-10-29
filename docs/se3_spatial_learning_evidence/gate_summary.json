@@ -1,0 +1,69 @@
+{
+  "gates": {
+    "overfit_20_percent": false,
+    "heldout_fape": false,
+    "no_material_regression": false
+  },
+  "eligible_for_revised_pilot": false,
+  "ready_for_larger_run": false,
+  "metrics": {
+    "fape": {
+      "baseline": 0.9478593836538494,
+      "refined": 0.9582568714395165,
+      "mean_delta": 0.010397487785667181,
+      "median_delta": 0.008249014616012573,
+      "improved": 4,
+      "material_regression": false
+    },
+    "ca_rmsd": {
+      "baseline": 18.40328325331211,
+      "refined": 19.603408113121986,
+      "mean_delta": 1.2001248598098755,
+      "median_delta": 0.6953983306884766,
+      "improved": 39,
+      "material_regression": true
+    },
+    "tm_score": {
+      "baseline": 0.19222074393425248,
+      "refined": 0.19485795736696904,
+      "mean_delta": 0.0026372134327165564,
+      "median_delta": 0.004227480824726737,
+      "improved": 69,
+      "material_regression": false
+    },
+    "lddt": {
+      "baseline": 0.1958122099749744,
+      "refined": 0.1930441447184421,
+      "mean_delta": -0.0027680652565322816,
+      "median_delta": 0.0016300901770591736,
+      "improved": 66,
+      "material_regression": false
+    },
+    "ca_bond_mae": {
+      "baseline": 1.7628455581143498,
+      "refined": 3.806308414787054,
+      "mean_delta": 2.043462856672704,
+      "median_delta": 1.8725233674049377,
+      "improved": 3,
+      "material_regression": true
+    },
+    "ca_bend_mae_radians": {
+      "baseline": 0.8435609587468207,
+      "refined": 0.8243235894478858,
+      "mean_delta": -0.019237369298934937,
+      "median_delta": -0.013223528861999512,
+      "improved": 81,
+      "material_regression": false
+    },
+    "ca_torsion_mae_radians": {
+      "baseline": 1.566215993836522,
+      "refined": 1.5515649793669581,
+      "mean_delta": -0.014651014469563961,
+      "median_delta": -0.01362311840057373,
+      "improved": 72,
+      "material_regression": false
+    }
+  },
+  "reduction": 0.16176553414601902,
+  "failed_events": 0
+}

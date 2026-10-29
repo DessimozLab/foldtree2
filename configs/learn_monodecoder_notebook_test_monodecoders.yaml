@@ -1,0 +1,50 @@
+dataset: structs_training_mk2.h5
+model_name: final_30char_mk2_contactsfix_aa
+output_dir: ./models/notebook/
+
+# Notebook architecture sizes
+num_embeddings: 30
+embedding_dim: 16
+hidden_size: 100
+encoder_hidden_size: 100
+sequence_hidden_size: 100
+aa_decoder_hidden_size: 256
+aa_decoder_dropout: 0.25
+geometry_cnn_hidden_size: 150
+geometry_cnn_dropout: 0.05
+foldx_hidden_size: 100
+
+# Training loop settings from test_monodecoders notebook
+epochs: 100
+batch_size: 8
+gradient_accumulation_steps: 1
+learning_rate: 5e-5
+optimizer_type: muon
+lr_schedule: plateau
+
+# Notebook masking + loss behavior
+mask_plddt: true
+plddt_threshold: 0.5
+use_regularized_recon_loss: true
+normalize_losses: true
+use_uncertainty_weighting: true
+
+# Loss weights from notebook
+edgeweight: 0.25
+logitweight: 0.0
+xweight: 0.15
+fft2weight: 0.0
+vqweight: 0.15
+angles_weight: 0.0
+ss_weight: 0.0
+fape_weight: 0.0
+lddt_weight: 0.0
+delta_weight: 0.0
+quat_geo_weight: 0.0
+quat_angle_weight: 0.0
+
+# Notebook encoder settings
+EMA: true
+use_commitment_scheduling: true
+commitment_warmup_steps: 7000
+commitment_start: 0.1

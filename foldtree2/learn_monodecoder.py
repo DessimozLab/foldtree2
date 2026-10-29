@@ -11,8 +11,9 @@ import torch
 from torch_geometric.data import DataLoader
 import numpy as np
 from foldtree2.src import pdbgraph
+from foldtree2.src.training_protocol import held_out_split
 from foldtree2.src import encoder as ecdr
-from foldtree2.src.losses.losses import recon_loss_diag, recon_loss_diag_with_regs, aa_reconstruction_loss, angles_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss
+from foldtree2.src.losses.losses import recon_loss_diag, recon_loss_diag_with_regs, aa_reconstruction_loss, angles_reconstruction_loss, ss_reconstruction_loss, UncertaintyWeighting , batch_fape_loss, batch_lddt_loss, batch_delta_loss, quaternion_geodesic_loss, quaternion_angle_loss
 from foldtree2.src.mono_decoders import MultiMonoDecoder
 from foldtree2.src.visualization import create_reconstruction_figure
 
@@ -35,25 +36,57 @@ from torch.cuda.amp import autocast, GradScaler
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i):
+def get_node_feature_dim(data_sample, *node_types):
+	for node_type in node_types:
+		if node_type not in data_sample.node_types:
+			continue
+		store = data_sample[node_type]
+		features = getattr(store, 'x', None)
+		if features is not None:
+			return features.shape[1]
+	return 0
+
+
+def compute_aa_reconstruction_accuracy(true_onehot, pred_logits):
+	aa_true = true_onehot.argmax(dim=1)
+	aa_pred = pred_logits.argmax(dim=1)
+	correct = (aa_true == aa_pred)
+	correct_count = int(correct.sum().item())
+	residue_count = int(correct.numel())
+	accuracy = correct_count / max(residue_count, 1)
+	return accuracy, correct_count, residue_count
+
+
+def build_notebook_mono_configs(args, converter, hidden_dims, ndim_godnode, ndim_fft2r, ndim_fft2i):
 	"""Build MultiMonoDecoder configs matching the notebook defaults as closely as possible."""
+	sequence_hidden_size = hidden_dims['sequence_hidden_size']
+	aa_decoder_hidden_size = hidden_dims['aa_decoder_hidden_size']
+	geometry_cnn_hidden_size = hidden_dims['geometry_cnn_hidden_size']
+	foldx_hidden_size = hidden_dims['foldx_hidden_size']
 	
 	mono_configs = {
 		'sequence_transformer': {
 			'in_channels': {'res': args.embedding_dim},
 			'xdim': 20,
 			'concat_positions': False,
-			'hidden_channels': {('res', 'backbone', 'res'): [hidden_size], ('res', 'backbonerev', 'res'): [hidden_size]},
+			'hidden_channels': {('res', 'backbone', 'res'): [sequence_hidden_size], ('res', 'backbonerev', 'res'): [sequence_hidden_size]},
 			'layers': 2,
-			'AAdecoder_hidden': [hidden_size, hidden_size, hidden_size],
+			'AAdecoder_hidden': [aa_decoder_hidden_size, aa_decoder_hidden_size, aa_decoder_hidden_size],
+			'aa_decoder_dropout': args.aa_decoder_dropout,
 			'amino_mapper': converter.aaindex,
 			'nheads': 10,
-			'dropout': 0.001,
+			'dropout': args.sequence_dropout,
 			'normalize': False,
 			'residual': False,
 			'use_cnn_decoder': args.sequence_use_cnn_decoder,
 			'output_ss': args.sequence_output_ss,
 			'learn_positions': True,
+			'use_xsatransformer': args.sequence_use_xsatransformer,
+			'use_mhc': False,
+			'mhc_streams': 4,
+			'mhc_sinkhorn_iters': 5,
+			'mhc_temperature': 1.0,
+			'mhc_eps': 1e-6,
 		},
 	}
 
@@ -80,11 +113,11 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 	mono_configs['geometry_cnn'] = {
 			'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23, 'fft2r': ndim_fft2r, 'fft2i': ndim_fft2i},
 			'concat_positions': False,
-			'conv_channels': [2 * hidden_size, hidden_size, hidden_size],
-			'kernel_sizes': [3] * args.nconv_layers,
-			'Xdecoder_hidden': [hidden_size, hidden_size],
+			'conv_channels': args.geometry_cnn_conv_channels or [geometry_cnn_hidden_size, max(1, geometry_cnn_hidden_size // 2), max(1, geometry_cnn_hidden_size // 3), 3],
+			'kernel_sizes': [3, 3, 3, 3],
+			'Xdecoder_hidden': [geometry_cnn_hidden_size, geometry_cnn_hidden_size],
 			'metadata': converter.metadata,
-			'dropout': 0.001,
+			'dropout': args.geometry_cnn_dropout,
 			'output_fft': False,
 			'output_ss': False,
 			'normalize': True,
@@ -100,11 +133,11 @@ def build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim
 		mono_configs['foldx'] = {
 			'in_channels': {'res': args.embedding_dim, 'godnode4decoder': ndim_godnode, 'foldx': 23},
 			'concat_positions': False,
-			'hidden_channels': {('res', 'backbone', 'res'): [hidden_size] * 3, ('res', 'backbonerev', 'res'): [hidden_size] * 3,
-							   ('res', 'informs', 'godnode4decoder'): [hidden_size] * 3,
-							   ('godnode4decoder', 'informs', 'res'): [hidden_size] * 3},
+			'hidden_channels': {('res', 'backbone', 'res'): [foldx_hidden_size] * 3, ('res', 'backbonerev', 'res'): [foldx_hidden_size] * 3,
+							   ('res', 'informs', 'godnode4decoder'): [foldx_hidden_size] * 3,
+							   ('godnode4decoder', 'informs', 'res'): [foldx_hidden_size] * 3},
 			'layers': 3,
-			'foldx_hidden': [hidden_size, hidden_size // 2],
+			'foldx_hidden': [foldx_hidden_size, max(1, foldx_hidden_size // 2)],
 			'nheads': 2,
 			'metadata': converter.metadata,
 			'flavor': 'sage',
@@ -182,12 +215,30 @@ parser.add_argument('--dataset', '-d', type=str, default='structs_train_final.h5
 					help='Path to the dataset file (default: structs_train_final.h5)')
 parser.add_argument('--hidden-size', '-hs', type=int, default=150,
 					help='Hidden layer size (default: 150)')
+parser.add_argument('--encoder-hidden-size', type=int, default=None,
+					help='Hidden size for encoder body/hidden channels (default: falls back to --hidden-size)')
+parser.add_argument('--sequence-hidden-size', type=int, default=None,
+					help='Hidden size for sequence_transformer message-passing channels (default: falls back to --hidden-size)')
+parser.add_argument('--aa-decoder-hidden-size', type=int, default=None,
+					help='Hidden size for sequence_transformer AA decoder MLP (default: falls back to --sequence-hidden-size)')
+parser.add_argument('--aa-decoder-dropout', type=float, default=0.05,
+					help='Dropout used specifically inside the AA decoder head (default: 0.05)')
+parser.add_argument('--geometry-cnn-hidden-size', type=int, default=None,
+					help='Hidden size for geometry_cnn conv/X decoder channels (default: falls back to --hidden-size)')
+parser.add_argument('--geometry-cnn-dropout', type=float, default=0.01,
+					help='Dropout for geometry_cnn edge reconstruction decoder (default: 0.01)')
+parser.add_argument('--foldx-hidden-size', type=int, default=None,
+					help='Hidden size for optional foldx decoder (default: falls back to --hidden-size)')
 parser.add_argument('--epochs', '-e', type=int, default=100,
 					help='Number of epochs for training (default: 100)')
 parser.add_argument('--device', type=str, default=None,
 					help='Device to run on (e.g., cuda:0, cuda:1, cpu) (default: auto-select)')
 parser.add_argument('--learning-rate', '-lr', type=float, default=1e-4,
 					help='Learning rate (default: 1e-4)')
+parser.add_argument('--adamw-weight-decay', type=float, default=1e-6,
+					help='AdamW weight decay; notebook production recipe uses 0.01')
+parser.add_argument('--num-workers', type=int, default=4,
+					help='Training HDF5 data loader workers (default: 4)')
 parser.add_argument('--batch-size', '-bs', type=int, default=10,
 					help='Batch size (default: 10)')
 parser.add_argument('--max-residues', type=int, default=None,
@@ -218,6 +269,10 @@ parser.add_argument('--sequence-use-cnn-decoder', action=argparse.BooleanOptiona
 					help='Use the CNN AA head inside sequence_transformer, matching the notebook (default: True)')
 parser.add_argument('--sequence-output-ss', action=argparse.BooleanOptionalAction, default=False,
 					help='Allow sequence_transformer to emit secondary structure predictions (default: False)')
+parser.add_argument('--sequence-use-xsatransformer', action=argparse.BooleanOptionalAction, default=True,
+					help='Use XSA attention in the sequence decoder')
+parser.add_argument('--sequence-dropout', type=float, default=0.05)
+parser.add_argument('--geometry-cnn-conv-channels', type=int, nargs='+', default=None)
 parser.add_argument('--geometry-output-rt', action=argparse.BooleanOptionalAction, default=None,
 					help='Allow geometry_transformer to emit rotation/translation outputs (default: follows --output-rt)')
 parser.add_argument('--geometry-output-ss', action=argparse.BooleanOptionalAction, default=True,
@@ -247,6 +302,12 @@ parser.add_argument('--tensorboard-dir', type=str, default='./runs/',
 					help='Directory for TensorBoard logs (default: ./runs/)')
 parser.add_argument('--run-name', type=str, default=None,
 					help='Name for this training run (default: auto-generated from timestamp)')
+parser.add_argument('--metrics-output', type=str, default=None,
+					help='Optional path to write final training/validation metrics as JSON (default: None)')
+parser.add_argument('--preflight-only', action='store_true',
+					help='Check one stored graph and model forward pass without training or saving checkpoints')
+parser.add_argument('--final-val-samples', type=int, default=0,
+					help='If > 0, export final metrics using quick validation on this many samples; 0 uses full validation loader (default: 0)')
 parser.add_argument('--save-config', type=str, default=None,
 					help='Save current configuration to file (YAML format)')
 parser.add_argument('--lr-warmup-steps', type=int, default=0,
@@ -258,6 +319,8 @@ parser.add_argument('--lr-schedule', type=str, default='plateau',
 					help='Learning rate schedule (default: plateau)')
 parser.add_argument('--lr-min', type=float, default=1e-6,
 					help='Minimum learning rate for cosine/linear schedules (default: 1e-6)')
+parser.add_argument('--plateau-monitor', choices=['validation_loss', 'training_aa_sum'], default='validation_loss',
+					help='Plateau scheduler metric; notebook monitors summed training AA loss')
 parser.add_argument('--gradient-accumulation-steps', '--grad-accum', type=int, default=2,
 					help='Number of gradient accumulation steps (default: 2)')
 parser.add_argument('--num-cycles', type=int, default=3,
@@ -376,6 +439,14 @@ parser.add_argument('--jump-ss-loss', type=int, default=None,
 parser.add_argument('--use-uncertainty-weighting', action='store_true',
 					help='Use uncertainty-based loss weighting (Kendall & Gal method, learns per-task weights)')
 
+parser.add_argument('--normalize-losses', action='store_true',
+					help='Normalize per-task losses exactly like the notebook training loop')
+
+parser.add_argument('--quat-geo-weight', type=float, default=0.0,
+					help='Weight for quaternion geodesic loss (default: 0.0)')
+parser.add_argument('--quat-angle-weight', type=float, default=0.0,
+					help='Weight for quaternion angular loss (default: 0.0)')
+
 parser.add_argument('--nconv-layers', type=int, default=3,
 					help='Number of convolutional layers in the geometry decoder (default: 3)')
 
@@ -462,12 +533,40 @@ if args.config:
 		'use_mixed_precision': 'mixed_precision',
 		'use_weight_scheduler': 'use_weight_scheduler',
 	}
+
+	# Build quick lookup from argparse destination to action for type-safe config parsing.
+	actions_by_dest = {a.dest: a for a in parser._actions if hasattr(a, 'dest')}
+
+	def _coerce_config_value(arg_key, value):
+		action = actions_by_dest.get(arg_key)
+		if action is None:
+			return value
+
+		arg_type = getattr(action, 'type', None)
+		if arg_type is not None and value is not None and not isinstance(value, arg_type):
+			try:
+				return arg_type(value)
+			except Exception:
+				print(f"  Warning: Could not coerce '{arg_key}' value '{value}' to {arg_type}; keeping raw value")
+				return value
+
+		# Handle common bool values provided as strings in config files.
+		default_value = parser.get_default(arg_key) if hasattr(args, arg_key) else None
+		if isinstance(default_value, bool) and isinstance(value, str):
+			v = value.strip().lower()
+			if v in {'true', '1', 'yes', 'y', 'on'}:
+				return True
+			if v in {'false', '0', 'no', 'n', 'off'}:
+				return False
+
+		return value
 	
 	# Set defaults from config file, but allow CLI args to override
 	for key, value in config.items():
 		# Map config key to argument name if needed
 		normalized_key = key.replace('-', '_')
 		arg_key = config_to_arg_map.get(normalized_key, normalized_key)
+		coerced_value = _coerce_config_value(arg_key, value)
 		
 		# Only set from config if not explicitly provided via CLI
 		if hasattr(args, arg_key):
@@ -476,8 +575,8 @@ if args.config:
 			default_value = parser.get_default(arg_key)
 			if cli_value == default_value:
 				# Use config value since CLI didn't override
-				setattr(args, arg_key, value)
-				print(f"  {arg_key}: {value} (from config key '{key}')")
+				setattr(args, arg_key, coerced_value)
+				print(f"  {arg_key}: {coerced_value} (from config key '{key}')")
 			else:
 				print(f"  {arg_key}: {cli_value} (from CLI, overriding config)")
 		else:
@@ -574,6 +673,18 @@ def decode_batch_reconstruction(encoder, decoder, z_batch, device, converter, ve
 print(f"Configuration:")
 print(f"  Dataset: {args.dataset}")
 print(f"  Hidden Size: {args.hidden_size}")
+resolved_encoder_hidden_size = args.encoder_hidden_size if args.encoder_hidden_size is not None else args.hidden_size
+resolved_sequence_hidden_size = args.sequence_hidden_size if args.sequence_hidden_size is not None else args.hidden_size
+resolved_aa_decoder_hidden_size = args.aa_decoder_hidden_size if args.aa_decoder_hidden_size is not None else resolved_sequence_hidden_size
+resolved_geometry_cnn_hidden_size = args.geometry_cnn_hidden_size if args.geometry_cnn_hidden_size is not None else args.hidden_size
+resolved_foldx_hidden_size = args.foldx_hidden_size if args.foldx_hidden_size is not None else args.hidden_size
+print(f"  Encoder Hidden Size: {resolved_encoder_hidden_size}")
+print(f"  Sequence Hidden Size: {resolved_sequence_hidden_size}")
+print(f"  AA Decoder Hidden Size: {resolved_aa_decoder_hidden_size}")
+print(f"  AA Decoder Dropout: {args.aa_decoder_dropout}")
+print(f"  Geometry CNN Hidden Size: {resolved_geometry_cnn_hidden_size}")
+print(f"  Geometry CNN Dropout: {args.geometry_cnn_dropout}")
+print(f"  FoldX Hidden Size: {resolved_foldx_hidden_size}")
 print(f"  Epochs: {args.epochs}")
 print(f"  Device: {args.device if args.device else 'auto-select'}")
 print(f"  Learning Rate: {args.learning_rate}")
@@ -606,6 +717,8 @@ print(f"  Random Seed: {args.seed}")
 print(f"  Exponential Moving Average: {'Enabled' if args.EMA else 'Disabled'}")
 print(f"  TensorBoard Directory: {args.tensorboard_dir}")
 print(f"  Run Name: {args.run_name if args.run_name else 'auto-generated'}")
+print(f"  Metrics Output: {args.metrics_output if args.metrics_output else 'disabled'}")
+print(f"  Final Val Samples: {args.final_val_samples} ({'full validation' if args.final_val_samples <= 0 else 'quick validation'})")
 print(f"  LR Schedule: {args.lr_schedule}")
 print(f"  Optimizer Type: {args.optimizer_type}")
 print(f"  LR Warmup Steps: {args.lr_warmup_steps}")
@@ -626,6 +739,7 @@ if args.use_weight_scheduler:
 	print(f"  Loss Warmup Steps: {args.loss_warmup_steps}")
 	print(f"  Loss Schedules: x={args.loss_schedule_x}, logit={args.loss_schedule_logit}, edge={args.loss_schedule_edge}, vq={args.loss_schedule_vq}, fft2={args.loss_schedule_fft2}, angles={args.loss_schedule_angles}, ss={args.loss_schedule_ss}")
 print(f"  Use Regularized Recon Loss: {args.use_regularized_recon_loss}")
+print(f"  Normalize Losses: {args.normalize_losses}")
 
 # Loss weights (from args, with defaults matching notebook)
 edgeweight = args.edgeweight
@@ -638,6 +752,8 @@ ss_weight = args.ss_weight
 fape_weight = args.fape_weight if getattr(args, 'fape_loss', False) else 0.0
 lddt_weight = args.lddt_weight if getattr(args, 'lddt_loss', False) else 0.0
 delta_weight = args.delta_weight if getattr(args, 'delta_loss', False) else 0.0
+quat_geo_weight = args.quat_geo_weight
+quat_angle_weight = args.quat_angle_weight
 
 recon_reg_latent_key = args.recon_reg_latent_key
 if isinstance(recon_reg_latent_key, str) and recon_reg_latent_key.lower() in {'none', 'null', ''}:
@@ -663,6 +779,8 @@ print(f"  SS Weight: {ss_weight}")
 print(f"  FAPE Weight: {fape_weight}")
 print(f"  lDDT Weight: {lddt_weight}")
 print(f"  Delta Weight: {delta_weight}")
+print(f"  Quat Geo Weight: {quat_geo_weight}")
+print(f"  Quat Angle Weight: {quat_angle_weight}")
 if args.use_regularized_recon_loss:
 	print(f"  Recon Reg Config: {recon_reg_config}")
 	print(f"  Recon Reg Latent Key: {recon_reg_latent_key}")
@@ -707,16 +825,19 @@ if args.max_residues is not None:
 	print(f"Kept {len(keep_indices)} / {len(struct_dat)} structures after max_residues filter")
 	struct_dat = torch.utils.data.Subset(struct_dat, keep_indices)
 
-# Create train/validation split
-torch.manual_seed(args.val_seed)
-val_size = int(len(struct_dat) * args.val_split)
-train_size = len(struct_dat) - val_size
-train_dataset, val_dataset = torch.utils.data.random_split(struct_dat, [train_size, val_size])
+# Match the notebook split without changing the model initialization RNG seed.
+train_dataset, val_dataset = held_out_split(struct_dat, args.val_split, args.val_seed)
+train_size, val_size = len(train_dataset), len(val_dataset)
 
 print(f"Dataset split: {train_size} training samples, {val_size} validation samples")
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+# PyG Data.pin_memory() always pins to device 0 regardless of pin_memory_device.
+# Only enable pin_memory when the training device is cuda:0 (or unspecified cuda).
+_dev = (args.device or '').strip()
+_pin_memory = _dev in ('', 'cuda', 'cuda:0')
+train_loader = DataLoader(train_dataset, batch_size=1 if args.preflight_only else args.batch_size,
+	shuffle=True, num_workers=0 if args.preflight_only else args.num_workers, pin_memory=_pin_memory)
+val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=_pin_memory)
 data_sample = next(iter(train_loader))
 
 # Set device
@@ -728,15 +849,24 @@ print(f"Using device: {device}")
 
 # Get dimensions from data sample
 ndim = data_sample['res'].x.shape[1]
-ndim_godnode = data_sample['godnode'].x.shape[1]
-ndim_fft2i = data_sample['fourier2di'].x.shape[1]
-ndim_fft2r = data_sample['fourier2dr'].x.shape[1]
+ndim_godnode = get_node_feature_dim(data_sample, 'godnode4decoder', 'godnode')
+ndim_fft2i = get_node_feature_dim(data_sample, 'fourier2di')
+ndim_fft2r = get_node_feature_dim(data_sample, 'fourier2dr')
 
 
 # Create output directory
 modeldir = args.output_dir
 os.makedirs(modeldir, exist_ok=True)
 modelname = args.model_name
+
+if not args.preflight_only:
+	# Keep an auditable record of the exact approved split and resolved defaults.
+	with open(os.path.join(modeldir, modelname + '_resolved_config.json'), 'w') as stream:
+		json.dump(vars(args), stream, indent=2, sort_keys=True)
+	with open(os.path.join(modeldir, modelname + '_split.json'), 'w') as stream:
+		json.dump({'dataset': os.path.realpath(args.dataset), 'seed': args.val_seed,
+			'fraction': args.val_split, 'protocol': 'notebook_permutation_prefix_rounded_v1',
+			'training_indices': train_dataset.indices, 'validation_indices': val_dataset.indices}, stream)
 
 # Setup TensorBoard
 if args.run_name:
@@ -770,32 +900,47 @@ else:
 	print("Creating new model...")
 	# Model setup
 	hidden_size = args.hidden_size
+	encoder_hidden_size = args.encoder_hidden_size if args.encoder_hidden_size is not None else hidden_size
+	sequence_hidden_size = args.sequence_hidden_size if args.sequence_hidden_size is not None else hidden_size
+	aa_decoder_hidden_size = args.aa_decoder_hidden_size if args.aa_decoder_hidden_size is not None else sequence_hidden_size
+	geometry_cnn_hidden_size = args.geometry_cnn_hidden_size if args.geometry_cnn_hidden_size is not None else hidden_size
+	foldx_hidden_size = args.foldx_hidden_size if args.foldx_hidden_size is not None else hidden_size
+	hidden_dims = {
+		'encoder_hidden_size': encoder_hidden_size,
+		'sequence_hidden_size': sequence_hidden_size,
+		'aa_decoder_hidden_size': aa_decoder_hidden_size,
+		'geometry_cnn_hidden_size': geometry_cnn_hidden_size,
+		'foldx_hidden_size': foldx_hidden_size,
+	}
+	sample_edge_attr = data_sample['res', 'contactPoints', 'res'].edge_attr
+	inferred_edge_dim = 1 if sample_edge_attr is None else (sample_edge_attr.shape[-1] if sample_edge_attr.dim() > 1 else 1)
 	encoder = ecdr.mk1_Encoder(
 		in_channels=ndim,
-		hidden_channels=[hidden_size, hidden_size],#, hidden_size],
+		hidden_channels=[encoder_hidden_size, encoder_hidden_size],#, hidden_size],
 		out_channels=args.embedding_dim,
 		metadata={'edge_types': [('res','contactPoints','res')]},
 		num_embeddings=args.num_embeddings,
 		commitment_cost=args.commitment_cost,
-		edge_dim=12,
-		encoder_hidden=hidden_size,
+		edge_dim=inferred_edge_dim,
+		encoder_hidden=encoder_hidden_size,
 		EMA=args.EMA,
-		nheads=16,
-		dropout_p=0.005,
+		nheads=20,
+		dropout_p=0.1,
 		reset_codes=False,
-		flavor='transformer',
-		fftin=True,
-		use_commitment_scheduling=args.use_commitment_scheduling,
-		commitment_warmup_steps=args.commitment_warmup_steps,
+		flavor='xsa_transformer',
+		residual=True,
+		fftin=False,
+		use_commitment_scheduling=True,
+		commitment_warmup_steps=2000,
 		commitment_schedule='linear',
-		commitment_start=args.commitment_start,
-		concat_positions=True,
+		commitment_start=0.1,
+		concat_positions=False,
 		learn_positions=True
 	)
 
 	# MultiMonoDecoder for sequence and geometry
 	print("Using notebook-style decoder configuration")
-	mono_configs = build_notebook_mono_configs(args, converter, hidden_size, ndim_godnode, ndim_fft2r, ndim_fft2i)
+	mono_configs = build_notebook_mono_configs(args, converter, hidden_dims, ndim_godnode, ndim_fft2r, ndim_fft2i)
 	# Initialize decoder
 	decoder = MultiMonoDecoder( configs=mono_configs)
 
@@ -817,9 +962,11 @@ if args.use_uncertainty_weighting:
 			'angles_loss',
 			'ss_loss',
 			'logit_loss',
-			'lddt_loss',
 			'fape_loss',
+			'lddt_loss',
 			'delta_loss',
+			'quat_geo_loss',
+			'quat_angle_loss',
 		],
 		device=device
 	)
@@ -942,9 +1089,9 @@ else:
 			{'params': params, 'lr': args.learning_rate},
 			{'params': uncertainy_weighting.parameters(), 'lr': args.learning_rate * 0.1}
 		]
-		optimizer = torch.optim.AdamW(param_groups, weight_decay=0.000001)
+		optimizer = torch.optim.AdamW(param_groups, weight_decay=args.adamw_weight_decay)
 	else:
-		optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=0.000001)
+		optimizer = torch.optim.AdamW(params, lr=args.learning_rate, weight_decay=args.adamw_weight_decay)
 
 # Define scheduler function with process group initialization
 def get_scheduler(optimizer, scheduler_type, num_warmup_steps, num_training_steps, **kwargs):
@@ -1022,6 +1169,23 @@ if args.lr_schedule in ['cosine', 'linear', 'cosine_restarts', 'polynomial']:
 	print(f"  Min learning rate: {args.lr_min}")
 
 # Function to analyze gradient norms
+if args.preflight_only:
+	encoder.eval()
+	decoder.eval()
+	probe = data_sample.to(device)
+	with torch.no_grad():
+		amp_dtype = torch.bfloat16 if device.type == 'cuda' and torch.cuda.is_bf16_supported() else torch.float16
+		with autocast(enabled=args.mixed_precision and device.type == 'cuda', dtype=amp_dtype):
+			z, _ = encoder(probe)
+			probe['res'].x = z
+			out = decoder(probe, None)
+		if not torch.isfinite(z).all() or not torch.isfinite(out['aa']).all():
+			raise ValueError('Nonfinite model outputs in HDF5 preflight')
+	print(f'PREFLIGHT PASSED: dataset={args.dataset}, input_dim={ndim}, alphabet={args.num_embeddings}, '
+		f'train={train_size}, validation={val_size}, device={device}, AA_shape={tuple(out["aa"].shape)}')
+	writer.close()
+	sys.exit(0)
+
 def analyze_gradient_norms(model, top_k=3):
 	"""
 	Analyzes gradients in the given model and returns the top_k layers with
@@ -1049,11 +1213,20 @@ with open(os.path.join(modeldir, modelname + '_info.txt'), 'w') as f:
 	f.write(f'Learning rate: {args.learning_rate}\n')
 	f.write(f'Batch size: {args.batch_size}\n')
 	f.write(f'Hidden size: {args.hidden_size}\n')
+	f.write(f'Encoder hidden size: {resolved_encoder_hidden_size}\n')
+	f.write(f'Sequence hidden size: {resolved_sequence_hidden_size}\n')
+	f.write(f'AA decoder hidden size: {resolved_aa_decoder_hidden_size}\n')
+	f.write(f'AA decoder dropout: {args.aa_decoder_dropout}\n')
+	f.write(f'Geometry CNN hidden size: {resolved_geometry_cnn_hidden_size}\n')
+	f.write(f'Geometry CNN dropout: {args.geometry_cnn_dropout}\n')
+	f.write(f'FoldX hidden size: {resolved_foldx_hidden_size}\n')
 	f.write(f'Embedding dimension: {args.embedding_dim}\n')
 	f.write(f'Number of embeddings: {args.num_embeddings}\n')
 	f.write(f'Normalize Loss Weights: {args.normalize_loss_weights}\n')
 	f.write(f'Loss weights - Edge: {edgeweight}, X: {xweight}, FFT2: {fft2weight}, VQ: {vqweight}\n')
 	f.write(f'Loss weights - Angles: {angles_weight}, SS: {ss_weight}, Logit: {logitweight}\n')
+	f.write(f'Loss weights - QuatGeo: {quat_geo_weight}, QuatAngle: {quat_angle_weight}\n')
+	f.write(f'Normalize losses: {args.normalize_losses}\n')
 	f.write(f'LR Schedule: {args.lr_schedule}\n')
 	f.write(f'LR Warmup Steps: {warmup_steps}\n')
 	f.write(f'Gradient Accumulation Steps: {args.gradient_accumulation_steps}\n')
@@ -1080,6 +1253,13 @@ hparams_dict = {
 	'learning_rate': args.learning_rate,
 	'batch_size': args.batch_size,
 	'hidden_size': args.hidden_size,
+	'encoder_hidden_size': resolved_encoder_hidden_size,
+	'sequence_hidden_size': resolved_sequence_hidden_size,
+	'aa_decoder_hidden_size': resolved_aa_decoder_hidden_size,
+	'aa_decoder_dropout': args.aa_decoder_dropout,
+	'geometry_cnn_hidden_size': resolved_geometry_cnn_hidden_size,
+	'geometry_cnn_dropout': args.geometry_cnn_dropout,
+	'foldx_hidden_size': resolved_foldx_hidden_size,
 	'embedding_dim': args.embedding_dim,
 	'num_embeddings': args.num_embeddings,
 	'epochs': args.epochs,
@@ -1101,6 +1281,9 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 
 	total_loss_x = total_loss_edge = total_vq = 0.0
 	total_angles_loss = total_loss_fft2 = total_logit_loss = total_ss_loss = 0.0
+	total_quat_geo_loss = total_quat_angle_loss = 0.0
+	total_aa_correct = 0
+	total_aa_residues = 0
 
 	with torch.no_grad():
 		z, vqloss = encoder(data)
@@ -1131,10 +1314,14 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 					decoder,
 					plddt=args.mask_plddt,
 					key='edge_probs',
-					plddt_thresh=args.plddt_threshold
+					plddt_thresh=args.plddt_threshold,
+					normalize=args.normalize_losses,
 				)
 
-		xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+		xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_losses)
+		aa_accuracy, aa_correct, aa_residues = compute_aa_reconstruction_accuracy(data['AA'].x, out['aa'])
+		total_aa_correct += aa_correct
+		total_aa_residues += aa_residues
 
 		fft2loss = torch.tensor(0.0, device=device)
 		if 'fft2pred' in out and out['fft2pred'] is not None:
@@ -1142,16 +1329,28 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 
 		angles_loss = torch.tensor(0.0, device=device)
 		if out.get('angles') is not None:
-			angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+			angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_losses)
 
 		ss_loss = torch.tensor(0.0, device=device)
 		if out.get('ss_pred') is not None:
-			if args.mask_plddt:
-				mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-				if mask.sum() > 0:
-					ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-			else:
-				ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+			ss_loss = ss_reconstruction_loss(
+				data['ss'].x,
+				out['ss_pred'],
+				mask_plddt=args.mask_plddt,
+				plddt_threshold=args.plddt_threshold,
+				plddt_mask=data['plddt'].x if args.mask_plddt else None,
+				normalize=args.normalize_losses,
+			)
+
+		quat_geo_loss = torch.tensor(0.0, device=device)
+		quat_angle_loss_val = torch.tensor(0.0, device=device)
+		if out.get('quat_pred') is not None and 'R_true' in data.node_types:
+			true_q = rotation_matrix_to_quaternion(data['R_true'].x.float())
+			pred_q = out['quat_pred'].float()
+			if args.quat_geo_weight > 0:
+				quat_geo_loss = quaternion_geodesic_loss(pred_q, true_q)
+			if args.quat_angle_weight > 0:
+				quat_angle_loss_val = quaternion_angle_loss(pred_q, true_q)
 
 		# lDDT loss
 		lddt_loss = torch.tensor(0.0, device=device)
@@ -1215,8 +1414,12 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 	avg_lddt_loss   = float(lddt_loss.item())
 	avg_fape_loss   = float(fape_loss.item())
 	avg_delta_loss  = float(delta_loss_val.item())
+	avg_quat_geo_loss = float(quat_geo_loss.item())
+	avg_quat_angle_loss = float(quat_angle_loss_val.item())
+	avg_aa_accuracy = total_aa_correct / max(total_aa_residues, 1)
 	avg_total_loss  = (avg_loss_x + avg_loss_edge + avg_loss_vq + avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss +
-					   args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss)
+					   args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss +
+					   args.quat_geo_weight * avg_quat_geo_loss + args.quat_angle_weight * avg_quat_angle_loss)
 
 	encoder.train()
 	decoder.train()
@@ -1224,6 +1427,7 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 	return {
 		'val/loss':        avg_total_loss,
 		'val/aa_loss':     avg_loss_x,
+		'val/aa_accuracy': avg_aa_accuracy,
 		'val/edge_loss':   avg_loss_edge,
 		'val/vq_loss':     avg_loss_vq,
 		'val/fft2_loss':   avg_loss_fft2,
@@ -1233,6 +1437,8 @@ def quick_validate(encoder, decoder, val_dataset, device, args, n_samples=10):
 		'val/lddt_loss':   avg_lddt_loss,
 		'val/fape_loss':   avg_fape_loss,
 		'val/delta_loss':  avg_delta_loss,
+		'val/quat_geo_loss': avg_quat_geo_loss,
+		'val/quat_angle_loss': avg_quat_angle_loss,
 	}
 
 
@@ -1251,6 +1457,14 @@ def validate(encoder, decoder, val_loader, device, args):
 	total_lddt_loss = 0
 	total_fape_loss = 0
 	total_delta_loss = 0
+	total_quat_geo_loss = 0
+	total_quat_angle_loss = 0
+	total_quat_geo_loss = 0
+	total_quat_angle_loss = 0
+	total_quat_geo_loss = 0
+	total_quat_angle_loss = 0
+	total_aa_correct = 0
+	total_aa_residues = 0
 	num_batches = 0
 	
 	with torch.no_grad():
@@ -1289,10 +1503,12 @@ def validate(encoder, decoder, val_loader, device, args):
 						decoder,
 						plddt=args.mask_plddt,
 						key='edge_probs',
+						normalize=args.normalize_losses,
 					)
 			
 			# Amino acid reconstruction loss
-			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'] )
+			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_losses)
+			aa_accuracy, aa_correct, aa_residues = compute_aa_reconstruction_accuracy(data['AA'].x, out['aa'])
 			
 			# FFT2 loss
 			fft2loss = torch.tensor(0.0, device=device)
@@ -1302,21 +1518,25 @@ def validate(encoder, decoder, val_loader, device, args):
 			# Angles loss
 			angles_loss = torch.tensor(0.0, device=device)
 			if out.get('angles') is not None:
-				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_losses)
 				 
 			# Secondary structure loss
 			ss_loss = torch.tensor(0.0, device=device)
 			if out.get('ss_pred') is not None:
-				if args.mask_plddt:
-					mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-					if mask.sum() > 0:
-						ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-				else:
-					ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+				ss_loss = ss_reconstruction_loss(
+					data['ss'].x,
+					out['ss_pred'],
+					mask_plddt=args.mask_plddt,
+					plddt_threshold=args.plddt_threshold,
+					plddt_mask=data['plddt'].x if args.mask_plddt else None,
+					normalize=args.normalize_losses,
+				)
 
 			fape_loss = torch.tensor(0.0, device=device)
 			lddt_loss = torch.tensor(0.0, device=device)
 			delta_loss = torch.tensor(0.0, device=device)
+			quat_geo_loss = torch.tensor(0.0, device=device)
+			quat_angle_loss_val = torch.tensor(0.0, device=device)
 
 			if out.get('quat_pred') is not None and out.get('trans_pred') is not None and 'R_true' in data.node_types and 't_true' in data.node_types:
 				batch_idx = data['res'].batch if 'res' in data.node_types else None
@@ -1353,9 +1573,15 @@ def validate(encoder, decoder, val_loader, device, args):
 						plddt=(data['plddt'].x if args.mask_plddt else None),
 						plddt_thresh=args.plddt_threshold,
 					)
+				if args.quat_geo_weight > 0:
+					quat_geo_loss = quaternion_geodesic_loss(pred_q, true_q)
+				if args.quat_angle_weight > 0:
+					quat_angle_loss_val = quaternion_angle_loss(pred_q, true_q)
 
 			# Accumulate losses
 			total_loss_x += float(xloss.item())
+			total_aa_correct += aa_correct
+			total_aa_residues += aa_residues
 			total_logit_loss += float(logitloss.item())
 			total_loss_edge += float(edgeloss.item())
 			total_loss_fft2 += float(fft2loss.item())
@@ -1365,11 +1591,14 @@ def validate(encoder, decoder, val_loader, device, args):
 			total_lddt_loss += float(lddt_loss.item())
 			total_fape_loss += float(fape_loss.item())
 			total_delta_loss += float(delta_loss.item())
+			total_quat_geo_loss += float(quat_geo_loss.item())
+			total_quat_angle_loss += float(quat_angle_loss_val.item())
 			num_batches += 1
 	
-	denominator = 1 
+	denominator = max(num_batches, 1)
 	# Calculate average losses
 	avg_loss_x = total_loss_x / denominator
+	avg_aa_accuracy = total_aa_correct / max(total_aa_residues, 1)
 	avg_loss_edge = total_loss_edge / denominator
 	avg_loss_vq = total_vq / denominator
 	avg_loss_fft2 = total_loss_fft2 / denominator
@@ -1379,9 +1608,12 @@ def validate(encoder, decoder, val_loader, device, args):
 	avg_lddt_loss = total_lddt_loss / denominator
 	avg_fape_loss = total_fape_loss / denominator
 	avg_delta_loss = total_delta_loss / denominator
+	avg_quat_geo_loss = total_quat_geo_loss / denominator
+	avg_quat_angle_loss = total_quat_angle_loss / denominator
 	avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
 					  avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss +
-					  args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss)
+					  args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss +
+					  args.quat_geo_weight * avg_quat_geo_loss + args.quat_angle_weight * avg_quat_angle_loss)
 	
 	encoder.train()
 	decoder.train()
@@ -1389,6 +1621,7 @@ def validate(encoder, decoder, val_loader, device, args):
 	return {
 		'val/loss': avg_total_loss,
 		'val/aa_loss': avg_loss_x,
+		'val/aa_accuracy': avg_aa_accuracy,
 		'val/edge_loss': avg_loss_edge,
 		'val/vq_loss': avg_loss_vq,
 		'val/fft2_loss': avg_loss_fft2,
@@ -1397,7 +1630,9 @@ def validate(encoder, decoder, val_loader, device, args):
 		'val/logit_loss': avg_logit_loss,
 		'val/lddt_loss': avg_lddt_loss,
 		'val/fape_loss': avg_fape_loss,
-		'val/delta_loss': avg_delta_loss
+		'val/delta_loss': avg_delta_loss,
+		'val/quat_geo_loss': avg_quat_geo_loss,
+		'val/quat_angle_loss': avg_quat_angle_loss
 	}
 
 # Training loop
@@ -1461,13 +1696,10 @@ for epoch in range(args.epochs):
 	total_lddt_loss = 0
 	total_fape_loss = 0
 	total_delta_loss = 0
+	total_quat_geo_loss = 0
+	total_quat_angle_loss = 0
 	
 	for batch_idx, data in enumerate(tqdm.tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
-		# Periodically clear CUDA cache to avoid OOM errors
-		if torch.cuda.is_available() and batch_idx % 10 == 0 and batch_idx > 0:
-			import gc
-			torch.cuda.empty_cache()
-			gc.collect()
 		data = data.to(device)
 
 		# Skip unstable batches early if any input node features contain NaN/Inf.
@@ -1487,6 +1719,7 @@ for epoch in range(args.epochs):
 			with autocast(enabled=True, dtype=amp_dtype):
 				z, vqloss = encoder(data)
 				data['res'].x = z
+				active_losses = []
 				
 				# Forward pass through decoder
 				out = decoder(data, None)
@@ -1516,35 +1749,50 @@ for epoch in range(args.epochs):
 							decoder,
 							plddt=args.mask_plddt,
 							key='edge_probs',
+							normalize=args.normalize_losses,
 						)
+					if args.normalize_losses:
+						active_losses.append(1)
 				
 				# Amino acid reconstruction loss
-				xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+				xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_losses)
+				if args.normalize_losses:
+					active_losses.append(0)
 				
 				# FFT2 loss
 				fft2loss = torch.tensor(0.0, device=device)
 				if 'fft2pred' in out and out['fft2pred'] is not None:
 					fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+					if args.normalize_losses:
+						active_losses.append(3)
 
 				# Angles loss
 				angles_loss = torch.tensor(0.0, device=device)
 				if out.get('angles') is not None:
-					angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+					angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_losses)
+					if args.normalize_losses:
+						active_losses.append(4)
 				
 				# Secondary structure loss
 				ss_loss = torch.tensor(0.0, device=device)
 				if out.get('ss_pred') is not None:
-					if args.mask_plddt:
-						mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-						if mask.sum() > 0:
-							ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-					else:
-						ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+					ss_loss = ss_reconstruction_loss(
+						data['ss'].x,
+						out['ss_pred'],
+						mask_plddt=args.mask_plddt,
+						plddt_threshold=args.plddt_threshold,
+						plddt_mask=data['plddt'].x if args.mask_plddt else None,
+						normalize=args.normalize_losses,
+					)
+					if args.normalize_losses:
+						active_losses.append(5)
 
 				# FAPE and lDDT losses computed in float32 outside autocast to prevent
 				fape_loss = torch.tensor(0.0, device=device)
 				lddt_loss = torch.tensor(0.0, device=device)
 				delta_loss = torch.tensor(0.0, device=device)
+				quat_geo_loss = torch.tensor(0.0, device=device)
+				quat_angle_loss_val = torch.tensor(0.0, device=device)
 
 				if out.get('quat_pred') is not None and out.get('trans_pred') is not None and 'R_true' in data.node_types and 't_true' in data.node_types:
 					batch_idx_rt = data['res'].batch if 'res' in data.node_types else None
@@ -1582,6 +1830,10 @@ for epoch in range(args.epochs):
 							plddt=(data['plddt'].x if args.mask_plddt else None),
 							plddt_thresh=args.plddt_threshold,
 						)
+					if args.quat_geo_weight > 0:
+						quat_geo_loss = quaternion_geodesic_loss(pred_q, true_q)
+					if args.quat_angle_weight > 0:
+						quat_angle_loss_val = quaternion_angle_loss(pred_q, true_q)
 
 				if args.use_weight_scheduler:
 					x_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_x, warmup_steps=loss_warmup_steps)
@@ -1613,17 +1865,21 @@ for epoch in range(args.epochs):
 							current_angles_weight * angles_loss,
 							current_ss_weight * ss_loss,
 							current_logitweight * logitloss,
-							args.lddt_weight * lddt_loss,
 							args.fape_weight * fape_loss,
+							args.lddt_weight * lddt_loss,
 							args.delta_weight * delta_loss,
-						])
+							args.quat_geo_weight * quat_geo_loss,
+							args.quat_angle_weight * quat_angle_loss_val,
+						]),
+						active=active_losses if args.normalize_losses else None,
 					)
 				else:
 					loss = (
 						current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
 						current_fft2weight * fft2loss + current_angles_weight * angles_loss +
 						current_ss_weight * ss_loss + current_logitweight * logitloss +
-						args.lddt_weight * lddt_loss + args.fape_weight * fape_loss + args.delta_weight * delta_loss
+						args.lddt_weight * lddt_loss + args.fape_weight * fape_loss + args.delta_weight * delta_loss +
+						args.quat_geo_weight * quat_geo_loss + args.quat_angle_weight * quat_angle_loss_val
 					)
 				
 				# Scale loss by gradient accumulation steps
@@ -1632,6 +1888,7 @@ for epoch in range(args.epochs):
 			# Non-mixed precision path
 			z, vqloss = encoder(data)
 			data['res'].x = z
+			active_losses = []
 			
 			out = decoder(data, None)
 			edge_index = data.edge_index_dict.get(('res', 'contactPoints', 'res')) if hasattr(data, 'edge_index_dict') else None
@@ -1659,27 +1916,87 @@ for epoch in range(args.epochs):
 						decoder,
 						plddt=args.mask_plddt,
 						key='edge_probs',
+						normalize=args.normalize_losses,
 					)
+				if args.normalize_losses:
+					active_losses.append(1)
 			
-			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'])
+			xloss = aa_reconstruction_loss(data['AA'].x, out['aa'], normalize=args.normalize_losses)
+			if args.normalize_losses:
+				active_losses.append(0)
 			
 			fft2loss = torch.tensor(0.0, device=device)
 			if 'fft2pred' in out and out['fft2pred'] is not None:
 				fft2loss = F.smooth_l1_loss(torch.cat([data['fourier2dr'].x, data['fourier2di'].x], axis=1), out['fft2pred'])
+				if args.normalize_losses:
+					active_losses.append(3)
 
 			angles_loss = torch.tensor(0.0, device=device)
 			if out.get('angles') is not None:
-				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None)
+				angles_loss = angles_reconstruction_loss(out['angles'], data['bondangles'].x, plddt_mask=data['plddt'].x if args.mask_plddt else None, normalize=args.normalize_losses)
+				if args.normalize_losses:
+					active_losses.append(4)
 
 			# Secondary structure loss
 			ss_loss = torch.tensor(0.0, device=device)
 			if out.get('ss_pred') is not None:
-				if args.mask_plddt:
-					mask = (data['plddt'].x >= args.plddt_threshold).squeeze()
-					if mask.sum() > 0:
-						ss_loss = F.cross_entropy(out['ss_pred'][mask], data['ss'].x[mask])
-				else:
-					ss_loss = F.cross_entropy(out['ss_pred'], data['ss'].x)
+				ss_loss = ss_reconstruction_loss(
+					data['ss'].x,
+					out['ss_pred'],
+					mask_plddt=args.mask_plddt,
+					plddt_threshold=args.plddt_threshold,
+					plddt_mask=data['plddt'].x if args.mask_plddt else None,
+					normalize=args.normalize_losses,
+				)
+				if args.normalize_losses:
+					active_losses.append(5)
+
+			fape_loss = torch.tensor(0.0, device=device)
+			lddt_loss = torch.tensor(0.0, device=device)
+			delta_loss = torch.tensor(0.0, device=device)
+			quat_geo_loss = torch.tensor(0.0, device=device)
+			quat_angle_loss_val = torch.tensor(0.0, device=device)
+
+			if out.get('quat_pred') is not None and out.get('trans_pred') is not None and 'R_true' in data.node_types and 't_true' in data.node_types:
+				batch_idx_rt = data['res'].batch if 'res' in data.node_types else None
+
+				true_R = data['R_true'].x.float()
+				true_t = data['t_true'].x.float()
+				pred_q = out['quat_pred'].float()
+				pred_t = out['trans_pred'].float()
+				true_ca = data['coords'].x.float() if 'coords' in data.node_types else None
+				true_q = rotation_matrix_to_quaternion(true_R)
+
+				if args.fape_weight > 0:
+					fape_loss = batch_fape_loss(
+						true_q=true_q,
+						true_t=true_t,
+						pred_q=pred_q,
+						pred_t=pred_t,
+						batch=batch_idx_rt,
+					)
+				if args.lddt_weight > 0:
+					lddt_loss = batch_lddt_loss(
+						pred_q=pred_q,
+						pred_t=pred_t,
+						true_coords=true_ca,
+						batch=batch_idx_rt,
+						plddt=(data['plddt'].x if args.mask_plddt else None),
+						plddt_thresh=args.plddt_threshold,
+					)
+				if args.delta_weight > 0:
+					delta_loss = batch_delta_loss(
+						true_ca=true_ca,
+						pred_q=pred_q,
+						pred_t=pred_t,
+						batch=batch_idx_rt,
+						plddt=(data['plddt'].x if args.mask_plddt else None),
+						plddt_thresh=args.plddt_threshold,
+					)
+				if args.quat_geo_weight > 0:
+					quat_geo_loss = quaternion_geodesic_loss(pred_q, true_q)
+				if args.quat_angle_weight > 0:
+					quat_angle_loss_val = quaternion_angle_loss(pred_q, true_q)
 
 			if args.use_weight_scheduler:
 				x_scale = loss_weight_scheduler(global_step, total_steps, schedule_type=args.loss_schedule_x, warmup_steps=loss_warmup_steps)
@@ -1710,13 +2027,21 @@ for epoch in range(args.epochs):
 						current_angles_weight * angles_loss,
 						current_ss_weight * ss_loss,
 						current_logitweight * logitloss,
-					])
+						args.fape_weight * fape_loss,
+						args.lddt_weight * lddt_loss,
+						args.delta_weight * delta_loss,
+						args.quat_geo_weight * quat_geo_loss,
+						args.quat_angle_weight * quat_angle_loss_val,
+					]),
+					active=active_losses if args.normalize_losses else None,
 				)
 			else:
 				loss = (
 					current_xweight * xloss + current_edgeweight * edgeloss + current_vqweight * vqloss +
 					current_fft2weight * fft2loss + current_angles_weight * angles_loss +
-					current_ss_weight * ss_loss + current_logitweight * logitloss
+					current_ss_weight * ss_loss + current_logitweight * logitloss +
+					args.fape_weight * fape_loss + args.lddt_weight * lddt_loss + args.delta_weight * delta_loss +
+					args.quat_geo_weight * quat_geo_loss + args.quat_angle_weight * quat_angle_loss_val
 				)
 			
 			loss = loss / args.gradient_accumulation_steps
@@ -1752,8 +2077,6 @@ for epoch in range(args.epochs):
 			if scheduler is not None and scheduler_step_mode == 'step':
 				scheduler.step()
 			
-			torch.cuda.empty_cache()  # Clear cache after each update to reduce fragmentation
-			gc.collect()  # Run garbage collection to free memory
 			global_step += 1
 
 		
@@ -1769,6 +2092,8 @@ for epoch in range(args.epochs):
 		total_lddt_loss += float(lddt_loss.item())
 		total_fape_loss += float(fape_loss.item())
 		total_delta_loss += float(delta_loss.item())
+		total_quat_geo_loss += float(quat_geo_loss.item())
+		total_quat_angle_loss += float(quat_angle_loss_val.item())
 	
 	# Clean up any remaining gradients at epoch end
 	if len(train_loader) % args.gradient_accumulation_steps != 0:
@@ -1797,10 +2122,13 @@ for epoch in range(args.epochs):
 	avg_lddt_loss = total_lddt_loss / denominator
 	avg_fape_loss = total_fape_loss / denominator
 	avg_delta_loss = total_delta_loss / denominator
+	avg_quat_geo_loss = total_quat_geo_loss / denominator
+	avg_quat_angle_loss = total_quat_angle_loss / denominator
 
 	avg_total_loss = (avg_loss_x + avg_loss_edge + avg_loss_vq + 
 					  avg_loss_fft2 + avg_angles_loss + avg_logit_loss + avg_ss_loss +
-					  args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss)
+					  args.lddt_weight * avg_lddt_loss + args.fape_weight * avg_fape_loss + args.delta_weight * avg_delta_loss +
+					  args.quat_geo_weight * avg_quat_geo_loss + args.quat_angle_weight * avg_quat_angle_loss)
 	
 	# Clear CUDA cache
 	torch.cuda.empty_cache()
@@ -1817,7 +2145,8 @@ for epoch in range(args.epochs):
 	# Update learning rate scheduler (for epoch-based schedulers)
 	if scheduler is not None and scheduler_step_mode == 'epoch':
 		if args.lr_schedule == 'plateau':
-			scheduler.step(val_metrics['val/loss'])  # Use validation loss for plateau scheduler
+			metric = total_loss_x if args.plateau_monitor == 'training_aa_sum' else val_metrics['val/loss']
+			scheduler.step(metric)
 		else:
 			scheduler.step()
 	
@@ -1829,6 +2158,7 @@ for epoch in range(args.epochs):
 		  f"Logit Loss: {avg_logit_loss:.4f}, lDDT Loss: {avg_lddt_loss:.4f}, FAPE Loss: {avg_fape_loss:.4f}, Delta Loss: {avg_delta_loss:.4f}")
 	print(f"  Val   - AA Loss: {val_metrics['val/aa_loss']:.4f}, Edge Loss: {val_metrics['val/edge_loss']:.4f}, "
 		  f"VQ Loss: {val_metrics['val/vq_loss']:.4f}, FFT2 Loss: {val_metrics['val/fft2_loss']:.4f}")
+	print(f"  Val   - AA Accuracy: {val_metrics.get('val/aa_accuracy', 0.0):.4%}")
 	print(f"  Val   - Angles Loss: {val_metrics['val/angles_loss']:.4f}, SS Loss: {val_metrics['val/ss_loss']:.4f}, "
 		  f"Logit Loss: {val_metrics['val/logit_loss']:.4f}, lDDT Loss: {val_metrics.get('val/lddt_loss', 0.0):.4f}, "
 		  f"FAPE Loss: {val_metrics.get('val/fape_loss', 0.0):.4f}, Delta Loss: {val_metrics.get('val/delta_loss', 0.0):.4f}")
@@ -1917,6 +2247,7 @@ for epoch in range(args.epochs):
 	metrics_dict['final_train_edge_loss'] = avg_loss_edge
 	metrics_dict['final_val_loss'] = val_metrics['val/loss']
 	metrics_dict['final_val_aa_loss'] = val_metrics['val/aa_loss']
+	metrics_dict['final_val_aa_accuracy'] = val_metrics.get('val/aa_accuracy', 0.0)
 	metrics_dict['final_val_edge_loss'] = val_metrics['val/edge_loss']
 	
 	# Save best model based on validation loss
@@ -1993,6 +2324,64 @@ torch.save(decoder, os.path.join(modeldir, f"{modelname}_decoder_final.pt"))
 
 # Log final hyperparameters and metrics
 writer.add_hparams(hparams_dict, metrics_dict)
+
+if args.metrics_output:
+	# Production exports use the selected best pair, so report its held-out metrics.
+	encoder = torch.load(os.path.join(modeldir, modelname + '_best_encoder.pt'), map_location=device, weights_only=False)
+	decoder = torch.load(os.path.join(modeldir, modelname + '_best_decoder.pt'), map_location=device, weights_only=False)
+	if args.final_val_samples and args.final_val_samples > 0:
+		final_metrics = quick_validate(
+			encoder,
+			decoder,
+			val_dataset,
+			device,
+			args,
+			n_samples=args.final_val_samples,
+		)
+	else:
+		final_metrics = validate(encoder, decoder, val_loader, device, args)
+
+	metrics_payload = {
+		'checkpoint': modelname + '_best_encoder.pt',
+		'train': {
+			'aa_loss': float(avg_loss_x),
+			'edge_loss': float(avg_loss_edge),
+			'vq_loss': float(avg_loss_vq),
+			'fft2_loss': float(avg_loss_fft2),
+			'angles_loss': float(avg_angles_loss),
+			'ss_loss': float(avg_ss_loss),
+			'logit_loss': float(avg_logit_loss),
+			'total_loss': float(avg_total_loss),
+		},
+		'validation': {k.replace('val/', ''): float(v) for k, v in final_metrics.items()},
+		'best_val_loss': float(best_loss),
+		'config': {
+			'model_name': args.model_name,
+			'dataset': args.dataset,
+			'epochs': int(args.epochs),
+			'batch_size': int(args.batch_size),
+			'adamw_weight_decay': float(args.adamw_weight_decay),
+			'plateau_monitor': args.plateau_monitor,
+			'split_protocol': 'notebook_permutation_prefix_rounded_v1',
+			'val_seed': args.val_seed,
+			'val_split': args.val_split,
+			'edgeweight': float(edgeweight),
+			'logitweight': float(logitweight),
+			'xweight': float(xweight),
+			'vqweight': float(vqweight),
+			'hidden_size': int(args.hidden_size),
+			'encoder_hidden_size': int(resolved_encoder_hidden_size),
+			'sequence_hidden_size': int(resolved_sequence_hidden_size),
+			'aa_decoder_hidden_size': int(resolved_aa_decoder_hidden_size),
+			'geometry_cnn_hidden_size': int(resolved_geometry_cnn_hidden_size),
+		},
+	}
+	metrics_dir = os.path.dirname(args.metrics_output)
+	if metrics_dir:
+		os.makedirs(metrics_dir, exist_ok=True)
+	with open(args.metrics_output, 'w') as f:
+		json.dump(metrics_payload, f, indent=2, sort_keys=True)
+	print(f"Final metrics written to {args.metrics_output}")
 
 # Close TensorBoard writer
 writer.close()

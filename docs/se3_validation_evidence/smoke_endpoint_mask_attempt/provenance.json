@@ -1,0 +1,84 @@
+{
+  "identity": {
+    "format": 1,
+    "dataset_sha256": "2c970702701a5bf789dd46974ff689f02c0805dcf146746db8d1eba07a2b3673",
+    "encoder_sha256": "75d176f4dd11fa1e676c536be953b78a767c40c405b425a49182192fbb6a7fc6",
+    "decoder_sha256": "b9642afd20db829a5ce2dd1c908c86df0c351319347fccd2ad1d335b3aa9089d",
+    "preprocessing": {
+      "extractor_sha256": "ad5494de73bad022a80e47a75a0790d7d52aaab9f90867d7068f1175babdb36a",
+      "coordinate_source": "bottleneck",
+      "max_residues": 256,
+      "contact_top_k": 8,
+      "contact_min_sep": 3,
+      "contact_cutoff": 8.0,
+      "plddt_threshold": 0.5,
+      "features": "latent+codebook"
+    }
+  },
+  "train_ids": [
+    "A0A0W7X8K2"
+  ],
+  "val_ids": [
+    "A0A518IXF4"
+  ],
+  "model": {
+    "hidden": 32,
+    "depth": 2,
+    "heads": 2,
+    "dim_head": 16
+  },
+  "optimizer": {
+    "learning_rate": 0.0005,
+    "effective_batch_size": 8,
+    "clip": 1.0
+  },
+  "seed": 42,
+  "implementation_sha256": "ca3f09738ab824a337dfd66524bba632dff469fe9d3ed4cec1ef3afd70a5748a",
+  "selection_sha256": "159c6155149b15522e73afd00de6ba196390b0fc6dda57c791e35ce2da40dc3b",
+  "loss_sha256": "bd7376ddb53965ee09fc3cd6f06ab6add30dc269422ce0a5c704a44da2293b64",
+  "config": {
+    "dataset": "foldtree2/notebooks/structs_training_mk2.h5",
+    "manifest": "configs/production_models.yaml",
+    "seed": 42,
+    "device": "cuda:0",
+    "train_count": 1,
+    "val_count": 1,
+    "max_residues": 256,
+    "epochs": 1,
+    "early_stopping": false,
+    "cache": "runs/se3_validation/cache",
+    "output": "runs/se3_validation/smoke"
+  },
+  "checkpoints": {
+    "encoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_encoder_full_epoch_40.pt",
+    "decoder": "models/production/40char_minimal_decoder/final_40char_mk2_contactsfix_aa_decoder_full_epoch_40.pt"
+  },
+  "skipped": [
+    {
+      "id": "A0A1S2MTV8",
+      "length": 294,
+      "reason": "length"
+    },
+    {
+      "id": "addH_F2ANL2",
+      "length": 619,
+      "reason": "length"
+    },
+    {
+      "id": "A0A5B8U3L0",
+      "length": 457,
+      "reason": "length"
+    },
+    {
+      "id": "X6MLV4",
+      "length": 529,
+      "reason": "length"
+    }
+  ],
+  "versions": {
+    "python": "3.9.23",
+    "torch": "2.8.0+cu128",
+    "cuda": "12.8",
+    "lightning": "2.6.0"
+  }
+}

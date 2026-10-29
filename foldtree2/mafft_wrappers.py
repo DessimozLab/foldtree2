@@ -21,7 +21,8 @@ def _get_executable_path(executable_name):
         sys.exit(1)
     
     # Ensure the executable has proper permissions
-    os.chmod(executable_path, 0o755)
+    if not os.access(executable_path, os.X_OK):
+        os.chmod(executable_path, 0o755)
     return executable_path
 
 
@@ -36,7 +37,8 @@ def _get_mad_executable_path(executable_name):
         sys.exit(1)
     
     # Ensure the executable has proper permissions
-    os.chmod(executable_path, 0o755)
+    if not os.access(executable_path, os.X_OK):
+        os.chmod(executable_path, 0o755)
     return executable_path
 
 
@@ -51,7 +53,8 @@ def _get_raxml_executable_path(executable_name):
         sys.exit(1)
     
     # Ensure the executable has proper permissions
-    os.chmod(executable_path, 0o755)
+    if not os.access(executable_path, os.X_OK):
+        os.chmod(executable_path, 0o755)
     return executable_path
 
 

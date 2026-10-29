@@ -1,0 +1,7 @@
+{
+  "scripts/investigate_se3_scale.py": "6656e747c4b96aea661f667d9d668fb0abee261f3a8647e0a9f6225185a6d34b",
+  "scripts/audit_se3_loss.py": "aaf3ad28cda827efbe0af34fc1844a0d792f7f090d7e185bf4556565a124c726",
+  "scripts/report_se3_spatial_learning.py": "14ae67f2b56cc1e072a34c01f1b4e42bf42d04658a5c1dc3ca78013edb0faec2",
+  "foldtree2/se3_validation.py": "0475b98fc10ccec7eee18e6b2873f6b2423d9ecaa73063fe42602dca85e4a220",
+  "foldtree2/tests/test_se3_validation.py": "224c3cfdff211559be049c31fa024f9748fb184f38dbf9cef2121a1db541fb85"
+}

@@ -45,24 +45,23 @@ def test_entry_points():
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
-                timeout=10,
+                timeout=60,
                 text=True
             )
             if result.returncode == 0:
                 print(f"  ✓ Command '{' '.join(cmd)}' works")
             else:
                 print(f"  ✗ Command '{' '.join(cmd)}' failed with return code {result.returncode}")
+                if result.stdout:
+                    print(result.stdout)
                 if result.stderr:
-                    print(f"    Error: {result.stderr[:200]}")
+                    print(result.stderr)
                 return False
         except subprocess.TimeoutExpired:
             print(f"  ✗ Command '{' '.join(cmd)}' timed out")
             return False
         except FileNotFoundError:
             print(f"  ✗ Command '{' '.join(cmd)}' not found")
-            return False
-        except Exception as e:
-            print(f"  ✗ Command '{' '.join(cmd)}' error: {e}")
             return False
     
     print("✓ All entry points work correctly\n")

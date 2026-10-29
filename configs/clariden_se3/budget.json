@@ -1,0 +1,90 @@
+{
+  "ceiling_gpuh": 256,
+  "reserve_gpuh": 9.3333333333333,
+  "stages": [
+    {
+      "name": "prepare_initial",
+      "nodes": 1,
+      "hours": 1,
+      "gpuh": 4
+    },
+    {
+      "name": "prepare_expanded",
+      "nodes": 1,
+      "hours": 1,
+      "gpuh": 4
+    },
+    {
+      "name": "debug_one",
+      "nodes": 1,
+      "hours": 0.5,
+      "gpuh": 2.0
+    },
+    {
+      "name": "debug_two",
+      "nodes": 2,
+      "hours": 0.25,
+      "gpuh": 2.0
+    },
+    {
+      "name": "debug_four",
+      "nodes": 4,
+      "hours": 0.16666666666666666,
+      "gpuh": 2.6666666666666665
+    },
+    {
+      "name": "small",
+      "nodes": 1,
+      "hours": 4,
+      "gpuh": 16
+    },
+    {
+      "name": "medium",
+      "nodes": 1,
+      "hours": 4,
+      "gpuh": 16
+    },
+    {
+      "name": "large",
+      "nodes": 1,
+      "hours": 4,
+      "gpuh": 16
+    },
+    {
+      "name": "expanded_two",
+      "nodes": 2,
+      "hours": 6,
+      "gpuh": 48
+    },
+    {
+      "name": "expanded_four",
+      "nodes": 4,
+      "hours": 8,
+      "gpuh": 128
+    },
+    {
+      "name": "normalized_debug_one",
+      "nodes": 1,
+      "hours": 0.5,
+      "gpuh": 2.0
+    },
+    {
+      "name": "normalized_debug_two",
+      "nodes": 2,
+      "hours": 0.25,
+      "gpuh": 2.0
+    },
+    {
+      "name": "fp64_debug_one",
+      "nodes": 1,
+      "hours": 0.5,
+      "gpuh": 2.0
+    },
+    {
+      "name": "fp64_debug_two",
+      "nodes": 2,
+      "hours": 0.25,
+      "gpuh": 2.0
+    }
+  ]
+}

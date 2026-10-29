@@ -1,0 +1,8 @@
+device: cuda:0
+seed: 42
+train_count: 8192
+val_count: 1024
+max_residues: 256
+retain_cohort: runs/se3_larger_local_20261013/cohort.json
+output: runs/se3_expanded_cache
+cohort_provenance: runs/se3_expanded_cache/cohort.json
