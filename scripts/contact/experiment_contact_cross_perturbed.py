@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from foldtree2.se3_cache import digest
-from foldtree2.src.contact_cross_dot_perturbed import PerturbedCrossDotHead
+from foldtree2.src.distance.contact_cross_dot_perturbed import PerturbedCrossDotHead
 import scripts.contact.experiment_contact_objectives as trainer
 
 
@@ -30,8 +30,8 @@ def main():
     root = Path(args.output)
     if root.exists():
         raise FileExistsError(root)
-    sources = [Path(__file__), Path('foldtree2/src/contact_cross_dot_perturbed.py'),
-               Path('foldtree2/src/contact_dot_experiments.py')]
+    sources = [Path(__file__), Path('foldtree2/src/distance/contact_cross_dot_perturbed.py'),
+               Path('foldtree2/src/distance/contact_dot_experiments.py')]
     hashes = {str(p): digest(p) for p in sources}
     trainer.PairwiseDistanceHead = PerturbedCrossDotHead
     try:
@@ -43,7 +43,7 @@ def main():
             from scripts.se3.diagnose_se3_reconstruction import atomic_json
             provenance = json.loads((root / 'provenance.json').read_text())
             provenance['variant'] = {
-                'model_class': 'foldtree2.src.contact_cross_dot_perturbed.PerturbedCrossDotHead',
+                'model_class': 'foldtree2.src.distance.contact_cross_dot_perturbed.PerturbedCrossDotHead',
                 'name': 'cross_dot_perturbed', 'sources_sha256': hashes,
                 'initial_key_perturbation_std': .001, 'perturbation_seed': 9281,
             }

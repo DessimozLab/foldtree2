@@ -127,7 +127,7 @@ def test_ca_virtual_angle_errors_are_zero_for_identical_coordinates():
 
 def test_cached_batch_collation_preserves_individual_refiner_outputs():
     from scripts.se3.profile_se3_validation import collate_cached
-    from foldtree2.src.se3_struct_decoder import se3_denoiser
+    from foldtree2.src.models.se3_struct_decoder import se3_denoiser
     from foldtree2.se3_validation import forward
     torch.manual_seed(9)
     entries = []
@@ -191,7 +191,7 @@ def test_train_only_calibration_recovers_uniform_scale_and_is_equivariant():
 
 
 def test_normal_lift_escapes_plane_and_transforms_under_se3():
-    from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+    from foldtree2.src.models.geometry_seeds import lift_seed_with_local_normals
     theta=torch.arange(12)*2*torch.pi/12
     coords=torch.stack([theta.cos(),theta.sin(),torch.zeros(12)],-1)
     features=(3*theta).sin()[:,None]
@@ -204,7 +204,7 @@ def test_normal_lift_escapes_plane_and_transforms_under_se3():
 
 
 def test_normal_lift_keeps_degenerate_and_masked_stencils_safe():
-    from foldtree2.src.geometry_seeds import lift_seed_with_local_normals
+    from foldtree2.src.models.geometry_seeds import lift_seed_with_local_normals
     coords=torch.zeros(7,3,requires_grad=True);features=torch.zeros(7,2,requires_grad=True)
     mask=torch.ones(7,dtype=torch.bool);mask[2]=False
     result=lift_seed_with_local_normals(coords,features,mask)

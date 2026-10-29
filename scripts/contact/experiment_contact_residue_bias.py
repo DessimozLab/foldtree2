@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from foldtree2.se3_cache import digest
-from foldtree2.src.contact_bias_experiment import ResidueBiasDistanceHead
+from foldtree2.src.distance.contact_bias_experiment import ResidueBiasDistanceHead
 import scripts.contact.experiment_contact_objectives as trainer
 
 
@@ -30,7 +30,7 @@ def main():
     root = Path(args.output)
     if root.exists():
         raise FileExistsError(root)
-    sources = [Path(__file__), Path('foldtree2/src/contact_bias_experiment.py')]
+    sources = [Path(__file__), Path('foldtree2/src/distance/contact_bias_experiment.py')]
     source_hashes = {str(p): digest(p) for p in sources}
     # The override is process-local; the two main training jobs keep their code.
     trainer.PairwiseDistanceHead = ResidueBiasDistanceHead
@@ -43,7 +43,7 @@ def main():
             from scripts.se3.diagnose_se3_reconstruction import atomic_json
             provenance = json.loads((root / 'provenance.json').read_text())
             provenance['variant'] = {
-                'model_class': 'foldtree2.src.contact_bias_experiment.ResidueBiasDistanceHead',
+                'model_class': 'foldtree2.src.distance.contact_bias_experiment.ResidueBiasDistanceHead',
                 'contact_score': 'scale * cosine + global_bias + residue_bias_i + residue_bias_j',
                 'initial_residue_bias': 0., 'sources_sha256': source_hashes,
             }

@@ -7,14 +7,16 @@
 
 1. [ft2treebuilder](../ft2treebuilder.py) orchestrates preprocessing, encoding,
    alignment, inference and optional rooting/ancestral analysis.
-2. [pdbgraphmk2](pdbgraphmk2.py) converts PDB/Foldcomp structures to heterogeneous
-   residue graphs; [config_paths](config_paths.py) resolves packaged properties.
-3. [encoder](encoder.py) builds continuous embeddings and discrete code indices;
-   [quantizers](quantizers.py) implements codebooks and training penalties.
+2. [pdbgraphmk2](graphs/pdbgraphmk2.py) converts PDB/Foldcomp structures to
+   heterogeneous residue graphs; [config_paths](graphs/config_paths.py) resolves
+   packaged properties.
+3. [encoder](models/encoder.py) builds continuous embeddings and discrete code
+   indices; [quantizers](models/quantizers.py) implements codebooks and training
+   penalties.
 4. [makesubmat](../makesubmat.py) estimates model-specific matrices from reference
    alignments. [Native wrappers](../mafft_wrappers.py) invoke packaged helpers.
-5. [ancestral](ancestral.py) shares native marginal reconstruction/FASTA export
-   between the tree CLI and benchmark scripts.
+5. [ancestral](trees/ancestral.py) shares native marginal reconstruction/FASTA
+   export between the tree CLI and benchmark scripts.
 
 Graph schemas, codebooks, maps and matrices form one compatibility boundary.
 Equal feature widths or alphabet sizes alone do not establish compatibility.
@@ -24,13 +26,10 @@ whitespace from structural-token FASTA.
 ## Subpackages
 
 The source tree is organized into importable domain subpackages, each with its
-own README describing contracts, status and entry points. Flat-path modules at
-this directory level (`pdbgraphmk2.py`, `encoder.py`, `mono_decoders.py`,
-`distance_restraints.py`, `ancestral.py`, and the rest) are backward-compatibility
-shims that re-export the canonical modules from the subpackages below; importing
-a shim and its canonical module yields identical class objects, so both stay
-valid for saved checkpoints and existing scripts. Prefer importing from the
-subpackages for new code.
+own README describing contracts, status and entry points. Import modules from
+their canonical subpackage locations (`foldtree2.src.graphs.pdbgraphmk2`,
+`foldtree2.src.models.encoder`, ...); there are no top-level aliases in this
+directory.
 
 - [graphs](graphs/README.md): PDB/Foldcomp structures to PyG residue graphs;
   [pdbgraphmk2](graphs/pdbgraphmk2.py) is the current builder, [pdbgraph](graphs/pdbgraph.py)

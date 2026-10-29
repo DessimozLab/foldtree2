@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
 from scripts.se3.diagnose_distance_learning import describe, memorization_pass, sources as learning_sources
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 

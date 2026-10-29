@@ -5,7 +5,7 @@ runtime. Use ft2treebuilder for production inference; do not treat this wrapper
 as an independently installable CLI.
 """
 
-from foldtree2.src import foldseek2tree
+from foldtree2.src.trees import foldseek2tree
 from foldtree2.src import corecut
 
 import argparse

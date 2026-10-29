@@ -17,7 +17,7 @@ def test_selection_excludes_old_families_and_samples_members_reproducibly(tmp_pa
 
 
 def test_concatenation_does_not_add_blank_lines_or_lose_last_record(tmp_path):
-    from foldtree2.src.encoder import load_encoded_fasta
+    from foldtree2.src.models.encoder import load_encoded_fasta
     first, second, output = [tmp_path / p for p in ['first.fa', 'second.fa', 'joined.fa']]
     first.write_bytes(b'>a\n\x01\t\n')
     second.write_bytes(b'>b\n\x02')

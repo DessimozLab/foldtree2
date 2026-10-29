@@ -34,7 +34,7 @@ def main():
         scale = fit_scale([entries[i] for i in ids])
         sources = ['scripts/archive/run_se3_loss_ablation.py','scripts/se3/investigate_se3_scale.py',
                    'foldtree2/se3_validation.py','foldtree2/src/losses/se3_ablation.py',
-                   'foldtree2/src/se3_struct_decoder.py','foldtree2/src/geometry_seeds.py']
+                   'foldtree2/src/models/se3_struct_decoder.py','foldtree2/src/models/geometry_seeds.py']
         record = {'protocol':'se3-loss-ablation-v1','train_ids':ids,'heldout_ids':val_ids,
                   'source_identity':provenance['identity'],'scale':scale,'args':vars(args),
                   'sources':{name:sha256(name) for name in sources},

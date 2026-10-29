@@ -12,17 +12,17 @@ def test_imports():
         import foldtree2
         print("  ✓ foldtree2")
         
-        import foldtree2.src.encoder
-        print("  ✓ foldtree2.src.encoder")
+        import foldtree2.src.models.encoder
+        print("  ✓ foldtree2.src.models.encoder")
         
-        import foldtree2.src.mono_decoders
-        print("  ✓ foldtree2.src.mono_decoders")
+        import foldtree2.src.models.mono_decoders
+        print("  ✓ foldtree2.src.models.mono_decoders")
         
-        import foldtree2.src.pdbgraph
-        print("  ✓ foldtree2.src.pdbgraph")
+        import foldtree2.src.graphs.pdbgraph
+        print("  ✓ foldtree2.src.graphs.pdbgraph")
 
-        import foldtree2.src.pdbgraphmk2
-        print("  ✓ foldtree2.src.pdbgraphmk2")
+        import foldtree2.src.graphs.pdbgraphmk2
+        print("  ✓ foldtree2.src.graphs.pdbgraphmk2")
         
         print("✓ All core modules imported successfully\n")
         return True

@@ -65,10 +65,10 @@ requirements:
 test:
   imports:
     - foldtree2
-    - foldtree2.src.encoder
-    - foldtree2.src.mono_decoders
-    - foldtree2.src.pdbgraph
-    - foldtree2.src.pdbgraphmk2
+    - foldtree2.src.models.encoder
+    - foldtree2.src.models.mono_decoders
+    - foldtree2.src.graphs.pdbgraph
+    - foldtree2.src.graphs.pdbgraphmk2
   commands:
     - foldtree2 --about
     - pdbs-to-graphs --help

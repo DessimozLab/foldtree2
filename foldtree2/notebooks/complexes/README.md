@@ -1,7 +1,7 @@
 # Complex and pairwise research
 
 [Notebook catalogue / prerequisites](../README.md) |
-[Source map](../../src/README.md) | [pairwise models](../../src/pairwise.py) |
+[Source map](../../src/README.md) | [pairwise models](../../src/models/pairwise.py) |
 [Supported monomer tree CLI](../../../docs/cli/treebuilding.md)
 
 These historical exploratory notebooks are not required for building a tree.

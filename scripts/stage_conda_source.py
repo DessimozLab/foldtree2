@@ -17,14 +17,22 @@ FORBIDDEN_SUFFIXES = {'.h5', '.hdf5', '.ipynb', '.pt', '.pth', '.pkl',
                       '.npy', '.npz', '.pyc', '.pyo', '.log'}
 
 
-def walk_files(directory):
-    """Prune excluded/symlink directories before examining their contents."""
+def walk_files(directory, _at_root=True):
+    """Prune excluded/symlink directories before examining their contents.
+
+    Well-known scopes (``tests``, ``notebooks``, ``models``, ``runs``, ...) are
+    only pruned at the walk root so that e.g. ``foldtree2/src/models`` (a
+    canonical import subpackage) is never dropped; junk names (``__pycache__``,
+    dot/results dirs) are pruned at any depth.
+    """
     for child in sorted(directory.iterdir()):
         if child.is_symlink() or child.name in EXCLUDED_FILES:
             continue
         if child.is_dir():
-            if child.name not in EXCLUDED_DIRS and not child.name.startswith(('results', '.')):
-                yield from walk_files(child)
+            junk = child.name == '__pycache__' or child.name.startswith(('.', 'results'))
+            prune = junk or (_at_root and child.name in EXCLUDED_DIRS)
+            if not prune:
+                yield from walk_files(child, _at_root=False)
         elif child.is_file() and child.suffix.lower() not in FORBIDDEN_SUFFIXES:
             yield child
 

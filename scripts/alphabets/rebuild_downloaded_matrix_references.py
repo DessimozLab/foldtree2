@@ -35,7 +35,7 @@ def main():
     if args.outdir.exists():
         parser.error('Use a new output directory to preserve prior builds')
     sys.path.insert(0, str(ROOT))
-    from foldtree2.src.encoder import load_encoded_fasta
+    from foldtree2.src.models.encoder import load_encoded_fasta
     from foldtree2.makesubmat import build_char_set
     entries = json.loads((ROOT / 'configs/production_models.yaml').read_text())['models']
     entry = next(e for e in entries if e['size'] == args.size)

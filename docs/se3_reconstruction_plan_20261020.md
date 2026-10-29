@@ -512,7 +512,7 @@ success manifest.
 ### Matched five-case experiment
 
 The isolated
-[DecoderFusionRefiner](../foldtree2/src/decoder_feature_fusion.py) wraps the
+[DecoderFusionRefiner](../foldtree2/src/models/decoder_feature_fusion.py) wraps the
 unchanged SE(3) core with gated adapters back to the original feature width.
 Contact and AA adapters have separate LayerNorm/MLP projections and scalar
 gates initialized to `tanh(0.1)`. Common branches have identical initialization
@@ -675,7 +675,7 @@ follow-up is not automatically launched by this runner.
 
 ## Frozen-feature distance-distribution head, 2026-10-21
 
-[PairwiseDistanceHead](../foldtree2/src/distance_restraints.py) is a new opt-in
+[PairwiseDistanceHead](../foldtree2/src/distance/distance_restraints.py) is a new opt-in
 module, independent of the production decoder and active SE(3) fusion runs.
 The encoder, contact decoder and AA decoder stay frozen; inputs are read from
 the verified enriched cache. This is continuous-latent-assisted geometry
@@ -856,7 +856,7 @@ These are training energy checks, not production refiner inputs.
 
 ### Opt-in normalized/reference-relative energy
 
-[distance_energy.py](../foldtree2/src/distance_energy.py) adds a separate
+[distance_energy.py](../foldtree2/src/distance/distance_energy.py) adds a separate
 score rather than silently changing `distribution_restraint_loss`.
 Its smooth bin memberships are logistic-CDF differences with open first/last
 tails and sum to one at every distance, even with unequal widths. A stable

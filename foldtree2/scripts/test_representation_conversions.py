@@ -25,7 +25,7 @@ from foldtree2.src.losses.fape import (
     reconstruct_positions,
     rotation_matrix_to_quaternion,
 )
-from foldtree2.src.pdbgraph import PDB2PyG
+from foldtree2.src.graphs.pdbgraph import PDB2PyG
 
 
 @dataclass

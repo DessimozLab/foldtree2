@@ -16,10 +16,10 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
-from foldtree2.src.distance_energy import (
+from foldtree2.src.distance.distance_energy import (
     distance_energy, fit_reference, sample_contact_strata, separation_groups,
 )
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
 from foldtree2.train_distance_restraints import contact_metrics, load_records
 from foldtree2.train_se3_lightning import calibrated, source_identity
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json, select_panel
@@ -27,8 +27,8 @@ from scripts.se3.reconstruct_distance_restraints import validate_export
 
 
 def sources():
-    files = ('scripts/se3/diagnose_distance_learning.py', 'foldtree2/src/distance_energy.py',
-             'foldtree2/src/distance_restraints.py', 'foldtree2/train_distance_restraints.py',
+    files = ('scripts/se3/diagnose_distance_learning.py', 'foldtree2/src/distance/distance_energy.py',
+             'foldtree2/src/distance/distance_restraints.py', 'foldtree2/train_distance_restraints.py',
              'foldtree2/se3_cache.py', 'scripts/se3/diagnose_se3_reconstruction.py',
              'scripts/se3/reconstruct_distance_restraints.py')
     return {**{str(Path('foldtree2') / name): value for name, value in source_identity().items()},

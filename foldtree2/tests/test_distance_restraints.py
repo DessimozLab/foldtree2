@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from foldtree2.src.distance_restraints import (
+from foldtree2.src.distance.distance_restraints import (
     DISTANCE_EDGES, PairwiseDistanceHead, distance_labels, distribution_restraint_loss,
     eligible_pairs, validate_edges,
 )

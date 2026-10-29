@@ -11,10 +11,10 @@ Core inference
 --------------
 
 * ``foldtree2.ft2treebuilder`` orchestrates the structure-to-tree pipeline.
-* ``foldtree2.src.pdbgraphmk2`` converts structures and loads graph datasets.
-* ``foldtree2.src.encoder`` and ``foldtree2.src.quantizers`` encode learned states.
+* ``foldtree2.src.graphs.pdbgraphmk2`` converts structures and loads graph datasets.
+* ``foldtree2.src.models.encoder`` and ``foldtree2.src.models.quantizers`` encode learned states.
 * ``foldtree2.makesubmat`` builds model-specific matrices from references.
-* ``foldtree2.src.ancestral`` shares native ancestral reconstruction.
+* ``foldtree2.src.trees.ancestral`` shares native ancestral reconstruction.
 
 Training and research
 ---------------------

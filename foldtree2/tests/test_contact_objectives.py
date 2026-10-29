@@ -6,7 +6,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, eligible_pairs
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, eligible_pairs
 from foldtree2.tests.test_distance_restraints import example
 from scripts.contact.experiment_contact_objectives import balanced_contact_loss, contact_logit, experiment_cases
 

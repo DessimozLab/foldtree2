@@ -8,11 +8,11 @@
 import torch
 from torch_geometric.data import DataLoader
 import numpy as np
-from foldtree2.src import pdbgraph
-from foldtree2.src import encoder as ecdr
+from foldtree2.src.graphs import pdbgraph
+from foldtree2.src.models import encoder as ecdr
 from foldtree2.src.losses.losses import recon_loss_diag, aa_reconstruction_loss
-from foldtree2.src.mono_decoders import MultiMonoDecoder
-from foldtree2.src.visualization import plot_loss_curves, plot_metric_curve, plot_multiple_curves
+from foldtree2.src.models.mono_decoders import MultiMonoDecoder
+from foldtree2.src.training.visualization import plot_loss_curves, plot_metric_curve, plot_multiple_curves
 import os
 import tqdm
 import random

@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from foldtree2.se3_cache import digest
-from foldtree2.src.distance_restraints import DISTANCE_EDGES, eligible_pairs
+from foldtree2.src.distance.distance_restraints import DISTANCE_EDGES, eligible_pairs
 from scripts.se3.reconstruct_distance_restraints import (
     MODES, reconstruction_objective, run, sources, validate_export,
 )

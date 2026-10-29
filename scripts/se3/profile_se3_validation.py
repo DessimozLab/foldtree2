@@ -19,7 +19,7 @@ import torch
 import yaml
 from torch_geometric.data import HeteroData, Batch
 from foldtree2.se3_validation import losses, length_bucket_batches, production_pair, sha256
-from foldtree2.src.se3_struct_decoder import se3_denoiser
+from foldtree2.src.models.se3_struct_decoder import se3_denoiser
 
 
 def collate_cached(entries):
@@ -55,7 +55,7 @@ def main():
     if identity['dataset_sha256'] != sha256(config['dataset']) or any(
         identity[key+'_sha256'] != sha256(pair[key]) for key in ('encoder','decoder')):
         raise ValueError('Profile dataset/checkpoints differ from the trained refiner provenance')
-    if ckpt['provenance']['implementation_sha256'] != sha256('foldtree2/src/se3_struct_decoder.py'):
+    if ckpt['provenance']['implementation_sha256'] != sha256('foldtree2/src/models/se3_struct_decoder.py'):
         raise ValueError('Refiner implementation differs from the checkpoint')
     cache_dir = Path(config['cache']) / hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     entries = []

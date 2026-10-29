@@ -6,9 +6,9 @@ import pytest
 import torch
 
 from foldtree2.se3_cache import digest, identity_hash
-from foldtree2.src.contact_lever_metrics import per_protein_range_metrics, summarize_ranges
-from foldtree2.src.contact_levers import InspectablePairHead, XSAPairHead
-from foldtree2.src.distance_restraints import eligible_pairs, PairwiseDistanceHead
+from foldtree2.src.distance.contact_lever_metrics import per_protein_range_metrics, summarize_ranges
+from foldtree2.src.distance.contact_levers import InspectablePairHead, XSAPairHead
+from foldtree2.src.distance.distance_restraints import eligible_pairs, PairwiseDistanceHead
 from foldtree2.tests.test_distance_restraints import example
 from scripts.contact.train_contact_levers import ranking_loss, train, batched_forward, make_optimizer
 

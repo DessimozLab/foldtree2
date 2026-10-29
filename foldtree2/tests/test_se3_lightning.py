@@ -79,7 +79,7 @@ def test_capacity_equivariance_and_gradients(width,depth,heads):
 
 
 def test_safe_tensor_norm_matches_double_reference_and_gradients():
-    from foldtree2.src.se3_struct_decoder import StableHighDegreeNorm
+    from foldtree2.src.models.se3_struct_decoder import StableHighDegreeNorm
     from gotennet_pytorch.gotennet import HighDegreeNorm
     safe=StableHighDegreeNorm(8)
     reference=HighDegreeNorm(8).double()
@@ -96,7 +96,7 @@ def test_safe_tensor_norm_matches_double_reference_and_gradients():
 
 def test_tensor_ff_normalization_is_local_and_limits_quadratic_growth():
     from gotennet_pytorch.gotennet import EquivariantFeedForward
-    from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+    from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
     torch.manual_seed(42)
     original = EquivariantFeedForward(8, 2)
     normalized = copy.deepcopy(original)
@@ -118,7 +118,7 @@ def test_tensor_ff_normalization_is_local_and_limits_quadratic_growth():
 
 def test_normalized_medium_remains_equivariant_with_finite_gradients():
     from foldtree2.train_se3_lightning import build_model
-    from foldtree2.src.se3_struct_decoder import enable_tensor_ff_input_norm
+    from foldtree2.src.models.se3_struct_decoder import enable_tensor_ff_input_norm
     from foldtree2.se3_validation import forward
     torch.manual_seed(42)
     model = enable_tensor_ff_input_norm(build_model(8, {'hidden':64,'depth':4,'heads':4})).eval()

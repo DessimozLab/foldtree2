@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import tqdm
 
-from foldtree2.src import pdbgraphmk2
+from foldtree2.src.graphs import pdbgraphmk2
 
 def print_about():
     ascii_art = r'''

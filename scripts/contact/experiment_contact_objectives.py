@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from foldtree2.se3_cache import digest, open_bundle
-from foldtree2.src.distance_restraints import PairwiseDistanceHead, distance_labels
+from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels
 from foldtree2.train_distance_restraints import evaluate, load_records
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 
@@ -75,7 +75,7 @@ def run(args):
     manifest = open_bundle(args.cache)
     records = {s: load_records(args.cache, manifest, s, getattr(args, s + '_count'))
                for s in ('train', 'val')}
-    source_paths = [__file__, 'foldtree2/src/distance_restraints.py',
+    source_paths = [__file__, 'foldtree2/src/distance/distance_restraints.py',
                     'foldtree2/train_distance_restraints.py', 'foldtree2/se3_cache.py']
     identity = {str(p): digest(p) for p in source_paths}
     atomic_json(root / 'provenance.json', {

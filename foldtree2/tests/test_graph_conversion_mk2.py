@@ -5,7 +5,7 @@ import pytest
 
 from foldtree2 import encode_pdbs
 from foldtree2.scripts import pdbs_to_graphs
-from foldtree2.src import pdbgraphmk2
+from foldtree2.src.graphs import pdbgraphmk2
 
 
 def test_public_converter_is_mk2():
