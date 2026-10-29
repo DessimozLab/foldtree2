@@ -98,7 +98,9 @@ class PairwiseDistanceHead(nn.Module):
     """Symmetric pair MLP with optional residue context; no geometry inputs."""
     def __init__(self, feature_dim, contact_dim=30, hidden=64, mode='decoder',
                  edges=DISTANCE_EDGES, context_layers=0, context_heads=8,
-                 contact_bias=False, dropout=0., spherical_dim=0, pair_bilinear_dim=0):
+                 contact_bias=False, contact_bias_source='cosine', dropout=0.,
+                 spherical_dim=0, pair_bilinear_dim=0,
+                 kendall_terms=()):
         super().__init__()
         if (any(isinstance(x, bool) or not isinstance(x, int) or x < 1
                 for x in (feature_dim, contact_dim, hidden))
@@ -111,6 +113,8 @@ class PairwiseDistanceHead(nn.Module):
             raise ValueError('Invalid residue-context depth or attention heads')
         if not isinstance(contact_bias, bool):
             raise ValueError('Expected boolean contact_bias')
+        if contact_bias_source not in ('cosine', 'calibrated'):
+            raise ValueError('contact_bias_source must be cosine or calibrated')
         if isinstance(dropout, bool) or not isinstance(dropout, (int, float)) or not 0. <= dropout < 1.:
             raise ValueError('Expected dropout probability in [0, 1)')
         if (isinstance(pair_bilinear_dim, bool) or not isinstance(pair_bilinear_dim, int)
@@ -145,6 +149,7 @@ class PairwiseDistanceHead(nn.Module):
             nn.Linear(hidden, hidden), nn.GELU(), nn.Linear(hidden, len(edges) + 1))
         self.context_layers, self.context_heads = context_layers, context_heads
         self.contact_bias = contact_bias
+        self.contact_bias_source = contact_bias_source
         self.context = nn.ModuleList(
             ResidueContextLayer(hidden, context_heads, contact_bias=contact_bias,
                                 dropout=dropout)
@@ -157,6 +162,18 @@ class PairwiseDistanceHead(nn.Module):
             self.contact_projection = nn.Linear(hidden, spherical_dim)
             self.contact_log_scale = nn.Parameter(torch.tensor(math.log(10.)))
             self.contact_offset = nn.Parameter(torch.tensor(-5.))
+        if (isinstance(kendall_terms, str)
+                or (not isinstance(kendall_terms, (tuple, list)))):
+            raise ValueError('Expected kendall_terms as an iterable of term names')
+        self.kendall_terms = tuple(str(term) for term in kendall_terms)
+        if self.kendall_terms and len(set(self.kendall_terms)) != len(self.kendall_terms):
+            raise ValueError('Duplicate Kendall term names')
+        if self.kendall_terms:
+            # Multi-task uncertainty weights: exp(-s) * loss + s per term.
+            # s starts at 0 so every term contributes weight 1 initially.
+            self.kendall_log_vars = nn.ParameterDict({
+                term: nn.Parameter(torch.zeros(())) for term in self.kendall_terms
+            })
 
     def model_config(self):
         config = {'feature_dim': self.feature_dim, 'contact_dim': self.contact_dim,
@@ -165,12 +182,15 @@ class PairwiseDistanceHead(nn.Module):
             config.update(context_layers=self.context_layers, context_heads=self.context_heads)
         if self.contact_bias:
             config.update(contact_bias=self.contact_bias)
+            config.update(contact_bias_source=self.contact_bias_source)
         if self.dropout:
             config.update(dropout=self.dropout)
         if self.spherical_dim:
             config.update(spherical_dim=self.spherical_dim)
         if self.pair_bilinear_dim:
             config.update(pair_bilinear_dim=self.pair_bilinear_dim)
+        if self.kendall_terms:
+            config.update(kendall_terms=list(self.kendall_terms))
         return config
 
     def _contact_dot(self, entry, mask):

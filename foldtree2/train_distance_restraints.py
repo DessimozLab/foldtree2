@@ -75,14 +75,46 @@ def pair_metrics(model, probabilities, labels, distances, top_count, prior):
     }
 
 
-def sample_pairs(entry, all_pairs, count, generator, balanced=False, contact_cutoff=8.):
-    """Uniform subsample, or a 50/50 contact/non-contact balanced subsample.
+def focal_ce(logits, labels, gamma=0., reduction='mean'):
+    """Focal cross-entropy: (1 - p_t)^gamma * CE, gamma=0 reduces to CE."""
+    logp = F.log_softmax(logits, dim=-1)
+    pt = logp.gather(-1, labels[:, None]).exp().squeeze(-1)
+    if gamma > 0.:
+        weights = (1. - pt).pow(gamma).detach().clamp_min(1e-8)
+    else:
+        weights = None
+    loss = F.nll_loss(logp, labels, reduction='none')
+    if weights is not None:
+        loss = loss * weights
+    return loss.mean() if reduction == 'mean' else loss
 
-    The balanced branch samples with replacement from each class, so batch
-    composition stays exactly half contacts even when contacts are rare (the
-    default uniform draw gives the model almost no contact supervision).
+
+def focal_bce(logits, labels, gamma=0., reduction='mean'):
+    """Focal binary CE on contact (distance < edges[bins]) vs far logits."""
+    labels = labels.long()
+    pt = torch.sigmoid(logits)
+    pt = torch.where(labels == 1, pt, 1. - pt)
+    if gamma > 0.:
+        weights = (1. - pt).pow(gamma).detach().clamp_min(1e-8)
+    else:
+        weights = None
+    loss = F.binary_cross_entropy_with_logits(logits, labels.float(), reduction='none')
+    if weights is not None:
+        loss = loss * weights
+    return loss.mean() if reduction == 'mean' else loss
+
+
+def sample_pairs(entry, all_pairs, count, generator, balanced_ratio=0.0, contact_cutoff=8.):
+    """Subsample pairs uniformly, or with a fixed contact fraction.
+
+    ``balanced_ratio`` specifies the fraction of the batch that should be drawn
+    from the contact set (with replacement).  The remaining batch is drawn from
+    the non-contact set.  Default 0 means uniform draws (the natural contact
+    frequency, typically ~2%).  A value of 0.5 gives equal contact and non-
+    contact representation.  Both classes are sampled with replacement so the
+    exact ratio is maintained regardless of the relative class sizes.
     """
-    if not balanced or count < 2:
+    if balanced_ratio <= 0. or count < 2:
         indices = torch.randperm(len(all_pairs), generator=generator)[:count]
         return all_pairs[indices]
     target = entry['target']
@@ -90,13 +122,14 @@ def sample_pairs(entry, all_pairs, count, generator, balanced=False, contact_cut
     contact = distances < contact_cutoff
     contact_idx = contact.nonzero().view(-1)
     noncontact_idx = (~contact).nonzero().view(-1)
-    half = count // 2
-    if len(contact_idx) == 0 or len(noncontact_idx) == 0 or half < 1:
+    contact_half = min(count, max(0, min(count, int(round(count * balanced_ratio)))))
+    noncontact_count = count - contact_half
+    if len(contact_idx) == 0 or len(noncontact_idx) == 0 or contact_half < 1 or noncontact_count < 1:
         indices = torch.randperm(len(all_pairs), generator=generator)[:count]
         return all_pairs[indices]
     chosen = torch.cat([
-        contact_idx[torch.randint(len(contact_idx), (half,), generator=generator)],
-        noncontact_idx[torch.randint(len(noncontact_idx), (count - half,), generator=generator)],
+        contact_idx[torch.randint(len(contact_idx), (contact_half,), generator=generator)],
+        noncontact_idx[torch.randint(len(noncontact_idx), (noncontact_count,), generator=generator)],
     ])
     return all_pairs[chosen[torch.randperm(count, generator=generator)]]
 
@@ -169,6 +202,14 @@ def train(args):
         selection = {s: [e['id'] for e, _ in rows] for s, rows in records.items()}
         if set(selection['train']) & set(selection['val']):
             raise ValueError('Training and validation IDs overlap')
+        balanced_ratio = max(0., min(1., float(getattr(args, 'balanced_ratio', 0.))))
+        focal_gamma = max(0., float(getattr(args, 'focal_gamma', 0.)))
+        kendall_terms = tuple(str(name) for name in getattr(args, 'kendall_terms', []) or [])
+        if kendall_terms and len(set(kendall_terms)) != len(kendall_terms):
+            raise ValueError('Duplicate Kendall term names')
+        kl_penalty = float(getattr(args, 'kl_penalty', 0.))
+        if kl_penalty < 0. or not math.isfinite(kl_penalty):
+            raise ValueError('KL penalty must be a nonnegative finite float')
         atomic_json(root / 'provenance.json', {
             'protocol': 'frozen-pair-distance-v1', 'args': vars(args),
             'sources': identity, 'bundle_sha256': manifest['bundle_sha256'],
@@ -181,6 +222,7 @@ def train(args):
                 'heads': getattr(args, 'context_heads', 8),
                 'position': 'learned signed relative row offsets clipped to [-32,32]',
                 'contact_bias': bool(getattr(args, 'contact_bias', False)),
+                'contact_bias_source': getattr(args, 'contact_bias_source', 'cosine'),
                 'mask': 'invalid residues excluded as attention keys and supervised endpoints',
                 'dropout': 0.,
             },
@@ -192,8 +234,21 @@ def train(args):
                 'spherical_dim': getattr(args, 'spherical_dim', 0),
                 'hierarchical': 'sphere fixes contact mass; pair MLP conditions distance on contact',
             },
-            'pair_sampling': ('balanced 50/50 contact/noncontact (with replacement per class)'
-                              if getattr(args, 'balanced', False) else 'uniform draws'),
+            'kl_penalty': {'strength': kl_penalty,
+                'kl_batch': getattr(args, 'kl_batch', 0),
+                'note': 'KL(marginal || empirical_prior) on detached large-pair sample',
+                'source': 'empirical distance prior from training chains'} if kl_penalty > 0. else None,
+            'pair_sampling': (f'balanced {balanced_ratio:.2f} contact fraction (with replacement per class)'
+                              if balanced_ratio > 0. else 'uniform draws'),
+            'chains_per_step': max(1, int(getattr(args, 'chain_batch', 1))),
+            'loss_terms': {
+                'focal_gamma': focal_gamma,
+                'kendall_terms': list(kendall_terms),
+                'note': ('focal CE on contact+far binary AND 10-bin distance, Kendall-uncertainty '
+                         'weighted' if kendall_terms else
+                         'focal CE on 10-bin distance' if focal_gamma > 0. else
+                         'plain 10-bin distance CE'),
+            },
             'lr_schedule': 'cosine-to-zero over the epoch budget' if args.cosine_lr else 'constant',
             'regularization': {'dropout': getattr(args, 'dropout', 0.),
                                'weight_decay': args.weight_decay,
@@ -201,8 +256,8 @@ def train(args):
                                'best_checkpoint': 'selection score = val NLL - 2 x contact AP'},
             'scope': 'Reused refiner development holdout; production pretraining independence unverified',
             'cache_scope': manifest.get('scope'),
-            'objective': ('distance-bin cross entropy on balanced 50/50 contact/noncontact sampled pairs'
-              if getattr(args, 'balanced', False)
+            'objective': (f'distance-bin cross entropy on balanced {balanced_ratio:.2f} contact-fraction pairs'
+              if balanced_ratio > 0.
               else 'unweighted distance-bin cross entropy, uniformly sampled nonlocal pairs'),
             'selection_metric': 'none; final fixed-budget weights, not validation-selected',
             'contact_definition': 'CA distance <8A; frozen decoder trained on CB contacts',
@@ -226,9 +281,11 @@ def train(args):
                 context_layers=getattr(args, 'context_layers', 0),
                 context_heads=getattr(args, 'context_heads', 8),
                 contact_bias=getattr(args, 'contact_bias', False),
+                contact_bias_source=getattr(args, 'contact_bias_source', 'cosine'),
                 dropout=getattr(args, 'dropout', 0.),
                 spherical_dim=getattr(args, 'spherical_dim', 0),
-                pair_bilinear_dim=getattr(args, 'pair_bilinear_dim', 0)).to(device)
+                pair_bilinear_dim=getattr(args, 'pair_bilinear_dim', 0),
+                kendall_terms=kendall_terms).to(device)
             histogram = torch.ones(len(model.edges) + 1, dtype=torch.float64)
             for entry, pairs in records['train']:
                 labels, _ = distance_labels(entry['target'], pairs, model.edges.cpu())
@@ -256,38 +313,85 @@ def train(args):
 
             best = {'score': float('inf'), 'epoch': 0}
             exhausted = False
+            chains_per_step = max(1, int(getattr(args, 'chain_batch', 1)))
             for epoch in range(1, args.epochs + 1):
                 model.train()
                 losses, norms = [], []
                 order = torch.randperm(len(records['train']), generator=sampling)
-                for index in order.tolist():
+                for position, index in enumerate(order.tolist(), start=1):
+                    # Start a new optimizer group — clear old gradients.
+                    if (position - 1) % chains_per_step == 0:
+                        optimizer.zero_grad(set_to_none=True)
                     entry, all_pairs = records['train'][index]
                     pairs = sample_pairs(entry, all_pairs, args.pairs, sampling,
-                                         balanced=getattr(args, 'balanced', False)).to(device)
+                             balanced_ratio=balanced_ratio).to(device)
                     inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v
                               for k, v in entry.items()}
                     labels, _ = distance_labels(inputs['target'], pairs, model.edges)
-                    optimizer.zero_grad(set_to_none=True)
-                    loss = F.cross_entropy(model(inputs, pairs), labels)
+                    logits = model(inputs, pairs)
+                    if kendall_terms and hasattr(model, 'kendall_log_vars'):
+                        # Two supervised terms over the same pair sample:
+                        #  - contact: marginal probability that the distance is
+                        #    below the 8A contact boundary (binary),
+                        #  - distance: full 10-bin distance classification.
+                        # Both use focal weights when focal_gamma > 0.  Kendall
+                        # log-variances learn the trade-off between the two so
+                        # the rare contact signal cannot be drowned out while
+                        # the natural batch distribution stays intact.
+                        contact_edges = int((model.edges <= 8.).sum())
+                        near_logit = torch.logsumexp(logits[:, :contact_edges], dim=-1)
+                        far_logit = torch.logsumexp(logits[:, contact_edges:], dim=-1)
+                        contact_target = (labels < contact_edges).float()
+                        term_contact = focal_bce(
+                            near_logit - far_logit, contact_target, gamma=focal_gamma)
+                        term_distance = focal_ce(logits, labels, gamma=focal_gamma)
+                        terms = {'contact': term_contact, 'distance': term_distance}
+                        loss = torch.stack([
+                            torch.exp(-model.kendall_log_vars[name]) * term + model.kendall_log_vars[name]
+                            for name, term in terms.items()]).sum()
+                    else:
+                        loss = focal_ce(logits, labels, gamma=focal_gamma) if focal_gamma > 0. \
+                            else F.cross_entropy(logits, labels)
+                    # KL penalty from a separate large pair sample so the
+                    # marginal estimate is low-noise (512 pairs with ~1.5%
+                    # contacts is too small for a stable KL).  The marginal
+                    # uses logits from the same inputs so it reflects the
+                    # current model state; no gradients through the extraction.
+                    if kl_penalty > 0. and len(all_pairs) >= args.kl_batch:
+                        kl_pairs = all_pairs[torch.randperm(len(all_pairs), generator=sampling)[:args.kl_batch]].to(device)
+                        kl_labels, _ = distance_labels(inputs['target'], kl_pairs, model.edges)
+                        with torch.no_grad():
+                            marginal = model(inputs, kl_pairs).softmax(-1).mean(0)
+                        kl = (marginal * (marginal / prior).log()).clamp_min(0.).sum()
+                        loss = loss + kl_penalty * kl
                     if not torch.isfinite(loss):
                         raise FloatingPointError('Nonfinite distance-head objective')
-                    loss.backward()
-                    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
-                    if norm <= 0:
-                        raise RuntimeError('Zero distance-head gradient')
-                    optimizer.step()
-                    if schedule is not None:
-                        schedule.step()
+                    # Gradient accumulation: average over the chains in one
+                    # optimizer step so the rare contact signal from several
+                    # structures is combined before stepping. 512 pairs from a
+                    # single chain contain only ~8 contacts at the natural
+                    # frequency, which is too weak a per-step gradient.
+                    (loss / chains_per_step).backward()
                     losses.append(float(loss.detach()))
-                    norms.append(float(norm))
-                    updates += 1
                     visits += len(pairs)
-                    if updates % 64 == 0:
-                        event('update', mode=mode, epoch=epoch, updates=updates,
-                              loss=losses[-1], gradient_norm=norms[-1])
+                    if position % chains_per_step == 0 or position == len(order):
+                        norm = torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), 1., error_if_nonfinite=True)
+                        if norm <= 0:
+                            raise RuntimeError('Zero distance-head gradient')
+                        optimizer.step()
+                        if schedule is not None:
+                            schedule.step()
+                        norms.append(float(norm))
+                        updates += 1
+                        if updates % 64 == 0:
+                            event('update', mode=mode, epoch=epoch, updates=updates,
+                                  loss=float(loss.detach()), gradient_norm=float(norm))
                     if time.monotonic() - started >= args.seconds:
                         exhausted = True
                         break
+                if time.monotonic() - started >= args.seconds:
+                    exhausted = True
                 report, _ = evaluate(model, records['val'], device, prior)
                 atomic_json(output / f'validation-{epoch:03d}.json', report)
                 row = {'epoch': epoch, 'updates': updates, 'pair_visits': visits,
@@ -397,18 +501,39 @@ def main():
     parser.add_argument('--context-layers', type=int, default=0)
     parser.add_argument('--context-heads', type=int, default=8)
     parser.add_argument('--contact-bias', action='store_true',
-                        help='Add learned per-head bias from the pairwise contact-embedding '
-                             'dot product inside residue context attention')
+                        help='Add learned per-head bias from the pairwise contact signal '
+                             'inside residue context attention')
+    parser.add_argument('--contact-bias-source', choices=['cosine', 'calibrated'], default='cosine',
+                        help='Contact signal for the attention bias: cosine uses the raw '
+                             'contact_z dot product; calibrated uses the sigmoid-calibrated '
+                             'contact_probs from the enriched cache')
     parser.add_argument('--cosine-lr', action='store_true',
                         help='Cosine-anneal the learning rate to zero over the epoch budget')
-    parser.add_argument('--balanced', action='store_true',
-                        help='Sample each batch 50/50 from contact and non-contact pairs '
-                             '(with replacement per class) instead of uniform pair draws')
+    parser.add_argument('--balanced-ratio', type=float, default=0., metavar='RATIO',
+                        help='Fraction of contact pairs in each batch (0 means the natural '
+                             'frequency; 0.5 gives 50/50).  With replacement per class.')
     parser.add_argument('--spherical-dim', type=int, default=0,
                         help='Enable the hierarchical spherical contact head with this '
                              'sphere dimension (0 disables it)')
     parser.add_argument('--pair-bilinear-dim', type=int, default=0,
                         help='Symmetrized low-rank bilinear pair term width (0 disables it)')
+    parser.add_argument('--chain-batch', type=int, default=16,
+                        help='Chains per optimizer step (gradient accumulation). Natural '
+                             'sampling with 512 pairs/chain gives only ~8 contact pairs per '
+                             'chain; batching 16 chains yields ~128 contacts per step.')
+    parser.add_argument('--kl-penalty', type=float, default=0.,
+                        help='KL(marginal || empirical prior) weight applied via a detached '
+                             'large-pair sample (0 disables; ~0.01-0.1 typical)')
+    parser.add_argument('--kl-batch', type=int, default=8192,
+                        help='Number of pairs for the detached KL marginal estimate '
+                             '(default 8192; more = lower noise, larger = slower per step)')
+    parser.add_argument('--focal-gamma', type=float, default=0.,
+                        help='Focal loss exponent: (1-p_t)^gamma down-weights easy pairs '
+                             '(0 = plain CE)')
+    parser.add_argument('--kendall-terms', nargs='+', default=[],
+                        choices=['contact', 'distance'],
+                        help='Multi-task Kendall-uncertainty terms to learn a balance for '
+                             '(e.g. "contact distance"); empty disables Kendall weighting')
     parser.add_argument('--dropout', type=float, default=0.,
                         help='Residual/hidden dropout probability applied inside the '
                              'node MLP and context layers (0 disables)')
