@@ -198,7 +198,7 @@ class Refiner(pl.LightningModule):
         print(f'Loaded frozen distance restraint head from {path} '
               f'(weight={spec.get("weight", 1.0)})')
         return {'model': model, 'weight': float(spec.get('weight', 1.0)),
-                'sha256': head_sha.hexdigest()}
+                'sha256': head_sha.hexdigest(), 'device': 'cpu'}
 
     def _restraint_loss(self, coords, entry):
         """Compute auxiliary distribution-restraint loss if a head is loaded."""
@@ -209,6 +209,11 @@ class Refiner(pl.LightningModule):
             return None
         head = self.restraint_head['model']
         dev = coords.device
+        # Move the head to the SE3 model's device on first use (it's
+        # loaded on CPU for cross-rank consistency).
+        if self.restraint_head.get('device', 'cpu') != str(dev):
+            head.to(dev)
+            self.restraint_head['device'] = str(dev)
         pairs = eligible_pairs(mask).to(dev)
         # Lazy-initialize the edges buffer on the right device.
         edges = head.edges.to(dev)

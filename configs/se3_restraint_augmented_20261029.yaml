@@ -8,13 +8,13 @@
 cache: runs/se3_distance_data_scaling_5120_20261022/comparison/bundle_5120
 output: runs/se3_restraint_augmented_20261029
 seed: 42
-devices: 4
+devices: 1
 nodes: 1
 accelerator: cuda
-strategy: ddp
+strategy: auto
 precision: 32-true
 global_batch: 16
-train_count: 8192
+train_count: 5120
 val_count: 256
 max_residues: 256
 learning_rate: 5.0e-4
