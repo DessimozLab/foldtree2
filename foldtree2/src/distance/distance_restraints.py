@@ -100,7 +100,7 @@ class PairwiseDistanceHead(nn.Module):
                  edges=DISTANCE_EDGES, context_layers=0, context_heads=8,
                  contact_bias=False, contact_bias_source='cosine', dropout=0.,
                  spherical_dim=0, pair_bilinear_dim=0, pair_layers=2,
-                 kendall_terms=()):
+                 kendall_terms=(), predict_angles=False):
         super().__init__()
         if (any(isinstance(x, bool) or not isinstance(x, int) or x < 1
                 for x in (feature_dim, contact_dim, hidden))
@@ -179,6 +179,14 @@ class PairwiseDistanceHead(nn.Module):
             self.kendall_log_vars = nn.ParameterDict({
                 term: nn.Parameter(torch.zeros(())) for term in self.kendall_terms
             })
+        self.predict_angles = bool(predict_angles)
+        if self.predict_angles:
+            self.angle_head = nn.Linear(hidden, 3)
+
+    def predict_angles_from_entry(self, entry):
+        """Predict backbone angles from context-enhanced node features."""
+        nodes = self._nodes(entry, self._contact_dot(entry, entry['mask']))
+        return self.angle_head(nodes)
 
     def model_config(self):
         config = {'feature_dim': self.feature_dim, 'contact_dim': self.contact_dim,
@@ -198,6 +206,8 @@ class PairwiseDistanceHead(nn.Module):
             config.update(pair_layers=self.pair_layers)
         if self.kendall_terms:
             config.update(kendall_terms=list(self.kendall_terms))
+        if self.predict_angles:
+            config.update(predict_angles=True)
         return config
 
     def _contact_dot(self, entry, mask):

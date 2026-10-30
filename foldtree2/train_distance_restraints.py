@@ -104,6 +104,16 @@ def focal_bce(logits, labels, gamma=0., reduction='mean'):
     return loss.mean() if reduction == 'mean' else loss
 
 
+def periodic_angle_loss(pred_angles, target_angles, mask):
+    """Smooth L1 on angle predictions wrapped to [-pi, pi]."""
+    valid = mask & torch.isfinite(target_angles).all(-1)
+    if not valid.any():
+        return torch.zeros((), device=pred_angles.device)
+    diff = pred_angles[valid] - target_angles[valid].to(pred_angles)
+    wrapped = torch.atan2(diff.sin(), diff.cos())  # wrap to [-pi, pi]
+    return F.smooth_l1_loss(wrapped, torch.zeros_like(wrapped))
+
+
 def sample_pairs(entry, all_pairs, count, generator, balanced_ratio=0.0, contact_cutoff=8.):
     """Subsample pairs uniformly, or with a fixed contact fraction.
 
@@ -271,10 +281,12 @@ def train(args):
             'loss_terms': {
                 'focal_gamma': focal_gamma,
                 'kendall_terms': list(kendall_terms),
+                'angle_head': getattr(args, 'predict_angles', False),
                 'note': ('focal CE on contact+far binary AND 10-bin distance, Kendall-uncertainty '
                          'weighted' if kendall_terms else
                          'focal CE on 10-bin distance' if focal_gamma > 0. else
-                         'plain 10-bin distance CE'),
+                         'plain 10-bin distance CE') + (
+                     ', + angle head' if getattr(args, 'predict_angles', False) else ''),
             },
             'lr_schedule': 'cosine-to-zero over the epoch budget' if args.cosine_lr else 'constant',
             'regularization': {'dropout': getattr(args, 'dropout', 0.),
@@ -313,7 +325,8 @@ def train(args):
                 spherical_dim=getattr(args, 'spherical_dim', 0),
                 pair_bilinear_dim=getattr(args, 'pair_bilinear_dim', 0),
                 pair_layers=getattr(args, 'pair_layers', 2),
-                kendall_terms=kendall_terms).to(device)
+                kendall_terms=kendall_terms,
+                predict_angles=getattr(args, 'predict_angles', False)).to(device)
             histogram = torch.ones(len(model.edges) + 1, dtype=torch.float64)
             for entry, pairs in records['train']:
                 labels, _ = distance_labels(entry['target'], pairs, model.edges.cpu())
@@ -373,6 +386,10 @@ def train(args):
                             near_logit - far_logit, contact_target, gamma=focal_gamma)
                         term_distance = focal_ce(logits, labels, gamma=focal_gamma)
                         terms = {'contact': term_contact, 'distance': term_distance}
+                        if 'angle' in kendall_terms and getattr(model, 'predict_angles', False):
+                            angle_pred = model.predict_angles_from_entry(inputs)
+                            term_angle = periodic_angle_loss(angle_pred, inputs['angles'], inputs['mask'])
+                            terms['angle'] = term_angle
                         loss = torch.stack([
                             torch.exp(-model.kendall_log_vars[name]) * term + model.kendall_log_vars[name]
                             for name, term in terms.items()]).sum()
@@ -560,9 +577,11 @@ def main():
                         help='Focal loss exponent: (1-p_t)^gamma down-weights easy pairs '
                              '(0 = plain CE)')
     parser.add_argument('--kendall-terms', nargs='+', default=[],
-                        choices=['contact', 'distance'],
+                        choices=['contact', 'distance', 'angle'],
                         help='Multi-task Kendall-uncertainty terms to learn a balance for '
-                             '(e.g. "contact distance"); empty disables Kendall weighting')
+                             '(e.g. "contact distance angle"); empty disables Kendall weighting')
+    parser.add_argument('--predict-angles', action='store_true',
+                        help='Add auxiliary backbone-angle prediction head and loss')
     parser.add_argument('--dropout', type=float, default=0.,
                         help='Residual/hidden dropout probability applied inside the '
                              'node MLP and context layers (0 disables)')
