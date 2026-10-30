@@ -134,6 +134,33 @@ def sample_pairs(entry, all_pairs, count, generator, balanced_ratio=0.0, contact
     return all_pairs[chosen[torch.randperm(count, generator=generator)]]
 
 
+def make_optimizer(model, args):
+    """Build AdamW (default) or Muon with auxiliary AdamW."""
+    if getattr(args, 'optimizer', 'adamw') == 'muon':
+        from muon import SingleDeviceMuonWithAuxAdam
+        muon_params = []
+        adamw_params = []
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            # Muon applies orthogonalized momentum to 2D weight matrices
+            # (the "hidden layers").  1D biases, norms, embeddings and the
+            # final output layer use a small AdamW auxiliary.
+            if param.ndim == 2 and 'pair.output' not in name and 'kendall' not in name:
+                muon_params.append(param)
+            else:
+                adamw_params.append(param)
+        param_groups = [
+            {'params': muon_params, 'use_muon': True,
+             'lr': float(args.learning_rate)},
+            {'params': adamw_params, 'use_muon': False,
+             'lr': 3e-4, 'weight_decay': 0.},
+        ]
+        return SingleDeviceMuonWithAuxAdam(param_groups)
+    return torch.optim.AdamW(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+
+
 def evaluate(model, records, device, prior, export=False):
     model.eval()
     rows, exports = [], []
@@ -292,8 +319,7 @@ def train(args):
                 labels, _ = distance_labels(entry['target'], pairs, model.edges.cpu())
                 histogram += torch.bincount(labels, minlength=len(histogram))
             prior = (histogram / histogram.sum()).float().to(device)
-            optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate,
-                                          weight_decay=args.weight_decay)
+            optimizer = make_optimizer(model, args)
             schedule = None
             if args.cosine_lr:
                 total_steps = max(1, args.epochs * max(len(records['train']), 1))
@@ -546,6 +572,9 @@ def main():
                         help='Stop after this many epochs without a selection-score improvement '
                              'when positive; 0 disables early stopping')
     parser.add_argument('--learning-rate', type=float, default=.001)
+    parser.add_argument('--optimizer', choices=['adamw', 'muon'], default='adamw',
+                        help='Optimizer: AdamW (default) or Muon (orthogonalized momentum '
+                             'for 2D param layers + AdamW aux for biases/norms/embeddings)')
     parser.add_argument('--train-count', type=int)
     parser.add_argument('--val-count', type=int)
     parser.add_argument('--modes', nargs='+', choices=['sequence', 'decoder'], default=['sequence', 'decoder'])
