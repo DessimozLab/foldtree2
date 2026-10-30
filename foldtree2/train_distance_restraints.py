@@ -379,7 +379,10 @@ def train(args):
                         terms = {'contact': term_contact, 'distance': term_distance}
                         if 'angle' in kendall_terms and getattr(model, 'predict_angles', False):
                             angle_pred = model.predict_angles_from_entry(inputs)
-                            term_angle = angles_reconstruction_loss(inputs['angles'], angle_pred)
+                            term_angle = angles_reconstruction_loss(
+                                inputs['angles'], angle_pred,
+                                plddt_mask=inputs['mask'].float().unsqueeze(-1),
+                                plddt_thresh=0.5, kl_penalty=False)
                             terms['angle'] = term_angle
                         loss = torch.stack([
                             torch.exp(-model.kendall_log_vars[name]) * term + model.kendall_log_vars[name]
