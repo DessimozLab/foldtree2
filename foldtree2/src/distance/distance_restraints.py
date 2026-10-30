@@ -99,7 +99,7 @@ class PairwiseDistanceHead(nn.Module):
     def __init__(self, feature_dim, contact_dim=30, hidden=64, mode='decoder',
                  edges=DISTANCE_EDGES, context_layers=0, context_heads=8,
                  contact_bias=False, contact_bias_source='cosine', dropout=0.,
-                 spherical_dim=0, pair_bilinear_dim=0,
+                 spherical_dim=0, pair_bilinear_dim=0, pair_layers=2,
                  kendall_terms=()):
         super().__init__()
         if (any(isinstance(x, bool) or not isinstance(x, int) or x < 1
@@ -120,6 +120,10 @@ class PairwiseDistanceHead(nn.Module):
         if (isinstance(pair_bilinear_dim, bool) or not isinstance(pair_bilinear_dim, int)
                 or pair_bilinear_dim < 0):
             raise ValueError('Expected nonnegative integer pair bilinear dimension')
+        if (isinstance(pair_layers, bool) or not isinstance(pair_layers, int)
+                or pair_layers < 1):
+            raise ValueError('pair_layers must be a positive integer')
+        self.pair_layers = pair_layers
         self.dropout = float(dropout)
         edges = torch.tensor(edges, dtype=torch.float32)
         validate_edges(edges)
@@ -139,14 +143,15 @@ class PairwiseDistanceHead(nn.Module):
         self.pair_bilinear_dim = int(pair_bilinear_dim)
         pair_input_dim = 3 * hidden + 2
         if self.pair_bilinear_dim:
-            # Symmetric low-rank bilinear term: (p_i x p_j + p_j x p_i) / 2,
-            # projected back to hidden so pair features grow by exactly hidden.
             self.pair_proj = nn.Linear(hidden, self.pair_bilinear_dim, bias=False)
             self.pair_bilin = nn.Linear(self.pair_bilinear_dim * self.pair_bilinear_dim, hidden, bias=False)
             pair_input_dim += hidden
-        self.pair = nn.Sequential(
-            nn.Linear(pair_input_dim, hidden), nn.GELU(),
-            nn.Linear(hidden, hidden), nn.GELU(), nn.Linear(hidden, len(edges) + 1))
+        pair_layers_n = max(1, int(pair_layers if isinstance(pair_layers, int) else 2))
+        pair_modules = [nn.Linear(pair_input_dim, hidden), nn.GELU()]
+        for _ in range(1, pair_layers_n):
+            pair_modules += [nn.Linear(hidden, hidden), nn.GELU()]
+        pair_modules.append(nn.Linear(hidden, len(edges) + 1))
+        self.pair = nn.Sequential(*pair_modules)
         self.context_layers, self.context_heads = context_layers, context_heads
         self.contact_bias = contact_bias
         self.contact_bias_source = contact_bias_source
@@ -189,6 +194,8 @@ class PairwiseDistanceHead(nn.Module):
             config.update(spherical_dim=self.spherical_dim)
         if self.pair_bilinear_dim:
             config.update(pair_bilinear_dim=self.pair_bilinear_dim)
+        if self.pair_layers != 2:
+            config.update(pair_layers=self.pair_layers)
         if self.kendall_terms:
             config.update(kendall_terms=list(self.kendall_terms))
         return config

@@ -285,6 +285,7 @@ def train(args):
                 dropout=getattr(args, 'dropout', 0.),
                 spherical_dim=getattr(args, 'spherical_dim', 0),
                 pair_bilinear_dim=getattr(args, 'pair_bilinear_dim', 0),
+                pair_layers=getattr(args, 'pair_layers', 2),
                 kendall_terms=kendall_terms).to(device)
             histogram = torch.ones(len(model.edges) + 1, dtype=torch.float64)
             for entry, pairs in records['train']:
@@ -517,6 +518,8 @@ def main():
                              'sphere dimension (0 disables it)')
     parser.add_argument('--pair-bilinear-dim', type=int, default=0,
                         help='Symmetrized low-rank bilinear pair term width (0 disables it)')
+    parser.add_argument('--pair-layers', type=int, default=2,
+                        help='Number of hidden layers in the pair MLP (2 = current, 4 = deeper)')
     parser.add_argument('--chain-batch', type=int, default=16,
                         help='Chains per optimizer step (gradient accumulation). Natural '
                              'sampling with 512 pairs/chain gives only ~8 contact pairs per '
