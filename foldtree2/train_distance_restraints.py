@@ -22,14 +22,14 @@ def sources():
     return {name: digest(name) for name in names}
 
 
-def load_records(cache, manifest, split, count=None):
+def load_records(cache, manifest, split, count=None, min_separation=12):
     dataset = FrozenDataset(cache, manifest, split)
     if count is not None and (count < 1 or count > len(dataset)):
         raise ValueError('Requested subset count outside cache split')
     records = []
     for index in range(len(dataset) if count is None else count):
         entry = dataset[index]
-        pairs = eligible_pairs(entry['mask'])
+        pairs = eligible_pairs(entry['mask'], min_separation=min_separation)
         records.append((entry, pairs))
     return records
 
@@ -76,16 +76,18 @@ def pair_metrics(model, probabilities, labels, distances, top_count, prior):
     }
 
 
-def focal_ce(logits, labels, gamma=0., reduction='mean'):
+def focal_ce(logits, labels, gamma=0., label_smoothing=0., reduction='mean'):
     """Focal cross-entropy: (1 - p_t)^gamma * CE, gamma=0 reduces to CE."""
     logp = F.log_softmax(logits, dim=-1)
-    pt = logp.gather(-1, labels[:, None]).exp().squeeze(-1)
-    if gamma > 0.:
-        weights = (1. - pt).pow(gamma).detach().clamp_min(1e-8)
+    if label_smoothing > 0.:
+        n_bins = logits.shape[-1]
+        smooth = (1. - label_smoothing) * F.one_hot(labels, n_bins) + label_smoothing / n_bins
+        loss = -(smooth * logp).sum(-1)
     else:
-        weights = None
-    loss = F.nll_loss(logp, labels, reduction='none')
-    if weights is not None:
+        loss = F.nll_loss(logp, labels, reduction='none')
+    if gamma > 0.:
+        pt = logp.gather(-1, labels[:, None]).exp().squeeze(-1)
+        weights = (1. - pt).pow(gamma).detach().clamp_min(1e-8)
         loss = loss * weights
     return loss.mean() if reduction == 'mean' else loss
 
@@ -223,8 +225,13 @@ def train(args):
         manifest = open_bundle(args.cache)
         if 'decoder_enrichment' not in manifest:
             raise ValueError('Requires versioned AA/contact enriched cache')
+        min_separation = max(1, int(getattr(args, 'min_separation', 12)))
+        if min_separation < 1 or min_separation > 255:
+            raise ValueError('min_separation must be between 1 and 255')
         records = {
-            split: load_records(args.cache, manifest, split, getattr(args, split + '_count'))
+            split: load_records(args.cache, manifest, split,
+                               getattr(args, split + '_count'),
+                               min_separation=min_separation)
             for split in ('train', 'val')}
         identity = sources()
         selection = {s: [e['id'] for e, _ in rows] for s, rows in records.items()}
@@ -232,6 +239,7 @@ def train(args):
             raise ValueError('Training and validation IDs overlap')
         balanced_ratio = max(0., min(1., float(getattr(args, 'balanced_ratio', 0.))))
         focal_gamma = max(0., float(getattr(args, 'focal_gamma', 0.)))
+        label_smoothing = max(0., min(1., float(getattr(args, 'label_smoothing', 0.))))
         kendall_terms = tuple(str(name) for name in getattr(args, 'kendall_terms', []) or [])
         if kendall_terms and len(set(kendall_terms)) != len(kendall_terms):
             raise ValueError('Duplicate Kendall term names')
@@ -281,6 +289,8 @@ def train(args):
             },
             'lr_schedule': 'cosine-to-zero over the epoch budget' if args.cosine_lr else 'constant',
             'regularization': {'dropout': getattr(args, 'dropout', 0.),
+                               'label_smoothing': label_smoothing,
+                               'min_separation': min_separation,
                                'weight_decay': args.weight_decay,
                                'early_stop_patience': args.early_stop,
                                'best_checkpoint': 'selection score = val NLL - 2 x contact AP'},
@@ -375,7 +385,8 @@ def train(args):
                         contact_target = (labels < contact_edges).float()
                         term_contact = focal_bce(
                             near_logit - far_logit, contact_target, gamma=focal_gamma)
-                        term_distance = focal_ce(logits, labels, gamma=focal_gamma)
+                        term_distance = focal_ce(logits, labels, gamma=focal_gamma,
+                                         label_smoothing=label_smoothing)
                         terms = {'contact': term_contact, 'distance': term_distance}
                         if 'angle' in kendall_terms and getattr(model, 'predict_angles', False):
                             angle_pred = model.predict_angles_from_entry(inputs)
@@ -388,8 +399,10 @@ def train(args):
                             torch.exp(-model.kendall_log_vars[name]) * term + model.kendall_log_vars[name]
                             for name, term in terms.items()]).sum()
                     else:
-                        loss = focal_ce(logits, labels, gamma=focal_gamma) if focal_gamma > 0. \
-                            else F.cross_entropy(logits, labels)
+                        loss = focal_ce(logits, labels, gamma=focal_gamma,
+                                label_smoothing=label_smoothing) if focal_gamma > 0. \
+                            else (F.cross_entropy(logits, labels) if label_smoothing <= 0.
+                                  else focal_ce(logits, labels, label_smoothing=label_smoothing))
                     # KL penalty from a separate large pair sample so the
                     # marginal estimate is low-noise (512 pairs with ~1.5%
                     # contacts is too small for a stable KL).  The marginal
@@ -588,6 +601,12 @@ def main():
     parser.add_argument('--optimizer', choices=['adamw', 'muon'], default='adamw',
                         help='Optimizer: AdamW (default) or Muon (orthogonalized momentum '
                              'for 2D param layers + AdamW aux for biases/norms/embeddings)')
+    parser.add_argument('--label-smoothing', type=float, default=0.,
+                        help='Apply label smoothing to distance-bin targets (0 = hard CE, '
+                             '0.1 = mild smoothing)')
+    parser.add_argument('--min-separation', type=int, default=12,
+                        help='Minimum sequence separation for eligible pairs (12 = nonlocal only, '
+                             '3 = also includes short-range local pairs)')
     parser.add_argument('--train-count', type=int)
     parser.add_argument('--val-count', type=int)
     parser.add_argument('--modes', nargs='+', choices=['sequence', 'decoder'], default=['sequence', 'decoder'])
