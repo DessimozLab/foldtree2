@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 from foldtree2.se3_cache import FrozenDataset, digest, open_bundle
 from foldtree2.src.distance.distance_restraints import PairwiseDistanceHead, distance_labels, eligible_pairs
+from foldtree2.src.losses.losses import angles_reconstruction_loss
 from scripts.se3.diagnose_se3_reconstruction import atomic_checkpoint, atomic_json
 
 
@@ -102,16 +103,6 @@ def focal_bce(logits, labels, gamma=0., reduction='mean'):
     if weights is not None:
         loss = loss * weights
     return loss.mean() if reduction == 'mean' else loss
-
-
-def periodic_angle_loss(pred_angles, target_angles, mask):
-    """Smooth L1 on angle predictions wrapped to [-pi, pi]."""
-    valid = mask & torch.isfinite(target_angles).all(-1)
-    if not valid.any():
-        return torch.zeros((), device=pred_angles.device)
-    diff = pred_angles[valid] - target_angles[valid].to(pred_angles)
-    wrapped = torch.atan2(diff.sin(), diff.cos())  # wrap to [-pi, pi]
-    return F.smooth_l1_loss(wrapped, torch.zeros_like(wrapped))
 
 
 def sample_pairs(entry, all_pairs, count, generator, balanced_ratio=0.0, contact_cutoff=8.):
@@ -388,7 +379,7 @@ def train(args):
                         terms = {'contact': term_contact, 'distance': term_distance}
                         if 'angle' in kendall_terms and getattr(model, 'predict_angles', False):
                             angle_pred = model.predict_angles_from_entry(inputs)
-                            term_angle = periodic_angle_loss(angle_pred, inputs['angles'], inputs['mask'])
+                            term_angle = angles_reconstruction_loss(inputs['angles'], angle_pred)
                             terms['angle'] = term_angle
                         loss = torch.stack([
                             torch.exp(-model.kendall_log_vars[name]) * term + model.kendall_log_vars[name]
