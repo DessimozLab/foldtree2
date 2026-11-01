@@ -140,6 +140,15 @@ class Refiner(pl.LightningModule):
         if config.get('contact_policy', 'normal') not in CONTACT_POLICIES:
             raise ValueError('Unknown SE3 contact policy')
         self.model = build_model(manifest['feature_dim'], config['model'])
+        # Distance-head input features: if config has both distance_head_input
+        # and an explicit feature_dim override, use that instead of manifest.
+        if config.get('distance_head_input') and config.get('feature_dim'):
+            actual_fd = int(config['feature_dim'])
+            # Rebuild with the correct dimension.  The feature_dim override
+            # is used when the distance head appends its predictions.
+            self.model = build_model(actual_fd, config['model'])
+        self.dist_input_head = self._maybe_load_distance_input_head(
+            config.get('distance_head_input'))
         if not isinstance(config.get('tensor_ff_input_norm', False), bool):
             raise ValueError('tensor_ff_input_norm must be an explicit boolean')
         if config.get('tensor_ff_input_norm', False):
@@ -204,6 +213,48 @@ class Refiner(pl.LightningModule):
         return {'model': model, 'weight': float(spec.get('weight', 1.0)),
                 'sha256': head_sha.hexdigest(), 'device': 'cpu',
                 'end_to_end': end_to_end}
+
+    def _augment_with_distance_features(self, entry):
+        """Augment entry features with distance-head predictions."""
+        head = getattr(self, 'dist_input_head', None)
+        if head is None:
+            return entry
+        device = next(head.parameters()).device
+        mask = entry['mask'].to(device)
+        pairs = eligible_pairs(mask).to(device)
+        entry_dev = {k: v.to(device) if isinstance(v, torch.Tensor) else v
+                     for k, v in entry.items()}
+        with torch.no_grad():
+            logits = head(entry_dev, pairs)
+            probs = logits.softmax(-1)
+        n = len(mask)
+        num_bins = probs.shape[-1]
+        features = torch.zeros(n, num_bins, device=device, dtype=probs.dtype)
+        counts = torch.zeros(n, device=device, dtype=torch.long)
+        i, j = pairs[:, 0], pairs[:, 1]
+        features.index_add_(0, i, probs)
+        features.index_add_(0, j, probs)
+        counts.index_add_(0, i, torch.ones(len(i), device=device, dtype=torch.long))
+        counts.index_add_(0, j, torch.ones(len(j), device=device, dtype=torch.long))
+        aug = (features / counts.clamp_min(1).unsqueeze(-1).float()).masked_fill(~mask[:, None], 0.)
+        result = dict(entry)
+        result['features'] = torch.cat([entry['features'], aug.cpu().to(entry['features'])], dim=-1)
+        return result
+
+    def _maybe_load_distance_input_head(self, spec):
+        """Load a frozen PairwiseDistanceHead for feature augmentation."""
+        if spec is None:
+            return None
+        path = Path(spec['checkpoint'])
+        state = torch.load(path, map_location='cpu', weights_only=False)
+        model = PairwiseDistanceHead(**state['model_config'])
+        model.load_state_dict(state['model'])
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad = False
+        print(f'Loaded distance head for input features: {path} '
+              f'({sum(p.numel() for p in model.parameters())} params)')
+        return model
 
     def _restraint_loss(self, coords, entry):
         """Compute auxiliary distribution-restraint loss if a head is loaded."""
@@ -288,6 +339,7 @@ class Refiner(pl.LightningModule):
         started = time.perf_counter()
         data_wait = started - self.last_end
         e = calibrated(batch, self.manifest['scale'])
+        e = self._augment_with_distance_features(e)
         if self.update_began is None:
             self.update_began = started
         if getattr(self.model.bn, 'track_running_stats', False):
@@ -382,6 +434,7 @@ class Refiner(pl.LightningModule):
         self.active_batch = {'phase':'validation', 'id':batch['id'],
                              'length':len(batch['coords']), 'batch_idx':batch_idx}
         e = calibrated(batch, self.manifest['scale'])
+        e = self._augment_with_distance_features(e)
         p, a = forward(self.model, e, self.config.get('contact_policy', 'normal'))
         restraint = self._restraint_loss(p, e)
         values = self.loss_fn(p, a, e)

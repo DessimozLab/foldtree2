@@ -1,0 +1,58 @@
+# SE3 refiner with frozen distance-head predictions as input features.
+#
+# The distance head's per-pair distance-bin logits are aggregated to per-residue
+# features and concatenated onto the standard latent+codebook features before
+# being fed to the SE3 GotenNet refiner.  The distance head itself is frozen.
+#
+# feature_dim is 50 = 40 (latent+codebook) + 10 (distance bins).
+#
+# Run from repo root:
+#   python -m foldtree2.train_se3_lightning \
+#     --config configs/se3_distance_head_input.yaml
+cache: runs/se3_distance_data_scaling_5120_20261022/comparison/bundle_5120
+output: runs/se3_distance_head_input
+seed: 42
+devices: 2
+nodes: 1
+accelerator: cuda
+strategy: ddp_find_unused_parameters_true
+precision: 32-true
+global_batch: 16
+train_count: 5120
+val_count: 256
+max_residues: 256
+learning_rate: 5.0e-4
+epochs: 64
+checkpoint_every: 32
+contact_policy: normal
+tensor_ff_input_norm: true
+gradient_accumulation_dtype: float64
+structural_metrics: true
+input_baseline_metrics: false
+checkpoint_metric: evaluation_fape
+
+model:
+  hidden: 64
+  depth: 4
+  heads: 4
+  input_normalization: per_structure
+
+loss:
+  protocol: balanced_geometry_v1
+  weights:
+    distance: 1.0
+    training_fape: 1.0
+    bond: 1.0
+    angle: 0.1
+    local_distance: 0.0
+    bend: 0.5
+    torsion: 0.0
+
+# The cache manifest says feature_dim=40, but we're augmenting to 50.
+# Override the model's input dimension here.
+feature_dim: 50
+
+# Frozen distance head whose predictions become input features.
+# Not an auxiliary loss — the predictions ARE the features.
+distance_head_input:
+  checkpoint: runs/se3_distance_head_21k/decoder/best.pt
