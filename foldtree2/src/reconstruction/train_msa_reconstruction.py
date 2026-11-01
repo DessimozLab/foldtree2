@@ -157,7 +157,7 @@ class MsaReconstructionModule(pl.LightningModule):
             num_heads=num_heads,
             num_layers=num_layers,
             dropout=dropout,
-            max_seqlen=2048,
+            max_seqlen=4096,
             geom_dim=9,
         )
 

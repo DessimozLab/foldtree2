@@ -167,7 +167,7 @@ class MsaReconstructionHead(nn.Module):
         dropout: float = 0.1,
         attention_dropout: float = 0.1,
         activation_dropout: float = 0.1,
-        max_seqlen: int = 1024,
+        max_seqlen: int = 2048,
         max_msa_depth: int = 256,
         max_tokens_per_msa: int = 2 ** 14,
         padding_idx: int = 0,
