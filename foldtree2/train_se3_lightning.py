@@ -246,10 +246,16 @@ class Refiner(pl.LightningModule):
             print(text, flush=True)
 
     def configure_optimizers(self):
-        params = list(self.model.parameters())
+        base_lr = self.config['learning_rate']
+        se3_params = list(self.model.parameters())
+        param_groups = [{'params': se3_params, 'lr': base_lr}]
         if self.restraint_head and self.restraint_head.get('end_to_end', False):
-            params.extend(self.restraint_head['model'].parameters())
-        optimizer = torch.optim.AdamW(params, lr=self.config['learning_rate'], weight_decay=.01)
+            head_lr = float(self.config.get('restraint_head', {}).get('head_lr', 1e-5))
+            param_groups.append({
+                'params': self.restraint_head['model'].parameters(),
+                'lr': head_lr,
+            })
+        optimizer = torch.optim.AdamW(param_groups, lr=base_lr, weight_decay=.01)
         if self.config.get('scheduler', False):
             self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.5, patience=3)
         return optimizer

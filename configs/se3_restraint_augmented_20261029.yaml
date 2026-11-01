@@ -6,7 +6,7 @@
 #   python -m foldtree2.train_se3_lightning \
 #     --config configs/se3_restraint_augmented_20261029.yaml
 cache: runs/se3_distance_data_scaling_5120_20261022/comparison/bundle_5120
-output: runs/se3_restraint_augmented_20261029
+output: runs/se3_end_to_end
 seed: 42
 devices: 1
 nodes: 1
@@ -47,9 +47,11 @@ loss:
 # Frozen distance head for auxiliary distribution restraint loss.
 # Points to the best 21k checkpoint.  end_to_end: true makes it trainable
 # so gradients flow through both the SE3 refiner and the distance head.
+# head_lr is lower than the base LR to preserve pretrained knowledge.
 restraint_head:
   checkpoint: runs/se3_distance_head_21k/decoder/best.pt
   weight: 0.05
   end_to_end: true
+  head_lr: 1e-5
   provenance:
     bundle_sha256: d13ae5884711ad8ab09ae48d09e5c8c9cad4a106574e844b4448bdaaab99efb6
