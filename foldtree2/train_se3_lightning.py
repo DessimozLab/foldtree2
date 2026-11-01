@@ -70,7 +70,8 @@ def provenance(config, manifest):
             'training': training, 'sources': source_identity(),
             'feature_dim': manifest['feature_dim'], 'input_identity':manifest['input_identity'],
             'preprocessing':{'scale':manifest['scale'],'lift_fraction':.1,'gain':32.},
-            'restraint_head': config.get('restraint_head') is not None}
+            'restraint_head': bool(config.get('restraint_head') is not None),
+            'restraint_end_to_end': bool(config.get('restraint_head', {}).get('end_to_end', False))}
 
 
 def check_resume(saved, current, topology, allow_change=False):
@@ -177,28 +178,32 @@ class Refiner(pl.LightningModule):
 
     @staticmethod
     def _maybe_load_restraint_head(spec, manifest):
-        """Load a frozen PairwiseDistanceHead for auxiliary restraint loss."""
+        """Load PairwiseDistanceHead — frozen or trainable."""
         if spec is None:
             return None
         path = Path(spec['checkpoint'])
         if not path.exists():
             raise FileNotFoundError(f'Restraint head not found: {path}')
+        end_to_end = bool(spec.get('end_to_end', False))
         state = torch.load(path, map_location='cpu', weights_only=False)
         model = PairwiseDistanceHead(**state['model_config'])
         model.load_state_dict(state['model'])
-        model.eval()
-        for p in model.parameters():
-            p.requires_grad = False
+        if not end_to_end:
+            model.eval()
+            for p in model.parameters():
+                p.requires_grad = False
         head_sha = hashlib.sha256()
         head_sha.update(open(path, 'rb').read())
         if 'provenance' in spec:
             spec_prov = spec['provenance']
             if spec_prov.get('bundle_sha256') and spec_prov['bundle_sha256'] != manifest['bundle_sha256']:
                 raise ValueError('Restraint head was trained on a different cache bundle')
-        print(f'Loaded frozen distance restraint head from {path} '
+        status = 'trainable' if end_to_end else 'frozen'
+        print(f'Loaded {status} distance head from {path} '
               f'(weight={spec.get("weight", 1.0)})')
         return {'model': model, 'weight': float(spec.get('weight', 1.0)),
-                'sha256': head_sha.hexdigest(), 'device': 'cpu'}
+                'sha256': head_sha.hexdigest(), 'device': 'cpu',
+                'end_to_end': end_to_end}
 
     def _restraint_loss(self, coords, entry):
         """Compute auxiliary distribution-restraint loss if a head is loaded."""
@@ -209,19 +214,24 @@ class Refiner(pl.LightningModule):
             return None
         head = self.restraint_head['model']
         dev = coords.device
-        # Move the head to the SE3 model's device on first use (it's
-        # loaded on CPU for cross-rank consistency).
         if self.restraint_head.get('device', 'cpu') != str(dev):
             head.to(dev)
             self.restraint_head['device'] = str(dev)
         pairs = eligible_pairs(mask).to(dev)
-        # Lazy-initialize the edges buffer on the right device.
         edges = head.edges.to(dev)
-        with torch.no_grad():
+        e2e = self.restraint_head.get('end_to_end', False)
+        # In end-to-end mode gradients flow through both networks.
+        if e2e:
             entry_dev = {k: v.to(dev) if isinstance(v, torch.Tensor) else v
                          for k, v in entry.items()}
             logits = head(entry_dev, pairs)
-            probs = logits.softmax(-1).detach()
+            probs = logits.softmax(-1)
+        else:
+            with torch.no_grad():
+                entry_dev = {k: v.to(dev) if isinstance(v, torch.Tensor) else v
+                             for k, v in entry.items()}
+                logits = head(entry_dev, pairs)
+                probs = logits.softmax(-1).detach()
         loss = distribution_restraint_loss(coords, pairs, probs, edges)
         return self.restraint_head['weight'] * loss
 
@@ -236,7 +246,10 @@ class Refiner(pl.LightningModule):
             print(text, flush=True)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config['learning_rate'], weight_decay=.01)
+        params = list(self.model.parameters())
+        if self.restraint_head and self.restraint_head.get('end_to_end', False):
+            params.extend(self.restraint_head['model'].parameters())
+        optimizer = torch.optim.AdamW(params, lr=self.config['learning_rate'], weight_decay=.01)
         if self.config.get('scheduler', False):
             self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.5, patience=3)
         return optimizer

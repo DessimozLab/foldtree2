@@ -45,9 +45,11 @@ loss:
     torsion: 0.0
 
 # Frozen distance head for auxiliary distribution restraint loss.
-# Points to the epoch-30 best checkpoint from the calibrated run.
+# Points to the best 21k checkpoint.  end_to_end: true makes it trainable
+# so gradients flow through both the SE3 refiner and the distance head.
 restraint_head:
-  checkpoint: runs/se3_distance_context_calibrated_20261029/decoder/best.pt
+  checkpoint: runs/se3_distance_head_21k/decoder/best.pt
   weight: 0.05
+  end_to_end: true
   provenance:
     bundle_sha256: d13ae5884711ad8ab09ae48d09e5c8c9cad4a106574e844b4448bdaaab99efb6
