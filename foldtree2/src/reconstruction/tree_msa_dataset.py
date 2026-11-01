@@ -130,12 +130,20 @@ def tokenise(sequence: str, alphabet_size: int = 31) -> torch.LongTensor:
 # Collation
 # ---------------------------------------------------------------------------
 
-def _pad_tensors(key_tensors, max_n, max_l):
-    """Pad a list of per-sample tensors to max_n x max_l."""
+def _pad_tensors(key_tensors, max_n, max_l, pad_pair_dim=False):
+    """Pad a list of per-sample tensors to max_n x max_l (and optionally max_p)."""
     arr = []
     for t in key_tensors:
         n_pad = max_n - t.shape[0]
-        l_pad = max_l - t.shape[1] if t.ndim >= 2 else 0
+        l_pad = max_l - t.shape[1] if t.ndim >= 2 and not pad_pair_dim else 0
+        if pad_pair_dim and t.ndim >= 2:
+            # For distance_labels: same n_pad but needs pair-dim padding
+            n_pad = max_n - t.shape[0]
+            if n_pad > 0:
+                pad = t.new_full((n_pad,) + t.shape[1:], -1, dtype=t.dtype)
+                t = torch.cat([t, pad], dim=0)
+            arr.append(t)
+            continue
         if l_pad > 0:
             pad = torch.full((t.shape[0], l_pad) + t.shape[2:],
                              float("nan") if t.is_floating_point() else _FT2_GAP,
@@ -161,7 +169,19 @@ def msa_collate(batch):
 
     for key in ("tokens", "mask", "known_structure", "coords", "distance_labels"):
         tensors = [s[key] for s in batch]
-        if tensors[0].ndim == 2:
+        if key == "distance_labels":
+            # Distance labels have variable P per family — pad to max P
+            max_p = max(t.shape[-1] for t in tensors)
+            arr = []
+            for t in tensors:
+                n_pad = max_n_seq - t.shape[0]
+                if n_pad > 0:
+                    t = torch.cat([t, t.new_full((n_pad, t.shape[1]), -1)], dim=0)
+                if t.shape[1] < max_p:
+                    t = torch.cat([t, t.new_full((t.shape[0], max_p - t.shape[1]), -1)], dim=1)
+                arr.append(t)
+            out[key] = torch.stack(arr, dim=0)
+        elif tensors[0].ndim == 2:
             out[key] = _pad_tensors(tensors, max_n_seq, max_len)
         elif tensors[0].ndim == 3:
             out[key] = _pad_tensors(tensors, max_n_seq, max_len)

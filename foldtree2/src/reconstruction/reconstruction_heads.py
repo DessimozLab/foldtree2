@@ -86,6 +86,7 @@ class MsaDistanceHead(nn.Module):
         # Using a list avoids the ``new_zeros + in-place slice`` pattern which
         # would break autograd (in-place assignment to a non-leaf does not
         # propagate grad).
+        # Subsample pairs for memory efficiency when max_pairs is set.
         all_out: list = []
 
         for b in range(B):

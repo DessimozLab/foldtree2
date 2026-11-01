@@ -128,6 +128,7 @@ class MsaReconstructionModule(pl.LightningModule):
         label_smoothing: float = 0.0,
         min_separation: int = _MIN_SEP,
         loss_weights: Optional[Dict[str, float]] = None,
+        max_pairs: int = 100000,
         # Heads mode
         distance_hidden: int = 128,
         angle_hidden: int = 64,
@@ -142,6 +143,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.use_se3 = bool(use_se3)
         self.label_smoothing = label_smoothing
         self.min_separation = min_separation
+        self._max_pairs = int(max_pairs)
         self._loss_weights = {
             "distance": 1.0, "angle": 0.1, "coordinate": 0.1,
             "fape": 1.0, "bond": 1.0,  # SE(3)-specific
@@ -215,6 +217,13 @@ class MsaReconstructionModule(pl.LightningModule):
         L = tokens.shape[-1]
         idx = torch.arange(L, device=self.device)
         pairs = (idx[None] - idx[:, None]).abs().ge(self.min_separation).nonzero()
+
+        # Subsample pairs for memory efficiency
+        max_pairs = getattr(self, '_max_pairs', 100000)
+        if max_pairs > 0 and pairs.shape[0] > max_pairs:
+            perm = torch.randperm(pairs.shape[0], device=pairs.device)[:max_pairs]
+            pairs = pairs[perm]
+
         if msa_mask is not None:
             seq_mask = msa_mask.any(dim=-1)
         else:
@@ -360,7 +369,7 @@ class MsaReconstructionModule(pl.LightningModule):
         known = batch.get("known_structure", None)
         coords_tgt = batch.get("coords", None)
         mask = batch.get("mask", None)
-        log = {"train": {}}
+        log = {}
         total = out.get("features", out.get("coords", torch.tensor(0.0))).sum() * 0.0
 
         if self.use_se3:
@@ -585,6 +594,8 @@ def _parser():
     p.add_argument("--loss-weights", type=str,
                    default="distance=1,angle=0.1,coordinate=0.1,fape=1,bond=1",
                    help="Comma-separated key=value weights")
+    p.add_argument("--max-pairs", type=int, default=100000,
+                   help="Max residue pairs per sequence for distance head")
 
     # Optimisation
     p.add_argument("--lr", type=float, default=1e-4)
@@ -676,6 +687,7 @@ def main():
         se3_hidden=args.se3_hidden,
         se3_depth=args.se3_depth,
         se3_heads=args.se3_heads,
+        max_pairs=args.max_pairs,
     )
 
     outdir = Path(args.outdir)

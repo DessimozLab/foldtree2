@@ -12,10 +12,10 @@
 cache: runs/se3_distance_data_scaling_5120_20261022/comparison/bundle_5120
 output: runs/se3_distance_head_input
 seed: 42
-devices: 2
+devices: 1
 nodes: 1
 accelerator: cuda
-strategy: ddp_find_unused_parameters_true
+strategy: auto
 precision: 32-true
 global_batch: 16
 train_count: 5120
