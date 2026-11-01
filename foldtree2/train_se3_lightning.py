@@ -324,7 +324,10 @@ class Refiner(pl.LightningModule):
             grads = [p.grad for p in self.model.parameters() if p.grad is not None]
             if not grads or not all(torch.isfinite(g).all() for g in grads):
                 raise FloatingPointError('Nonfinite or missing gradients')
-            norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1., error_if_nonfinite=True)
+            clip_params = list(self.model.parameters())
+            if self.restraint_head and self.restraint_head.get('end_to_end', False):
+                clip_params.extend(self.restraint_head['model'].parameters())
+            norm = torch.nn.utils.clip_grad_norm_(clip_params, 1., error_if_nonfinite=True)
             if norm <= 0:
                 raise RuntimeError('Zero refiner gradient')
             optimizer.step(); optimizer.zero_grad(set_to_none=True)
