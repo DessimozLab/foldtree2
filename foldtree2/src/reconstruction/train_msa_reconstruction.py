@@ -737,6 +737,14 @@ class MsaReconstructionModule(pl.LightningModule):
                                 geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.)
         return geom
 
+    def on_after_backward(self):
+        # GotenNet masked-node ops can yield NaN gradients (0 * inf/NaN in
+        # LayerNorm/where chains) even when the forward loss is finite.
+        # Zero those entries so Adam cannot poison the weights.
+        for p in self.parameters():
+            if p.grad is not None and torch.isnan(p.grad).any():
+                p.grad = torch.nan_to_num(p.grad, nan=0.0)
+
     def on_train_batch_end(self, outputs, batch, batch_idx):
         # Prevent gradual memory fragmentation over many epochs
         if batch_idx % 10 == 0:
