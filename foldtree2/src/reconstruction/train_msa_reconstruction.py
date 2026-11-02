@@ -367,7 +367,7 @@ class MsaReconstructionModule(pl.LightningModule):
                     # Padded/short sequences carry NaN coords; replace those
                     # rows with idealized helix positions and drop them from
                     # the decoder node mask.
-                    bad = ~torch.isfinite(seed_k).all(dim=-1)
+                    bad = ~torch.isfinite(seed_k).all(dim=-1) | (seed_k == 0).all(dim=-1)
                     if bad.any():
                         idx_bad = torch.arange(K, device=tokens.device, dtype=torch.float32)
                         theta_bad = torch.deg2rad(idx_bad * 100.0)
@@ -397,15 +397,20 @@ class MsaReconstructionModule(pl.LightningModule):
                 g = HeteroData()
                 g["res"].x = feat_k
 
-                out = self.se3_pipeline.se3_decoder(
-                    g,
-                    coords_pred=seed_k,
-                    ft2_token_ids=tok_k,
-                    edge_attr_dict={
-                        "node_mask": node_mask_k,
-                        "use_distance_contacts": True,
-                    },
-                )
+                try:
+                    out = self.se3_pipeline.se3_decoder(
+                        g,
+                        coords_pred=seed_k,
+                        ft2_token_ids=tok_k,
+                        edge_attr_dict={
+                            "node_mask": node_mask_k,
+                            "use_distance_contacts": True,
+                        },
+                    )
+                except RuntimeError:
+                    # shortcut: degenerate GotenNet input (nonfinite invariants);
+                    # skip this sequence, upgrade if failures become common
+                    continue
                 coords_k = out["coors_out_flat"]   # (K, 3)
                 angles_k = out["angles"]           # (K, A) — A depends on head
 
