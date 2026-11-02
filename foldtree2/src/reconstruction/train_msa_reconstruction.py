@@ -218,6 +218,16 @@ class MsaReconstructionModule(pl.LightningModule):
             se3_heads=se3_heads,
             dropout=self.hparams.dropout,
         )
+        # GotenNet's coord/angle heads are zero-initialised, which blocks
+        # gradients to every upstream layer (grad_h = W^T grad_out = 0).
+        # A small random init restores gradient flow.
+        dec = self.se3_pipeline.se3_decoder
+        torch.nn.init.normal_(dec.gotennet.proj_to_coors[1].weight, std=1e-3)
+        if hasattr(dec, "out_angles"):
+            for m in reversed(list(dec.out_angles)):
+                if isinstance(m, torch.nn.Linear):
+                    torch.nn.init.normal_(m.weight, std=1e-3)
+                    break
 
     # ------------------------------------------------------------------ #
     # Forward
