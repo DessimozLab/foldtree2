@@ -157,6 +157,11 @@ class MsaReconstructionModule(pl.LightningModule):
         # the true CA coords plus N(0, se3_seed_noise) noise so the decoder
         # acts as a denoising/refinement network.  0 uses the exact coords.
         se3_seed_noise: float = 0.5,
+        # Supervision mask: residues with AlphaFold pLDDT below this value
+        # are excluded from the SE(3) loss (and from distance/angle targets
+        # in heads mode) so noisy low-confidence regions do not poison the
+        # training signal.  0 disables masking.
+        plddt_threshold: float = 70.0,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -168,6 +173,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.se3_max_residues = int(se3_max_residues) if se3_max_residues else 0
         self.se3_max_sequences = int(se3_max_sequences) if se3_max_sequences else 0
         self.se3_seed_noise = float(se3_seed_noise)
+        self.plddt_threshold = float(plddt_threshold)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -471,13 +477,15 @@ class MsaReconstructionModule(pl.LightningModule):
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _pair_labels(coords, pairs, edges):
+    def _pair_labels(coords, pairs, edges, plddt=None, plddt_threshold=0.0):
         B, N_seq, L, _ = coords.shape
         labels = coords.new_full((B, N_seq, pairs.shape[0]), -1, dtype=torch.long)
         for b in range(B):
             for n in range(N_seq):
                 c = coords[b, n]
                 vr = torch.isfinite(c).all(dim=-1)
+                if plddt is not None and plddt_threshold > 0:
+                    vr = vr & (plddt[b, n] >= plddt_threshold)
                 if not vr.any():
                     continue
                 vp = vr[pairs[:, 0]] & vr[pairs[:, 1]]
@@ -551,6 +559,7 @@ class MsaReconstructionModule(pl.LightningModule):
         known = batch.get("known_structure", None)
         coords_tgt = batch.get("coords", None)
         mask = batch.get("mask", None)
+        plddt = batch.get("plddt", None)
         log = {}
         total = out.get("features", out.get("coords", torch.tensor(0.0))).sum() * 0.0
 
@@ -592,6 +601,10 @@ class MsaReconstructionModule(pl.LightningModule):
                     # Drop positions with nonfinite target coords (PDB gaps,
                     # collate padding) so they cannot poison the loss.
                     res_mask = res_mask & torch.isfinite(tgt_c).all(dim=-1)
+                    # Drop low-confidence (low pLDDT) residues: their coords
+                    # are noisy predictions, not reliable supervision.
+                    if plddt is not None and self.plddt_threshold > 0:
+                        res_mask = res_mask & (plddt[b, n] >= self.plddt_threshold)
 
                     loss_val, comps = self._se3_loss_for_sequence(
                         pred_c, pred_a, tgt_c, res_mask, self._loss_weights,
@@ -615,7 +628,10 @@ class MsaReconstructionModule(pl.LightningModule):
                 # Distance
                 if self._loss_weights.get("distance", 0) > 0:
                     edges = self.distance_head.edges.to(self.device)
-                    labels = self._pair_labels(coords_tgt, pairs, edges).to(self.device)
+                    labels = self._pair_labels(
+                        coords_tgt, pairs, edges,
+                        batch.get("plddt"), self.plddt_threshold,
+                    ).to(self.device)
                     loss = msa_distance_loss(
                         out["distance_logits"], labels, known,
                         label_smoothing=self.label_smoothing,
@@ -648,7 +664,10 @@ class MsaReconstructionModule(pl.LightningModule):
             pairs = out.get("pairs")
             if pairs is not None:
                 edges = self.distance_head.edges.to(self.device)
-                labels = self._pair_labels(coords_tgt, pairs, edges).to(self.device)
+                labels = self._pair_labels(
+                    coords_tgt, pairs, edges,
+                    batch.get("plddt"), self.plddt_threshold,
+                ).to(self.device)
                 loss = msa_distance_loss(out["distance_logits"], labels, known, gamma=self.focal_gamma)
                 log["val/loss"] = loss.detach()
 
@@ -835,6 +854,10 @@ def _parser():
                         "(denoising/refinement). Set to 0 to seed with the "
                         "exact coordinates. Unknown (ancestral) sequences "
                         "are always seeded with an idealized alpha-helix.")
+    p.add_argument("--plddt-threshold", type=float, default=70.0,
+                   help="Exclude residues with AlphaFold pLDDT below this "
+                        "value from supervision (SE(3) loss and heads-mode "
+                        "distance/angle targets). Set to 0 to disable.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -949,6 +972,7 @@ def main():
         se3_max_residues=args.se3_max_residues,
         se3_max_sequences=args.se3_max_sequences,
         se3_seed_noise=args.se3_seed_noise,
+        plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,
         lr_patience=args.lr_patience,

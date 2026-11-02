@@ -47,12 +47,15 @@ _MIN_SEP = 12
 
 @functools.lru_cache(maxsize=4096)
 def ca_coordinates_from_pdb(pdb_path: str) -> torch.Tensor:
-    """Extract CA coordinates from a PDB file using Gemmi.
+    """Extract CA coordinates and per-residue confidence from a PDB file.
 
-    Returns a ``(N, 3)`` float32 tensor ordered by polymer-chain residue
-    index.  Only standard amino acids are kept; ligands and water are
-    skipped.  The best-model/best-chain heuristic picks the longest
-    polymer chain (most CA atoms).  Result is cached.
+    Returns ``(coords, plddt)`` where ``coords`` is ``(N, 3)`` float32 and
+    ``plddt`` is ``(N,)`` float32.  For AlphaFold predictions the B-factor
+    column holds pLDDT (0-100).  For experimental structures the B-factor is
+    a temperature factor, not a confidence score; in that case plddt is set
+    to 100.0 for every residue so masking is a no-op.  Only standard amino
+    acids are kept; ligands and water are skipped.  The best-model/best-chain
+    heuristic picks the longest polymer chain (most CA atoms).
     """
     if not Path(pdb_path).is_file():
         raise FileNotFoundError(f"PDB not found: {pdb_path}")
@@ -72,9 +75,11 @@ def ca_coordinates_from_pdb(pdb_path: str) -> torch.Tensor:
     if best_model is None:
         raise ValueError(f"No CA atoms found in {pdb_path}")
     best_chain = None
+    best_plddt = None
     best_len = 0
     for chain in best_model:
         coords = []
+        conf = []
         for res in chain:
             if res.is_water():
                 continue
@@ -83,12 +88,23 @@ def ca_coordinates_from_pdb(pdb_path: str) -> torch.Tensor:
             ca = res.get_ca()
             if ca is not None:
                 coords.append((ca.pos.x, ca.pos.y, ca.pos.z))
+                atom = res.find_atom("CA", "*")
+                conf.append(float(atom.b_iso) if atom is not None else 0.0)
         if len(coords) > best_len:
             best_len = len(coords)
             best_chain = coords
+            best_plddt = conf
     if best_chain is None or best_len == 0:
         raise ValueError(f"No CA atoms found in polymer chain of {pdb_path}")
-    return torch.tensor(np.array(best_chain, dtype=np.float32))
+    plddt = np.array(best_plddt, dtype=np.float32)
+    # Heuristic: pLDDT lives in [0, 100]. If the B-factor column exceeds that
+    # range it is an experimental temperature factor, not a confidence score.
+    if plddt.max() > 100.0:
+        plddt = np.full_like(plddt, 100.0)
+    return (
+        torch.tensor(np.array(best_chain, dtype=np.float32)),
+        torch.tensor(plddt, dtype=torch.float32),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +183,7 @@ def msa_collate(batch):
                   "index": [s.get("index") for s in batch],
                   "pairs": [s.get("pairs") for s in batch]}
 
-    for key in ("tokens", "mask", "known_structure", "coords", "distance_labels"):
+    for key in ("tokens", "mask", "known_structure", "coords", "plddt", "distance_labels"):
         tensors = [s[key] for s in batch]
         if key == "distance_labels":
             # Distance labels have variable P per family — pad to max P
@@ -252,15 +268,18 @@ class FamilyMsaSample:
 
         self._sequences: Dict[str, str] = {t: ft2_seqs[t] for t in self.taxon_ids}
 
-        # --- Pre-load CA coords ---
+        # --- Pre-load CA coords + confidence ---
         self._ca_coords: Dict[str, torch.Tensor] = {}
+        self._ca_plddt: Dict[str, torch.Tensor] = {}
         for taxon in self.taxon_ids:
             pdb = struct_dir / f"{taxon}.pdb"
             if not pdb.is_file():
                 if require_all_coords:
                     raise FileNotFoundError(f"Missing PDB for {taxon} in {family_dir}")
                 continue
-            self._ca_coords[taxon] = ca_coordinates_from_pdb(str(pdb))
+            coords, plddt = ca_coordinates_from_pdb(str(pdb))
+            self._ca_coords[taxon] = coords
+            self._ca_plddt[taxon] = plddt
 
         # --- Distance labels (shared pairs, per-taxon labels) ---
         self._distance_labels: Dict[str, torch.Tensor] = {}
@@ -285,6 +304,7 @@ class FamilyMsaSample:
                 n = min(n_valid, coords.shape[0])
                 coords = coords[:n]
                 self._ca_coords[taxon] = coords
+                self._ca_plddt[taxon] = self._ca_plddt[taxon][:n]
                 cum = valid.cumsum(dim=0)
                 valid = valid.clone()
                 valid &= cum <= n
@@ -343,7 +363,7 @@ class FamilyMsaSample:
         masked_set = set(rng.sample(taxa, min(n_masked, n_taxa - 1))) if n_masked else set()
 
         tokens_list, mask_list = [], []
-        known_list, coord_list, label_list = [], [], []
+        known_list, coord_list, label_list, plddt_list = [], [], [], []
         n_pairs = self._pairs.shape[0]
 
         for taxon in taxa:
@@ -360,7 +380,9 @@ class FamilyMsaSample:
 
             if is_known:
                 ca = self._ca_coords[taxon].to(torch.float32)
+                pl = self._ca_plddt[taxon].to(torch.float32)
                 expanded = torch.full((L, 3), float("nan"), dtype=ca.dtype)
+                plddt_exp = torch.zeros(L, dtype=torch.float32)
                 rmask = self._residue_mask[taxon]
                 if len(rmask) < L:
                     rmask = torch.cat([rmask, rmask.new_zeros(L - len(rmask), dtype=torch.bool)])
@@ -370,12 +392,16 @@ class FamilyMsaSample:
                     n = min(n_rmask, n_ca)
                     idx = rmask.nonzero(as_tuple=True)[0][:n]
                     expanded[idx] = ca[:n]
+                    plddt_exp[idx] = pl[:n]
                 else:
                     expanded[rmask] = ca
+                    plddt_exp[rmask] = pl
                 coord_list.append(expanded)
+                plddt_list.append(plddt_exp)
                 label_list.append(self._distance_labels[taxon])
             else:
                 coord_list.append(torch.full((L, 3), float("nan"), dtype=torch.float32))
+                plddt_list.append(torch.zeros(L, dtype=torch.float32))
                 label_list.append(torch.full((max(1, n_pairs),), -1, dtype=torch.long))
 
         return {
@@ -383,6 +409,7 @@ class FamilyMsaSample:
             "mask": torch.stack(mask_list, dim=0),
             "known_structure": torch.tensor(known_list, dtype=torch.bool),
             "coords": torch.stack(coord_list, dim=0),
+            "plddt": torch.stack(plddt_list, dim=0),
             "distance_labels": torch.stack(label_list, dim=0),
             "pairs": self._pairs,
             "family_id": self.family_id,
