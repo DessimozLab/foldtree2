@@ -340,6 +340,11 @@ class MsaReconstructionModule(pl.LightningModule):
             for n in candidates:
                 # Truncate to the first K residues to bound the O(L^2) decoder.
                 feat_k = features[b, n, :K]           # (K, D)
+                # Fully-masked rows in axial attention can produce NaN
+                # features (softmax over all-masked keys); sanitize before
+                # handing them to the SE(3) decoder, which rejects nonfinite
+                # valid features.
+                feat_k = torch.nan_to_num(feat_k, nan=0.0)
                 tok_k = tokens[b, n, :K]              # (K,)
                 if msa_mask is not None:
                     node_mask_k = msa_mask[b, n, :K]   # (K,) bool
@@ -359,6 +364,19 @@ class MsaReconstructionModule(pl.LightningModule):
                 is_sup = known_mask is not None and bool(known_mask[b, n])
                 if is_sup and coords is not None:
                     seed_k = coords[b, n, :K].to(device=tokens.device, dtype=torch.float32).clone()
+                    # Padded/short sequences carry NaN coords; replace those
+                    # rows with idealized helix positions and drop them from
+                    # the decoder node mask.
+                    bad = ~torch.isfinite(seed_k).all(dim=-1)
+                    if bad.any():
+                        idx_bad = torch.arange(K, device=tokens.device, dtype=torch.float32)
+                        theta_bad = torch.deg2rad(idx_bad * 100.0)
+                        helix = torch.stack(
+                            [2.3 * torch.cos(theta_bad),
+                             2.3 * torch.sin(theta_bad),
+                             3.6 * idx_bad], dim=-1)
+                        seed_k[bad] = helix[bad]
+                        node_mask_k = node_mask_k & ~bad
                     if self.se3_seed_noise > 0:
                         seed_k = seed_k + torch.randn_like(seed_k) * self.se3_seed_noise
                 else:
@@ -554,6 +572,9 @@ class MsaReconstructionModule(pl.LightningModule):
                     pred_c = out["coords"][b, n]
                     pred_a = out["angles"][b, n]
                     tgt_c = coords_tgt[b, n]
+                    # Drop positions with nonfinite target coords (PDB gaps,
+                    # collate padding) so they cannot poison the loss.
+                    res_mask = res_mask & torch.isfinite(tgt_c).all(dim=-1)
 
                     loss_val, comps = self._se3_loss_for_sequence(
                         pred_c, pred_a, tgt_c, res_mask, self._loss_weights,
