@@ -609,6 +609,16 @@ def _parser():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--outdir", default="models/msa_reconstruction")
 
+    # Callbacks
+    p.add_argument("--patience", type=int, default=10,
+                   help="EarlyStopping patience on val/loss (or train/fape in SE(3) mode)")
+    p.add_argument("--lr-patience", type=int, default=5,
+                   help="ReduceLROnPlateau patience")
+    p.add_argument("--lr-factor", type=float, default=0.5,
+                   help="LR decay factor for ReduceLROnPlateau")
+    p.add_argument("--min-lr", type=float, default=1e-6,
+                   help="minimum LR for ReduceLROnPlateau")
+
     # Lightning
     p.add_argument("--accelerator", default="auto")
     p.add_argument("--devices", type=int, default=1)
@@ -705,6 +715,17 @@ def main():
         monitor=ckpt_monitor, save_top_k=3, mode="min",
     )
 
+    # EarlyStopping + ReduceLROnPlateau: monitor val/loss in Heads mode,
+    # train/fape in SE(3) mode (which has no validation loss).
+    stop_monitor = ckpt_monitor
+    early_stop = pl.callbacks.EarlyStopping(
+        monitor=stop_monitor, patience=args.patience, mode="min", verbose=True,
+    )
+    lr_scheduler = pl.callbacks.ReduceLROnPlateau(
+        monitor=stop_monitor, factor=args.lr_factor,
+        patience=args.lr_patience, min_lr=args.min_lr, verbose=True,
+    )
+
     cfg = {**vars(args), "loss_weights": loss_weights,
            "dataset_size": n}
     (outdir / "config.json").write_text(json.dumps(cfg, indent=2, default=str))
@@ -715,7 +736,7 @@ def main():
         strategy=args.strategy,
         precision=args.precision,
         max_epochs=args.epochs,
-        callbacks=[checkpoint],
+        callbacks=[checkpoint, early_stop, lr_scheduler],
         default_root_dir=str(outdir),
         fast_dev_run=args.fast_dev_run,
         limit_train_batches=args.limit_train_batches,
