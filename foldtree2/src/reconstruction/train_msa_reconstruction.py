@@ -138,13 +138,42 @@ class MsaReconstructionModule(pl.LightningModule):
         se3_hidden: int = 128,
         se3_depth: int = 3,
         se3_heads: int = 4,
+        # SE(3) memory: cap per-sequence length handed to the O(L^2) GotenNet
+        # decoder.  Sequences longer than this are truncated to the first
+        # ``se3_max_residues`` residues before the decoder forward, and the
+        # loss is restricted to that prefix.  0 / None disables the cap.
+        se3_max_residues: int = 512,
+        # SE(3) memory: cap the number of sequences per batch that are run
+        # through the O(L^2) GotenNet decoder.  The decoder builds an autograd
+        # graph per sequence; running it on every sequence in a deep MSA
+        # (e.g. 18 sequences for family 1003993) accumulates a graph that
+        # OOMs a 23 GB GPU.  Supervised (known_structure=True, not masked)
+        # sequences are decoded first; if fewer than the cap are supervised,
+        # the remaining slots are filled with any other non-masked sequences.
+        # Sequences not decoded get zero coords/angles and no loss.  0 /
+        # None disables the cap (decode every non-masked sequence).
+        se3_max_sequences: int = 4,
+        # SE(3) seed noise (Angstrom): supervised sequences are seeded with
+        # the true CA coords plus N(0, se3_seed_noise) noise so the decoder
+        # acts as a denoising/refinement network.  0 uses the exact coords.
+        se3_seed_noise: float = 0.5,
+        # ReduceLROnPlateau scheduler (used by configure_optimizers)
+        lr_factor: float = 0.5,
+        lr_patience: int = 5,
+        min_lr: float = 1e-6,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["loss_weights"])
         self.use_se3 = bool(use_se3)
+        self.se3_max_residues = int(se3_max_residues) if se3_max_residues else 0
+        self.se3_max_sequences = int(se3_max_sequences) if se3_max_sequences else 0
+        self.se3_seed_noise = float(se3_seed_noise)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
+        self.lr_factor = float(lr_factor)
+        self.lr_patience = int(lr_patience)
+        self.min_lr = float(min_lr)
         self._max_pairs = int(max_pairs)
         self._loss_weights = {
             "distance": 1.0, "angle": 0.1, "coordinate": 0.1,
@@ -238,51 +267,168 @@ class MsaReconstructionModule(pl.LightningModule):
         }
 
     def _forward_se3(self, tokens, msa_mask, known_mask=None, coords=None):
-        """Run MSA Transformer then SE(3) decoder per sequence."""
+        """Run MSA Transformer then SE(3) decoder per sequence.
+
+        The GotenNet SE(3) decoder runs a dense O(L^2) neighbor attention per
+        sequence, which OOMs on long MSA rows (e.g. ~2500-residue OMA rows).
+        To bound peak memory, each sequence is truncated to the first
+        ``self.se3_max_residues`` residues before being handed to the decoder.
+        Outputs are zero-padded back to the full MSA length ``L`` so downstream
+        tensor shapes stay consistent; the training step is responsible for
+        restricting the loss mask to the truncated prefix.  A cap of ``0`` (or
+        ``None``) disables the truncation.
+
+        A second memory bound, ``self.se3_max_sequences``, caps the number of
+        sequences per batch that are actually run through the decoder.  The
+        decoder builds its own autograd graph per sequence; running it on
+        every sequence in a deep MSA accumulates a graph that OOMs a 23 GB
+        GPU.  Supervised (``known_structure=True`` and not fully masked)
+        sequences are decoded first; remaining slots are filled with any
+        other non-masked sequences.  Sequences that are not decoded get
+        zero coords/angles and contribute no loss.  A cap of ``0`` disables
+        the cap (decode every non-masked sequence).  The indices actually
+        decoded are returned as ``out["se3_decoded_idx"]`` (a list of
+        ``(b, n)`` tuples) so the training step can restrict the loss.
+        """
         B, N_seq, L = tokens.shape
 
-        # Step 1: MSA Transformer — cross-sequence context
+        # Step 1: MSA Transformer — cross-sequence context (full length)
         enc = self.msa_encoder(tokens, msa_mask=msa_mask, need_head_weights=False)
         features = enc["features"]  # (B, N_seq, L, D)
 
-        # Step 2: SE(3) decoder per sequence
-        all_coords, all_angles = [], []
+        # Resolve the per-sequence decoder length cap.
+        K = int(getattr(self, "se3_max_residues", 0) or 0)
+        if K <= 0:
+            K = L
+        K = min(K, L)
+
+        # Resolve the per-batch decoder sequence cap.
+        M = int(getattr(self, "se3_max_sequences", 0) or 0)
+        # M == 0 means "decode every non-masked sequence" (uncapped).
+
+        # Step 2: SE(3) decoder per sequence (truncated to first K residues).
+        # We only run the decoder on a capped subset of sequences per batch
+        # element: supervised sequences first, then any remaining non-masked
+        # sequences.  Non-decoded sequences are zero-filled later.
+        all_coords = [[None] * N_seq for _ in range(B)]
+        all_angles = [[None] * N_seq for _ in range(B)]
+        decoded_idx = []  # list of (b, n) tuples that were actually decoded
+        A = None
+
         for b in range(B):
+            # Build the ordered candidate list for this batch element:
+            # supervised (known & not masked) first, then remaining non-masked.
+            supervised_cands = []
+            remaining_cands = []
             for n in range(N_seq):
                 if msa_mask is not None:
-                    seq_v = msa_mask[b, n].any()
+                    seq_v = bool(msa_mask[b, n].any().item())
                 else:
                     seq_v = True
                 if not seq_v:
-                    all_coords.append(torch.zeros(L, 3, device=tokens.device))
-                    all_angles.append(torch.zeros(L, 6, device=tokens.device))
+                    # Fully masked sequence — cannot be decoded.
                     continue
-
-                # Build a HeteroData for this sequence
-                g = HeteroData()
-                g["res"].x = features[b, n]  # (L, D)
-
-                seed = torch.zeros(L, 3, device=tokens.device)
-
-                if msa_mask is not None:
-                    node_mask = msa_mask[b, n]
+                is_sup = known_mask is not None and bool(known_mask[b, n])
+                if is_sup:
+                    supervised_cands.append(n)
                 else:
-                    node_mask = torch.ones(L, dtype=torch.bool, device=tokens.device)
+                    remaining_cands.append(n)
+            candidates = supervised_cands + remaining_cands
+            if M > 0:
+                candidates = candidates[:M]
+
+            for n in candidates:
+                # Truncate to the first K residues to bound the O(L^2) decoder.
+                feat_k = features[b, n, :K]           # (K, D)
+                tok_k = tokens[b, n, :K]              # (K,)
+                if msa_mask is not None:
+                    node_mask_k = msa_mask[b, n, :K]   # (K,) bool
+                else:
+                    node_mask_k = torch.ones(
+                        K, dtype=torch.bool, device=tokens.device,
+                    )
+                # Seed coordinates for the refinement decoder.  The GotenNet
+                # SE(3) decoder is a *refinement* network: seeding all points
+                # at the origin makes every pair distance r_ij = 0, from
+                # which no meaningful geometry can be recovered.  Instead:
+                #   * supervised (known structure) sequences are seeded with
+                #     the true CA coordinates plus Gaussian noise
+                #     N(0, se3_seed_noise) — a denoising task;
+                #   * unknown (ancestral) sequences are seeded with an
+                #     idealized alpha-helix backbone.
+                is_sup = known_mask is not None and bool(known_mask[b, n])
+                if is_sup and coords is not None:
+                    seed_k = coords[b, n, :K].to(device=tokens.device, dtype=torch.float32).clone()
+                    if self.se3_seed_noise > 0:
+                        seed_k = seed_k + torch.randn_like(seed_k) * self.se3_seed_noise
+                else:
+                    # Idealized alpha-helix: radius 2.3 A, 100 deg/residue
+                    # rotation, 3.6 A/residue rise along z.
+                    idx = torch.arange(K, device=tokens.device, dtype=torch.float32)
+                    theta = torch.deg2rad(idx * 100.0)
+                    seed_k = torch.stack(
+                        [
+                            2.3 * torch.cos(theta),
+                            2.3 * torch.sin(theta),
+                            3.6 * idx,
+                        ],
+                        dim=-1,
+                    )
+
+                # Build a HeteroData for this (truncated) sequence
+                g = HeteroData()
+                g["res"].x = feat_k
 
                 out = self.se3_pipeline.se3_decoder(
                     g,
-                    coords_pred=seed,
-                    ft2_token_ids=tokens[b, n],
-                    edge_attr_dict={"node_mask": node_mask, "use_distance_contacts": True},
+                    coords_pred=seed_k,
+                    ft2_token_ids=tok_k,
+                    edge_attr_dict={
+                        "node_mask": node_mask_k,
+                        "use_distance_contacts": True,
+                    },
                 )
-                all_coords.append(out["coors_out_flat"])
-                all_angles.append(out["angles"])
+                coords_k = out["coors_out_flat"]   # (K, 3)
+                angles_k = out["angles"]           # (K, A) — A depends on head
+
+                if A is None:
+                    A = angles_k.shape[-1]
+
+                # Zero-pad back to the full MSA length so downstream shapes
+                # (loss, validation, checkpointing) stay consistent.
+                coords_full = torch.zeros(L, 3, device=tokens.device)
+                angles_full = torch.zeros(L, A, device=tokens.device)
+                coords_full[:K] = coords_k
+                angles_full[:K] = angles_k
+                all_coords[b][n] = coords_full
+                all_angles[b][n] = angles_full
+                decoded_idx.append((b, n))
+
+        # Default angle dim if no sequence was decoded at all.
+        if A is None:
+            A = 3
+
+        # Fill every non-decoded slot (masked or beyond the cap) with zeros.
+        for b in range(B):
+            for n in range(N_seq):
+                if all_coords[b][n] is None:
+                    all_coords[b][n] = torch.zeros(L, 3, device=tokens.device)
+                    all_angles[b][n] = torch.zeros(L, A, device=tokens.device)
+
+        coords_out = torch.stack(
+            [torch.stack(row, dim=0) for row in all_coords], dim=0
+        ).view(B, N_seq, L, 3)
+        angles_out = torch.stack(
+            [torch.stack(row, dim=0) for row in all_angles], dim=0
+        ).view(B, N_seq, L, A)
 
         return {
             "features": features,
-            "coords": torch.stack(all_coords, dim=0).view(B, N_seq, L, 3),
-            "angles": torch.stack(all_angles, dim=0).view(B, N_seq, L, 6),
+            "coords": coords_out,
+            "angles": angles_out,
             "attentions": enc.get("row_attentions", None),
+            "se3_max_residues": K,
+            "se3_decoded_idx": decoded_idx,
         }
 
     # ------------------------------------------------------------------ #
@@ -352,7 +498,8 @@ class MsaReconstructionModule(pl.LightningModule):
         # Angle: predicted vs target (circular)
         if loss_weights.get("angle", 0) > 0:
             if pred_angles is not None and torch.isfinite(pred_angles[mask]).any():
-                delta = (pred_angles[mask] - target_coords.new_zeros(mask.sum(), 6))  # placeholder
+                pa = pred_angles[mask]
+                delta = (pa - pa.new_zeros(pa.shape))  # placeholder, no target angles
                 components["angle"] = delta.norm() * 0.0
 
         total = sum(
@@ -375,14 +522,34 @@ class MsaReconstructionModule(pl.LightningModule):
         if self.use_se3:
             # SE(3) mode: per-sequence losses
             B, N_seq = known.shape
+            # Loss is restricted to the truncated SE(3) decoder prefix
+            # (see ``_forward_se3``); the decoder is O(L^2) and is only run on
+            # the first ``K`` residues, so the zero-padded tail of the
+            # predicted coords must not contribute to the loss.
+            K_cap = int(out.get("se3_max_residues", 0) or 0)
+            # Only compute loss for sequences that were actually run through
+            # the decoder; sequences beyond ``se3_max_sequences`` (or fully
+            # masked) get zero coords and must be skipped.
+            decoded_idx = out.get("se3_decoded_idx", [])
+            decoded_set = {(int(b), int(n)) for b, n in decoded_idx}
+            n_decoded_sup = 0  # supervised + decoded (used for normalization)
             for b in range(B):
                 for n in range(N_seq):
-                    if known is not None and not known[b, n]:
+                    if (b, n) not in decoded_set:
                         continue
+                    if known is not None and not known[b, n]:
+                        # Decoded but unsupervised: no target coords → no loss.
+                        continue
+                    n_decoded_sup += 1
                     if mask is not None:
                         res_mask = mask[b, n]  # (L,)
                     else:
                         res_mask = torch.ones_like(coords_tgt[b, n, :, 0], dtype=torch.bool)
+
+                    # Restrict the loss to the truncated SE(3) prefix.
+                    if K_cap > 0 and K_cap < res_mask.shape[0]:
+                        res_mask = res_mask.clone()
+                        res_mask[K_cap:] = False
 
                     pred_c = out["coords"][b, n]
                     pred_a = out["angles"][b, n]
@@ -396,8 +563,8 @@ class MsaReconstructionModule(pl.LightningModule):
                         key = f"train/se3_{k}"
                         log[key] = log.get(key, total.new_zeros(())) + v.detach()
 
-            # Normalise by number of supervised sequences
-            n_sup = max(1, int(known.sum().item())) if known is not None else 1
+            # Normalise by number of supervised AND decoded sequences
+            n_sup = max(1, n_decoded_sup)
             total = total / n_sup
             for k in list(log.keys()):
                 if k.startswith("train/se3_"):
@@ -545,10 +712,14 @@ class MsaReconstructionModule(pl.LightningModule):
             self.parameters(), lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt, T_max=self.trainer.max_epochs if self.trainer else 100,
+        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            opt, mode="min",
+            factor=self.lr_factor,
+            patience=self.lr_patience,
+            min_lr=self.min_lr,
         )
-        return [opt], [{"scheduler": sched, "interval": "epoch"}]
+        monitor = "val/loss" if not self.use_se3 else "train/se3_fape"
+        return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "monitor": monitor}}
 
     def on_before_optimizer_step(self, optimizer):
         # Squeeze `use_se3` since it sets up modules lazily
@@ -573,6 +744,9 @@ def _parser():
 
     # Mode
     p.add_argument("--use-se3", action="store_true", help="Use SE(3) decoder pipeline")
+    p.add_argument("--init-from", default=None,
+                   help="Path to a heads-mode .ckpt to warm-start the SE(3) "
+                        "pipeline's msa_encoder weights from.")
 
     # MSA Transformer
     p.add_argument("--alphabet-size", type=int, default=31)
@@ -590,6 +764,31 @@ def _parser():
     p.add_argument("--se3-hidden", type=int, default=128)
     p.add_argument("--se3-depth", type=int, default=3)
     p.add_argument("--se3-heads", type=int, default=4)
+    p.add_argument("--se3-max-residues", type=int, default=512,
+                   help="Cap the per-sequence length handed to the O(L^2) "
+                        "GotenNet SE(3) decoder.  Each sequence is truncated "
+                        "to the first K residues before the decoder forward "
+                        "and the loss is restricted to that prefix.  Set to 0 "
+                        "to disable the cap (full-length decoder, may OOM on "
+                        "long MSA rows).")
+    p.add_argument("--se3-max-sequences", type=int, default=4,
+                   help="Cap the number of sequences per batch run through "
+                        "the SE(3) decoder.  The GotenNet decoder builds an "
+                        "autograd graph per sequence; decoding every sequence "
+                        "in a deep MSA (e.g. 18 sequences for family 1003993) "
+                        "accumulates a graph that OOMs a 23 GB GPU.  "
+                        "Supervised (known_structure=True, not masked) "
+                        "sequences are decoded first; remaining slots are "
+                        "filled with any other non-masked sequences.  "
+                        "Sequences not decoded get zero coords/angles and "
+                        "no loss.  Set to 0 to disable the cap.")
+    p.add_argument("--se3-seed-noise", type=float, default=0.5,
+                   help="Std-dev (Angstrom) of the Gaussian noise added to "
+                        "the true CA coordinates when seeding the SE(3) "
+                        "decoder for supervised sequences "
+                        "(denoising/refinement). Set to 0 to seed with the "
+                        "exact coordinates. Unknown (ancestral) sequences "
+                        "are always seeded with an idealized alpha-helix.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -701,29 +900,59 @@ def main():
         se3_hidden=args.se3_hidden,
         se3_depth=args.se3_depth,
         se3_heads=args.se3_heads,
+        se3_max_residues=args.se3_max_residues,
+        se3_max_sequences=args.se3_max_sequences,
+        se3_seed_noise=args.se3_seed_noise,
         max_pairs=args.max_pairs,
+        lr_factor=args.lr_factor,
+        lr_patience=args.lr_patience,
+        min_lr=args.min_lr,
     )
+
+    # Warm-start the SE(3) pipeline's MSA encoder from a heads-mode checkpoint.
+    if args.use_se3 and args.init_from:
+        init_path = Path(args.init_from)
+        if not init_path.is_file():
+            raise FileNotFoundError(f"--init-from checkpoint not found: {init_path}")
+        print(f"Warm-starting msa_encoder from: {init_path}")
+        ckpt = torch.load(str(init_path), map_location="cpu")
+        # Lightning checkpoints store weights under "state_dict"; raw torch.save
+        # of a module stores at the top level. Handle both.
+        src_state = ckpt.get("state_dict", ckpt)
+        enc_state = {
+            k[len("msa_encoder."):]: v for k, v in src_state.items()
+            if k.startswith("msa_encoder.")
+        }
+        if not enc_state:
+            raise RuntimeError(
+                f"No keys starting with 'msa_encoder.' found in {init_path}. "
+                f"Available prefixes: "
+                f"{sorted(set(k.split('.')[0] for k in src_state))[:10]}"
+            )
+        missing, unexpected = model.msa_encoder.load_state_dict(
+            enc_state, strict=True,
+        )
+        # With strict=True, mismatched keys raise; reaching here means success.
+        print(f"Loaded {len(enc_state)} msa_encoder weights from {init_path} "
+              f"(strict=True).")
+        del ckpt, src_state, enc_state
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Use val/loss if available, else train/loss
-    ckpt_monitor = "val/loss" if not args.use_se3 else "train/fape"
+    ckpt_monitor = "val/loss" if not args.use_se3 else "train/se3_fape"
 
     checkpoint = pl.callbacks.ModelCheckpoint(
         dirpath=outdir, filename="msa_recon-{epoch:03d}-{val/loss:.3f}",
         monitor=ckpt_monitor, save_top_k=3, mode="min",
     )
 
-    # EarlyStopping + ReduceLROnPlateau: monitor val/loss in Heads mode,
-    # train/fape in SE(3) mode (which has no validation loss).
+    # EarlyStopping (ReduceLROnPlateau is handled inside configure_optimizers
+    # and monitors val/loss in Heads mode, train/fape in SE(3) mode).
     stop_monitor = ckpt_monitor
     early_stop = pl.callbacks.EarlyStopping(
         monitor=stop_monitor, patience=args.patience, mode="min", verbose=True,
-    )
-    lr_scheduler = pl.callbacks.ReduceLROnPlateau(
-        monitor=stop_monitor, factor=args.lr_factor,
-        patience=args.lr_patience, min_lr=args.min_lr, verbose=True,
     )
 
     cfg = {**vars(args), "loss_weights": loss_weights,
@@ -736,7 +965,7 @@ def main():
         strategy=args.strategy,
         precision=args.precision,
         max_epochs=args.epochs,
-        callbacks=[checkpoint, early_stop, lr_scheduler],
+        callbacks=[checkpoint, early_stop],
         default_root_dir=str(outdir),
         fast_dev_run=args.fast_dev_run,
         limit_train_batches=args.limit_train_batches,
