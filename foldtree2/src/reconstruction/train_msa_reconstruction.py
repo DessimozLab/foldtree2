@@ -397,6 +397,8 @@ class MsaReconstructionModule(pl.LightningModule):
                 g = HeteroData()
                 g["res"].x = feat_k
 
+                if not node_mask_k.any():
+                    continue
                 try:
                     out = self.se3_pipeline.se3_decoder(
                         g,
@@ -407,7 +409,7 @@ class MsaReconstructionModule(pl.LightningModule):
                             "use_distance_contacts": True,
                         },
                     )
-                except RuntimeError:
+                except (RuntimeError, ValueError):
                     # shortcut: degenerate GotenNet input (nonfinite invariants);
                     # skip this sequence, upgrade if failures become common
                     continue
