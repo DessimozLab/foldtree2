@@ -6,7 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 
 
-DISTANCE_EDGES = (4., 6., 8., 10., 12., 16., 20., 24., 32.)
+DISTANCE_EDGES = (3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 14., 16., 20., 24., 32.)
 
 
 def validate_edges(edges):

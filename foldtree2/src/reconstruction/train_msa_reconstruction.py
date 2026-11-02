@@ -126,6 +126,7 @@ class MsaReconstructionModule(pl.LightningModule):
         lr: float = 1e-4,
         weight_decay: float = 1e-5,
         label_smoothing: float = 0.0,
+        focal_gamma: float = 2.0,
         min_separation: int = _MIN_SEP,
         loss_weights: Optional[Dict[str, float]] = None,
         max_pairs: int = 100000,
@@ -142,6 +143,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.save_hyperparameters(ignore=["loss_weights"])
         self.use_se3 = bool(use_se3)
         self.label_smoothing = label_smoothing
+        self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
         self._max_pairs = int(max_pairs)
         self._loss_weights = {
@@ -173,7 +175,6 @@ class MsaReconstructionModule(pl.LightningModule):
             edges=DISTANCE_EDGES, dropout=dropout,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
-        self.coord_head = MsaCoordinateHead(embed_dim=embed_dim, hidden=coord_hidden)
 
     def _build_se3_pipeline(self, embed_dim, se3_hidden, se3_depth, se3_heads):
         from foldtree2.src.reconstruction.msa_se3_pipeline import MsaSe3Pipeline
@@ -232,7 +233,6 @@ class MsaReconstructionModule(pl.LightningModule):
             "features": features,
             "distance_logits": self.distance_head(features, seq_mask=seq_mask, pairs=pairs),
             "angle_logits": self.angle_head(features),
-            "coord_delta": self.coord_head(features),
             "pairs": pairs,
             "attentions": enc.get("row_attentions", None),
         }
@@ -414,6 +414,7 @@ class MsaReconstructionModule(pl.LightningModule):
                     loss = msa_distance_loss(
                         out["distance_logits"], labels, known,
                         label_smoothing=self.label_smoothing,
+                        gamma=self.focal_gamma,
                     )
                     log["train/distance"] = loss.detach()
                     total = total + self._loss_weights["distance"] * loss
@@ -429,14 +430,6 @@ class MsaReconstructionModule(pl.LightningModule):
                     log["train/angle"] = loss.detach()
                     total = total + self._loss_weights["angle"] * loss
 
-                # Coordinate
-                if self._loss_weights.get("coordinate", 0) > 0:
-                    loss = msa_coordinate_loss(
-                        out["coord_delta"], coords_tgt, known,
-                    )
-                    log["train/coordinate"] = loss.detach()
-                    total = total + self._loss_weights["coordinate"] * loss
-
         self.log_dict(log, prog_bar=True)
         return total
 
@@ -451,7 +444,7 @@ class MsaReconstructionModule(pl.LightningModule):
             if pairs is not None:
                 edges = self.distance_head.edges.to(self.device)
                 labels = self._pair_labels(coords_tgt, pairs, edges).to(self.device)
-                loss = msa_distance_loss(out["distance_logits"], labels, known)
+                loss = msa_distance_loss(out["distance_logits"], labels, known, gamma=self.focal_gamma)
                 log["val/loss"] = loss.detach()
 
         if log:
@@ -539,6 +532,14 @@ class MsaReconstructionModule(pl.LightningModule):
                                 geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.)
         return geom
 
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        # Prevent gradual memory fragmentation over many epochs
+        if batch_idx % 10 == 0:
+            torch.cuda.empty_cache()
+
+    def on_validation_end(self):
+        torch.cuda.empty_cache()
+
     def configure_optimizers(self):
         opt = torch.optim.AdamW(
             self.parameters(), lr=self.hparams.lr,
@@ -592,7 +593,7 @@ def _parser():
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
-                   default="distance=1,angle=0.1,coordinate=0.1,fape=1,bond=1",
+                   default="distance=1,angle=0.1",
                    help="Comma-separated key=value weights")
     p.add_argument("--max-pairs", type=int, default=100000,
                    help="Max residue pairs per sequence for distance head")
@@ -603,6 +604,8 @@ def _parser():
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--label-smoothing", type=float, default=0.05)
+    p.add_argument("--focal-gamma", type=float, default=2.0,
+                   help="Focal loss gamma for distance head")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--outdir", default="models/msa_reconstruction")
 
@@ -680,6 +683,7 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         label_smoothing=args.label_smoothing,
+        focal_gamma=args.focal_gamma,
         loss_weights=loss_weights,
         distance_hidden=args.distance_hidden,
         angle_hidden=args.angle_hidden,

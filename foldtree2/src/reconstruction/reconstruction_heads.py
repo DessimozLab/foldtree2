@@ -319,22 +319,26 @@ def msa_distance_loss(
     labels: torch.Tensor,
     known_mask: torch.Tensor,
     label_smoothing: float = 0.0,
+    gamma: float = 2.0,
 ) -> torch.Tensor:
-    """Cross-entropy loss for binned distance predictions with masking.
+    """Focal cross-entropy loss for binned distance predictions with masking.
 
     Labels set to -1 indicate invalid pairs (gap positions) and are ignored.
+    The focal term ``(1 - p_t)^gamma`` down-weights confident predictions,
+    focusing on the minority short-range pairs critical for structure.
 
     Args:
         logits: (B, N_seq, P, n_bins) predicted logits.
         labels: (B, N_seq, P) ground-truth bin indices; -1 = ignore.
         known_mask: (B, N_seq) bool; True = supervised.
         label_smoothing: Label smoothing epsilon.
+        gamma: Focal focusing parameter. gamma=0 = CE.
 
     Returns:
         loss: Scalar loss (mean over valid supervised pairs).
     """
     B, N_seq, P, n_bins = logits.shape
-    total_loss = logits.sum() * 0.0  # preserves grad
+    total_loss = logits.sum() * 0.0
     n_valid = 0
 
     for b in range(B):
@@ -349,9 +353,15 @@ def msa_distance_loss(
             if label_smoothing > 0.0:
                 target = F.one_hot(lbl[valid], n_bins).float()
                 target = target * (1.0 - label_smoothing) + label_smoothing / n_bins
-                loss = -(target * logp).sum(-1).mean()
+                ce = -(target * logp).sum(-1)
             else:
-                loss = F.nll_loss(logp, lbl[valid], reduction="mean")
+                ce = F.nll_loss(logp, lbl[valid], reduction="none")
+            if gamma > 0.0:
+                pt = logp.gather(-1, lbl[valid, None]).exp().squeeze(-1)
+                focal = (1.0 - pt).pow(gamma).detach().clamp_min(1e-8)
+                loss = (ce * focal).mean()
+            else:
+                loss = ce.mean()
             total_loss = total_loss + loss
             n_valid += 1
 
