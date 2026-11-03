@@ -334,10 +334,10 @@ class MsaReconstructionHead(nn.Module):
             are the outputs of each axial block, and ``"final"`` is the
             post-``LayerNorm`` features (identical to ``"features"``).
             ``"row_attentions"`` : ``torch.Tensor`` of shape
-            ``(B, num_layers, H, N_seq, N_seq)`` — sequence-sequence
+            ``(H, num_layers, B, seq_len, seq_len)`` — residue-residue
             attention. Only present when ``need_head_weights=True``.
             ``"col_attentions"`` : ``torch.Tensor`` of shape
-            ``(B, num_layers, H, seq_len, seq_len)`` — residue-residue
+            ``(H, num_layers, seq_len, B, N_seq, N_seq)`` — sequence-sequence
             attention. Only present when ``need_head_weights=True``.
 
         Raises
@@ -468,7 +468,10 @@ class MsaReconstructionHead(nn.Module):
                     [x[..., : self.embed_dim - self.geom_dim], geom_channels], dim=-1
                 )
             if need_head_weights:
-                x, row_attn, col_attn = layer(
+                # AxialTransformerLayer returns (x, column_attn, row_attn):
+                # row attention is over residues (H, B, L, L) and column
+                # attention is over alignment sequences (H, L, B, N, N).
+                x, col_attn, row_attn = layer(
                     x,
                     self_attn_padding_mask=padding_mask,
                     need_head_weights=True,

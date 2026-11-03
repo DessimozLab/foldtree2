@@ -175,6 +175,7 @@ class MsaReconstructionModule(pl.LightningModule):
         # only at the embedding, so the structural signal survives deep stacks.
         geom_persistent: bool = False,
         propagate_geometry: bool = False,
+        attn_pairs: bool = False,
         # Auxiliary per-residue canonical-coordinate head whose output feeds
         # the pair MLP as an analytic distance estimate.
         coord_head: bool = False,
@@ -193,6 +194,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.geometry_withhold_ratio = float(geometry_withhold_ratio)
         self.geom_persistent = bool(geom_persistent)
         self.propagate_geometry = bool(propagate_geometry)
+        self.attn_pairs = bool(attn_pairs)
         self._use_coord_head = bool(coord_head)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
@@ -235,6 +237,7 @@ class MsaReconstructionModule(pl.LightningModule):
             edges=DISTANCE_EDGES, dropout=dropout,
             use_coords=self.coord_head is not None,
             use_prop=self.propagate_geometry,
+            use_attn=self.attn_pairs,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
 
@@ -359,7 +362,7 @@ class MsaReconstructionModule(pl.LightningModule):
                 geom = self._geom_features(coords, geom_known)
 
         enc = self.msa_encoder(
-            tokens, msa_mask=msa_mask, need_head_weights=False,
+            tokens, msa_mask=msa_mask, need_head_weights=self.attn_pairs,
             geom_features=geom, geom_known_mask=geom_known,
         )
         features = enc["features"]
@@ -380,6 +383,14 @@ class MsaReconstructionModule(pl.LightningModule):
         if self.propagate_geometry and coords is not None and known_mask is not None:
             prop = self._propagated_distances(coords, known_mask, pairs)
 
+        attn = None
+        if self.attn_pairs and enc.get("row_attentions") is not None:
+            # (H, n_layers, B, L, L) -> mean over heads, last layer only.
+            # Row attention is summed over alignment rows, so this is an
+            # MSA-wide residue-residue attention, shared by every sequence.
+            a = enc["row_attentions"][:, -1].mean(dim=0)
+            attn = a[:, pairs[:, 0], pairs[:, 1]]   # (B, P)
+
         if msa_mask is not None:
             seq_mask = msa_mask.any(dim=-1)
         else:
@@ -388,7 +399,7 @@ class MsaReconstructionModule(pl.LightningModule):
             "features": features,
             "distance_logits": self.distance_head(
                 features, seq_mask=seq_mask, pairs=pairs, pair_coords=coord_pred,
-                pair_prop=prop
+                pair_prop=prop, pair_attn=attn
             ),
             "angle_logits": self.angle_head(features),
             "coord_pred": coord_pred,
@@ -1108,6 +1119,9 @@ def _parser():
                    help="Give the distance head an explicit propagation channel: "
                         "the mean CA-CA distance at each aligned column pair over "
                         "the MSA rows that actually have structure.")
+    p.add_argument("--attn-pairs", action="store_true",
+                   help="Feed the row-attention weight between residues i and j "
+                        "into the distance head as a pair-specific feature.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1225,6 +1239,7 @@ def main():
         geometry_withhold_ratio=args.geometry_withhold_ratio,
         geom_persistent=args.geom_persistent,
         propagate_geometry=args.propagate_geometry,
+        attn_pairs=args.attn_pairs,
         coord_head=args.coord_head,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
@@ -1267,8 +1282,10 @@ def main():
     # Use val/loss if available, else train/loss
     ckpt_monitor = "val/loss" if not args.use_se3 else "train/se3_fape"
 
+    # The monitored key contains a "/", which Lightning would splice into the
+    # filename and create nested directories, so keep the name epoch-based.
     checkpoint = pl.callbacks.ModelCheckpoint(
-        dirpath=outdir, filename="msa_recon-{epoch:03d}-{val/loss:.3f}",
+        dirpath=outdir, filename="msa_recon-{epoch:03d}",
         monitor=ckpt_monitor, save_top_k=3, mode="min",
     )
 
