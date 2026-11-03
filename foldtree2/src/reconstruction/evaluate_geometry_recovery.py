@@ -33,6 +33,15 @@ def evaluate(args, withhold_ratio: float) -> dict:
         mask_ratio=args.mask_ratio, family_ids=args.family_ids,
         alphabet_size=args.alphabet_size,
     )
+    # Reproduce the training split so --val-split scores families the model
+    # never saw.
+    if args.val_split and args.family_ids is None:
+        n = len(ds)
+        n_train = max(1, int(n * 0.85))
+        _, ds = torch.utils.data.random_split(
+            ds, [n_train, n - n_train],
+            generator=torch.Generator().manual_seed(args.seed),
+        )
     loader = DataLoader(ds, batch_size=1, shuffle=False, collate_fn=msa_collate)
 
     model = MsaReconstructionModule(
@@ -111,6 +120,10 @@ def main():
     p.add_argument("--withhold-ratio", type=float, default=1.0,
                    help="Fraction of known-structure rows whose geometry is hidden "
                         "from the encoder. 1.0 = pure inference.")
+    p.add_argument("--val-split", action="store_true",
+                   help="Score only the 15% of families held out by the training "
+                        "split (same --seed as training).")
+    p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
     res = evaluate(args, args.withhold_ratio)
