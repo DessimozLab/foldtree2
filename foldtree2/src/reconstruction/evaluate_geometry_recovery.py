@@ -44,19 +44,23 @@ def evaluate(args, withhold_ratio: float) -> dict:
         )
     loader = DataLoader(ds, batch_size=1, shuffle=False, collate_fn=msa_collate)
 
+    ckpt = torch.load(args.checkpoint, map_location=device)
+    hp = ckpt.get("hyper_parameters", {})
     model = MsaReconstructionModule(
         use_se3=False,
-        alphabet_size=args.alphabet_size,
-        embed_dim=args.embed_dim,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers,
+        alphabet_size=hp.get("alphabet_size", args.alphabet_size),
+        embed_dim=hp.get("embed_dim", args.embed_dim),
+        num_heads=hp.get("num_heads", args.num_heads),
+        num_layers=hp.get("num_layers", args.num_layers),
         focal_gamma=args.focal_gamma,
         geometry_withhold_ratio=withhold_ratio,
+        propagate_geometry=hp.get("propagate_geometry", False),
+        attn_pairs=hp.get("attn_pairs", False),
+        coord_head=hp.get("coord_head", False),
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         loss_weights={"distance": 1.0},
     )
-    ckpt = torch.load(args.checkpoint, map_location=device)
     state = ckpt["state_dict"]
     # Older checkpoints predate the "no geometry" marker; keep their weights and
     # leave the new parameter at its initial value.
@@ -126,7 +130,7 @@ def main():
     p.add_argument("--families-root", default="families/Information_benchmark/marker_genes")
     p.add_argument("--family-ids", nargs="*", default=None)
     p.add_argument("--mask-ratio", type=float, default=0.25)
-    p.add_argument("--alphabet-size", type=int, default=31)
+    p.add_argument("--alphabet-size", type=int, default=51)
     p.add_argument("--embed-dim", type=int, default=128)
     p.add_argument("--num-heads", type=int, default=4)
     p.add_argument("--num-layers", type=int, default=4)

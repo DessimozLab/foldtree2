@@ -48,7 +48,7 @@ class MsaSe3Pipeline(nn.Module):
 
     def __init__(
         self,
-        alphabet_size: int = 31,
+        alphabet_size: int = 51,
         embed_dim: int = 256,
         num_heads: int = 8,
         num_layers: int = 6,

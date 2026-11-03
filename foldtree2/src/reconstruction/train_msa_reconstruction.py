@@ -119,7 +119,7 @@ class MsaReconstructionModule(pl.LightningModule):
     def __init__(
         self,
         use_se3: bool = False,
-        alphabet_size: int = 31,
+        alphabet_size: int = 51,
         embed_dim: int = 256,
         num_heads: int = 8,
         num_layers: int = 6,
@@ -1058,7 +1058,7 @@ def _parser():
                         "pipeline's msa_encoder weights from.")
 
     # MSA Transformer
-    p.add_argument("--alphabet-size", type=int, default=31)
+    p.add_argument("--alphabet-size", type=int, default=51)
     p.add_argument("--embed-dim", type=int, default=256)
     p.add_argument("--num-heads", type=int, default=8)
     p.add_argument("--num-layers", type=int, default=6)

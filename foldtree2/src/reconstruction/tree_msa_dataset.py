@@ -112,11 +112,16 @@ def ca_coordinates_from_pdb(pdb_path: str) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 
 def read_fasta(path: Path, encoding: str = "latin-1") -> Dict[str, str]:
-    """Mapping header -> sequence (latin-1 for ft2 byte-range chars)."""
+    """Mapping header -> sequence (latin-1 for ft2 byte-range chars).
+
+    Split on "\n" only: str.splitlines() also breaks on \x0b, \x0c, \x1c, \x1d
+    and \x1e, which are real ft2 alphabet states, so it silently deletes
+    residues and desynchronises sequences from their CA coordinates.
+    """
     records: Dict[str, str] = {}
     current = ""
-    for line in path.read_text(encoding=encoding).splitlines():
-        line = line.strip()
+    for line in path.read_text(encoding=encoding).split("\n"):
+        line = line.rstrip("\r")
         if not line:
             continue
         if line.startswith(">"):
@@ -130,15 +135,45 @@ def read_fasta(path: Path, encoding: str = "latin-1") -> Dict[str, str]:
 read_aligned_ascii = read_fasta
 
 
-def tokenise(sequence: str, alphabet_size: int = 31) -> torch.LongTensor:
-    """Convert ft2 chars to token indices.  Index 0 = gap/pad."""
+def _strip_mafft_sentinel(seq: str) -> str:
+    """MAFFT appends chr(255) to every sequence in these alignments, giving one
+    more token than the structure has CA atoms.  Remove it in place so the
+    alignment columns stay intact."""
+    i = len(seq)
+    while i and seq[i - 1] == "-":
+        i -= 1
+    if i and seq[i - 1] == chr(255):
+        return seq[:i - 1] + seq[i:]
+    return seq
+
+
+# ft2 structural alphabets (10/20/30/40/50 states) are written as chr(1)..chr(n);
+# the characters RAxML cannot handle are swapped for 0xf7-0xff when the
+# alignment is stored.  See scripts/alphabets/prepare_production_alphabets.py.
+FT2_RAXML_REPLACEMENTS = {'"': 248, '#': 247, '>': 249, '=': 250, '<': 251,
+                          '-': 252, ' ': 253, '\r': 254, '\n': 255}
+
+
+def ft2_token_map(n_states: int) -> dict[int, int]:
+    """byte value -> token id (1..n_states); 0 stays the gap/pad token."""
+    mapping = {}
+    for i in range(n_states):
+        char = chr(i + 1)
+        mapping[FT2_RAXML_REPLACEMENTS.get(char, ord(char))] = i + 1
+    return mapping
+
+
+def tokenise(sequence: str, token_map: dict[int, int]) -> torch.LongTensor:
+    """Convert ft2 chars to token indices.  Index 0 = gap/pad.
+
+    Only "-" is a gap; every other byte is a real alphabet state.  Anything
+    outside the declared alphabet is treated as a gap rather than silently
+    becoming a spurious state.
+    """
     tokens = torch.zeros(len(sequence), dtype=torch.long)
     for i, char in enumerate(sequence):
-        code = ord(char) - 1
-        if 0 <= code < alphabet_size - 1:
-            tokens[i] = code + 1
-        else:
-            tokens[i] = _FT2_GAP
+        if char != "-":
+            tokens[i] = token_map.get(ord(char), _FT2_GAP)
     return tokens
 
 
@@ -223,7 +258,7 @@ class FamilyMsaSample:
 
     Args:
         family_dir: Path to the OMA family subdirectory.
-        alphabet_size: ft2 vocab size (default 31: 30 chars + gap).
+        alphabet_size: ft2 vocab size (default 51: 50 ft2 states + gap).
         require_all_coords: Raise if a taxon lacks a PDB.
         edges: Distance-bin boundaries (A).  Default ``DISTANCE_EDGES``.
     """
@@ -231,22 +266,24 @@ class FamilyMsaSample:
     def __init__(
         self,
         family_dir: Path,
-        alphabet_size: int = 31,
+        alphabet_size: int = 51,
         require_all_coords: bool = True,
         edges=DISTANCE_EDGES,
     ):
         self.family_dir = Path(family_dir)
         self.family_id = self.family_dir.name
         self.alphabet_size = int(alphabet_size)
+        self.token_map = ft2_token_map(self.alphabet_size - 1)
 
         # --- ft2 aligned sequences ---
         aln_path = self.family_dir / "encoded.ASCIIaln.txt"
         if aln_path.is_file():
-            ft2_seqs = read_aligned_ascii(aln_path)
+            ft2_seqs = {t: _strip_mafft_sentinel(s)
+                        for t, s in read_aligned_ascii(aln_path).items()}
         else:
             fasta_path = self.family_dir / "encoded.fasta"
             if fasta_path.is_file():
-                ft2_seqs = read_fasta(fasta_path)
+                ft2_seqs = read_fasta(fasta_path, encoding="utf-8")
             else:
                 raise FileNotFoundError(
                     f"No ft2 file in {family_dir}"
@@ -292,7 +329,7 @@ class FamilyMsaSample:
             if coords is None:
                 continue
             seq = self._sequences[taxon]
-            tok = tokenise(seq, self.alphabet_size)
+            tok = tokenise(seq, self.token_map)
             valid = tok != _FT2_GAP
             n_valid = int(valid.sum().item())
 
@@ -368,7 +405,7 @@ class FamilyMsaSample:
 
         for taxon in taxa:
             seq = self._sequences.get(taxon, "")
-            tok = tokenise(seq, self.alphabet_size)
+            tok = tokenise(seq, self.token_map)
             if len(tok) < L:
                 tok = torch.cat([tok, tok.new_full((L - len(tok),), _FT2_GAP)])
             tokens_list.append(tok)
@@ -430,7 +467,7 @@ class TreeMsaDataset(Dataset):
         families_root: str = "families/Information_benchmark/marker_genes",
         mask_ratio: float = 0.25,
         family_ids: Optional[List[str]] = None,
-        alphabet_size: int = 31,
+        alphabet_size: int = 51,
     ):
         super().__init__()
         self.families_root = Path(families_root)
@@ -489,7 +526,7 @@ class CladeSampledMsaDataset(Dataset):
         clade_size: int = 8,
         samples_per_family: int = 5,
         mask_ratio: float = 0.25,
-        alphabet_size: int = 31,
+        alphabet_size: int = 51,
     ):
         super().__init__()
         self.families_root = Path(families_root)
