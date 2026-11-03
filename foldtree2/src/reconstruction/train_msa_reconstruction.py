@@ -320,10 +320,12 @@ class MsaReconstructionModule(pl.LightningModule):
         return cand[keep]
 
     def _propagated_distances(self, coords, known_mask, pairs):
-        """Mean CA-CA distance at each aligned column pair over the rows that
-        actually have structure.  This is the explicit geometry-propagation
-        channel: a row with no structure inherits the distances its homologs
-        show at the same alignment columns."""
+        """Mean CA-CA distance at each aligned column pair over the *other*
+        rows of the MSA that actually have structure.  This is the explicit
+        geometry-propagation channel: a row with no structure inherits the
+        distances its homologs show at the same alignment columns.  A row's
+        own structure is excluded, otherwise the channel would leak the label
+        it is being asked to predict."""
         B, N_seq, L, _ = coords.shape
         i, j = pairs[:, 0], pairs[:, 1]
         prop = torch.zeros(B, N_seq, pairs.shape[0], device=coords.device)
@@ -331,13 +333,21 @@ class MsaReconstructionModule(pl.LightningModule):
             rows = known_mask[b].nonzero(as_tuple=True)[0]
             if rows.numel() == 0:
                 continue
-            acc = torch.zeros(pairs.shape[0], device=coords.device)
+            dists = []
             for m in rows:
                 # Masked alignment positions are NaN in the coordinate tensor;
                 # they never enter the loss, so treating them as 0 is safe.
                 c = torch.nan_to_num(coords[b, m])
-                acc += torch.linalg.norm(c[i] - c[j], dim=-1)
-            prop[b] = acc / rows.numel()
+                dists.append(torch.linalg.norm(c[i] - c[j], dim=-1))
+            dists = torch.stack(dists)
+            total = dists.sum(0)
+            own = {int(r): t for t, r in enumerate(rows)}
+            for n in range(N_seq):
+                t = own.get(n)
+                if t is None:
+                    prop[b, n] = total / rows.numel()
+                elif rows.numel() > 1:
+                    prop[b, n] = (total - dists[t]) / (rows.numel() - 1)
         return prop
 
     def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None):
