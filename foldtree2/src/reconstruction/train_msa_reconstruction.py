@@ -721,6 +721,24 @@ class MsaReconstructionModule(pl.LightningModule):
                 loss = msa_distance_loss(out["distance_logits"], labels, known, gamma=self.focal_gamma)
                 log["val/loss"] = loss.detach()
 
+                # Held-out measure of masked-geometry recovery: rows whose
+                # geometry was hidden from the encoder but whose true
+                # coordinates exist.  Uniform guessing over the 16 bins gives
+                # 1/16 = 6.25% top-1 accuracy, so anything above that means the
+                # MSA Transformer is propagating structure across the alignment.
+                geom_known = out.get("geom_known")
+                withheld = known if geom_known is None else (known & ~geom_known)
+                visible = known & ~withheld
+                pred = out["distance_logits"].argmax(dim=-1)
+                for name, row_mask in (("withheld", withheld), ("visible", visible)):
+                    valid = row_mask.unsqueeze(-1) & (labels >= 0)
+                    if valid.any():
+                        log[f"val/{name}_acc"] = ((pred == labels) & valid).sum() / valid.sum()
+                if withheld.any():
+                    log["val/loss_withheld"] = msa_distance_loss(
+                        out["distance_logits"], labels, withheld, gamma=self.focal_gamma
+                    ).detach()
+
         if log:
             self.log_dict(log, prog_bar=True)
         return log
