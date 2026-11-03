@@ -69,9 +69,9 @@ def evaluate(args, withhold_ratio: float) -> dict:
     n_pairs = n_correct = 0
     err_sum = 0.0
     n_seq = 0
-    bin_correct = torch.zeros(16, dtype=torch.long, device=device)
-    bin_total = torch.zeros(16, dtype=torch.long, device=device)
-    pred_hist = torch.zeros(16, dtype=torch.long, device=device)
+    bin_correct = torch.zeros(16, dtype=torch.long)
+    bin_total = torch.zeros(16, dtype=torch.long)
+    pred_hist = torch.zeros(16, dtype=torch.long)
 
     with torch.no_grad():
         for batch in loader:
@@ -91,11 +91,13 @@ def evaluate(args, withhold_ratio: float) -> dict:
             if not valid.any():
                 continue
             n_seq += int(known.sum().item())
-            n_pairs += int(valid.sum().item())
-            n_correct += int(((pred == labels) & valid).sum().item())
-            pred_hist.scatter_add_(0, pred[valid])
-            bin_correct.scatter_add_(0, labels[valid][pred[valid] == labels[valid]])
-            bin_total.scatter_add_(0, labels[valid])
+            lab = labels[valid]
+            pr = pred[valid]
+            n_pairs += int(lab.numel())
+            n_correct += int((pr == lab).sum().item())
+            bin_total += torch.bincount(lab.cpu(), minlength=16)
+            pred_hist += torch.bincount(pr.cpu(), minlength=16)
+            bin_correct += torch.bincount(lab[pr == lab].cpu(), minlength=16)
             true_d = torch.linalg.norm(
                 coords[:, :, pairs[:, 0]] - coords[:, :, pairs[:, 1]], dim=-1
             )
