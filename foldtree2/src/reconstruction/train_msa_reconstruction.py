@@ -204,7 +204,7 @@ class MsaReconstructionModule(pl.LightningModule):
             num_layers=num_layers,
             dropout=dropout,
             max_seqlen=4096,
-            geom_dim=9,
+            geom_dim=12,
         )
 
         if self.use_se3:
@@ -763,11 +763,20 @@ class MsaReconstructionModule(pl.LightningModule):
 
     @staticmethod
     def _geom_features(coords, known_mask):
-        """SE(3)-invariant per-residue geometry features from CA coords."""
+        """SE(3)-invariant per-residue geometry features from CA coords.
+
+        Twelve channels: pseudo-torsion, bond-angle cosine, d(i,i+3), contact
+        densities at 8/12 A, the 5th/10th/20th/50th nearest-neighbour distances,
+        and the residue's position in a canonical frame obtained by centring the
+        chain and projecting onto its principal axes.  The canonical frame is
+        invariant to rotation and translation (up to a per-chain axis sign, which
+        is consistent within a chain), so the pair head can read off long-range
+        geometry that the purely local features cannot express.
+        """
         import math
         B, N_seq, L, _ = coords.shape
         device = coords.device
-        geom = torch.zeros(B, N_seq, L, 9, device=device)
+        geom = torch.zeros(B, N_seq, L, 12, device=device)
         for b in range(B):
             for n in range(N_seq):
                 if not known_mask[b, n]:
@@ -822,6 +831,14 @@ class MsaReconstructionModule(pl.LightningModule):
                         for fi, nth in enumerate([5, 10, 20, 50], start=5):
                             if len(sd) >= nth:
                                 geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.) / 10.0
+                # Canonical structural coordinates: centre the chain and project
+                # onto its principal axes, then scale by the radius of gyration.
+                if nv >= 3:
+                    centred = cv - cv.mean(dim=0)
+                    rg = centred.norm(dim=-1).mean().clamp(min=1.0)
+                    _, _, Vh = torch.linalg.svd(centred, full_matrices=False)
+                    proj = (centred @ Vh.T) / rg
+                    geom[b, n, vi, 9:12] = proj
         return geom
 
     def on_after_backward(self):
