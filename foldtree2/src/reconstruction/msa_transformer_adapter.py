@@ -172,6 +172,7 @@ class MsaReconstructionHead(nn.Module):
         max_tokens_per_msa: int = 2 ** 14,
         padding_idx: int = 0,
         geom_dim: int = 0,
+        geom_persistent: bool = False,
     ) -> None:
         super().__init__()
 
@@ -199,6 +200,7 @@ class MsaReconstructionHead(nn.Module):
         self.max_tokens_per_msa = max_tokens_per_msa
         self.dropout = dropout
         self.geom_dim = int(geom_dim)
+        self.geom_persistent = bool(geom_persistent)
 
         # Token lookup. ``padding_idx`` zeroes the gradient and the row so
         # padded tokens contribute neither forward nor backward.
@@ -431,6 +433,9 @@ class MsaReconstructionHead(nn.Module):
                 geom_embed = self.geom_proj(geom_features) * row_geom.unsqueeze(-1)
                 geom_embed = geom_embed + self.no_geom_embedding * row_no_geom.unsqueeze(-1)
             x = torch.cat([x[..., : self.embed_dim - self.geom_dim], geom_embed], dim=-1)
+            geom_channels = geom_embed.permute(1, 2, 0, 3)      # (N, L, B, G)
+        else:
+            geom_channels = None
 
         # ---- Axial transformer (layout: R, C, B, D) ------------------- #
         # The axial layers expect the attention axes first: R = sequences
@@ -455,6 +460,13 @@ class MsaReconstructionHead(nn.Module):
         col_attentions = []
 
         for layer_idx, layer in enumerate(self.layers, start=1):
+            # Persistent geometry: refresh the dedicated geometry channels
+            # before every axial block so the structural signal is not diluted
+            # by successive attention/feed-forward mixing.
+            if self.geom_persistent and geom_channels is not None:
+                x = torch.cat(
+                    [x[..., : self.embed_dim - self.geom_dim], geom_channels], dim=-1
+                )
             if need_head_weights:
                 x, row_attn, col_attn = layer(
                     x,

@@ -170,6 +170,9 @@ class MsaReconstructionModule(pl.LightningModule):
         # geometry propagated across the MSA by row attention.  0 disables
         # withholding.
         geometry_withhold_ratio: float = 0.3,
+        # Re-inject the geometry channels before every axial block instead of
+        # only at the embedding, so the structural signal survives deep stacks.
+        geom_persistent: bool = False,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -183,6 +186,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.se3_seed_noise = float(se3_seed_noise)
         self.plddt_threshold = float(plddt_threshold)
         self.geometry_withhold_ratio = float(geometry_withhold_ratio)
+        self.geom_persistent = bool(geom_persistent)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -205,6 +209,7 @@ class MsaReconstructionModule(pl.LightningModule):
             dropout=dropout,
             max_seqlen=4096,
             geom_dim=12,
+            geom_persistent=geom_persistent,
         )
 
         if self.use_se3:
@@ -984,6 +989,9 @@ def _parser():
                         "input (replaced by a learnable 'no geometry' marker). "
                         "The SE(3) decoder is trained to predict those rows' "
                         "coordinates from propagated MSA context.")
+    p.add_argument("--geom-persistent", action="store_true",
+                   help="Re-inject the geometry channels before every axial "
+                        "attention block instead of only at the embedding.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1099,6 +1107,7 @@ def main():
         se3_max_sequences=args.se3_max_sequences,
         se3_seed_noise=args.se3_seed_noise,
         geometry_withhold_ratio=args.geometry_withhold_ratio,
+        geom_persistent=args.geom_persistent,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,
