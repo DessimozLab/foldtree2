@@ -69,7 +69,7 @@ class MsaSe3Pipeline(nn.Module):
             num_layers=num_layers,
             dropout=dropout,
             max_seqlen=4096,
-            geom_dim=9,
+            geom_dim=12,
         )
 
         # Optional projection if MSA embed_dim ≠ SE(3) input dim
