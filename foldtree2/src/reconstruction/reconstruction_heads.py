@@ -36,6 +36,7 @@ class MsaDistanceHead(nn.Module):
         edges=DISTANCE_EDGES,
         dropout: float = 0.1,
         use_coords: bool = False,
+        use_prop: bool = False,
     ):
         super().__init__()
         edges = torch.tensor(edges, dtype=torch.float32)
@@ -51,7 +52,7 @@ class MsaDistanceHead(nn.Module):
             # channels (linear and log), and one normalised dot product of the
             # two residue features — without a relative term the head cannot
             # tell "same environment" from "opposite ends of the chain".
-            nn.Linear(embed_dim * 2 + 3 + (1 if use_coords else 0), hidden),
+            nn.Linear(embed_dim * 2 + 3 + (1 if use_coords else 0) + (1 if use_prop else 0), hidden),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -67,6 +68,7 @@ class MsaDistanceHead(nn.Module):
         pairs: Optional[torch.Tensor] = None,
         chunk_size: int = 2048,
         pair_coords: Optional[torch.Tensor] = None,
+        pair_prop: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Predict distance bin logits for each sequence in the MSA.
 
@@ -123,6 +125,11 @@ class MsaDistanceHead(nn.Module):
                         rg = cc[i, 3].clamp(min=0.05) * 20.0
                         d_hat = torch.linalg.norm(cc[i, :3] - cc[j, :3], dim=-1) * rg
                         parts.append((d_hat / 40.0).clamp(0.0, 1.0).unsqueeze(-1))
+                    if pair_prop is not None:
+                        # Distances already measured at these alignment columns
+                        # by the homologs in this MSA that do have structure.
+                        parts.append((pair_prop[b, n, c_start:c_end] / 40.0)
+                                     .clamp(0.0, 1.0).unsqueeze(-1))
                     pair_feat = torch.cat(parts, dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))

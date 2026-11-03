@@ -174,6 +174,7 @@ class MsaReconstructionModule(pl.LightningModule):
         # Re-inject the geometry channels before every axial block instead of
         # only at the embedding, so the structural signal survives deep stacks.
         geom_persistent: bool = False,
+        propagate_geometry: bool = False,
         # Auxiliary per-residue canonical-coordinate head whose output feeds
         # the pair MLP as an analytic distance estimate.
         coord_head: bool = False,
@@ -191,6 +192,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.plddt_threshold = float(plddt_threshold)
         self.geometry_withhold_ratio = float(geometry_withhold_ratio)
         self.geom_persistent = bool(geom_persistent)
+        self.propagate_geometry = bool(propagate_geometry)
         self._use_coord_head = bool(coord_head)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
@@ -232,6 +234,7 @@ class MsaReconstructionModule(pl.LightningModule):
             embed_dim=embed_dim, hidden=distance_hidden,
             edges=DISTANCE_EDGES, dropout=dropout,
             use_coords=self.coord_head is not None,
+            use_prop=self.propagate_geometry,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
 
@@ -316,6 +319,27 @@ class MsaReconstructionModule(pl.LightningModule):
             keep[idx[torch.randperm(idx.numel(), device=idx.device)[:take]]] = True
         return cand[keep]
 
+    def _propagated_distances(self, coords, known_mask, pairs):
+        """Mean CA-CA distance at each aligned column pair over the rows that
+        actually have structure.  This is the explicit geometry-propagation
+        channel: a row with no structure inherits the distances its homologs
+        show at the same alignment columns."""
+        B, N_seq, L, _ = coords.shape
+        i, j = pairs[:, 0], pairs[:, 1]
+        prop = torch.zeros(B, N_seq, pairs.shape[0], device=coords.device)
+        for b in range(B):
+            rows = known_mask[b].nonzero(as_tuple=True)[0]
+            if rows.numel() == 0:
+                continue
+            acc = torch.zeros(pairs.shape[0], device=coords.device)
+            for m in rows:
+                # Masked alignment positions are NaN in the coordinate tensor;
+                # they never enter the loss, so treating them as 0 is safe.
+                c = torch.nan_to_num(coords[b, m])
+                acc += torch.linalg.norm(c[i] - c[j], dim=-1)
+            prop[b] = acc / rows.numel()
+        return prop
+
     def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None):
         geom = None
         geom_known = None
@@ -342,6 +366,10 @@ class MsaReconstructionModule(pl.LightningModule):
         if max_pairs > 0 and pairs.shape[0] > max_pairs:
             pairs = self._balanced_pairs(pairs, max_pairs, coords, known_mask)
 
+        prop = None
+        if self.propagate_geometry and coords is not None and known_mask is not None:
+            prop = self._propagated_distances(coords, known_mask, pairs)
+
         if msa_mask is not None:
             seq_mask = msa_mask.any(dim=-1)
         else:
@@ -349,7 +377,8 @@ class MsaReconstructionModule(pl.LightningModule):
         return {
             "features": features,
             "distance_logits": self.distance_head(
-                features, seq_mask=seq_mask, pairs=pairs, pair_coords=coord_pred
+                features, seq_mask=seq_mask, pairs=pairs, pair_coords=coord_pred,
+                pair_prop=prop
             ),
             "angle_logits": self.angle_head(features),
             "coord_pred": coord_pred,
@@ -1054,6 +1083,10 @@ def _parser():
                    help="Add the canonical-coordinate head: predict per-residue "
                         "canonical CA coordinates and feed the resulting analytic "
                         "pair distance into the distance head.")
+    p.add_argument("--propagate-geometry", action="store_true",
+                   help="Give the distance head an explicit propagation channel: "
+                        "the mean CA-CA distance at each aligned column pair over "
+                        "the MSA rows that actually have structure.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1170,6 +1203,7 @@ def main():
         se3_seed_noise=args.se3_seed_noise,
         geometry_withhold_ratio=args.geometry_withhold_ratio,
         geom_persistent=args.geom_persistent,
+        propagate_geometry=args.propagate_geometry,
         coord_head=args.coord_head,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,

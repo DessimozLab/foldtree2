@@ -26,3 +26,4 @@ run() {
 
 run v4_persistent --geometry-withhold-ratio 0.3 --geom-persistent
 run v5_no_geom    --geometry-withhold-ratio 1.0
+run v6_coord      --geometry-withhold-ratio 0.3 --coord-head --loss-weights distance=1,angle=0.1,coord=1
