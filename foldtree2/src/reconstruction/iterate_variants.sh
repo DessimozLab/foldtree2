@@ -11,13 +11,14 @@ run() {
   mkdir -p "$out"
   echo "=== starting $name: $* ==="
   CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "$PY" -m foldtree2.src.reconstruction.train_msa_reconstruction \
-    --family-ids $FAMS --epochs 10 --batch-size 4 --mask-ratio 0.25 \
+    --family-ids $FAMS --epochs 20 --batch-size 4 --mask-ratio 0.25 --lr 5e-4 \
     --geometry-withhold-ratio 0.3 --max-pairs 40000 \
-    --loss-weights distance=1,angle=0.1 --patience 4 \
+    --loss-weights distance=1,angle=0.1 --patience 6 \
     --outdir "$out" --accelerator cuda --devices 1 "$@" \
     > "$out/training.log" 2>&1
   echo "=== $name results ==="
-  tr '\r' '\n' < "$out/training.log" | grep -oE "val/[a-z_]+=[0-9.]+" | awk 'NR%6==0' | tail -6
+  tr '\r' '\n' < "$out/training.log" | grep -oE "val/[a-z_]+_macro_acc=[0-9.]+" | tail -8
+  tr '\r' '\n' < "$out/training.log" | grep -oE "val/[a-z_]+=[0-9.]+" | tail -6
   tr '\r' '\n' < "$out/training.log" | tail -2 | cut -c1-160
   echo
 }
