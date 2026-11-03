@@ -48,7 +48,12 @@ def evaluate(args, withhold_ratio: float) -> dict:
         loss_weights={"distance": 1.0},
     )
     ckpt = torch.load(args.checkpoint, map_location=device)
-    model.load_state_dict(ckpt["state_dict"])
+    state = ckpt["state_dict"]
+    # Older checkpoints predate the "no geometry" marker; keep their weights and
+    # leave the new parameter at its initial value.
+    for k, v in model.state_dict().items():
+        state.setdefault(k, v)
+    model.load_state_dict(state)
     model.to(device).eval()
 
     reps = torch.tensor(_REPS, device=device)
