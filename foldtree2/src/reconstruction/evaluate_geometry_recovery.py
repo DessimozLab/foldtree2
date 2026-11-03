@@ -69,6 +69,9 @@ def evaluate(args, withhold_ratio: float) -> dict:
     n_pairs = n_correct = 0
     err_sum = 0.0
     n_seq = 0
+    bin_correct = torch.zeros(16, dtype=torch.long, device=device)
+    bin_total = torch.zeros(16, dtype=torch.long, device=device)
+    pred_hist = torch.zeros(16, dtype=torch.long, device=device)
 
     with torch.no_grad():
         for batch in loader:
@@ -90,15 +93,26 @@ def evaluate(args, withhold_ratio: float) -> dict:
             n_seq += int(known.sum().item())
             n_pairs += int(valid.sum().item())
             n_correct += int(((pred == labels) & valid).sum().item())
+            pred_hist.scatter_add_(0, pred[valid])
+            bin_correct.scatter_add_(0, labels[valid][pred[valid] == labels[valid]])
+            bin_total.scatter_add_(0, labels[valid])
             true_d = torch.linalg.norm(
                 coords[:, :, pairs[:, 0]] - coords[:, :, pairs[:, 1]], dim=-1
             )
             err_sum += float((reps[pred] - true_d).abs()[valid].sum().item())
 
+    present = bin_total > 0
+    macro = (bin_correct[present] / bin_total[present]).mean().item()
     return {
         "sequences": n_seq,
         "pairs": n_pairs,
         "top1_acc": n_correct / max(1, n_pairs),
+        "macro_acc": macro,
+        "majority_acc": (bin_total.max().item() / max(1, n_pairs)),
+        "per_bin_recall": {int(b): round(bin_correct[b].item() / bin_total[b].item(), 3)
+                           for b in range(16) if bin_total[b].item() > 0},
+        "pred_hist": {int(b): round(pred_hist[b].item() / max(1, n_pairs), 3)
+                      for b in range(16) if pred_hist[b].item() > 0},
         "mean_abs_dist_err": err_sum / max(1, n_pairs),
     }
 
@@ -128,10 +142,13 @@ def main():
 
     res = evaluate(args, args.withhold_ratio)
     print(f"withhold_ratio={args.withhold_ratio}")
-    print(f"  sequences scored : {res['sequences']}")
-    print(f"  valid pairs      : {res['pairs']}")
-    print(f"  top-1 bin acc    : {res['top1_acc']:.4f}   (uniform baseline 0.0625)")
-    print(f"  mean |dist| err  : {res['mean_abs_dist_err']:.2f} A")
+    print(f"  sequences scored   : {res['sequences']}")
+    print(f"  valid pairs        : {res['pairs']}")
+    print(f"  top-1 bin acc      : {res['top1_acc']:.4f}   (uniform {1/16:.4f}, majority {res['majority_acc']:.4f})")
+    print(f"  macro per-bin acc  : {res['macro_acc']:.4f}")
+    print(f"  mean |dist| err    : {res['mean_abs_dist_err']:.2f} A")
+    print(f"  predicted bins     : {res['pred_hist']}")
+    print(f"  per-bin recall     : {res['per_bin_recall']}")
 
 
 if __name__ == "__main__":
