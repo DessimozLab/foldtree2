@@ -11,7 +11,7 @@ run() {
   mkdir -p "$out"
   echo "=== starting $name: $* ==="
   CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "$PY" -m foldtree2.src.reconstruction.train_msa_reconstruction \
-    --family-ids $FAMS --epochs 20 --batch-size 4 --mask-ratio 0.25 --lr 5e-4 \
+    --family-ids $FAMS --epochs 8 --batch-size 4 --mask-ratio 0.25 --lr 5e-4 \
     --geometry-withhold-ratio 0.3 --max-pairs 40000 \
     --loss-weights distance=1,angle=0.1 --patience 6 \
     --outdir "$out" --accelerator cuda --devices 1 "$@" \
@@ -25,4 +25,4 @@ run() {
 
 run v1_base  --embed-dim 128 --num-layers 4 --num-heads 4 --focal-gamma 2.0
 run v2_ce    --embed-dim 128 --num-layers 4 --num-heads 4 --focal-gamma 0.0
-run v3_big   --embed-dim 256 --num-layers 6 --num-heads 8 --focal-gamma 2.0
+run v7_prop --embed-dim 128 --num-layers 4 --num-heads 4 --focal-gamma 2.0 --propagate-geometry

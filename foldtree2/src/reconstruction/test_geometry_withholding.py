@@ -62,8 +62,25 @@ def test_bad_mask_shape_raises():
     raise AssertionError("geom_known_mask with the wrong shape should raise")
 
 
+def test_propagated_distances_exclude_self():
+    m = MsaReconstructionModule(geometry_withhold_ratio=0.0, propagate_geometry=True)
+    coords = torch.tensor([[
+        [[0., 0, 0], [10., 0, 0], [20., 0, 0]],   # row 0: has structure
+        [[0., 0, 0], [4., 0, 0], [8., 0, 0]],     # row 1: has structure
+        [[0., 0, 0], [0., 0, 0], [0., 0, 0]],     # row 2: no structure
+    ]])
+    known = torch.tensor([[True, True, False]])
+    pairs = torch.tensor([[0, 2]])
+    prop = m._propagated_distances(coords, known, pairs)
+    # A row never receives its own distance; it gets the mean of its homologs.
+    assert abs(prop[0, 0, 0].item() - 8.0) < 1e-6
+    assert abs(prop[0, 1, 0].item() - 20.0) < 1e-6
+    assert abs(prop[0, 2, 0].item() - 14.0) < 1e-6
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
     test_bad_mask_shape_raises()
+    test_propagated_distances_exclude_self()
     print("geometry-withholding self-checks passed")
