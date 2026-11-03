@@ -78,9 +78,27 @@ def test_propagated_distances_exclude_self():
     assert abs(prop[0, 2, 0].item() - 14.0) < 1e-6
 
 
+def test_ft2_alphabet_mapping():
+    from foldtree2.src.reconstruction.tree_msa_dataset import ft2_token_map, tokenise
+    tm = ft2_token_map(50)
+    # RAxML-unsafe states are stored as 0xf7-0xff: '#'(35)->chr(247), '\n'(10)->chr(255)
+    assert tm[ord(chr(247))] == 35
+    assert tm[ord(chr(255))] == 10
+    assert tm[1] == 1 and tm[40] == 40
+    assert tokenise("-" + chr(247) + chr(255), tm).tolist() == [0, 35, 10]
+
+
+def test_mafft_sentinel_stripped():
+    from foldtree2.src.reconstruction.tree_msa_dataset import _strip_mafft_sentinel
+    assert _strip_mafft_sentinel(chr(3) + chr(255) + "---") == chr(3) + "---"
+    assert _strip_mafft_sentinel(chr(3) + chr(4) + "---") == chr(3) + chr(4) + "---"
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
     test_bad_mask_shape_raises()
     test_propagated_distances_exclude_self()
+    test_ft2_alphabet_mapping()
+    test_mafft_sentinel_stripped()
     print("geometry-withholding self-checks passed")
