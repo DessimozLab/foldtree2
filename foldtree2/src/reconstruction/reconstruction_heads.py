@@ -46,10 +46,11 @@ class MsaDistanceHead(nn.Module):
         self.n_bins = len(edges) + 1
 
         self.pair_mlp = nn.Sequential(
-            # Two residue features + two normalised sequence-separation
-            # channels (linear and log), without which the head cannot tell a
-            # 12-residue pair from a 1000-residue pair.
-            nn.Linear(embed_dim * 2 + 2, hidden),
+            # Two residue features, two normalised sequence-separation
+            # channels (linear and log), and one normalised dot product of the
+            # two residue features — without a relative term the head cannot
+            # tell "same environment" from "opposite ends of the chain".
+            nn.Linear(embed_dim * 2 + 3, hidden),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -109,7 +110,9 @@ class MsaDistanceHead(nn.Module):
                         [sep / max(L, 2), torch.log(sep.clamp(min=1.0)) / log_L],
                         dim=-1,
                     )
-                    pair_feat = torch.cat([feat[i], feat[j], sep_feat], dim=-1)
+                    fi, fj = feat[i], feat[j]
+                    rel = ((fi * fj).sum(-1) / D).unsqueeze(-1)
+                    pair_feat = torch.cat([fi, fj, sep_feat, rel], dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))
 
