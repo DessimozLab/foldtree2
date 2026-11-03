@@ -144,8 +144,8 @@ class MsaDistanceHead(nn.Module):
                         # Upper-bound control: the measured CA-CA distance for
                         # rows whose structure the encoder is allowed to see,
                         # -1 (-> 0 after clamping) for geometry-free rows.
-                        parts.append((pair_oracle[b, n] / 40.0).clamp(0.0, 1.0)
-                                     .unsqueeze(-1))
+                        parts.append((pair_oracle[b, n, c_start:c_end] / 40.0)
+                                     .clamp(0.0, 1.0).unsqueeze(-1))
                     pair_feat = torch.cat(parts, dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))

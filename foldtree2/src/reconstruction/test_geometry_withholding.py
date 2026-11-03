@@ -109,7 +109,8 @@ def test_oracle_distance_is_learnable():
     feats = torch.zeros(1, 1, L, 4)
     opt = torch.optim.AdamW(head.parameters(), lr=1e-2)
     for _ in range(150):
-        logits = head(feats, pairs=pairs, pair_oracle=oracle)
+        # chunk_size < P exercises the per-chunk slicing of the pair features.
+        logits = head(feats, pairs=pairs, pair_oracle=oracle, chunk_size=7)
         loss = torch.nn.functional.cross_entropy(logits.view(-1, head.n_bins),
                                                 labels.view(-1))
         loss.backward()
@@ -118,7 +119,7 @@ def test_oracle_distance_is_learnable():
     acc = (logits.argmax(-1) == labels).float().mean().item()
     assert acc > 0.9, f"head cannot fit oracle distances (acc {acc:.3f})"
     # A geometry-free row (oracle -1 -> 0) gets no metric signal at all.
-    no_geom = head(feats, pairs=pairs,
+    no_geom = head(feats, pairs=pairs, chunk_size=7,
                    pair_oracle=torch.full((1, 1, pairs.shape[0]), -1.0))
     pred = no_geom.argmax(-1)
     assert (pred[0, 0] == pred[0, 0, 0]).all()
