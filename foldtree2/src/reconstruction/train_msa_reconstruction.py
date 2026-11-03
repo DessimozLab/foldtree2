@@ -277,6 +277,30 @@ class MsaReconstructionModule(pl.LightningModule):
             geom_known = geom_known & ~(rand < self.geometry_withhold_ratio)
         return geom_known
 
+    def _balanced_pairs(self, pairs, max_pairs, coords, known_mask):
+        """Choose ``max_pairs`` residue pairs with roughly equal representation
+        of each true distance bin, so short-range contacts are not swamped by
+        the open-ended "far" bin."""
+        if coords is None or known_mask is None:
+            perm = torch.randperm(pairs.shape[0], device=pairs.device)[:max_pairs]
+            return pairs[perm]
+
+        cand = pairs[torch.randperm(pairs.shape[0], device=pairs.device)[:max_pairs * 4]]
+        edges = self.distance_head.edges.to(coords.device)
+        labels = self._pair_labels(coords, cand, edges)
+        valid = (labels >= 0) & known_mask.unsqueeze(-1)
+
+        n_bins = self.distance_head.n_bins
+        per_bin = max(1, max_pairs // n_bins)
+        keep = torch.zeros(cand.shape[0], dtype=torch.bool, device=cand.device)
+        for b in range(n_bins):
+            idx = ((labels == b) & valid).any(dim=(0, 1)).nonzero().squeeze(-1)
+            if idx.numel() == 0:
+                continue
+            take = min(per_bin, idx.numel())
+            keep[idx[torch.randperm(idx.numel(), device=idx.device)[:take]]] = True
+        return cand[keep]
+
     def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None):
         geom = None
         geom_known = None
@@ -294,11 +318,13 @@ class MsaReconstructionModule(pl.LightningModule):
         idx = torch.arange(L, device=self.device)
         pairs = (idx[None] - idx[:, None]).abs().ge(self.min_separation).nonzero()
 
-        # Subsample pairs for memory efficiency
+        # Subsample pairs for memory efficiency, stratified by the true
+        # distance bin.  A uniform sample is ~50% open-ended ">=32 A", which
+        # lets the head reach majority-class accuracy by always answering
+        # "far" and never learning contact geometry.
         max_pairs = getattr(self, '_max_pairs', 100000)
         if max_pairs > 0 and pairs.shape[0] > max_pairs:
-            perm = torch.randperm(pairs.shape[0], device=pairs.device)[:max_pairs]
-            pairs = pairs[perm]
+            pairs = self._balanced_pairs(pairs, max_pairs, coords, known_mask)
 
         if msa_mask is not None:
             seq_mask = msa_mask.any(dim=-1)
@@ -734,6 +760,15 @@ class MsaReconstructionModule(pl.LightningModule):
                     valid = row_mask.unsqueeze(-1) & (labels >= 0)
                     if valid.any():
                         log[f"val/{name}_acc"] = ((pred == labels) & valid).sum() / valid.sum()
+                        # Macro (per-bin) accuracy: a head that only predicts
+                        # the dominant "far" bin scores ~0.5 here.
+                        recalls = []
+                        for b in range(self.distance_head.n_bins):
+                            m = valid & (labels == b)
+                            if m.any():
+                                recalls.append(((pred == labels) & m).sum() / m.sum())
+                        if recalls:
+                            log[f"val/{name}_macro_acc"] = torch.stack(recalls).mean()
                 if withheld.any():
                     log["val/loss_withheld"] = msa_distance_loss(
                         out["distance_logits"], labels, withheld, gamma=self.focal_gamma

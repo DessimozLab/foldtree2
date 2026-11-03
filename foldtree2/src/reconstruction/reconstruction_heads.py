@@ -46,7 +46,10 @@ class MsaDistanceHead(nn.Module):
         self.n_bins = len(edges) + 1
 
         self.pair_mlp = nn.Sequential(
-            nn.Linear(embed_dim * 2, hidden),
+            # Two residue features + two normalised sequence-separation
+            # channels (linear and log), without which the head cannot tell a
+            # 12-residue pair from a 1000-residue pair.
+            nn.Linear(embed_dim * 2 + 2, hidden),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -81,6 +84,7 @@ class MsaDistanceHead(nn.Module):
         else:
             pairs = pairs.to(features.device)
         P = pairs.shape[0]
+        log_L = math.log(max(L, 2))
 
         # Collect chunk outputs then stack to preserve gradient through the MLP.
         # Using a list avoids the ``new_zeros + in-place slice`` pattern which
@@ -100,7 +104,12 @@ class MsaDistanceHead(nn.Module):
                     c_end = min(c_start + chunk_size, P)
                     cp = pairs[c_start:c_end]
                     i, j = cp[:, 0], cp[:, 1]
-                    pair_feat = torch.cat([feat[i], feat[j]], dim=-1)
+                    sep = (j - i).abs().float()
+                    sep_feat = torch.stack(
+                        [sep / max(L, 2), torch.log(sep.clamp(min=1.0)) / log_L],
+                        dim=-1,
+                    )
+                    pair_feat = torch.cat([feat[i], feat[j], sep_feat], dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))
 
