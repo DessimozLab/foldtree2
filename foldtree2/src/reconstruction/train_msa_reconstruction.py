@@ -179,6 +179,10 @@ class MsaReconstructionModule(pl.LightningModule):
         # Auxiliary per-residue canonical-coordinate head whose output feeds
         # the pair MLP as an analytic distance estimate.
         coord_head: bool = False,
+        # Upper-bound control: feed the measured CA-CA distance of every pair
+        # whose structure the encoder is allowed to see.  Separates "the head
+        # cannot fit the bins" from "the encoder carries no geometry".
+        oracle_distance: bool = False,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -196,6 +200,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.propagate_geometry = bool(propagate_geometry)
         self.attn_pairs = bool(attn_pairs)
         self._use_coord_head = bool(coord_head)
+        self.oracle_distance = bool(oracle_distance)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -238,6 +243,7 @@ class MsaReconstructionModule(pl.LightningModule):
             use_coords=self.coord_head is not None,
             use_prop=self.propagate_geometry,
             use_attn=self.attn_pairs,
+            use_oracle=self.oracle_distance,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
 
@@ -391,6 +397,14 @@ class MsaReconstructionModule(pl.LightningModule):
             a = enc["row_attentions"][:, -1].mean(dim=0)
             attn = a[:, pairs[:, 0], pairs[:, 1]]   # (B, P)
 
+        oracle = None
+        if self.oracle_distance and coords is not None and geom_known is not None:
+            i, j = pairs[:, 0], pairs[:, 1]
+            c = torch.nan_to_num(coords)
+            d = torch.linalg.norm(c[:, :, i] - c[:, :, j], dim=-1)  # (B, N_seq, P)
+            oracle = torch.where(geom_known.unsqueeze(-1), d,
+                                 d.new_full(d.shape, -1.0))
+
         if msa_mask is not None:
             seq_mask = msa_mask.any(dim=-1)
         else:
@@ -399,7 +413,7 @@ class MsaReconstructionModule(pl.LightningModule):
             "features": features,
             "distance_logits": self.distance_head(
                 features, seq_mask=seq_mask, pairs=pairs, pair_coords=coord_pred,
-                pair_prop=prop, pair_attn=attn
+                pair_prop=prop, pair_attn=attn, pair_oracle=oracle
             ),
             "angle_logits": self.angle_head(features),
             "coord_pred": coord_pred,
@@ -1122,6 +1136,10 @@ def _parser():
     p.add_argument("--attn-pairs", action="store_true",
                    help="Feed the row-attention weight between residues i and j "
                         "into the distance head as a pair-specific feature.")
+    p.add_argument("--oracle-distance", action="store_true",
+                   help="Upper-bound control: give the distance head the measured "
+                        "CA-CA distance for every row whose geometry the encoder "
+                        "can see.  Rows without geometry get 0.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1241,6 +1259,7 @@ def main():
         propagate_geometry=args.propagate_geometry,
         attn_pairs=args.attn_pairs,
         coord_head=args.coord_head,
+        oracle_distance=args.oracle_distance,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,

@@ -38,6 +38,7 @@ class MsaDistanceHead(nn.Module):
         use_coords: bool = False,
         use_prop: bool = False,
         use_attn: bool = False,
+        use_oracle: bool = False,
     ):
         super().__init__()
         edges = torch.tensor(edges, dtype=torch.float32)
@@ -53,7 +54,8 @@ class MsaDistanceHead(nn.Module):
             # channels (linear and log), and one normalised dot product of the
             # two residue features — without a relative term the head cannot
             # tell "same environment" from "opposite ends of the chain".
-            nn.Linear(embed_dim * 2 + 3 + (1 if use_coords else 0) + (1 if use_prop else 0) + (1 if use_attn else 0), hidden),
+            nn.Linear(embed_dim * 2 + 3 + (1 if use_coords else 0) + (1 if use_prop else 0)
+                      + (1 if use_attn else 0) + (1 if use_oracle else 0), hidden),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -71,6 +73,7 @@ class MsaDistanceHead(nn.Module):
         pair_coords: Optional[torch.Tensor] = None,
         pair_prop: Optional[torch.Tensor] = None,
         pair_attn: Optional[torch.Tensor] = None,
+        pair_oracle: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Predict distance bin logits for each sequence in the MSA.
 
@@ -137,6 +140,12 @@ class MsaDistanceHead(nn.Module):
                         # sequence — the only pair-specific signal the encoder
                         # can produce.
                         parts.append(pair_attn[b, c_start:c_end].unsqueeze(-1))
+                    if pair_oracle is not None:
+                        # Upper-bound control: the measured CA-CA distance for
+                        # rows whose structure the encoder is allowed to see,
+                        # -1 (-> 0 after clamping) for geometry-free rows.
+                        parts.append((pair_oracle[b, n] / 40.0).clamp(0.0, 1.0)
+                                     .unsqueeze(-1))
                     pair_feat = torch.cat(parts, dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))

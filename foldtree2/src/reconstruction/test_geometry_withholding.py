@@ -94,6 +94,36 @@ def test_mafft_sentinel_stripped():
     assert _strip_mafft_sentinel(chr(3) + chr(4) + "---") == chr(3) + chr(4) + "---"
 
 
+def test_oracle_distance_is_learnable():
+    """Upper-bound control: with a metric in the input the head must be able to
+    fit the bins.  If this passes but real training stays at chance, the encoder
+    is the bottleneck, not the head or the loss."""
+    from foldtree2.src.reconstruction.reconstruction_heads import MsaDistanceHead
+    head = MsaDistanceHead(embed_dim=4, hidden=64, dropout=0.0, use_oracle=True)
+    L = 30
+    pairs = torch.tensor([[i, i + 12] for i in range(L - 12)])
+    cycle = [3.0, 5.0, 8.0, 12.0, 18.0, 25.0, 35.0]
+    oracle = torch.tensor([cycle[k % len(cycle)] for k in range(pairs.shape[0])])
+    oracle = oracle.reshape(1, 1, -1)
+    labels = (oracle.unsqueeze(-1) >= head.edges).sum(-1)
+    feats = torch.zeros(1, 1, L, 4)
+    opt = torch.optim.AdamW(head.parameters(), lr=1e-2)
+    for _ in range(150):
+        logits = head(feats, pairs=pairs, pair_oracle=oracle)
+        loss = torch.nn.functional.cross_entropy(logits.view(-1, head.n_bins),
+                                                labels.view(-1))
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+    acc = (logits.argmax(-1) == labels).float().mean().item()
+    assert acc > 0.9, f"head cannot fit oracle distances (acc {acc:.3f})"
+    # A geometry-free row (oracle -1 -> 0) gets no metric signal at all.
+    no_geom = head(feats, pairs=pairs,
+                   pair_oracle=torch.full((1, 1, pairs.shape[0]), -1.0))
+    pred = no_geom.argmax(-1)
+    assert (pred[0, 0] == pred[0, 0, 0]).all()
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
@@ -101,4 +131,5 @@ if __name__ == "__main__":
     test_propagated_distances_exclude_self()
     test_ft2_alphabet_mapping()
     test_mafft_sentinel_stripped()
+    test_oracle_distance_is_learnable()
     print("geometry-withholding self-checks passed")
