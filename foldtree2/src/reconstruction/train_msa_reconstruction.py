@@ -162,6 +162,14 @@ class MsaReconstructionModule(pl.LightningModule):
         # in heads mode) so noisy low-confidence regions do not poison the
         # training signal.  0 disables masking.
         plddt_threshold: float = 70.0,
+        # Geometry withholding: fraction of known-structure sequences whose
+        # SE(3)-invariant geometry features are dropped from the MSA
+        # Transformer input per batch.  Withheld rows get a learnable "no
+        # geometry" marker embedding instead, and the SE(3) decoder runs on
+        # them (and on ancestral rows) to predict their coordinates from the
+        # geometry propagated across the MSA by row attention.  0 disables
+        # withholding.
+        geometry_withhold_ratio: float = 0.3,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -174,6 +182,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.se3_max_sequences = int(se3_max_sequences) if se3_max_sequences else 0
         self.se3_seed_noise = float(se3_seed_noise)
         self.plddt_threshold = float(plddt_threshold)
+        self.geometry_withhold_ratio = float(geometry_withhold_ratio)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -250,14 +259,35 @@ class MsaReconstructionModule(pl.LightningModule):
             return self._forward_heads(tokens, msa_mask,
                                        batch.get("known_structure"), batch.get("coords"))
 
+    def _geometry_known(self, known_mask):
+        """Per-batch mask of which sequences' geometry is visible to the encoder.
+
+        Known-structure sequences are withheld with probability
+        ``geometry_withhold_ratio`` (independently per sequence per batch),
+        so the MSA Transformer sees an explicit "no geometry" marker on those
+        rows and the SE(3) decoder is trained to reconstruct their
+        coordinates from propagated cross-sequence context.  Ancestral rows
+        are always geometry-free.
+        """
+        if known_mask is None:
+            return None
+        geom_known = known_mask.clone()
+        if self.geometry_withhold_ratio > 0.0:
+            rand = torch.rand(known_mask.shape, device=known_mask.device)
+            geom_known = geom_known & ~(rand < self.geometry_withhold_ratio)
+        return geom_known
+
     def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None):
         geom = None
+        geom_known = None
         if hasattr(self.msa_encoder, 'geom_proj') and self.msa_encoder.geom_proj is not None:
             if coords is not None and known_mask is not None:
-                geom = self._geom_features(coords, known_mask)
+                geom_known = self._geometry_known(known_mask)
+                geom = self._geom_features(coords, geom_known)
 
         enc = self.msa_encoder(
-            tokens, msa_mask=msa_mask, need_head_weights=False, geom_features=geom,
+            tokens, msa_mask=msa_mask, need_head_weights=False,
+            geom_features=geom, geom_known_mask=geom_known,
         )
         features = enc["features"]
         L = tokens.shape[-1]
@@ -279,6 +309,7 @@ class MsaReconstructionModule(pl.LightningModule):
             "distance_logits": self.distance_head(features, seq_mask=seq_mask, pairs=pairs),
             "angle_logits": self.angle_head(features),
             "pairs": pairs,
+            "geom_known": geom_known,
             "attentions": enc.get("row_attentions", None),
         }
 
@@ -308,8 +339,20 @@ class MsaReconstructionModule(pl.LightningModule):
         """
         B, N_seq, L = tokens.shape
 
+        # Geometry visible to the encoder: known structures with a fraction
+        # withheld so the decoder must reconstruct those rows from context.
+        geom_known = None
+        geom = None
+        if (self.msa_encoder.geom_proj is not None
+                and known_mask is not None and coords is not None):
+            geom_known = self._geometry_known(known_mask)
+            geom = self._geom_features(coords, geom_known)
+
         # Step 1: MSA Transformer — cross-sequence context (full length)
-        enc = self.msa_encoder(tokens, msa_mask=msa_mask, need_head_weights=False)
+        enc = self.msa_encoder(
+            tokens, msa_mask=msa_mask, need_head_weights=False,
+            geom_features=geom, geom_known_mask=geom_known,
+        )
         features = enc["features"]  # (B, N_seq, L, D)
 
         # Resolve the per-sequence decoder length cap.
@@ -332,8 +375,11 @@ class MsaReconstructionModule(pl.LightningModule):
         A = None
 
         for b in range(B):
-            # Build the ordered candidate list for this batch element:
-            # supervised (known & not masked) first, then remaining non-masked.
+            # The SE(3) decoder predicts coordinates only for sequences that
+            # lack geometry in the MSA input: withheld known structures
+            # (supervised — their true coords exist but were hidden from the
+            # encoder) and ancestral rows (unsupervised, inference only).
+            # Rows whose geometry is present are not decoded.
             supervised_cands = []
             remaining_cands = []
             for n in range(N_seq):
@@ -344,8 +390,9 @@ class MsaReconstructionModule(pl.LightningModule):
                 if not seq_v:
                     # Fully masked sequence — cannot be decoded.
                     continue
-                is_sup = known_mask is not None and bool(known_mask[b, n])
-                if is_sup:
+                if geom_known is not None and bool(geom_known[b, n]):
+                    continue
+                if known_mask is not None and bool(known_mask[b, n]):
                     supervised_cands.append(n)
                 else:
                     remaining_cands.append(n)
@@ -368,46 +415,25 @@ class MsaReconstructionModule(pl.LightningModule):
                     node_mask_k = torch.ones(
                         K, dtype=torch.bool, device=tokens.device,
                     )
-                # Seed coordinates for the refinement decoder.  The GotenNet
-                # SE(3) decoder is a *refinement* network: seeding all points
-                # at the origin makes every pair distance r_ij = 0, from
-                # which no meaningful geometry can be recovered.  Instead:
-                #   * supervised (known structure) sequences are seeded with
-                #     the true CA coordinates plus Gaussian noise
-                #     N(0, se3_seed_noise) — a denoising task;
-                #   * unknown (ancestral) sequences are seeded with an
-                #     idealized alpha-helix backbone.
-                is_sup = known_mask is not None and bool(known_mask[b, n])
-                if is_sup and coords is not None:
-                    seed_k = coords[b, n, :K].to(device=tokens.device, dtype=torch.float32).clone()
-                    # Padded/short sequences carry NaN coords; replace those
-                    # rows with idealized helix positions and drop them from
-                    # the decoder node mask.
-                    bad = ~torch.isfinite(seed_k).all(dim=-1) | (seed_k == 0).all(dim=-1)
-                    if bad.any():
-                        idx_bad = torch.arange(K, device=tokens.device, dtype=torch.float32)
-                        theta_bad = torch.deg2rad(idx_bad * 100.0)
-                        helix = torch.stack(
-                            [2.3 * torch.cos(theta_bad),
-                             2.3 * torch.sin(theta_bad),
-                             3.6 * idx_bad], dim=-1)
-                        seed_k[bad] = helix[bad]
-                        node_mask_k = node_mask_k & ~bad
-                    if self.se3_seed_noise > 0:
-                        seed_k = seed_k + torch.randn_like(seed_k) * self.se3_seed_noise
-                else:
-                    # Idealized alpha-helix: radius 2.3 A, 100 deg/residue
-                    # rotation, 3.6 A/residue rise along z.
-                    idx = torch.arange(K, device=tokens.device, dtype=torch.float32)
-                    theta = torch.deg2rad(idx * 100.0)
-                    seed_k = torch.stack(
-                        [
-                            2.3 * torch.cos(theta),
-                            2.3 * torch.sin(theta),
-                            3.6 * idx,
-                        ],
-                        dim=-1,
-                    )
+                # Seed coordinates for the refinement decoder.  Every decoded
+                # sequence lacks geometry in the MSA input (withheld known
+                # structure or ancestral row), so all are seeded with an
+                # idealized alpha-helix backbone (radius 2.3 A, 100 deg
+                # rotation, 3.6 A rise): the decoder must deform that seed
+                # into the true structure using only the MSA features.  Seeding
+                # with the true coords would leak the target.
+                idx = torch.arange(K, device=tokens.device, dtype=torch.float32)
+                theta = torch.deg2rad(idx * 100.0)
+                seed_k = torch.stack(
+                    [
+                        2.3 * torch.cos(theta),
+                        2.3 * torch.sin(theta),
+                        3.6 * idx,
+                    ],
+                    dim=-1,
+                )
+                if self.se3_seed_noise > 0:
+                    seed_k = seed_k + torch.randn_like(seed_k) * self.se3_seed_noise
 
                 # Build a HeteroData for this (truncated) sequence
                 g = HeteroData()
@@ -640,6 +666,20 @@ class MsaReconstructionModule(pl.LightningModule):
                     log["train/distance"] = loss.detach()
                     total = total + self._loss_weights["distance"] * loss
 
+                    # Geometry-withheld rows are the actual inference task:
+                    # log their loss separately to track masked-geometry
+                    # recovery without adding a second gradient term.
+                    geom_known = out.get("geom_known")
+                    if geom_known is not None:
+                        withheld = known & ~geom_known
+                        if withheld.any():
+                            loss_w = msa_distance_loss(
+                                out["distance_logits"], labels, withheld,
+                                label_smoothing=self.label_smoothing,
+                                gamma=self.focal_gamma,
+                            )
+                            log["train/distance_withheld"] = loss_w.detach()
+
                 # Angle
                 if self._loss_weights.get("angle", 0) > 0:
                     targets = self._angle_targets(coords_tgt).to(self.device)
@@ -650,6 +690,16 @@ class MsaReconstructionModule(pl.LightningModule):
                     )
                     log["train/angle"] = loss.detach()
                     total = total + self._loss_weights["angle"] * loss
+
+                    geom_known = out.get("geom_known")
+                    if geom_known is not None:
+                        withheld = known & ~geom_known
+                        if withheld.any():
+                            loss_w = msa_angle_loss(
+                                out["angle_logits"], targets_3d, withheld,
+                                res_mask=torch.isfinite(targets),
+                            )
+                            log["train/angle_withheld"] = loss_w.detach()
 
         self.log_dict(log, prog_bar=True)
         return total
@@ -858,6 +908,12 @@ def _parser():
                    help="Exclude residues with AlphaFold pLDDT below this "
                         "value from supervision (SE(3) loss and heads-mode "
                         "distance/angle targets). Set to 0 to disable.")
+    p.add_argument("--geometry-withhold-ratio", type=float, default=0.3,
+                   help="Fraction of known-structure sequences per batch whose "
+                        "geometry features are withheld from the MSA Transformer "
+                        "input (replaced by a learnable 'no geometry' marker). "
+                        "The SE(3) decoder is trained to predict those rows' "
+                        "coordinates from propagated MSA context.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -972,6 +1028,7 @@ def main():
         se3_max_residues=args.se3_max_residues,
         se3_max_sequences=args.se3_max_sequences,
         se3_seed_noise=args.se3_seed_noise,
+        geometry_withhold_ratio=args.geometry_withhold_ratio,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,
