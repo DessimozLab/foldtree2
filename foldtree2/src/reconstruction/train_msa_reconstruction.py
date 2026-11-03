@@ -838,6 +838,17 @@ class MsaReconstructionModule(pl.LightningModule):
                                 recalls.append(((pred == labels) & m).sum() / m.sum())
                         if recalls:
                             log[f"val/{name}_macro_acc"] = torch.stack(recalls).mean()
+                        # Contact F1 (true distance <= 8 A), the standard
+                        # contact-prediction measure: far more sensitive to
+                        # real geometry than 16-bin accuracy.
+                        n_contact = self.distance_head.contact_bins
+                        is_contact = valid & (labels < n_contact)
+                        pred_contact = valid & (pred < n_contact)
+                        tp = (is_contact & pred_contact).sum().float()
+                        if tp > 0:
+                            precision = tp / pred_contact.sum().float()
+                            recall = tp / is_contact.sum().float()
+                            log[f"val/{name}_contact_f1"] = 2 * precision * recall / (precision + recall)
                 if withheld.any():
                     log["val/loss_withheld"] = msa_distance_loss(
                         out["distance_logits"], labels, withheld, gamma=self.focal_gamma
