@@ -215,14 +215,19 @@ class MsaReconstructionHead(nn.Module):
         # embedding drives those rows.  The row attention then propagates
         # geometry from known to masked sequences during axial processing.
         if self.geom_dim > 0:
-            self.geom_proj = nn.Linear(self.geom_dim, embed_dim)
-            # Learnable marker added to MSA rows whose geometry has been
-            # withheld.  This gives axial attention an explicit signal of
-            # which rows carry structural information so it can propagate
-            # geometry from rows that have it to rows that do not.
-            self.no_geom_embedding = nn.Parameter(
-                0.02 * torch.randn(1, 1, 1, embed_dim)
-            )
+            if self.geom_dim >= embed_dim:
+                raise ValueError(
+                    f"geom_dim ({self.geom_dim}) must be smaller than "
+                    f"embed_dim ({embed_dim})"
+                )
+            # Geometry is *concatenated*, not summed: the last ``geom_dim``
+            # channels of the embedding are reserved for structure, so axial
+            # attention and the pair heads can read it as a separate signal
+            # instead of a perturbation of the token embedding.
+            self.geom_proj = nn.Linear(self.geom_dim, self.geom_dim)
+            # Learnable marker occupying the geometry channels of rows whose
+            # geometry has been withheld.
+            self.no_geom_embedding = nn.Parameter(0.02 * torch.randn(self.geom_dim))
         else:
             self.geom_proj = None
             self.no_geom_embedding = None
@@ -391,40 +396,41 @@ class MsaReconstructionHead(nn.Module):
         x = x * msa_mask.unsqueeze(-1).type_as(x)
 
         # ---- Integrate geometry features for rows that carry geometry ----
-        # Each sequence with available structure supplies per-residue
-        # geometry (pseudo-torsions, bond-angle cosines, contact densities,
-        # nearest-neighbour distances).  Rows whose geometry is withheld get
-        # zero geometry features plus a learnable "no geometry" marker, so
-        # axial attention can explicitly distinguish them and propagate
-        # structural information from the rows that do carry geometry.
-        if self.geom_proj is not None and geom_features is not None:
-            if geom_features.shape != tokens.shape + (self.geom_dim,):
-                raise ValueError(
-                    f"geom_features expected shape "
-                    f"{tuple(tokens.shape) + (self.geom_dim,)}, "
-                    f"got {tuple(geom_features.shape)}"
-                )
-            if geom_known_mask is None:
-                has_geom = torch.ones(
-                    batch_size, num_seqs, dtype=torch.bool, device=tokens.device
-                )
+        # Each sequence with available structure supplies per-residue geometry
+        # (pseudo-torsions, bond-angle cosines, contact densities,
+        # nearest-neighbour distances).  Instead of summing it into the token
+        # embedding, the geometry is *concatenated* into the last ``geom_dim``
+        # channels of the embedding, so it remains a distinct signal that axial
+        # attention and the pair heads can read separately.  Rows whose geometry
+        # is withheld get zeros in those channels plus a learnable "no geometry"
+        # marker, which explicitly tells the model which rows lack structure.
+        if self.geom_proj is not None:
+            if geom_features is None:
+                geom_embed = x.new_zeros(tokens.shape + (self.geom_dim,))
             else:
-                if geom_known_mask.shape != (batch_size, num_seqs):
+                if geom_features.shape != tokens.shape + (self.geom_dim,):
                     raise ValueError(
-                        f"geom_known_mask expected shape "
-                        f"({batch_size}, {num_seqs}), got "
-                        f"{tuple(geom_known_mask.shape)}"
+                        f"geom_features expected shape "
+                        f"{tuple(tokens.shape) + (self.geom_dim,)}, "
+                        f"got {tuple(geom_features.shape)}"
                     )
-                has_geom = geom_known_mask.to(torch.bool)
-            row_geom = has_geom.unsqueeze(-1) & msa_mask          # (B, N, L)
-            row_no_geom = (~has_geom).unsqueeze(-1) & msa_mask    # (B, N, L)
-            geom_embed = self.geom_proj(geom_features)           # (B, N, L, D)
-            x = x + geom_embed * row_geom.unsqueeze(-1).type_as(x)
-            if self.no_geom_embedding is not None:
-                x = x + self.no_geom_embedding * row_no_geom.unsqueeze(-1).type_as(x)
-        elif self.geom_proj is not None and geom_features is None:
-            # Geometry is enabled but not provided — continue with tokens only.
-            pass
+                if geom_known_mask is None:
+                    has_geom = torch.ones(
+                        batch_size, num_seqs, dtype=torch.bool, device=tokens.device
+                    )
+                else:
+                    if geom_known_mask.shape != (batch_size, num_seqs):
+                        raise ValueError(
+                            f"geom_known_mask expected shape "
+                            f"({batch_size}, {num_seqs}), got "
+                            f"{tuple(geom_known_mask.shape)}"
+                        )
+                    has_geom = geom_known_mask.to(torch.bool)
+                row_geom = has_geom.unsqueeze(-1) & msa_mask          # (B, N, L)
+                row_no_geom = (~has_geom).unsqueeze(-1) & msa_mask    # (B, N, L)
+                geom_embed = self.geom_proj(geom_features) * row_geom.unsqueeze(-1)
+                geom_embed = geom_embed + self.no_geom_embedding * row_no_geom.unsqueeze(-1)
+            x = torch.cat([x[..., : self.embed_dim - self.geom_dim], geom_embed], dim=-1)
 
         # ---- Axial transformer (layout: R, C, B, D) ------------------- #
         # The axial layers expect the attention axes first: R = sequences

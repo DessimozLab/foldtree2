@@ -803,10 +803,10 @@ class MsaReconstructionModule(pl.LightningModule):
                         u = F.normalize(cv[k] - cv[k-1], dim=-1, eps=1e-8)
                         v = F.normalize(cv[k+1] - cv[k], dim=-1, eps=1e-8)
                         geom[b, n, col, 1] = (u * v).sum().clamp(-1., 1.)
-                # Sequential distance d(i, i+3)
+                # Sequential distance d(i, i+3) — scaled to a comparable range
                 if nv >= 4:
                     for k in range(nv - 3):
-                        geom[b, n, vi[k].item(), 2] = (cv[k+3] - cv[k]).norm().clamp(0., 50.)
+                        geom[b, n, vi[k].item(), 2] = (cv[k+3] - cv[k]).norm().clamp(0., 50.) / 10.0
                 # Contact densities and NN distances
                 if nv > 1:
                     pd = torch.cdist(cv[None], cv[None])[0]
@@ -814,14 +814,14 @@ class MsaReconstructionModule(pl.LightningModule):
                     for idx, col in enumerate(vi):
                         col = col.item()
                         dr = pd[idx]
-                        geom[b, n, col, 3] = ((dr < 8.0) & off[idx]).sum().float()
-                        geom[b, n, col, 4] = ((dr < 12.0) & off[idx]).sum().float()
+                        geom[b, n, col, 3] = ((dr < 8.0) & off[idx]).sum().float() / 20.0
+                        geom[b, n, col, 4] = ((dr < 12.0) & off[idx]).sum().float() / 20.0
                         s = dr.clone()
                         s[idx] = float('inf')
                         sd = s.sort().values
                         for fi, nth in enumerate([5, 10, 20, 50], start=5):
                             if len(sd) >= nth:
-                                geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.)
+                                geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.) / 10.0
         return geom
 
     def on_after_backward(self):
