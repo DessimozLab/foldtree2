@@ -55,6 +55,7 @@ from foldtree2.src.reconstruction.msa_transformer_adapter import MsaReconstructi
 from foldtree2.src.reconstruction.reconstruction_heads import (
     MsaDistanceHead,
     MsaAngleHead,
+    MsaCoordHead,
     MsaCoordinateHead,
     msa_distance_loss,
     msa_angle_loss,
@@ -173,6 +174,9 @@ class MsaReconstructionModule(pl.LightningModule):
         # Re-inject the geometry channels before every axial block instead of
         # only at the embedding, so the structural signal survives deep stacks.
         geom_persistent: bool = False,
+        # Auxiliary per-residue canonical-coordinate head whose output feeds
+        # the pair MLP as an analytic distance estimate.
+        coord_head: bool = False,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -187,6 +191,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.plddt_threshold = float(plddt_threshold)
         self.geometry_withhold_ratio = float(geometry_withhold_ratio)
         self.geom_persistent = bool(geom_persistent)
+        self._use_coord_head = bool(coord_head)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -219,9 +224,14 @@ class MsaReconstructionModule(pl.LightningModule):
 
     def _build_heads(self, embed_dim, distance_hidden, angle_hidden, coord_hidden, dropout):
         from foldtree2.src.distance.distance_restraints import DISTANCE_EDGES
+        self.coord_head = (
+            MsaCoordHead(embed_dim=embed_dim, hidden=coord_hidden)
+            if getattr(self, '_use_coord_head', False) else None
+        )
         self.distance_head = MsaDistanceHead(
             embed_dim=embed_dim, hidden=distance_hidden,
             edges=DISTANCE_EDGES, dropout=dropout,
+            use_coords=self.coord_head is not None,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
 
@@ -319,6 +329,7 @@ class MsaReconstructionModule(pl.LightningModule):
             geom_features=geom, geom_known_mask=geom_known,
         )
         features = enc["features"]
+        coord_pred = self.coord_head(features) if getattr(self, "coord_head", None) is not None else None
         L = tokens.shape[-1]
         idx = torch.arange(L, device=self.device)
         pairs = (idx[None] - idx[:, None]).abs().ge(self.min_separation).nonzero()
@@ -337,8 +348,11 @@ class MsaReconstructionModule(pl.LightningModule):
             seq_mask = None
         return {
             "features": features,
-            "distance_logits": self.distance_head(features, seq_mask=seq_mask, pairs=pairs),
+            "distance_logits": self.distance_head(
+                features, seq_mask=seq_mask, pairs=pairs, pair_coords=coord_pred
+            ),
             "angle_logits": self.angle_head(features),
+            "coord_pred": coord_pred,
             "pairs": pairs,
             "geom_known": geom_known,
             "attentions": enc.get("row_attentions", None),
@@ -732,6 +746,17 @@ class MsaReconstructionModule(pl.LightningModule):
                             )
                             log["train/angle_withheld"] = loss_w.detach()
 
+                # Canonical-coordinate head: gives the model an explicit
+                # 3D target, which the pair MLP then converts into distances.
+                if (self._loss_weights.get("coord", 0) > 0
+                        and out.get("coord_pred") is not None):
+                    tgt = self._coord_targets(coords_tgt, known).to(self.device)
+                    valid = tgt[..., 3] > 0
+                    if valid.any():
+                        loss = F.mse_loss(out["coord_pred"][valid], tgt[valid])
+                        log["train/coord"] = loss.detach()
+                        total = total + self._loss_weights["coord"] * loss
+
         self.log_dict(log, prog_bar=True)
         return total
 
@@ -802,7 +827,43 @@ class MsaReconstructionModule(pl.LightningModule):
         return angles
 
     @staticmethod
-    def _geom_features(coords, known_mask):
+    def _canonical_frame(c):
+        """Chain-centred CA coords projected onto their principal axes.
+
+        Returns (proj, rg) where proj is normalised by the radius of gyration
+        rg (Angstrom).  Rotation invariant, so pairwise distances are preserved
+        up to the rg scale.
+        """
+        vr = torch.isfinite(c).all(dim=-1)
+        if int(vr.sum()) < 3:
+            return None, 0.0
+        cv = c[vr]
+        centred = cv - cv.mean(dim=0)
+        rg = centred.norm(dim=-1).mean().clamp(min=1.0)
+        _, _, Vh = torch.linalg.svd(centred, full_matrices=False)
+        proj = (centred @ Vh.T) / rg
+        out = torch.zeros_like(c)
+        out[vr] = proj
+        return out, float(rg)
+
+    def _coord_targets(self, coords, known_mask):
+        """(B, N_seq, L, 4): canonical coords + radius of gyration per residue."""
+        B, N_seq, L, _ = coords.shape
+        tgt = torch.zeros(B, N_seq, L, 4, device=coords.device)
+        for b in range(B):
+            for n in range(N_seq):
+                if not known_mask[b, n]:
+                    continue
+                proj, rg = self._canonical_frame(coords[b, n])
+                if proj is None:
+                    continue
+                tgt[b, n, :, :3] = proj
+                # Radius of gyration is stored in units of 20 A so the
+                # coordinate and scale channels have comparable magnitude.
+                tgt[b, n, :, 3] = rg / 20.0
+        return tgt
+
+    def _geom_features(self, coords, known_mask):
         """SE(3)-invariant per-residue geometry features from CA coords.
 
         Twelve channels: pseudo-torsion, bond-angle cosine, d(i,i+3), contact
@@ -873,12 +934,9 @@ class MsaReconstructionModule(pl.LightningModule):
                                 geom[b, n, col, fi] = sd[nth - 1].clamp(0., 50.) / 10.0
                 # Canonical structural coordinates: centre the chain and project
                 # onto its principal axes, then scale by the radius of gyration.
-                if nv >= 3:
-                    centred = cv - cv.mean(dim=0)
-                    rg = centred.norm(dim=-1).mean().clamp(min=1.0)
-                    _, _, Vh = torch.linalg.svd(centred, full_matrices=False)
-                    proj = (centred @ Vh.T) / rg
-                    geom[b, n, vi, 9:12] = proj
+                proj, _ = self._canonical_frame(c)
+                if proj is not None:
+                    geom[b, n, :, 9:12] = proj
         return geom
 
     def on_after_backward(self):
@@ -992,6 +1050,10 @@ def _parser():
     p.add_argument("--geom-persistent", action="store_true",
                    help="Re-inject the geometry channels before every axial "
                         "attention block instead of only at the embedding.")
+    p.add_argument("--coord-head", action="store_true",
+                   help="Add the canonical-coordinate head: predict per-residue "
+                        "canonical CA coordinates and feed the resulting analytic "
+                        "pair distance into the distance head.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1108,6 +1170,7 @@ def main():
         se3_seed_noise=args.se3_seed_noise,
         geometry_withhold_ratio=args.geometry_withhold_ratio,
         geom_persistent=args.geom_persistent,
+        coord_head=args.coord_head,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,

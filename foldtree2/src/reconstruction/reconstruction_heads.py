@@ -35,6 +35,7 @@ class MsaDistanceHead(nn.Module):
         hidden: int = 128,
         edges=DISTANCE_EDGES,
         dropout: float = 0.1,
+        use_coords: bool = False,
     ):
         super().__init__()
         edges = torch.tensor(edges, dtype=torch.float32)
@@ -50,7 +51,7 @@ class MsaDistanceHead(nn.Module):
             # channels (linear and log), and one normalised dot product of the
             # two residue features — without a relative term the head cannot
             # tell "same environment" from "opposite ends of the chain".
-            nn.Linear(embed_dim * 2 + 3, hidden),
+            nn.Linear(embed_dim * 2 + 3 + (1 if use_coords else 0), hidden),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -65,6 +66,7 @@ class MsaDistanceHead(nn.Module):
         seq_mask: Optional[torch.Tensor] = None,
         pairs: Optional[torch.Tensor] = None,
         chunk_size: int = 2048,
+        pair_coords: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Predict distance bin logits for each sequence in the MSA.
 
@@ -112,7 +114,16 @@ class MsaDistanceHead(nn.Module):
                     )
                     fi, fj = feat[i], feat[j]
                     rel = ((fi * fj).sum(-1) / D).unsqueeze(-1)
-                    pair_feat = torch.cat([fi, fj, sep_feat, rel], dim=-1)
+                    parts = [fi, fj, sep_feat, rel]
+                    if pair_coords is not None:
+                        # Analytic distance from the predicted canonical
+                        # coordinates: the head gets a geometric estimate of
+                        # |r_i - r_j| for free instead of having to infer it.
+                        cc = pair_coords[b, n]                     # (L, 4)
+                        rg = cc[i, 3].clamp(min=0.05) * 20.0
+                        d_hat = torch.linalg.norm(cc[i, :3] - cc[j, :3], dim=-1) * rg
+                        parts.append((d_hat / 40.0).clamp(0.0, 1.0).unsqueeze(-1))
+                    pair_feat = torch.cat(parts, dim=-1)
                     chunk_list.append(self.pair_mlp(pair_feat))
                 all_out.append(torch.cat(chunk_list, dim=0))
 
@@ -175,6 +186,28 @@ class MsaContactHead(nn.Module):
         return torch.stack(all_out, dim=0).view(B, N_seq, P)
 
 
+class MsaCoordHead(nn.Module):
+    """Predict canonical (chain-centred, principal-axis) CA coordinates.
+
+    Outputs (x, y, z) per residue normalised by the chain radius of gyration,
+    plus that radius in Angstrom, so a pairwise distance can be reconstructed
+    analytically as ``|c_i - c_j| * rg``.  Distances are rotation invariant,
+    and the canonical frame makes the regression target well defined.
+    """
+
+    def __init__(self, embed_dim: int = 256, hidden: int = 64):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 4),
+        )
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """(B, N_seq, L, D) -> (B, N_seq, L, 4)."""
+        return self.mlp(features)
+
+
 class MsaAngleHead(nn.Module):
     """Predicts backbone torsion angles (phi, psi, omega) from MSA features.
 
@@ -204,33 +237,13 @@ class MsaAngleHead(nn.Module):
 
 
 class MsaCoordinateHead(nn.Module):
-    """Predicts CA coordinates per residue from MSA features.
+    """Deprecated alias for :class:`MsaCoordHead` (canonical-frame coordinates)."""
 
-    A lightweight regression head — not an IPA module.  Produces rough
-    coordinate estimates that can be refined by downstream SE(3) modules.
-    The coordinates are predicted in a local frame relative to the residue
-    index (like a simple polymer model), so the loss is positional.
-    """
-
-    def __init__(self, embed_dim: int = 256, hidden: int = 128):
+    def __init__(self, embed_dim: int = 256, hidden: int = 64):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, 3),  # (dx, dy, dz) residual step
-        )
+        self.mlp = MsaCoordHead(embed_dim=embed_dim, hidden=hidden).mlp
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """Predict per-residue coordinate deltas.
-
-        Args:
-            features: (B, N_seq, L, D)
-
-        Returns:
-            delta: (B, N_seq, L, 3) coordinate deltas.
-        """
         return self.mlp(features)
 
 
