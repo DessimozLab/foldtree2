@@ -107,6 +107,56 @@ def ca_coordinates_from_pdb(pdb_path: str) -> torch.Tensor:
     )
 
 
+BB_ATOMS = ("N", "CA", "C", "O", "CB")
+
+
+@functools.lru_cache(maxsize=4096)
+def backbone_atoms_from_pdb(pdb_path: str) -> torch.Tensor:
+    """Backbone + beta-carbon coordinates, ``(N, 5, 3)`` float32.
+
+    Atom order is ``BB_ATOMS``.  Atoms that do not exist (the CB of glycine)
+    are NaN, so a transferred side chain can be checked for completeness.
+    Uses the same longest-polymer-chain heuristic as
+    ``ca_coordinates_from_pdb``, so the residue ordering matches.
+    """
+    st = gemmi.read_structure(pdb_path)
+    best_model, best_count = None, 0
+    for model in st:
+        count = sum(
+            1 for chain in model for res in chain
+            if not res.is_water()
+            and gemmi.find_tabulated_residue(res.name).kind == gemmi.ResidueKind.AA
+            and res.get_ca() is not None
+        )
+        if count > best_count:
+            best_count, best_model = count, model
+    if best_model is None:
+        raise ValueError(f"No CA atoms found in {pdb_path}")
+    best_chain, best_len = None, 0
+    for chain in best_model:
+        rows = []
+        for res in chain:
+            if res.is_water():
+                continue
+            if gemmi.find_tabulated_residue(res.name).kind != gemmi.ResidueKind.AA:
+                continue
+            if res.get_ca() is None:
+                continue
+            row = []
+            for name in BB_ATOMS:
+                atom = res.find_atom(name, "*")
+                if atom is None:
+                    row.append((float("nan"),) * 3)
+                else:
+                    row.append((atom.pos.x, atom.pos.y, atom.pos.z))
+            rows.append(row)
+        if len(rows) > best_len:
+            best_len, best_chain = len(rows), rows
+    if not best_chain:
+        raise ValueError(f"No backbone atoms in polymer chain of {pdb_path}")
+    return torch.tensor(np.array(best_chain, dtype=np.float32))
+
+
 # ---------------------------------------------------------------------------
 # Sequence I/O helpers
 # ---------------------------------------------------------------------------
@@ -323,6 +373,8 @@ class FamilyMsaSample:
         # --- Pre-load CA coords + confidence ---
         self._ca_coords: Dict[str, torch.Tensor] = {}
         self._ca_plddt: Dict[str, torch.Tensor] = {}
+        # Backbone + CB atoms (N, CA, C, O, CB) for side-chain transfer.
+        self._bb_coords: Dict[str, torch.Tensor] = {}
         for taxon in self.taxon_ids:
             pdb = struct_dir / f"{taxon}.pdb"
             if not pdb.is_file():
@@ -332,6 +384,12 @@ class FamilyMsaSample:
             coords, plddt = ca_coordinates_from_pdb(str(pdb))
             self._ca_coords[taxon] = coords
             self._ca_plddt[taxon] = plddt
+            try:
+                self._bb_coords[taxon] = backbone_atoms_from_pdb(str(pdb))
+            except ValueError:
+                self._bb_coords[taxon] = torch.full(
+                    (coords.shape[0], len(BB_ATOMS), 3), float("nan"), dtype=torch.float32
+                )
 
         # --- Distance labels (shared pairs, per-taxon labels) ---
         self._distance_labels: Dict[str, torch.Tensor] = {}
@@ -357,6 +415,8 @@ class FamilyMsaSample:
                 coords = coords[:n]
                 self._ca_coords[taxon] = coords
                 self._ca_plddt[taxon] = self._ca_plddt[taxon][:n]
+                if taxon in self._bb_coords:
+                    self._bb_coords[taxon] = self._bb_coords[taxon][:n]
                 cum = valid.cumsum(dim=0)
                 valid = valid.clone()
                 valid &= cum <= n
@@ -432,6 +492,8 @@ class FamilyMsaSample:
             q = self._ca_coords[taxon][[cols[c] for c in shared]]
             r, t = procrustes(p, q)
             self._ca_coords[taxon] = self._ca_coords[taxon] @ r.T + t
+            if taxon in self._bb_coords:
+                self._bb_coords[taxon] = self._bb_coords[taxon] @ r.T + t
 
     def _build_transfer_prior(self, plddt_threshold: float) -> Dict[str, torch.Tensor]:
         """Leave-one-out mean CA position of the homologs at each column.
@@ -452,6 +514,49 @@ class FamilyMsaSample:
                     arr[c] = torch.stack(vals).mean(dim=0)
             prior[taxon] = arr
         return prior
+
+    def _build_backbone_prior(self, plddt_threshold: float) -> Dict[str, torch.Tensor]:
+        """Leave-one-out mean backbone atoms plus a modelled CB.
+
+        Side chains cannot be averaged: only ~14% of alignment columns carry
+        the same residue type across a family, so a transferred CG/SG would be
+        a mixture of chemically different groups.  CB is the exception - every
+        residue except glycine has one, and its position relative to the
+        backbone frame is essentially invariant (measured |CB-CA| = 1.535 A,
+        per-axis std ~0.04 A over the cohort), so it can be placed from the
+        averaged N/CA/C.
+
+        Returns ``(L, 5, 3)`` in ``BB_ATOMS`` order, NaN where no homolog
+        covers the column.  For glycine the CB is a pseudo-atom.
+        """
+        confident = self._confident_columns(plddt_threshold)
+        L = max((len(self._sequences[t]) for t in self.taxon_ids), default=0)
+        out: Dict[str, torch.Tensor] = {}
+        for taxon in self.taxon_ids:
+            arr = torch.full((L, len(BB_ATOMS), 3), float("nan"), dtype=torch.float32)
+            for c in confident.get(taxon, {}):
+                rows = [self._bb_coords[o][confident[o][c]]
+                        for o in confident
+                        if o != taxon and c in confident[o]
+                        and torch.isfinite(self._bb_coords[o][confident[o][c]]).all()]
+                if not rows:
+                    continue
+                mean = torch.stack(rows).mean(dim=0)
+                n, ca, cc = mean[0], mean[1], mean[2]
+                e1 = ca - cc
+                n1 = torch.linalg.norm(e1)
+                if n1 > 1e-6:
+                    e1 = e1 / n1
+                    v = n - ca
+                    e2 = v - v.dot(e1) * e1
+                    n2 = torch.linalg.norm(e2)
+                    if n2 > 1e-6:
+                        e2 = e2 / n2
+                        e3 = torch.linalg.cross(e1, e2)
+                        mean[4] = ca + 0.557 * e1 - 0.783 * e2 + 1.197 * e3
+                arr[c] = mean
+            out[taxon] = arr
+        return out
 
     def n_taxa(self) -> int:
         return len(self.taxon_ids)

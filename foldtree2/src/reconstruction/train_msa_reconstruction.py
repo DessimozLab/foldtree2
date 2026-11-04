@@ -289,6 +289,11 @@ class MsaReconstructionModule(pl.LightningModule):
             se3_hidden=se3_hidden,
             se3_depth=se3_depth,
             se3_heads=se3_heads,
+            # GotenNet indexes its atom embedding with the ft2 token ids, so
+            # it needs at least ``alphabet_size`` entries: the 40-state ft2
+            # alphabet produces id 40, which overflows the old default of 40
+            # (valid ids are 0..39) and silently dropped those rows.
+            se3_num_atom_types=self.hparams.alphabet_size,
             dropout=self.hparams.dropout,
         )
         # GotenNet's coord/angle heads are zero-initialised, which blocks
@@ -625,9 +630,8 @@ class MsaReconstructionModule(pl.LightningModule):
                             "use_distance_contacts": True,
                         },
                     )
-                except (RuntimeError, ValueError):
-                    # shortcut: degenerate GotenNet input (nonfinite invariants);
-                    # skip this sequence, upgrade if failures become common
+                except (RuntimeError, ValueError) as exc:
+                    print(f"decoder skipped row {n}: {exc}")
                     continue
                 coords_k = out["coors_out_flat"]   # (K, 3)
                 angles_k = out["angles"]           # (K, A) — A depends on head
@@ -812,6 +816,12 @@ class MsaReconstructionModule(pl.LightningModule):
                     tc = tgt_c[res_mask]
                     comps["prior_fape"] = comps.get("prior_fape", zero) + (
                         (sc - sc.mean(0)) - (tc - tc.mean(0))
+                    ).norm(dim=-1).mean().detach()
+                    # How much the decoder actually moves the seed.  If this is
+                    # ~0 the GotenNet residual head is inert and fape is just
+                    # the prior's accuracy.
+                    comps["delta"] = comps.get("delta", zero) + (
+                        out["coords"][b, s][res_mask] - sc
                     ).norm(dim=-1).mean().detach()
         if n == 0:
             return zero, {}
