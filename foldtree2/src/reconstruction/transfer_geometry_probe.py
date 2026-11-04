@@ -59,7 +59,7 @@ def columns(seq: str, coords: np.ndarray, plddt: np.ndarray, thresh: float):
     return out
 
 
-def analyse(family, plddt_thresh: float):
+def analyse(family, plddt_thresh: float, iterations: int = 1):
     taxa = family.taxon_ids
     seqs = {t: family._sequences[t] for t in taxa}
     coords = {t: family._ca_coords[t].numpy() for t in taxa}
@@ -70,18 +70,38 @@ def analyse(family, plddt_thresh: float):
     if len(cols[ref]) < 30 or len(taxa) < 3:
         return None
 
-    # Superpose every taxon onto the reference frame, keyed by alignment column.
-    superposed, rmsd = {}, {}
-    for t in taxa:
-        shared = sorted(set(cols[ref]) & set(cols[t]))
-        if len(shared) < 30:
+    # Superpose every taxon onto the family consensus (not onto one reference):
+    # fitting each structure to a single arbitrary reference propagates that
+    # reference's own errors into every transferred coordinate.
+    placed = {t: {c: coords[t][k] for c, k in cols[t].items()} for t in taxa}
+    consensus = {}
+    for _ in range(iterations):
+        acc, cnt = {}, {}
+        for t in taxa:
+            for c, v in placed[t].items():
+                acc[c] = acc.get(c, 0.0) + v
+                cnt[c] = cnt.get(c, 0) + 1
+        consensus = {c: acc[c] / cnt[c] for c, n in cnt.items() if n >= 2}
+        if not consensus:
             return None
-        p = np.array([coords[ref][cols[ref][c]] for c in shared])
-        q = np.array([coords[t][cols[t][c]] for c in shared])
-        r, tr = procrustes(p, q)
-        superposed[t] = {c: q[i] @ r.T + tr for i, c in enumerate(shared)}
-        rmsd[t] = float(np.sqrt(((np.array([superposed[t][c] for c in shared]) - p)
-                                ** 2).sum(axis=1).mean()))
+        for t in taxa:
+            shared = sorted(set(consensus) & set(placed[t]))
+            if len(shared) < 30:
+                return None
+            p = np.array([consensus[c] for c in shared])
+            q = np.array([placed[t][c] for c in shared])
+            r, tr = procrustes(p, q)
+            placed[t] = {c: v @ r.T + tr for c, v in placed[t].items()}
+
+    superposed = placed
+    rmsd = {}
+    for t in taxa:
+        shared = [c for c in superposed[t] if c in consensus]
+        if not shared:
+            continue
+        pts = np.array([superposed[t][c] for c in shared])
+        cen = np.array([consensus[c] for c in shared])
+        rmsd[t] = float(np.sqrt(((pts - cen) ** 2).sum(axis=1).mean()))
 
     # Leave-one-out transfer: predict each taxon from its homologs.
     transfer, naive = [], []
@@ -111,6 +131,10 @@ def main():
     ap.add_argument("--families-root", default="families/Information_benchmark/marker_genes")
     ap.add_argument("--n-families", type=int, default=30)
     ap.add_argument("--plddt-threshold", type=float, default=70.0)
+    ap.add_argument("--iterations", type=int, default=1,
+                    help="Consensus-superposition rounds (1 = fit to a single "
+                         "reference taxon, >1 = refit every structure to the "
+                         "family consensus).")
     args = ap.parse_args()
 
     from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
@@ -124,7 +148,7 @@ def main():
             sample = FamilyMsaSample(fam, alphabet_size=51, require_all_coords=False)
         except Exception:
             continue
-        res = analyse(sample, args.plddt_threshold)
+        res = analyse(sample, args.plddt_threshold, args.iterations)
         if res is None:
             continue
         rmsd, transfer, naive = res

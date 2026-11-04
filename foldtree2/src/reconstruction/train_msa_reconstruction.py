@@ -94,6 +94,25 @@ def _ca_pseudo_dihedrals(ca: torch.Tensor) -> torch.Tensor:
     return result
 
 
+def _fill_prior_gaps(prior: torch.Tensor) -> torch.Tensor | None:
+    """Nearest-neighbour fill of the NaNs in a transferred prior.
+
+    Alignment columns where no homolog has a confident residue have no prior
+    coordinate.  Leaving them as NaN makes the seed unusable, and filling them
+    with the origin collapses the chain, so each gap takes the coordinate of
+    the closest covered residue along the sequence.
+
+    Returns None when fewer than three residues carry a prior.
+    """
+    finite = torch.isfinite(prior).all(dim=-1)
+    if int(finite.sum()) < 3:
+        return None
+    idx = finite.nonzero(as_tuple=True)[0]
+    pos = torch.arange(prior.shape[0], device=prior.device)
+    nearest = idx[torch.argmin((pos.unsqueeze(1) - idx.unsqueeze(0)).abs(), dim=1)]
+    return prior[nearest]
+
+
 # ---------------------------------------------------------------------------
 # Lightning module
 # ---------------------------------------------------------------------------
@@ -293,7 +312,8 @@ class MsaReconstructionModule(pl.LightningModule):
 
         if self.use_se3:
             return self._forward_se3(tokens, msa_mask,
-                                     batch.get("known_structure"), batch.get("coords"))
+                                     batch.get("known_structure"), batch.get("coords"),
+                                     batch.get("transfer_coords"))
         else:
             return self._forward_heads(tokens, msa_mask,
                                        batch.get("known_structure"), batch.get("coords"),
@@ -458,7 +478,8 @@ class MsaReconstructionModule(pl.LightningModule):
             "attentions": enc.get("row_attentions", None),
         }
 
-    def _forward_se3(self, tokens, msa_mask, known_mask=None, coords=None):
+    def _forward_se3(self, tokens, msa_mask, known_mask=None, coords=None,
+                     transfer=None):
         """Run MSA Transformer then SE(3) decoder per sequence.
 
         The GotenNet SE(3) decoder runs a dense O(L^2) neighbor attention per
@@ -516,6 +537,7 @@ class MsaReconstructionModule(pl.LightningModule):
         # sequences.  Non-decoded sequences are zero-filled later.
         all_coords = [[None] * N_seq for _ in range(B)]
         all_angles = [[None] * N_seq for _ in range(B)]
+        all_seeds = [[None] * N_seq for _ in range(B)]
         decoded_idx = []  # list of (b, n) tuples that were actually decoded
         A = None
 
@@ -562,21 +584,28 @@ class MsaReconstructionModule(pl.LightningModule):
                     )
                 # Seed coordinates for the refinement decoder.  Every decoded
                 # sequence lacks geometry in the MSA input (withheld known
-                # structure or ancestral row), so all are seeded with an
-                # idealized alpha-helix backbone (radius 2.3 A, 100 deg
-                # rotation, 3.6 A rise): the decoder must deform that seed
-                # into the true structure using only the MSA features.  Seeding
-                # with the true coords would leak the target.
-                idx = torch.arange(K, device=tokens.device, dtype=torch.float32)
-                theta = torch.deg2rad(idx * 100.0)
-                seed_k = torch.stack(
-                    [
-                        2.3 * torch.cos(theta),
-                        2.3 * torch.sin(theta),
-                        3.6 * idx,
-                    ],
-                    dim=-1,
-                )
+                # structure or ancestral row).  When a homolog-transferred
+                # prior exists it is used as the seed: it is a real structure
+                # (median transfer error ~1.3 A) rather than a generic helix,
+                # and it never contains the target row's own coordinates.
+                # Otherwise fall back to an idealized alpha-helix backbone
+                # (radius 2.3 A, 100 deg rotation, 3.6 A rise).
+                prior_k = None
+                if transfer is not None:
+                    prior_k = _fill_prior_gaps(transfer[b, n, :K])
+                if prior_k is not None:
+                    seed_k = prior_k
+                else:
+                    idx = torch.arange(K, device=tokens.device, dtype=torch.float32)
+                    theta = torch.deg2rad(idx * 100.0)
+                    seed_k = torch.stack(
+                        [
+                            2.3 * torch.cos(theta),
+                            2.3 * torch.sin(theta),
+                            3.6 * idx,
+                        ],
+                        dim=-1,
+                    )
                 if self.se3_seed_noise > 0:
                     seed_k = seed_k + torch.randn_like(seed_k) * self.se3_seed_noise
 
@@ -610,10 +639,13 @@ class MsaReconstructionModule(pl.LightningModule):
                 # (loss, validation, checkpointing) stay consistent.
                 coords_full = torch.zeros(L, 3, device=tokens.device)
                 angles_full = torch.zeros(L, A, device=tokens.device)
+                seed_full = torch.zeros(L, 3, device=tokens.device)
                 coords_full[:K] = coords_k
                 angles_full[:K] = angles_k
+                seed_full[:K] = seed_k
                 all_coords[b][n] = coords_full
                 all_angles[b][n] = angles_full
+                all_seeds[b][n] = seed_full
                 decoded_idx.append((b, n))
 
         # Default angle dim if no sequence was decoded at all.
@@ -626,6 +658,7 @@ class MsaReconstructionModule(pl.LightningModule):
                 if all_coords[b][n] is None:
                     all_coords[b][n] = torch.zeros(L, 3, device=tokens.device)
                     all_angles[b][n] = torch.zeros(L, A, device=tokens.device)
+                    all_seeds[b][n] = torch.zeros(L, 3, device=tokens.device)
 
         coords_out = torch.stack(
             [torch.stack(row, dim=0) for row in all_coords], dim=0
@@ -639,6 +672,9 @@ class MsaReconstructionModule(pl.LightningModule):
             "coords": coords_out,
             "angles": angles_out,
             "attentions": enc.get("row_attentions", None),
+            "se3_seeds": torch.stack(
+                [torch.stack(row, dim=0) for row in all_seeds], dim=0
+            ).view(B, N_seq, L, 3),
             "se3_max_residues": K,
             "se3_decoded_idx": decoded_idx,
         }
@@ -721,6 +757,67 @@ class MsaReconstructionModule(pl.LightningModule):
         )
         return total, components
 
+    def _se3_losses(self, out, batch, prefix):
+        """Sum the per-sequence SE(3) losses over decoded, supervised rows.
+
+        Shared by training_step and validation_step so the reported numbers are
+        computed identically.  Returns (total_loss, {prefix/se3_<name>: ...})
+        normalised by the number of supervised decoded sequences.
+        """
+        known = batch.get("known_structure")
+        coords_tgt = batch.get("coords")
+        mask = batch.get("mask")
+        plddt = batch.get("plddt")
+        anchor = out.get("features", out.get("coords"))
+        # Keep the autograd graph alive when nothing was decoded, so
+        # training_step can still call backward() on the returned total.
+        zero = anchor.sum() * 0.0
+        if known is None or coords_tgt is None:
+            return zero, {}
+
+        B, N_seq = known.shape
+        # Loss is restricted to the truncated SE(3) decoder prefix (see
+        # ``_forward_se3``); the decoder is O(L^2) and is only run on the first
+        # ``K`` residues, so the zero-padded tail must not contribute.
+        K_cap = int(out.get("se3_max_residues", 0) or 0)
+        decoded = {(int(b), int(n)) for b, n in out.get("se3_decoded_idx", [])}
+        total = zero
+        comps = {}
+        n = 0
+        for b in range(B):
+            for s in range(N_seq):
+                if (b, s) not in decoded or not known[b, s]:
+                    # Not decoded, or no target coordinates: no loss.
+                    continue
+                n += 1
+                res_mask = (mask[b, s] if mask is not None
+                            else torch.ones_like(coords_tgt[b, s, :, 0], dtype=torch.bool))
+                if 0 < K_cap < res_mask.shape[0]:
+                    res_mask = res_mask.clone()
+                    res_mask[K_cap:] = False
+                tgt_c = coords_tgt[b, s]
+                res_mask = res_mask & torch.isfinite(tgt_c).all(dim=-1)
+                if plddt is not None and self.plddt_threshold > 0:
+                    res_mask = res_mask & (plddt[b, s] >= self.plddt_threshold)
+                loss_val, c = self._se3_loss_for_sequence(
+                    out["coords"][b, s], out["angles"][b, s], tgt_c,
+                    res_mask, self._loss_weights,
+                )
+                total = total + loss_val
+                for k, v in c.items():
+                    comps[k] = comps.get(k, zero) + v.detach()
+                seeds = out.get("se3_seeds")
+                if seeds is not None:
+                    sc = seeds[b, s][res_mask]
+                    tc = tgt_c[res_mask]
+                    comps["prior_fape"] = comps.get("prior_fape", zero) + (
+                        (sc - sc.mean(0)) - (tc - tc.mean(0))
+                    ).norm(dim=-1).mean().detach()
+        if n == 0:
+            return zero, {}
+        total = total / n
+        return total, {f"{prefix}/se3_{k}": v / n for k, v in comps.items()}
+
     # ------------------------------------------------------------------ #
     # Training step
     # ------------------------------------------------------------------ #
@@ -736,61 +833,8 @@ class MsaReconstructionModule(pl.LightningModule):
 
         if self.use_se3:
             # SE(3) mode: per-sequence losses
-            B, N_seq = known.shape
-            # Loss is restricted to the truncated SE(3) decoder prefix
-            # (see ``_forward_se3``); the decoder is O(L^2) and is only run on
-            # the first ``K`` residues, so the zero-padded tail of the
-            # predicted coords must not contribute to the loss.
-            K_cap = int(out.get("se3_max_residues", 0) or 0)
-            # Only compute loss for sequences that were actually run through
-            # the decoder; sequences beyond ``se3_max_sequences`` (or fully
-            # masked) get zero coords and must be skipped.
-            decoded_idx = out.get("se3_decoded_idx", [])
-            decoded_set = {(int(b), int(n)) for b, n in decoded_idx}
-            n_decoded_sup = 0  # supervised + decoded (used for normalization)
-            for b in range(B):
-                for n in range(N_seq):
-                    if (b, n) not in decoded_set:
-                        continue
-                    if known is not None and not known[b, n]:
-                        # Decoded but unsupervised: no target coords → no loss.
-                        continue
-                    n_decoded_sup += 1
-                    if mask is not None:
-                        res_mask = mask[b, n]  # (L,)
-                    else:
-                        res_mask = torch.ones_like(coords_tgt[b, n, :, 0], dtype=torch.bool)
-
-                    # Restrict the loss to the truncated SE(3) prefix.
-                    if K_cap > 0 and K_cap < res_mask.shape[0]:
-                        res_mask = res_mask.clone()
-                        res_mask[K_cap:] = False
-
-                    pred_c = out["coords"][b, n]
-                    pred_a = out["angles"][b, n]
-                    tgt_c = coords_tgt[b, n]
-                    # Drop positions with nonfinite target coords (PDB gaps,
-                    # collate padding) so they cannot poison the loss.
-                    res_mask = res_mask & torch.isfinite(tgt_c).all(dim=-1)
-                    # Drop low-confidence (low pLDDT) residues: their coords
-                    # are noisy predictions, not reliable supervision.
-                    if plddt is not None and self.plddt_threshold > 0:
-                        res_mask = res_mask & (plddt[b, n] >= self.plddt_threshold)
-
-                    loss_val, comps = self._se3_loss_for_sequence(
-                        pred_c, pred_a, tgt_c, res_mask, self._loss_weights,
-                    )
-                    total = total + loss_val
-                    for k, v in comps.items():
-                        key = f"train/se3_{k}"
-                        log[key] = log.get(key, total.new_zeros(())) + v.detach()
-
-            # Normalise by number of supervised AND decoded sequences
-            n_sup = max(1, n_decoded_sup)
-            total = total / n_sup
-            for k in list(log.keys()):
-                if k.startswith("train/se3_"):
-                    log[k] = log[k] / n_sup
+            total, se3_log = self._se3_losses(out, batch, "train")
+            log.update(se3_log)
 
         else:
             # Heads mode: distance + angle + coordinate losses
@@ -878,6 +922,12 @@ class MsaReconstructionModule(pl.LightningModule):
         log = {}
         known = batch.get("known_structure")
         coords_tgt = batch.get("coords")
+
+        if self.use_se3:
+            _, se3_log = self._se3_losses(out, batch, "val")
+            if se3_log:
+                self.log_dict(se3_log, prog_bar=True)
+            return se3_log
 
         if coords_tgt is not None and known is not None and not self.use_se3:
             pairs = out.get("pairs")
@@ -1102,7 +1152,7 @@ class MsaReconstructionModule(pl.LightningModule):
             patience=self.lr_patience,
             min_lr=self.min_lr,
         )
-        monitor = "val/loss" if not self.use_se3 else "train/se3_fape"
+        monitor = "val/loss" if not self.use_se3 else "val/se3_fape"
         return {"optimizer": opt, "lr_scheduler": {"scheduler": sched, "monitor": monitor}}
 
     def on_before_optimizer_step(self, optimizer):
@@ -1171,8 +1221,9 @@ def _parser():
                         "the true CA coordinates when seeding the SE(3) "
                         "decoder for supervised sequences "
                         "(denoising/refinement). Set to 0 to seed with the "
-                        "exact coordinates. Unknown (ancestral) sequences "
-                        "are always seeded with an idealized alpha-helix.")
+                        "exact coordinates. Unknown (ancestral) sequences are "
+                        "seeded with the homolog-transferred prior when one "
+                        "exists, otherwise with an idealized alpha-helix.")
     p.add_argument("--plddt-threshold", type=float, default=70.0,
                    help="Exclude residues with AlphaFold pLDDT below this "
                         "value from supervision (SE(3) loss and heads-mode "
@@ -1227,7 +1278,8 @@ def _parser():
 
     # Callbacks
     p.add_argument("--patience", type=int, default=10,
-                   help="EarlyStopping patience on val/loss (or train/fape in SE(3) mode)")
+                   help="EarlyStopping patience on val/loss (heads mode) or "
+                        "val/se3_fape (SE(3) mode)")
     p.add_argument("--lr-patience", type=int, default=5,
                    help="ReduceLROnPlateau patience")
     p.add_argument("--lr-factor", type=float, default=0.5,
@@ -1366,7 +1418,7 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Use val/loss if available, else train/loss
-    ckpt_monitor = "val/loss" if not args.use_se3 else "train/se3_fape"
+    ckpt_monitor = "val/loss" if not args.use_se3 else "val/se3_fape"
 
     # The monitored key contains a "/", which Lightning would splice into the
     # filename and create nested directories, so keep the name epoch-based.

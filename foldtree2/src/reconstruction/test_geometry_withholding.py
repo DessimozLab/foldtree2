@@ -156,6 +156,20 @@ def test_transfer_prior_excludes_self():
     assert prior["a"].shape == (2, 3)
 
 
+def test_prior_gap_fill():
+    from foldtree2.src.reconstruction.train_msa_reconstruction import _fill_prior_gaps
+    prior = torch.tensor([[0.0, 0, 0], [float("nan"), 0, 0],
+                         [float("nan"), 0, 0], [4.0, 0, 0], [6.0, 0, 0]])
+    filled = _fill_prior_gaps(prior)
+    assert filled is not None
+    # Positions 1 and 2 are nearest to residue 0 and residue 3 respectively.
+    assert torch.allclose(filled[1], torch.tensor([0.0, 0.0, 0.0]))
+    assert torch.allclose(filled[2], torch.tensor([4.0, 0.0, 0.0]))
+    assert torch.isfinite(filled).all(), "fill must remove every NaN"
+    sparse = torch.tensor([[1.0, 0, 0], [float("nan"), 0, 0], [2.0, 0, 0]])
+    assert _fill_prior_gaps(sparse) is None, "fewer than 3 covered residues is unusable"
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
@@ -164,4 +178,5 @@ if __name__ == "__main__":
     test_ft2_alphabet_mapping()
     test_mafft_sentinel_stripped()
     test_oracle_distance_is_learnable()
+    test_prior_gap_fill()
     print("geometry-withholding self-checks passed")
