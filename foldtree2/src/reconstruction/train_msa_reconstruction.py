@@ -178,6 +178,7 @@ class MsaReconstructionModule(pl.LightningModule):
         # the true CA coords plus N(0, se3_seed_noise) noise so the decoder
         # acts as a denoising/refinement network.  0 uses the exact coords.
         se3_seed_noise: float = 0.5,
+        se3_seed: str = "prior",
         # Supervision mask: residues with AlphaFold pLDDT below this value
         # are excluded from the SE(3) loss (and from distance/angle targets
         # in heads mode) so noisy low-confidence regions do not poison the
@@ -220,6 +221,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.se3_max_residues = int(se3_max_residues) if se3_max_residues else 0
         self.se3_max_sequences = int(se3_max_sequences) if se3_max_sequences else 0
         self.se3_seed_noise = float(se3_seed_noise)
+        self.se3_seed = se3_seed
         self.plddt_threshold = float(plddt_threshold)
         self.geometry_withhold_ratio = float(geometry_withhold_ratio)
         self.geom_persistent = bool(geom_persistent)
@@ -596,7 +598,7 @@ class MsaReconstructionModule(pl.LightningModule):
                 # Otherwise fall back to an idealized alpha-helix backbone
                 # (radius 2.3 A, 100 deg rotation, 3.6 A rise).
                 prior_k = None
-                if transfer is not None:
+                if self.se3_seed == "prior" and transfer is not None:
                     prior_k = _fill_prior_gaps(transfer[b, n, :K])
                 if prior_k is not None:
                     seed_k = prior_k
@@ -1226,6 +1228,12 @@ def _parser():
                         "filled with any other non-masked sequences.  "
                         "Sequences not decoded get zero coords/angles and "
                         "no loss.  Set to 0 to disable the cap.")
+    p.add_argument("--se3-seed", choices=("prior", "helix"), default="prior",
+                   help="Seed the SE(3) decoder with the transferred homolog "
+                        "prior (default) or with an idealized alpha-helix. The "
+                        "helix seed is a control: if the decoder can learn "
+                        "geometry at all, it should beat the prior baseline "
+                        "from a helix.")
     p.add_argument("--se3-seed-noise", type=float, default=0.5,
                    help="Std-dev (Angstrom) of the Gaussian noise added to "
                         "the true CA coordinates when seeding the SE(3) "
@@ -1382,6 +1390,7 @@ def main():
         se3_max_residues=args.se3_max_residues,
         se3_max_sequences=args.se3_max_sequences,
         se3_seed_noise=args.se3_seed_noise,
+        se3_seed=args.se3_seed,
         geometry_withhold_ratio=args.geometry_withhold_ratio,
         geom_persistent=args.geom_persistent,
         propagate_geometry=args.propagate_geometry,
