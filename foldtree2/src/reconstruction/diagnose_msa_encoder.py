@@ -136,7 +136,7 @@ def probe(fi, fj, seps, labels, train_idx, test_idx, n_bins, use_features=True):
     acc = float((pred == lab).float().mean())
     recalls = [float(((pred == lab) & (lab == b)).sum() / (lab == b).sum())
                for b in range(n_bins) if (lab == b).any()]
-    return acc, float(torch.tensor(recalls).mean())
+    return acc, float(torch.tensor(recalls).mean()), recalls
 
 
 def main():
@@ -150,15 +150,30 @@ def main():
     p.add_argument("--max-len", type=int, default=1200,
                    help="Skip families whose alignment is longer than this "
                         "(attention over very long alignments blows up memory).")
+    p.add_argument("--random-encoder", action="store_true",
+                   help="Use an untrained (randomly initialised) encoder instead of "
+                        "the checkpoint. If a random encoder's features predict "
+                        "distances as well as the trained one, the probe is reading "
+                        "trivial sequence/position information, not geometry.")
+    p.add_argument("--ablate-geometry", action="store_true",
+                   help="Run every probe with the geometry channels removed, so "
+                        "the encoder sees sequence only. Without this the test "
+                        "rows' own structure is injected and the probe measures "
+                        "information present, not information inferred.")
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = Path(args.checkpoint)
-    ck = torch.load(ckpt, map_location=device)
-    hp = ck.get("hyper_parameters", {})
-    embed_dim = int(hp.get("embed_dim") or
-                    ck["state_dict"]["msa_encoder.embed_tokens.weight"].shape[1])
+    if args.random_encoder:
+        hp = {"alphabet_size": 51, "embed_dim": 128, "num_heads": 4, "num_layers": 4,
+              "geometry_withhold_ratio": 0.3}
+        embed_dim = hp["embed_dim"]
+    else:
+        ck = torch.load(ckpt, map_location=device)
+        hp = ck.get("hyper_parameters", {})
+        embed_dim = int(hp.get("embed_dim") or
+                        ck["state_dict"]["msa_encoder.embed_tokens.weight"].shape[1])
     model = MsaReconstructionModule(
         alphabet_size=hp.get("alphabet_size", 51),
         embed_dim=embed_dim,
@@ -168,13 +183,14 @@ def main():
         max_pairs=args.max_pairs,
         loss_weights={"distance": 1.0},
     )
-    state = ck["state_dict"]
-    for k, v in model.state_dict().items():
-        state.setdefault(k, v)
-    model.load_state_dict(state)
+    if not args.random_encoder:
+        state = ck["state_dict"]
+        for k, v in model.state_dict().items():
+            state.setdefault(k, v)
+        model.load_state_dict(state)
     model.to(device).eval()
-    print(f"checkpoint {ckpt.name}  embed_dim={embed_dim} "
-          f"layers={hp.get('num_layers', 4)}")
+    print(f"encoder: {'random init' if args.random_encoder else ckpt.name}  "
+          f"embed_dim={embed_dim} layers={hp.get('num_layers', 4)}")
 
     ds = TreeMsaDataset(families_root=args.families_root, alphabet_size=hp.get("alphabet_size", 51))
     all_fams = [i for i in range(ds.n_families)
@@ -189,7 +205,8 @@ def main():
     print(f"\ntrain families {len(train_fams)}  test families {len(test_fams)}")
 
     # ---------------- 1. attention -> contacts ---------------- #
-    fi, fj, attn, dist, contact, sep = collect(model, test_fams, device, args.max_pairs)
+    fi, fj, attn, dist, contact, sep = collect(model, test_fams, device, args.max_pairs,
+                                               with_geometry=not args.ablate_geometry)
     n_pairs = int(dist.numel())
     n_contact = int(contact.sum().item())
     print("\n=== 1. row attention vs true contacts ===")
@@ -204,7 +221,8 @@ def main():
     print(f"  corr(attention, distance) = {corr:.4f}")
 
     # ---------------- 2. generalising feature probe ---------------- #
-    fi_tr, fj_tr, _, dist_tr, _, sep_tr = collect(model, train_fams, device, args.max_pairs)
+    fi_tr, fj_tr, _, dist_tr, _, sep_tr = collect(model, train_fams, device, args.max_pairs,
+                                                  with_geometry=not args.ablate_geometry)
     lab_tr = (dist_tr.unsqueeze(-1) >= model.distance_head.edges).sum(-1)
     lab_te = (dist.unsqueeze(-1) >= model.distance_head.edges).sum(-1)
     print("\n=== 2. pair probe: trained on train families, tested on unseen families ===")
@@ -212,12 +230,15 @@ def main():
     sep_all = torch.cat([sep_tr, sep]); lab_all = torch.cat([lab_tr, lab_te])
     idx_tr = torch.arange(len(fi_tr), device=device)
     idx_te = torch.arange(len(fi_tr), len(fi_all), device=device)
-    acc, macro = probe(fi_all, fj_all, sep_all, lab_all, idx_tr, idx_te, 16, use_features=True)
-    acc0, macro0 = probe(fi_all, fj_all, sep_all, lab_all, idx_tr, idx_te, 16, use_features=False)
+    acc, macro, rec = probe(fi_all, fj_all, sep_all, lab_all, idx_tr, idx_te, 16, use_features=True)
+    acc0, macro0, rec0 = probe(fi_all, fj_all, sep_all, lab_all, idx_tr, idx_te, 16, use_features=False)
     majority = float(torch.bincount(lab_te, minlength=16).max() / len(lab_te))
+    counts = [int((lab_te == b).sum()) for b in range(16)]
     print(f"  held-out families   : features+separation acc {acc:.3f} macro {macro:.4f}")
     print(f"  held-out families   : separation only     acc {acc0:.3f} macro {macro0:.4f}")
     print(f"  held-out majority   : {majority:.3f}")
+    print(f"  held-out bin counts : {counts}")
+    print(f"  per-bin recall      : {[round(r, 3) for r in rec]}")
 
     # ---------------- 3. geometry ablation ---------------- #
     print("\n=== 3. does the encoder use the geometry channels? ===")
