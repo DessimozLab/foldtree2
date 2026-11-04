@@ -281,7 +281,7 @@ def msa_collate(batch):
                   "pairs": [s.get("pairs") for s in batch]}
 
     for key in ("tokens", "mask", "known_structure", "coords", "plddt",
-                "transfer_coords", "distance_labels"):
+                "transfer_coords", "backbone_prior", "distance_labels"):
         tensors = [s[key] for s in batch]
         if key == "distance_labels":
             # Distance labels have variable P per family — pad to max P
@@ -295,9 +295,7 @@ def msa_collate(batch):
                     t = torch.cat([t, t.new_full((t.shape[0], max_p - t.shape[1]), -1)], dim=1)
                 arr.append(t)
             out[key] = torch.stack(arr, dim=0)
-        elif tensors[0].ndim == 2:
-            out[key] = _pad_tensors(tensors, max_n_seq, max_len)
-        elif tensors[0].ndim == 3:
+        elif tensors[0].ndim >= 2:
             out[key] = _pad_tensors(tensors, max_n_seq, max_len)
         elif tensors[0].ndim == 1:
             arr = []
@@ -437,6 +435,7 @@ class FamilyMsaSample:
         # the distance labels are unaffected.
         self._superpose_to_family_frame(plddt_threshold)
         self._transfer_prior = self._build_transfer_prior(plddt_threshold)
+        self._backbone_prior = self._build_backbone_prior(plddt_threshold)
 
         # Per-taxon labels from shared pairs
         for taxon in self.taxon_ids:
@@ -647,6 +646,8 @@ class FamilyMsaSample:
             mask:            (N_seq, L) bool — non-gap
             known_structure: (N_seq,) bool — supervised
             coords:          (N_seq, L, 3) — NaN at gaps/masked
+            transfer_coords: (N_seq, L, 3) — leave-one-out homolog CA prior
+            backbone_prior:  (N_seq, L, 5, 3) — N,CA,C,O,CB prior per column
             distance_labels: (N_seq, P) long, -1 = invalid
             pairs:           (P, 2) alignment-column-space
             family_id:       str
@@ -661,7 +662,7 @@ class FamilyMsaSample:
         masked_set = set(rng.sample(taxa, min(n_masked, n_taxa - 1))) if n_masked else set()
 
         tokens_list, mask_list = [], []
-        known_list, coord_list, label_list, plddt_list, prior_list = [], [], [], [], []
+        known_list, coord_list, label_list, plddt_list, prior_list, bb_list = [], [], [], [], [], []
         n_pairs = self._pairs.shape[0]
 
         for taxon in taxa:
@@ -705,6 +706,10 @@ class FamilyMsaSample:
             prior = self._transfer_prior.get(taxon)
             prior_list.append(prior if prior is not None
                               else torch.full((L, 3), float("nan"), dtype=torch.float32))
+            bb = self._backbone_prior.get(taxon)
+            bb_list.append(bb if bb is not None
+                           else torch.full((L, len(BB_ATOMS), 3), float("nan"),
+                                          dtype=torch.float32))
 
         return {
             "tokens": torch.stack(tokens_list, dim=0),
@@ -713,6 +718,7 @@ class FamilyMsaSample:
             "coords": torch.stack(coord_list, dim=0),
             "plddt": torch.stack(plddt_list, dim=0),
             "transfer_coords": torch.stack(prior_list, dim=0),
+            "backbone_prior": torch.stack(bb_list, dim=0),
             "distance_labels": torch.stack(label_list, dim=0),
             "pairs": self._pairs,
             "family_id": self.family_id,
