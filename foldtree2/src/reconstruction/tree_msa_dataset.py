@@ -515,45 +515,121 @@ class FamilyMsaSample:
             prior[taxon] = arr
         return prior
 
+    def _aa_columns(self) -> Dict[str, Dict[int, str]]:
+        """taxon -> {alignment column: amino-acid letter}.
+
+        The ft2 alignment and the amino-acid alignment are different alignments
+        of the same sequences, so they cannot be zipped directly; they are
+        matched by walking both and pairing the k-th non-gap residue.
+        """
+        aa_path = self.family_dir / "sequences.aligned.fa"
+        if not aa_path.is_file():
+            return {}
+        aa = {k.split("|")[0]: v
+              for k, v in read_fasta(aa_path).items()}
+        out: Dict[str, Dict[int, str]] = {}
+        for taxon in self.taxon_ids:
+            ft2, seq = self._sequences.get(taxon, ""), aa.get(taxon, "")
+            if not seq:
+                continue
+            cols, j = {}, 0
+            for i, ch in enumerate(ft2):
+                if ch == "-":
+                    continue
+                while j < len(seq) and seq[j] == "-":
+                    j += 1
+                if j < len(seq):
+                    cols[i] = seq[j]
+                    j += 1
+            out[taxon] = cols
+        return out
+
+    @staticmethod
+    def _local_cb(atom: torch.Tensor) -> torch.Tensor:
+        """CB - CA expressed in that residue's own backbone frame."""
+        e1 = atom[1] - atom[2]
+        n1 = torch.linalg.norm(e1)
+        if n1 <= 1e-6:
+            return torch.full((3,), float("nan"), dtype=atom.dtype)
+        e1 = e1 / n1
+        v = atom[0] - atom[1]
+        e2 = v - v.dot(e1) * e1
+        n2 = torch.linalg.norm(e2)
+        if n2 <= 1e-6:
+            return torch.full((3,), float("nan"), dtype=atom.dtype)
+        e2 = e2 / n2
+        e3 = torch.linalg.cross(e1, e2)
+        cb = atom[4] - atom[1]
+        return torch.stack([cb.dot(e1), cb.dot(e2), cb.dot(e3)])
+
     def _build_backbone_prior(self, plddt_threshold: float) -> Dict[str, torch.Tensor]:
         """Leave-one-out mean backbone atoms plus a modelled CB.
 
-        Side chains cannot be averaged: only ~14% of alignment columns carry
-        the same residue type across a family, so a transferred CG/SG would be
-        a mixture of chemically different groups.  CB is the exception - every
-        residue except glycine has one, and its position relative to the
-        backbone frame is essentially invariant (measured |CB-CA| = 1.535 A,
-        per-axis std ~0.04 A over the cohort), so it can be placed from the
-        averaged N/CA/C.
+        N/CA/C are averaged over the homologs at each column.  CB is *not*
+        averaged in the family frame: only ~14% of columns carry the same
+        residue type across a family, and averaging side chains of different
+        conformations gives a physically inconsistent point.  Instead each
+        homolog's CB is expressed in its own backbone frame, those local vectors
+        are averaged, and the result is placed in the target's averaged frame.
+        Donors are restricted to the same residue type; when none exist the
+        homologs sharing the same ft2 structural state are used, and failing
+        that CB is placed from the empirical offsets (|CB-CA| = 1.535 A).
 
         Returns ``(L, 5, 3)`` in ``BB_ATOMS`` order, NaN where no homolog
         covers the column.  For glycine the CB is a pseudo-atom.
         """
         confident = self._confident_columns(plddt_threshold)
+        aa_cols = self._aa_columns()
         L = max((len(self._sequences[t]) for t in self.taxon_ids), default=0)
         out: Dict[str, torch.Tensor] = {}
         for taxon in self.taxon_ids:
             arr = torch.full((L, len(BB_ATOMS), 3), float("nan"), dtype=torch.float32)
             for c in confident.get(taxon, {}):
-                rows = [self._bb_coords[o][confident[o][c]]
-                        for o in confident
-                        if o != taxon and c in confident[o]
-                        and torch.isfinite(self._bb_coords[o][confident[o][c]]).all()]
-                if not rows:
+                donors = [(o, self._bb_coords[o][confident[o][c]])
+                          for o in confident
+                          if o != taxon and c in confident[o]
+                          and torch.isfinite(self._bb_coords[o][confident[o][c]]).all()]
+                if not donors:
                     continue
-                mean = torch.stack(rows).mean(dim=0)
+                mean = torch.stack([atom for _, atom in donors]).mean(dim=0)
+
                 n, ca, cc = mean[0], mean[1], mean[2]
                 e1 = ca - cc
                 n1 = torch.linalg.norm(e1)
-                if n1 > 1e-6:
-                    e1 = e1 / n1
-                    v = n - ca
-                    e2 = v - v.dot(e1) * e1
-                    n2 = torch.linalg.norm(e2)
-                    if n2 > 1e-6:
-                        e2 = e2 / n2
-                        e3 = torch.linalg.cross(e1, e2)
-                        mean[4] = ca + 0.557 * e1 - 0.783 * e2 + 1.197 * e3
+                if n1 <= 1e-6:
+                    arr[c] = mean
+                    continue
+                e1 = e1 / n1
+                v = n - ca
+                e2 = v - v.dot(e1) * e1
+                n2 = torch.linalg.norm(e2)
+                if n2 <= 1e-6:
+                    arr[c] = mean
+                    continue
+                e2 = e2 / n2
+                e3 = torch.linalg.cross(e1, e2)
+
+                letter = aa_cols.get(taxon, {}).get(c)
+                local = None
+                if letter is not None and letter != "G":
+                    same = [atom for o, atom in donors
+                            if aa_cols.get(o, {}).get(c) == letter
+                            and torch.isfinite(atom[4]).all()]
+                    if not same:
+                        # No homolog carries this residue type at this column:
+                        # fall back to homologs in the same structural state.
+                        state = self._sequences[taxon][c]
+                        same = [atom for o, atom in donors
+                                if self._sequences[o][c] == state
+                                and torch.isfinite(atom[4]).all()]
+                    if same:
+                        vecs = [self._local_cb(atom) for atom in same]
+                        vecs = [w for w in vecs if torch.isfinite(w).all()]
+                        if vecs:
+                            local = torch.stack(vecs).mean(dim=0)
+                if local is None:
+                    local = torch.tensor([0.557, -0.783, 1.197], dtype=mean.dtype)
+                mean[4] = ca + local[0] * e1 + local[1] * e2 + local[2] * e3
                 arr[c] = mean
             out[taxon] = arr
         return out

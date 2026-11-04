@@ -170,6 +170,55 @@ def test_prior_gap_fill():
     assert _fill_prior_gaps(sparse) is None, "fewer than 3 covered residues is unusable"
 
 
+def test_backbone_prior_places_cb_from_homolog_frames():
+    """CB must come from homolog side-chain orientations expressed in each
+    homolog's own backbone frame, not from a frame-blind average of absolute
+    CB positions."""
+    from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
+    s = FamilyMsaSample.__new__(FamilyMsaSample)
+    s.taxon_ids = ["a", "b", "c"]
+    s._sequences = {t: "AA" for t in s.taxon_ids}
+    s._ca_plddt = {t: torch.full((2,), 90.0) for t in s.taxon_ids}
+    s._residue_mask = {t: torch.tensor([True, True]) for t in s.taxon_ids}
+
+    n_b = torch.tensor([0.0, 1.0, 0.0])
+    ca_b = torch.zeros(3)
+    c_b = torch.tensor([1.0, 0.0, 0.0])
+    e1 = (ca_b - c_b) / (ca_b - c_b).norm()
+    e2 = n_b - ca_b
+    e3 = torch.linalg.cross(e1, e2)
+    cb_b = ca_b + 0.557 * e1 - 0.783 * e2 + 1.197 * e3
+
+    rot = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    n_c, ca_c, c_c, cb_c = n_b @ rot.T, ca_b @ rot.T, c_b @ rot.T, cb_b @ rot.T
+
+    res_b = torch.stack([n_b, ca_b, c_b, torch.zeros(3), cb_b])
+    res_c = torch.stack([n_c, ca_c, c_c, torch.zeros(3), cb_c])
+    s._bb_coords = {t: torch.stack([res_b, res_b]) for t in ("a", "b")}
+    s._bb_coords["c"] = torch.stack([res_c, res_c])
+    s._ca_coords = {t: s._bb_coords[t][:, 1] for t in s.taxon_ids}
+    s._aa_columns = lambda: {t: {0: "A", 1: "A"} for t in s.taxon_ids}
+
+    prior = s._build_backbone_prior(70.0)["a"][0]
+    naive = (cb_b + cb_c) / 2
+
+    assert abs((prior[4] - prior[1]).norm().item() - 1.535) < 1e-3, \
+        "CB must sit 1.535 A from CA"
+    assert (prior[4] - naive).norm().item() > 0.1, \
+        "CB must not be a frame-blind average of absolute positions"
+
+    # the transferred side chain must be the average local vector, expressed
+    # in the averaged backbone frame
+    e1 = prior[1] - prior[2]
+    e1 = e1 / e1.norm()
+    v = prior[0] - prior[1]
+    e2 = v - v.dot(e1) * e1
+    e2 = e2 / e2.norm()
+    e3 = torch.linalg.cross(e1, e2)
+    local = torch.tensor([prior[4].dot(e1), prior[4].dot(e2), prior[4].dot(e3)])
+    assert torch.allclose(local, torch.tensor([0.557, -0.783, 1.197]), atol=1e-3), local
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
