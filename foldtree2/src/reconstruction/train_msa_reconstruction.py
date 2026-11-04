@@ -57,6 +57,7 @@ from foldtree2.src.reconstruction.reconstruction_heads import (
     MsaAngleHead,
     MsaCoordHead,
     MsaCoordinateHead,
+    MsaTransferHead,
     msa_distance_loss,
     msa_angle_loss,
     msa_coordinate_loss,
@@ -183,6 +184,12 @@ class MsaReconstructionModule(pl.LightningModule):
         # whose structure the encoder is allowed to see.  Separates "the head
         # cannot fit the bins" from "the encoder carries no geometry".
         oracle_distance: bool = False,
+        # Geometry transfer: a head that predicts CA coordinates for rows whose
+        # structure is hidden, seeded with the superposed homolog average at
+        # each alignment column.  This is the task the MSA Transformer can
+        # actually solve on 15-sequence families: transferring geometry that is
+        # already present in the MSA rather than inferring it from sequence.
+        transfer_geometry: bool = False,
         # ReduceLROnPlateau scheduler (used by configure_optimizers)
         lr_factor: float = 0.5,
         lr_patience: int = 5,
@@ -201,6 +208,7 @@ class MsaReconstructionModule(pl.LightningModule):
         self.attn_pairs = bool(attn_pairs)
         self._use_coord_head = bool(coord_head)
         self.oracle_distance = bool(oracle_distance)
+        self.transfer_geometry = bool(transfer_geometry)
         self.label_smoothing = label_smoothing
         self.focal_gamma = float(focal_gamma)
         self.min_separation = min_separation
@@ -246,6 +254,10 @@ class MsaReconstructionModule(pl.LightningModule):
             use_oracle=self.oracle_distance,
         )
         self.angle_head = MsaAngleHead(embed_dim=embed_dim, hidden=angle_hidden)
+        self.transfer_head = (
+            MsaTransferHead(embed_dim=embed_dim, hidden=coord_hidden)
+            if getattr(self, "transfer_geometry", False) else None
+        )
 
     def _build_se3_pipeline(self, embed_dim, se3_hidden, se3_depth, se3_heads):
         from foldtree2.src.reconstruction.msa_se3_pipeline import MsaSe3Pipeline
@@ -284,7 +296,25 @@ class MsaReconstructionModule(pl.LightningModule):
                                      batch.get("known_structure"), batch.get("coords"))
         else:
             return self._forward_heads(tokens, msa_mask,
-                                       batch.get("known_structure"), batch.get("coords"))
+                                       batch.get("known_structure"), batch.get("coords"),
+                                       batch.get("transfer_coords"))
+
+    def _transfer_mask(self, out, batch, coords_tgt):
+        """Residues where a transferred prior exists and the true coordinate
+        is a confident one.  Columns with no homolog donor have a NaN prior;
+        counting them would compare 0 against a real coordinate and make both
+        the prior and the model look equally bad."""
+        geom_known = out.get("geom_known")
+        prior = batch.get("transfer_coords")
+        if prior is None:
+            return None
+        valid = torch.isfinite(coords_tgt).all(dim=-1) & torch.isfinite(prior).all(dim=-1)
+        plddt = batch.get("plddt")
+        if plddt is not None:
+            valid = valid & (plddt >= self.plddt_threshold)
+        if geom_known is not None:
+            valid = valid & ~geom_known.unsqueeze(-1)
+        return valid
 
     def _geometry_known(self, known_mask):
         """Per-batch mask of which sequences' geometry is visible to the encoder.
@@ -359,7 +389,7 @@ class MsaReconstructionModule(pl.LightningModule):
                     prop[b, n] = (total - dists[t]) / (rows.numel() - 1)
         return prop
 
-    def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None):
+    def _forward_heads(self, tokens, msa_mask, known_mask=None, coords=None, prior=None):
         geom = None
         geom_known = None
         if hasattr(self.msa_encoder, 'geom_proj') and self.msa_encoder.geom_proj is not None:
@@ -373,6 +403,11 @@ class MsaReconstructionModule(pl.LightningModule):
         )
         features = enc["features"]
         coord_pred = self.coord_head(features) if getattr(self, "coord_head", None) is not None else None
+        transfer_pred = None
+        if getattr(self, "transfer_head", None) is not None and prior is not None:
+            # NaN prior = no homolog covers this column; the head then has to
+            # predict the coordinate from the encoder features alone.
+            transfer_pred = self.transfer_head(features, torch.nan_to_num(prior, nan=0.0))
         L = tokens.shape[-1]
         idx = torch.arange(L, device=self.device)
         pairs = (idx[None] - idx[:, None]).abs().ge(self.min_separation).nonzero()
@@ -417,6 +452,7 @@ class MsaReconstructionModule(pl.LightningModule):
             ),
             "angle_logits": self.angle_head(features),
             "coord_pred": coord_pred,
+            "transfer_pred": transfer_pred,
             "pairs": pairs,
             "geom_known": geom_known,
             "attentions": enc.get("row_attentions", None),
@@ -821,6 +857,19 @@ class MsaReconstructionModule(pl.LightningModule):
                         log["train/coord"] = loss.detach()
                         total = total + self._loss_weights["coord"] * loss
 
+                # Geometry transfer: coordinates for rows the encoder cannot
+                # see, seeded by the superposed homolog average at each column.
+                if (self._loss_weights.get("transfer", 0) > 0
+                        and out.get("transfer_pred") is not None):
+                    valid = self._transfer_mask(out, batch, coords_tgt)
+                    if valid is not None and valid.any():
+                        err = out["transfer_pred"][valid] - coords_tgt[valid]
+                        # Coordinates are in Angstrom; dividing by 10 keeps the
+                        # squared loss on the same scale as the other terms.
+                        loss = (err / 10.0).pow(2).mean()
+                        log["train/transfer_rmsd"] = err.pow(2).mean().sqrt().detach()
+                        total = total + self._loss_weights["transfer"] * loss
+
         self.log_dict(log, prog_bar=True)
         return total
 
@@ -878,6 +927,18 @@ class MsaReconstructionModule(pl.LightningModule):
                     log["val/loss_withheld"] = msa_distance_loss(
                         out["distance_logits"], labels, withheld, gamma=self.focal_gamma
                     ).detach()
+
+            # Transfer head: how well do predicted coordinates match the true
+            # ones, and do they beat the raw homolog-average prior?  The prior
+            # is the baseline the model must improve on.
+            if out.get("transfer_pred") is not None:
+                valid = self._transfer_mask(out, batch, coords_tgt)
+                if valid is not None and valid.any():
+                    pred = out["transfer_pred"][valid]
+                    tgt = coords_tgt[valid]
+                    prior = torch.nan_to_num(batch["transfer_coords"], nan=0.0)[valid]
+                    log["val/transfer_rmsd"] = (pred - tgt).pow(2).mean().sqrt()
+                    log["val/prior_rmsd"] = (prior - tgt).pow(2).mean().sqrt()
 
         if log:
             self.log_dict(log, prog_bar=True)
@@ -1140,6 +1201,11 @@ def _parser():
                    help="Upper-bound control: give the distance head the measured "
                         "CA-CA distance for every row whose geometry the encoder "
                         "can see.  Rows without geometry get 0.")
+    p.add_argument("--transfer-geometry", action="store_true",
+                   help="Train a coordinate head that transfers geometry from "
+                        "superposed homologs: it starts from the leave-one-out "
+                        "mean CA position at each alignment column and learns "
+                        "only the residual correction.")
 
     # Loss weights
     p.add_argument("--loss-weights", type=str,
@@ -1260,6 +1326,7 @@ def main():
         attn_pairs=args.attn_pairs,
         coord_head=args.coord_head,
         oracle_distance=args.oracle_distance,
+        transfer_geometry=args.transfer_geometry,
         plddt_threshold=args.plddt_threshold,
         max_pairs=args.max_pairs,
         lr_factor=args.lr_factor,

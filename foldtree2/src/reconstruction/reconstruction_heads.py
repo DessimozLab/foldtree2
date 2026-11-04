@@ -231,6 +231,35 @@ class MsaCoordHead(nn.Module):
         return self.mlp(features)
 
 
+class MsaTransferHead(nn.Module):
+    """Predict CA coordinates by transferring them from superposed homologs.
+
+    The alignment already tells us which column of a known structure
+    corresponds to each residue of a structure-free row; after the family
+    superposition the homolog's coordinate at that column is a ~1 A accurate
+    estimate.  This head starts from that prior and learns only the residual
+    correction, which is a far easier regression than predicting geometry from
+    sequence.
+
+    ``prior`` must be finite (NaNs replaced by 0 by the caller); rows with no
+    donor simply get a zero prior and learn the coordinates from scratch.
+    """
+
+    def __init__(self, embed_dim: int = 256, hidden: int = 128):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim + 3, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 3),
+        )
+
+    def forward(self, features: torch.Tensor, prior: torch.Tensor) -> torch.Tensor:
+        """(B, N_seq, L, D) and (B, N_seq, L, 3) -> (B, N_seq, L, 3)."""
+        return prior + self.mlp(torch.cat([features, prior], dim=-1))
+
+
 class MsaAngleHead(nn.Module):
     """Predicts backbone torsion angles (phi, psi, omega) from MSA features.
 

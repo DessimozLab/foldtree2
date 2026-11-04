@@ -147,6 +147,18 @@ def _strip_mafft_sentinel(seq: str) -> str:
     return seq
 
 
+def procrustes(p: torch.Tensor, q: torch.Tensor):
+    """Rigid transform (R, t) mapping q onto p, minimising RMSD (Kabsch)."""
+    pc, qc = p.mean(dim=0), q.mean(dim=0)
+    h = (p - pc).T @ (q - qc)
+    u, _, vt = torch.linalg.svd(h)
+    r = u @ vt
+    if torch.linalg.det(r) < 0:
+        u[:, -1] *= -1
+        r = u @ vt
+    return r, pc - r @ qc
+
+
 # ft2 structural alphabets (10/20/30/40/50 states) are written as chr(1)..chr(n);
 # the characters RAxML cannot handle are swapped for 0xf7-0xff when the
 # alignment is stored.  See scripts/alphabets/prepare_production_alphabets.py.
@@ -218,7 +230,8 @@ def msa_collate(batch):
                   "index": [s.get("index") for s in batch],
                   "pairs": [s.get("pairs") for s in batch]}
 
-    for key in ("tokens", "mask", "known_structure", "coords", "plddt", "distance_labels"):
+    for key in ("tokens", "mask", "known_structure", "coords", "plddt",
+                "transfer_coords", "distance_labels"):
         tensors = [s[key] for s in batch]
         if key == "distance_labels":
             # Distance labels have variable P per family — pad to max P
@@ -269,10 +282,12 @@ class FamilyMsaSample:
         alphabet_size: int = 51,
         require_all_coords: bool = True,
         edges=DISTANCE_EDGES,
+        plddt_threshold: float = 70.0,
     ):
         self.family_dir = Path(family_dir)
         self.family_id = self.family_dir.name
         self.alphabet_size = int(alphabet_size)
+        self.plddt_threshold = float(plddt_threshold)
         self.token_map = ft2_token_map(self.alphabet_size - 1)
 
         # --- ft2 aligned sequences ---
@@ -352,6 +367,17 @@ class FamilyMsaSample:
                 self._pairs = _eligible_pairs(valid, min_separation=_MIN_SEP)
                 self._shared_pairs_init = True
 
+        # --- Common family frame ---
+        # Every PDB sits in its own arbitrary frame, so two homologs in the same
+        # alignment column are tens of Angstrom apart in raw coordinates even
+        # though they are structurally equivalent.  Superposing each structure
+        # onto a family reference makes the columns directly comparable, which
+        # is what lets geometry be TRANSFERRED from a known homolog instead of
+        # inferred from sequence.  Pairwise distances are frame invariant, so
+        # the distance labels are unaffected.
+        self._superpose_to_family_frame(plddt_threshold)
+        self._transfer_prior = self._build_transfer_prior(plddt_threshold)
+
         # Per-taxon labels from shared pairs
         for taxon in self.taxon_ids:
             if taxon not in self._residue_mask:
@@ -372,6 +398,60 @@ class FamilyMsaSample:
                 good_labels, _ = _distance_labels(coords, cp, self._edges)
                 labels[in_range] = good_labels.long()
             self._distance_labels[taxon] = labels
+
+    def _confident_columns(self, plddt_threshold: float) -> Dict[str, Dict[int, int]]:
+        """taxon -> {alignment column: residue index} for confident, non-gap rows."""
+        out: Dict[str, Dict[int, int]] = {}
+        for taxon in self.taxon_ids:
+            valid = self._residue_mask.get(taxon)
+            coords = self._ca_coords.get(taxon)
+            if valid is None or coords is None:
+                continue
+            idx = valid.nonzero(as_tuple=True)[0]
+            plddt = self._ca_plddt[taxon]
+            out[taxon] = {int(c): int(k) for k, c in enumerate(idx) if plddt[k] >= plddt_threshold}
+        return out
+
+    def _superpose_to_family_frame(self, plddt_threshold: float) -> None:
+        """Rigid-fit every structure onto the longest confident taxon's frame."""
+        confident = self._confident_columns(plddt_threshold)
+        if not confident:
+            return
+        ref = max(confident, key=lambda t: len(confident[t]))
+        if len(confident[ref]) < 30:
+            return
+        self._frame_ref = ref
+        for taxon in self.taxon_ids:
+            cols = confident.get(taxon)
+            if not cols:
+                continue
+            shared = sorted(set(confident[ref]) & set(cols))
+            if len(shared) < 30:
+                continue
+            p = self._ca_coords[ref][[confident[ref][c] for c in shared]]
+            q = self._ca_coords[taxon][[cols[c] for c in shared]]
+            r, t = procrustes(p, q)
+            self._ca_coords[taxon] = self._ca_coords[taxon] @ r.T + t
+
+    def _build_transfer_prior(self, plddt_threshold: float) -> Dict[str, torch.Tensor]:
+        """Leave-one-out mean CA position of the homologs at each column.
+
+        For a taxon with no structure (an ancestral node) this is the geometry
+        transferred from its relatives; for a supervised taxon it is the same
+        prior, computed without ever using its own coordinates.
+        """
+        confident = self._confident_columns(plddt_threshold)
+        L = max((len(self._sequences[t]) for t in self.taxon_ids), default=0)
+        prior: Dict[str, torch.Tensor] = {}
+        for taxon in self.taxon_ids:
+            arr = torch.full((L, 3), float("nan"), dtype=torch.float32)
+            for c in confident.get(taxon, {}):
+                vals = [self._ca_coords[o][confident[o][c]]
+                        for o in confident if o != taxon and c in confident[o]]
+                if vals:
+                    arr[c] = torch.stack(vals).mean(dim=0)
+            prior[taxon] = arr
+        return prior
 
     def n_taxa(self) -> int:
         return len(self.taxon_ids)
@@ -400,7 +480,7 @@ class FamilyMsaSample:
         masked_set = set(rng.sample(taxa, min(n_masked, n_taxa - 1))) if n_masked else set()
 
         tokens_list, mask_list = [], []
-        known_list, coord_list, label_list, plddt_list = [], [], [], []
+        known_list, coord_list, label_list, plddt_list, prior_list = [], [], [], [], []
         n_pairs = self._pairs.shape[0]
 
         for taxon in taxa:
@@ -441,12 +521,17 @@ class FamilyMsaSample:
                 plddt_list.append(torch.zeros(L, dtype=torch.float32))
                 label_list.append(torch.full((max(1, n_pairs),), -1, dtype=torch.long))
 
+            prior = self._transfer_prior.get(taxon)
+            prior_list.append(prior if prior is not None
+                              else torch.full((L, 3), float("nan"), dtype=torch.float32))
+
         return {
             "tokens": torch.stack(tokens_list, dim=0),
             "mask": torch.stack(mask_list, dim=0),
             "known_structure": torch.tensor(known_list, dtype=torch.bool),
             "coords": torch.stack(coord_list, dim=0),
             "plddt": torch.stack(plddt_list, dim=0),
+            "transfer_coords": torch.stack(prior_list, dim=0),
             "distance_labels": torch.stack(label_list, dim=0),
             "pairs": self._pairs,
             "family_id": self.family_id,

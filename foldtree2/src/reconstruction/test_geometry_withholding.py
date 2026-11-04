@@ -125,6 +125,37 @@ def test_oracle_distance_is_learnable():
     assert (pred[0, 0] == pred[0, 0, 0]).all()
 
 
+def test_procrustes_recovers_rigid_transform():
+    import math
+    from foldtree2.src.reconstruction.tree_msa_dataset import procrustes
+    torch.manual_seed(0)
+    p = torch.randn(200, 3)
+    c, s = math.cos(0.7), math.sin(0.7)
+    r_true = torch.tensor([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    q = p @ r_true.T + torch.tensor([10.0, -3.0, 4.0])
+    r, t = procrustes(p, q)
+    back = q @ r.T + t
+    assert torch.allclose(back, p, atol=1e-6), "Procrustes must invert the rotation"
+
+
+def test_transfer_prior_excludes_self():
+    from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
+    s = FamilyMsaSample.__new__(FamilyMsaSample)
+    s.taxon_ids = ["a", "b", "c"]
+    s._sequences = {t: "AA" for t in s.taxon_ids}
+    s._ca_coords = {
+        "a": torch.tensor([[0.0, 0.0, 0.0], [3.8, 0.0, 0.0]]),
+        "b": torch.tensor([[1.0, 0.0, 0.0], [4.8, 0.0, 0.0]]),
+        "c": torch.tensor([[3.0, 0.0, 0.0], [6.8, 0.0, 0.0]]),
+    }
+    s._ca_plddt = {t: torch.full((2,), 90.0) for t in s.taxon_ids}
+    s._residue_mask = {t: torch.tensor([True, True]) for t in s.taxon_ids}
+    prior = s._build_transfer_prior(70.0)
+    # column 0 of 'a' is predicted from b and c only: (1 + 3) / 2 = 2
+    assert torch.allclose(prior["a"][0], torch.tensor([2.0, 0.0, 0.0]))
+    assert prior["a"].shape == (2, 3)
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
