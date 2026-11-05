@@ -219,6 +219,47 @@ def test_backbone_prior_places_cb_from_homolog_frames():
     assert torch.allclose(local, torch.tensor([0.557, -0.783, 1.197]), atol=1e-3), local
 
 
+def test_backbone_prior_falls_back_to_ft2_state():
+    """With no same-residue homolog, CB comes from homologs in the same ft2
+    structural state; only when those are absent too does it use the global
+    empirical offsets."""
+    from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
+    s = FamilyMsaSample.__new__(FamilyMsaSample)
+    s.taxon_ids = ["a", "b", "c"]
+    s._ca_plddt = {t: torch.full((1,), 90.0) for t in s.taxon_ids}
+    s._residue_mask = {t: torch.tensor([True]) for t in s.taxon_ids}
+
+    n = torch.tensor([0.0, 1.0, 0.0])
+    ca = torch.zeros(3)
+    c = torch.tensor([1.0, 0.0, 0.0])
+    # a side chain pointing the other way than the empirical offsets
+    atom = torch.stack([n, ca, c, torch.zeros(3), torch.tensor([-0.5, 0.8, -1.2])])
+    s._bb_coords = {t: atom.unsqueeze(0) for t in s.taxon_ids}
+    s._ca_coords = {t: atom[1:2] for t in s.taxon_ids}
+    s._aa_columns = lambda: {"a": {0: "A"}, "b": {0: "V"}, "c": {0: "V"}}
+
+    def local_cb(row):
+        e1 = row[1] - row[2]
+        e1 = e1 / e1.norm()
+        v = row[0] - row[1]
+        e2 = v - v.dot(e1) * e1
+        e2 = e2 / e2.norm()
+        e3 = torch.linalg.cross(e1, e2)
+        w = row[4] - row[1]
+        return torch.tensor([w.dot(e1), w.dot(e2), w.dot(e3)])
+
+    # b and c share a's ft2 state -> their local CB vectors are used
+    s._sequences = {"a": "B", "b": "B", "c": "B"}
+    prior = s._build_backbone_prior(70.0)["a"][0]
+    assert torch.allclose(prior[4], torch.tensor([-0.5, 0.8, -1.2]), atol=1e-4), prior[4]
+
+    # no homolog shares the state -> empirical offsets
+    s._sequences = {"a": "B", "b": "C", "c": "D"}
+    prior = s._build_backbone_prior(70.0)["a"][0]
+    assert torch.allclose(local_cb(prior), torch.tensor([0.557, -0.783, 1.197]),
+                         atol=1e-4), local_cb(prior)
+
+
 if __name__ == "__main__":
     test_withhold_ratio_bounds()
     test_marker_distinguishes_withheld_rows()
