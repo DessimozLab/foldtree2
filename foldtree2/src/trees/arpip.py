@@ -7,10 +7,31 @@ RAxML-NG custom format that makesubmat.py already writes, so the foldtree2
 treebuilder already produced for RAxML-NG.
 """
 from pathlib import Path
+import math
 import subprocess
 
 # raxml-ng MULTI models accept at most 64 states; ARPIP inherits that limit.
 MAX_STATES = 64
+_OUTPUT_SUFFIXES = {
+    "ancestral": ".ancestral.fasta",
+    "probabilities": ".probs",
+    "indelpoints": ".indelpoints",
+    "tree": ".tree",
+    "node_rel": ".noderel",
+    "conf": ".conf",
+    "charset": ".charset.txt",
+}
+_ARPIP_OUTPUTS = ("ancestral", "probabilities", "indelpoints", "tree", "node_rel")
+
+
+def _positive_finite_rate(value, name):
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a finite positive number") from None
+    if not math.isfinite(rate) or rate <= 0:
+        raise ValueError(f"{name} must be a finite positive number")
+    return rate
 
 
 def arpip_conf(alignment, tree, charset_file, submat, prefix, *,
@@ -60,6 +81,13 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
     gap state has zero equilibrium frequency) - read them from the FASTA.
     """
     charset = list(charset)
+    if not charset:
+        raise ValueError("charset must contain at least one state")
+    if any(not isinstance(state, str) or len(state) != 1 for state in charset):
+        raise ValueError("every charset state must be exactly one character")
+    if any(not state.isascii() or not state.isprintable() or state.isspace()
+           for state in charset):
+        raise ValueError("charset states must be printable, non-whitespace ASCII characters")
     if len(set(charset)) != len(charset):
         raise ValueError(f"charset has duplicate characters: {charset}")
     if len(charset) > MAX_STATES:
@@ -67,6 +95,8 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
                          f"raxml-ng/ARPIP support at most {MAX_STATES}")
     if "-" in charset:
         raise ValueError("'-' is reserved by ARPIP for gaps and cannot be a state")
+    indel_lambda = _positive_finite_rate(indel_lambda, "indel_lambda")
+    indel_mu = _positive_finite_rate(indel_mu, "indel_mu")
 
     prefix = str(prefix)
     Path(prefix).parent.mkdir(parents=True, exist_ok=True)
@@ -82,10 +112,11 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
     else:
         runner(command)
 
-    return {name: Path(str(prefix) + ".arpip" + suffix)
-            for name, suffix in (("ancestral", ".ancestral.fasta"),
-                                 ("probabilities", ".probs"),
-                                 ("indelpoints", ".indelpoints"),
-                                 ("tree", ".tree"),
-                                 ("conf", ".conf"),
-                                 ("charset", ".charset.txt"))}
+    outputs = {name: Path(str(prefix) + ".arpip" + suffix)
+               for name, suffix in _OUTPUT_SUFFIXES.items()}
+    missing = [str(outputs[name]) for name in _ARPIP_OUTPUTS
+               if not outputs[name].is_file()]
+    if missing:
+        raise FileNotFoundError("ARPIP did not produce required outputs: "
+                                + ", ".join(missing))
+    return outputs

@@ -7,6 +7,7 @@ import pytest
 
 from scripts.benchmark_common import read_paml
 from scripts.benchmarks.compare_indel_asr import compare_family, fitted_substitution, node_keys, profile
+from scripts.ancestral import ancestral_state_uncertainty as asr
 
 
 def test_fitted_model_export_preserves_exchangeabilities(tmp_path):
@@ -48,6 +49,22 @@ def test_gap_profiles_are_missing_uncertainty_not_confidence(tmp_path):
         profile(path, list("01"), [0.5, 0.5], {"N": "11"}, {"N": "key"}, 2, arpip=True)
     with pytest.raises(ValueError, match="Incomplete"):
         profile(path, list("01"), [0.5, 0.5], {"N": "1--"}, {"N": "key"}, 3, arpip=True)
+
+
+def test_tied_mad_roots_are_not_combined_into_one_tree(tmp_path, monkeypatch):
+    source = tmp_path / "input.nwk"
+    source.write_text("(A:1,B:1,(C:1,D:1)X:1)Y;")
+    candidates = ("((A:1,B:1)Y:0.5,(C:1,D:1)X:0.5);\n"
+                  "(A:0.5,(B:1,(C:1,D:1)X:1)Y:0.5);\n")
+    def fake_mad(command, log):
+        from pathlib import Path
+        Path(str(command[-1]) + ".rooted").write_text(candidates)
+    monkeypatch.setattr(asr, "run", fake_mad)
+    with pytest.raises(ValueError, match="2 tied roots"):
+        asr.rooted_nodes(source, tmp_path, None)
+    tree, _, rooting = asr.rooted_nodes(source, tmp_path, None, root_ties="first")
+    assert len(tree.get_leaf_names()) == 4
+    assert rooting == "MAD_inferred_first_of_2_tied_roots"
 
 
 ARPIP = os.environ.get("ARPIP_BIN") or shutil.which("ARPIP")

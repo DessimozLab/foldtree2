@@ -79,10 +79,13 @@ def posterior_rows(path, states):
             raise ValueError('Empty posterior table')
 
 
-def rooted_nodes(tree_path, outdir, outgroups):
+def rooted_nodes(tree_path, outdir, outgroups, *, root_ties='error'):
     from ete3 import Tree
+    if root_ties not in ('error', 'first'):
+        raise ValueError('root_ties must be error or first')
     tree = Tree(str(tree_path), format=1)
     all_taxa = set(tree.get_leaf_names())
+    tie_count = 1
     def partition(node):
         parts = [tuple(sorted(c.get_leaf_names())) for c in node.children]
         if not node.is_root():
@@ -104,16 +107,26 @@ def rooted_nodes(tree_path, outdir, outgroups):
         rooted = Path(str(source) + '.rooted')
         if not rooted.exists():
             raise FileNotFoundError('MAD did not produce a rooted tree')
-        tree = Tree(str(rooted), format=1)
+        candidates = [line.strip() for line in rooted.read_text().splitlines() if line.strip()]
+        if not candidates:
+            raise ValueError('MAD produced no rooted trees')
+        tie_count = len(candidates)
+        if tie_count > 1 and root_ties == 'error':
+            raise ValueError(f'MAD returned {tie_count} tied roots; select an explicit tie policy')
+        tree = Tree(candidates[0], format=1)
         rooting = 'MAD_inferred'
+        if tie_count > 1:
+            rooting += f'_first_of_{tie_count}_tied_roots'
     # MAD discards internal labels. Restore by the incident unrooted clades,
     # not descendant sets, which change when the root moves.
     for node in tree.traverse():
         if not node.is_leaf():
             node.name = original_names.get(partition(node), '')
-    if set(tree.get_leaf_names()) != set(Tree(str(tree_path), format=1).get_leaf_names()):
+    if set(tree.get_leaf_names()) != all_taxa or len(tree.get_leaf_names()) != len(all_taxa):
         raise ValueError('Rooting changed tree taxa')
     tree.write(format=1, outfile=str(outdir / 'rooted.nwk'))
+    write_json(outdir / 'rooting.json', {'rooting': rooting, 'tied_root_count': tie_count,
+                                       'tie_policy': root_ties})
     max_depth = max(tree.get_distance(tip) for tip in tree.iter_leaves())
     if max_depth <= 0:
         raise ValueError('Cannot normalize root distances on a zero-length tree')
@@ -148,7 +161,8 @@ def reconstruct(alignment, tree, model, fitted_log, states, outdir, family='unkn
     disk = shutil.disk_usage(outdir.parent if outdir.parent.exists() else alignment.parent)
     if disk.free < expected_bytes + min_free_gb * 1024**3:
         raise RuntimeError(f'Insufficient disk: require {expected_bytes} estimated uncompressed bytes plus {min_free_gb} GiB reserve')
-    signature = {'protocol': 'own_alignment_own_tree_marginal_uncertainty_v2', 'family': family,
+    signature = {'protocol': 'own_alignment_own_tree_marginal_uncertainty_v3', 'family': family,
+        'root_tie_policy': 'error',
         'strategy': strategy, 'states': list(states), 'outgroups': sorted(outgroups or []),
         'inputs': {str(p): digest(p) for p in (alignment, tree, model, fitted_log)},
         'raxml': tool_version('raxml-ng'), 'mad_sha256': digest(shutil.which('mad')) if not outgroups else None}
@@ -220,6 +234,7 @@ def reconstruct(alignment, tree, model, fitted_log, states, outdir, family='unkn
         'stationary_frequencies': prior.tolist(), 'estimated_uncompressed_bytes': expected_bytes,
         **{key: value / total for key, value in sums.items()}})
     complete_stage(outdir, signature, [output, outdir / 'summary.json', outdir / 'rooted.nwk',
+        outdir / 'rooting.json',
         Path(str(raw) + '.gz'), consensus, native['states'], native['tree']], n_node_sites=total)
     return outdir
 

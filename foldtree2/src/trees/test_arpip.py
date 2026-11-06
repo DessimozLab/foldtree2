@@ -23,6 +23,13 @@ def _fixture(tmp_path):
     return tmp_path / "aln.fasta", tmp_path / "tree.nwk", tmp_path / "submat.txt"
 
 
+def _successful_runner(command):
+    conf = Path(command[1].split("=", 1)[1])
+    for line in conf.read_text().splitlines():
+        if line.startswith("output."):
+            Path(line.split("=", 1)[1]).write_text("test output\n")
+
+
 def test_conf_uses_the_foldtree2_alphabet_and_submat(tmp_path):
     conf = arpip_conf(tmp_path / "aln.fasta", tmp_path / "tree.nwk",
                      tmp_path / "charset.txt", tmp_path / "submat.txt", "run")
@@ -30,18 +37,47 @@ def test_conf_uses_the_foldtree2_alphabet_and_submat(tmp_path):
     assert "model=PIP(model=GTR(file=" in conf
     assert "lambda=10.0, mu=0.01" in conf
     assert "output.ancestral.file=run.arpip.ancestral.fasta" in conf
+    assert "output.node_rel.file=run.arpip.noderel" in conf
 
 
 def test_charset_is_written_and_validated(tmp_path):
     msa, tree, submat = _fixture(tmp_path)
     outputs = run_arpip_asr(msa, tree, CHARSET, submat, tmp_path / "run",
-                           runner=lambda cmd: None)
+                           runner=_successful_runner)
     assert Path(outputs["charset"]).read_text().splitlines() == CHARSET
     assert outputs["ancestral"].name == "run.arpip.ancestral.fasta"
+    assert outputs["node_rel"].name == "run.arpip.noderel"
+    assert all(outputs[name].is_file() for name in
+               ("ancestral", "probabilities", "indelpoints", "tree", "node_rel"))
 
-    for bad in (CHARSET + ["0"], CHARSET + ["-"], list("ab" * 32)):
+    called = []
+    for bad in ([], CHARSET + ["0"], CHARSET + ["-"], ["ab"],
+                ["\n"], list("ab" * 32)):
         with pytest.raises(ValueError):
-            run_arpip_asr(msa, tree, bad, submat, tmp_path / "run2", runner=lambda cmd: None)
+            run_arpip_asr(msa, tree, bad, submat, tmp_path / "run2",
+                          runner=lambda cmd: called.append(cmd))
+    assert not called
+
+
+@pytest.mark.parametrize("rate", [0, -1, float("nan"), float("inf"),
+                                   float("-inf"), "not-a-rate"])
+@pytest.mark.parametrize("name", ["indel_lambda", "indel_mu"])
+def test_indel_rates_must_be_finite_and_positive(tmp_path, rate, name):
+    msa, tree, submat = _fixture(tmp_path)
+    called = []
+    rates = {"indel_lambda": 10.0, "indel_mu": 0.01}
+    rates[name] = rate
+    with pytest.raises(ValueError, match="finite positive"):
+        run_arpip_asr(msa, tree, CHARSET, submat, tmp_path / "invalid",
+                      runner=lambda cmd: called.append(cmd), **rates)
+    assert not called
+
+
+def test_missing_external_outputs_raise(tmp_path):
+    msa, tree, submat = _fixture(tmp_path)
+    with pytest.raises(FileNotFoundError, match="ARPIP did not produce"):
+        run_arpip_asr(msa, tree, CHARSET, submat, tmp_path / "missing",
+                      runner=lambda cmd: None)
 
 
 @pytest.mark.skipif(ARPIP is None, reason="ARPIP binary not available (set ARPIP_BIN)")

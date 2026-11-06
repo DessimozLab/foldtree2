@@ -201,6 +201,12 @@ are optimized. `--indel-lambda` and `--indel-mu` set the fixed PIP rates (defaul
 10 and 0.01); these are an experimental setting, not a calibrated indel model.
 Node pairing uses incident unrooted clades, excludes the synthetic edge root,
 and validates identical topology, taxa, tip sequences and column coverage.
+When MAD returns equally optimal roots, the comparison selects its first
+reported tree deterministically for both engines and records the ambiguity
+count in `rooting.json` and the family summary. It never combines tied trees.
+The standalone uncertainty command instead rejects tied MAD roots; provide an
+explicit outgroup to resolve them. Its corrected rooting protocol is version 3,
+so older cached uncertainty outputs require a new output directory.
 
 Each family writes `paired_node_sites.csv.gz`, all native engine outputs,
 `summary.json`, provenance and completion hashes. ARPIP's zero-mass gap rows

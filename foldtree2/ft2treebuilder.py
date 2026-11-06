@@ -116,7 +116,7 @@ class treebuilder():
 				char_set, char_position_map, raxml_charset, raxml_char_position_map = (
 					data['char_set'], data['char_position_map'], data['raxml_charset'], data['raxml_char_position_map'])
 			self.raxml_characters = raxml_charset
-			self.alphabet = char_set	
+			self.alphabet = char_set
 			self.nchars = len(self.alphabet)
 			self.map = char_position_map
 			self.revmap = { v:k for k,v in char_position_map.items() }
@@ -124,7 +124,7 @@ class treebuilder():
 			self.rev_raxml_indices = { v:k for k,v in raxml_char_position_map.items() }
 			self.revmap_raxml = self.raxml_indices
 			self.raxmlchars = raxml_charset
-		
+
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		self.aapropcsv = resolve_aapropcsv_path(kwargs.get('aapropcsv'))
 		self.converter = PDB2PyG(aapropcsv=self.aapropcsv)

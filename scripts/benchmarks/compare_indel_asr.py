@@ -144,6 +144,7 @@ def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
         "raxml": tool_version("raxml-ng"), "mad": tool_version("mad"),
         "indel_lambda": indel_lambda, "indel_mu": indel_mu, "threads": threads,
         "timeout_seconds": timeout, "driver_sha256": digest(__file__),
+        "root_tie_policy": "first",
     }
     if not begin_stage(outdir, signature):
         return json.loads((outdir / "summary.json").read_text())
@@ -156,13 +157,14 @@ def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
                            check=True, timeout=timeout,
                            env={**os.environ, "OMP_NUM_THREADS": str(threads)})
 
-    rooted_nodes(tree, outdir, None)
+    rooted_nodes(tree, outdir, None, root_ties="first")
     rooted = outdir / "rooted.nwk"
     matrix = outdir / "submat.txt"
     matrix.write_text(submat)
     constant_model = outdir / "constant.model"
     constant_model.write_text(constant + "\n")
-    engines, outputs = {}, [rooted, matrix, constant_model, outdir / "commands.log"]
+    engines, outputs = {}, [rooted, matrix, constant_model, outdir / "commands.log",
+                           outdir / "rooting.json"]
     for name, source in (("raxml", model), ("raxml_constant", constant_model)):
         native = run_ancestral(alignment, rooted, source, outdir / name, threads=threads,
                                overwrite=True, freeze_fitted=True, runner=execute)
@@ -223,6 +225,7 @@ def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
     present = totals["present_sites"]
     summary = {"n_tips": len(records), "n_sites": length, "n_shared_nodes": len(common),
                "n_node_sites": length * len(common), **totals,
+               "rooting": json.loads((outdir / "rooting.json").read_text()),
                "arpip_gap_fraction": totals["arpip_gap_sites"] / (length * len(common)),
                "interpretation": "Descriptive agreement/conditional uncertainty, not accuracy; "
                "ARPIP gaps have no posterior mass. RAxML constant controls for +I removal."}

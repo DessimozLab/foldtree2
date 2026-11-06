@@ -36,9 +36,10 @@ and has no bootstrap support. `--bs` requests bootstrap analysis; `--root` reque
 MAD rooting; `--ancestral` requests experimental ancestral processing. Inspect
 logs and requested outputs rather than treating an existing file as completion.
 
-`--ancestral-indel` runs the ancestral reconstruction with ARPIP (the Poisson
-Indel Process) instead of RAxML-NG, so ancestral sequences keep their gaps. It
-needs an ARPIP executable on the PATH or given with `--arpip`
+`--ancestral-indel` runs an additional ancestral reconstruction with ARPIP (the
+Poisson Indel Process), so ancestral sequences keep their gaps. It can be used
+alongside `--ancestral` and needs an ARPIP executable on the PATH or given with
+`--arpip`
 ([bpp-ARPIP](https://github.com/DessimozLab/bpp-ARPIP)); the indel rates are
 `--indel_lambda` and `--indel_mu`. Outputs are `<prefix>.arpip.*` in the output
 directory. In the posterior profile, sites reconstructed as indels have no
