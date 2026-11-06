@@ -173,6 +173,58 @@ families change.
 
 ## Native ancestral character reconstruction
 
+### Indel-aware comparison
+
+Compare ARPIP with the usual fitted RAxML marginal reconstruction using the
+same native FT2 alignment and MAD-rooted tree for each family/representation:
+
+```bash
+python scripts/benchmarks/compare_indel_asr.py \
+  --native-root runs/local_benchmarks/full_native_ancestral_20261001 \
+  --outdir runs/local_benchmarks/indel_asr_pilot \
+  --sizes 20 30 40 --max-families 5 --threads 2 \
+  --arpip /path/to/bpp-ARPIP/build/ARPIP
+```
+
+Use a new output directory and omit `--max-families` for a full frozen-cohort
+sweep after the pilot succeeds. Existing native and ancestral stages must pass
+hash verification; incomplete baselines fail explicitly rather than silently
+shrinking the cohort. `--timeout` bounds each ASR subprocess (default 600 seconds).
+The command stops on the first failure and can resume completed, hash-verified
+family stages with the identical command. It does not re-encode or re-infer trees.
+
+The usual RAxML fitted model includes invariant sites, while ARPIP currently
+uses constant rates. A third run, RAxML without the fitted invariant-site term,
+controls for this difference. The fitted GTR exchangeabilities and frequencies
+are exported in PAML order for ARPIP; no substitution parameters or branch lengths
+are optimized. `--indel-lambda` and `--indel-mu` set the fixed PIP rates (defaults
+10 and 0.01); these are an experimental setting, not a calibrated indel model.
+Node pairing uses incident unrooted clades, excludes the synthetic edge root,
+and validates identical topology, taxa, tip sequences and column coverage.
+
+Each family writes `paired_node_sites.csv.gz`, all native engine outputs,
+`summary.json`, provenance and completion hashes. ARPIP's zero-mass gap rows
+have **missing uncertainty**, not entropy zero or confidence one. Agreement
+and mean conditional entropy use only ARPIP-present node/sites, identically
+filtered across both RAxML controls. These are descriptive comparisons, not
+reconstruction accuracy estimates: the OMA cohort has no known ancestral truth.
+The driver currently covers FT2 custom alphabets, not the AA/3Di baselines.
+
+The 2026-11-06 pilot completed all 15 comparisons (the first five frozen
+families, FT2-20/30/40), in
+`runs/local_benchmarks/indel_asr_validated_pilot_20261106`. Equal-family means:
+
+| Alphabet | ARPIP gap fraction | State agreement with usual RAxML | With constant-rate RAxML |
+|---|---:|---:|---:|
+| FT2-20 | 30.92% | 94.67% | 94.70% |
+| FT2-30 | 29.84% | 94.84% | 94.90% |
+| FT2-40 | 28.09% | 93.59% | 93.62% |
+
+Agreement excludes ARPIP-absent node/sites; gap fractions cover all shared
+node/sites. These pilot numbers do not establish which reconstruction is correct.
+All 499 families have hash-verified native and ancestral baseline stages for
+these three alphabets, giving 1,497 paired runs in the full scope.
+
 Inspect completed results with
 [`ancestral-sharpness-depth.ipynb`](../output/jupyter-notebook/ancestral-sharpness-depth.ipynb).
 It compares sharpness against normalized root-to-node distance, with equal-family

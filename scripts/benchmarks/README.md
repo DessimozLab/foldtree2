@@ -14,6 +14,7 @@ sweeps can drain unattended rather than blocking an interactive session.
 - [run_local_benchmark_queue.py](./run_local_benchmark_queue.py): persistent workstation benchmark queue; drains queued cohorts in priority order.
 - [benchmark_cohort.py](./benchmark_cohort.py): benchmark a single cohort of alignments and trees.
 - [compare_oma_representations.py](./compare_oma_representations.py): compare OMA-based sequence representations head-to-head.
+- [compare_indel_asr.py](./compare_indel_asr.py): paired ARPIP/RAxML ancestral reconstruction on frozen native FT2 inputs, including a constant-rate RAxML control.
 - [benchmark_species_supermatrix.py](./benchmark_species_supermatrix.py): benchmark over the concatenated species supermatrix.
 - [alphabet_information_benchmark.py](./alphabet_information_benchmark.py): information-theoretic benchmark across learned alphabets.
 - [optuna_phylo_information_search.py](./optuna_phylo_information_search.py): Optuna-driven search over phylogenetic-information hyperparameters.
