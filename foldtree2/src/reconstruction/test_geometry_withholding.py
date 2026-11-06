@@ -142,6 +142,8 @@ def test_transfer_prior_excludes_self():
     from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
     s = FamilyMsaSample.__new__(FamilyMsaSample)
     s.taxon_ids = ["a", "b", "c"]
+    s.ancestor_ids = []
+    s._aa_rows = {}
     s._sequences = {t: "AA" for t in s.taxon_ids}
     s._ca_coords = {
         "a": torch.tensor([[0.0, 0.0, 0.0], [3.8, 0.0, 0.0]]),
@@ -177,6 +179,8 @@ def test_backbone_prior_places_cb_from_homolog_frames():
     from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
     s = FamilyMsaSample.__new__(FamilyMsaSample)
     s.taxon_ids = ["a", "b", "c"]
+    s.ancestor_ids = []
+    s._aa_rows = {}
     s._sequences = {t: "AA" for t in s.taxon_ids}
     s._ca_plddt = {t: torch.full((2,), 90.0) for t in s.taxon_ids}
     s._residue_mask = {t: torch.tensor([True, True]) for t in s.taxon_ids}
@@ -226,6 +230,8 @@ def test_backbone_prior_falls_back_to_ft2_state():
     from foldtree2.src.reconstruction.tree_msa_dataset import FamilyMsaSample
     s = FamilyMsaSample.__new__(FamilyMsaSample)
     s.taxon_ids = ["a", "b", "c"]
+    s.ancestor_ids = []
+    s._aa_rows = {}
     s._ca_plddt = {t: torch.full((1,), 90.0) for t in s.taxon_ids}
     s._residue_mask = {t: torch.tensor([True]) for t in s.taxon_ids}
 

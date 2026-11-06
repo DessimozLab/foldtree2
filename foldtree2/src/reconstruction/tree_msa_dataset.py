@@ -197,6 +197,29 @@ def _strip_mafft_sentinel(seq: str) -> str:
     return seq
 
 
+ANCESTRAL_FT2 = "ancestral_ft2.fasta"
+ANCESTRAL_AA = "ancestral_aa.fasta"
+
+
+def family_ft2_alignment(family_dir: Path, model_tag: str = "40char") -> Path:
+    """The MAFFT ft2 alignment whose states the production encoder/decoder use.
+
+    The family-root ``encoded.ASCIIaln.txt`` is an older encoding whose state
+    labels decode to amino acids at ~5% accuracy; the per-model alignment in the
+    family subdirectory decodes at ~0.91 with the matching models, so ancestral
+    states and amino-acid identities are taken from that one.
+    """
+    family = Path(family_dir)
+    hits = sorted(p for p in family.glob(f"*{model_tag}*/*encoded.ASCIIaln.txt"))
+    if hits:
+        return hits[0]
+    for name in ("encoded.ASCIIaln.txt", "encoded.fasta"):
+        path = family / name
+        if path.is_file():
+            return path
+    raise FileNotFoundError(f"No ft2 alignment in {family_dir}")
+
+
 def procrustes(p: torch.Tensor, q: torch.Tensor):
     """Rigid transform (R, t) mapping q onto p, minimising RMSD (Kabsch)."""
     pc, qc = p.mean(dim=0), q.mean(dim=0)
@@ -322,6 +345,9 @@ class FamilyMsaSample:
         alphabet_size: ft2 vocab size (default 51: 50 ft2 states + gap).
         require_all_coords: Raise if a taxon lacks a PDB.
         edges: Distance-bin boundaries (A).  Default ``DISTANCE_EDGES``.
+        ancestral_files: (ft2, aa) FASTAs of internal nodes, as written by
+            ``ancestral_states.reconstruct``.  Defaults to the family's
+            ``ancestral_ft2.fasta`` / ``ancestral_aa.fasta`` when present.
     """
 
     def __init__(
@@ -331,6 +357,7 @@ class FamilyMsaSample:
         require_all_coords: bool = True,
         edges=DISTANCE_EDGES,
         plddt_threshold: float = 70.0,
+        ancestral_files: Optional[Tuple[Path, Path]] = None,
     ):
         self.family_dir = Path(family_dir)
         self.family_id = self.family_dir.name
@@ -339,18 +366,12 @@ class FamilyMsaSample:
         self.token_map = ft2_token_map(self.alphabet_size - 1)
 
         # --- ft2 aligned sequences ---
-        aln_path = self.family_dir / "encoded.ASCIIaln.txt"
-        if aln_path.is_file():
+        aln_path = family_ft2_alignment(self.family_dir)
+        if aln_path.suffix == ".fasta":
+            ft2_seqs = read_fasta(aln_path, encoding="utf-8")
+        else:
             ft2_seqs = {t: _strip_mafft_sentinel(s)
                         for t, s in read_aligned_ascii(aln_path).items()}
-        else:
-            fasta_path = self.family_dir / "encoded.fasta"
-            if fasta_path.is_file():
-                ft2_seqs = read_fasta(fasta_path, encoding="utf-8")
-            else:
-                raise FileNotFoundError(
-                    f"No ft2 file in {family_dir}"
-                )
 
         struct_dir = self.family_dir / "structs"
         if not struct_dir.is_dir():
@@ -367,6 +388,31 @@ class FamilyMsaSample:
             raise ValueError(f"No ft2-aligned taxa with PDBs in {family_dir}")
 
         self._sequences: Dict[str, str] = {t: ft2_seqs[t] for t in self.taxon_ids}
+
+        # --- ancestral rows (internal nodes of the family tree) ---
+        # They have no structure of their own, so their geometry can only be
+        # transferred from the extant homologs beneath them.
+        if ancestral_files is None:
+            ancestral_files = (self.family_dir / ANCESTRAL_FT2,
+                               self.family_dir / ANCESTRAL_AA)
+        self.ancestor_ids: List[str] = []
+        self._aa_rows: Dict[str, str] = {}
+        ft2_file, aa_file = ancestral_files
+        if Path(ft2_file).is_file():
+            length = max(len(s) for s in self._sequences.values())
+            anc_aa = read_fasta(aa_file) if Path(aa_file).is_file() else {}
+            for node, seq in read_fasta(ft2_file).items():
+                seq = _strip_mafft_sentinel(seq)
+                if len(seq) != length:
+                    warnings.warn(
+                        f"{self.family_id}: ancestral node {node} has {len(seq)} "
+                        f"columns, alignment has {length}; skipped"
+                    )
+                    continue
+                key = f"anc:{node}"
+                self._sequences[key] = seq
+                self._aa_rows[key] = anc_aa.get(node, "")
+                self.ancestor_ids.append(key)
 
         # --- Pre-load CA coords + confidence ---
         self._ca_coords: Dict[str, torch.Tensor] = {}
@@ -494,6 +540,17 @@ class FamilyMsaSample:
             if taxon in self._bb_coords:
                 self._bb_coords[taxon] = self._bb_coords[taxon] @ r.T + t
 
+    def _covered_columns(self, taxon: str, confident: Dict[str, Dict[int, int]]) -> List[int]:
+        """Alignment columns where this row has a residue.
+
+        Structured taxa use their confident columns; ancestral rows have no
+        structure, so every non-gap column of their ft2 sequence counts.
+        """
+        cols = confident.get(taxon)
+        if cols:
+            return list(cols)
+        return [i for i, ch in enumerate(self._sequences[taxon]) if ch != "-"]
+
     def _build_transfer_prior(self, plddt_threshold: float) -> Dict[str, torch.Tensor]:
         """Leave-one-out mean CA position of the homologs at each column.
 
@@ -502,11 +559,11 @@ class FamilyMsaSample:
         prior, computed without ever using its own coordinates.
         """
         confident = self._confident_columns(plddt_threshold)
-        L = max((len(self._sequences[t]) for t in self.taxon_ids), default=0)
+        L = max((len(self._sequences[t]) for t in self.rows()), default=0)
         prior: Dict[str, torch.Tensor] = {}
-        for taxon in self.taxon_ids:
+        for taxon in self.rows():
             arr = torch.full((L, 3), float("nan"), dtype=torch.float32)
-            for c in confident.get(taxon, {}):
+            for c in self._covered_columns(taxon, confident):
                 vals = [self._ca_coords[o][confident[o][c]]
                         for o in confident if o != taxon and c in confident[o]]
                 if vals:
@@ -519,15 +576,15 @@ class FamilyMsaSample:
 
         The ft2 alignment and the amino-acid alignment are different alignments
         of the same sequences, so they cannot be zipped directly; they are
-        matched by walking both and pairing the k-th non-gap residue.
+        matched by walking both and pairing the k-th non-gap residue.  Ancestral
+        rows are already in the ft2 alignment layout, so they need no walking.
         """
         aa_path = self.family_dir / "sequences.aligned.fa"
-        if not aa_path.is_file():
-            return {}
         aa = {k.split("|")[0]: v
-              for k, v in read_fasta(aa_path).items()}
+              for k, v in read_fasta(aa_path).items()} if aa_path.is_file() else {}
+        aa.update(self._aa_rows)
         out: Dict[str, Dict[int, str]] = {}
-        for taxon in self.taxon_ids:
+        for taxon in self.rows():
             ft2, seq = self._sequences.get(taxon, ""), aa.get(taxon, "")
             if not seq:
                 continue
@@ -579,11 +636,11 @@ class FamilyMsaSample:
         """
         confident = self._confident_columns(plddt_threshold)
         aa_cols = self._aa_columns()
-        L = max((len(self._sequences[t]) for t in self.taxon_ids), default=0)
+        L = max((len(self._sequences[t]) for t in self.rows()), default=0)
         out: Dict[str, torch.Tensor] = {}
-        for taxon in self.taxon_ids:
+        for taxon in self.rows():
             arr = torch.full((L, len(BB_ATOMS), 3), float("nan"), dtype=torch.float32)
-            for c in confident.get(taxon, {}):
+            for c in self._covered_columns(taxon, confident):
                 donors = [(o, self._bb_coords[o][confident[o][c]])
                           for o in confident
                           if o != taxon and c in confident[o]
@@ -636,6 +693,10 @@ class FamilyMsaSample:
     def n_taxa(self) -> int:
         return len(self.taxon_ids)
 
+    def rows(self) -> List[str]:
+        """Every MSA row: extant taxa first, then the ancestral nodes."""
+        return self.taxon_ids + self.ancestor_ids
+
     def to_tensors(
         self, mask_ratio: float = 0.0, rng: Optional[random.Random] = None
     ) -> dict:
@@ -654,12 +715,14 @@ class FamilyMsaSample:
             n_taxa:          int
         """
         rng = rng or random
-        taxa = list(self.taxon_ids)
-        n_taxa = len(taxa)
+        taxa = self.rows()
+        n_taxa = len(self.taxon_ids)
         L = max(len(self._sequences[t]) for t in taxa)
 
+        # Only structured taxa can be withheld; ancestral rows never have labels.
         n_masked = max(1, int(n_taxa * mask_ratio)) if mask_ratio > 0 else 0
-        masked_set = set(rng.sample(taxa, min(n_masked, n_taxa - 1))) if n_masked else set()
+        masked_set = (set(rng.sample(self.taxon_ids, min(n_masked, n_taxa - 1)))
+                      if n_masked else set())
 
         tokens_list, mask_list = [], []
         known_list, coord_list, label_list, plddt_list, prior_list, bb_list = [], [], [], [], [], []
@@ -785,7 +848,7 @@ class TreeMsaDataset(Dataset):
     @property
     def max_length(self) -> int:
         return max(len(s._sequences[t]) for s in self._samples
-                   for t in s.taxon_ids)
+                   for t in s.rows())
 
 
 class CladeSampledMsaDataset(Dataset):
