@@ -14,6 +14,9 @@ Tree inference, scoring and ancestral-state reconstruction from structure tokens
   benchmark; requires frozen taxa/taxonomy. See [TCS benchmark](../../../docs/curnagl_tcs.md).
 - [ancestral](./ancestral.py): ancestral-state reconstruction and FASTA export;
   shared between the treebuilding CLI (`ft2treebuilder`) and the benchmark scripts.
+- [arpip](./arpip.py): ancestral reconstruction with the Poisson Indel Process
+  through the external ARPIP binary; needs `--ancestral-indel` and an ARPIP
+  executable (see [bpp-ARPIP](https://github.com/DessimozLab/bpp-ARPIP)).
 
 ## When to use this
 

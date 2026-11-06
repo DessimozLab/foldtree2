@@ -14,8 +14,7 @@ this package.
 ## Modules
 - [ancestral_state_uncertainty.py](./ancestral_state_uncertainty.py): stream per-node, per-site posterior uncertainty over a fixed tree.
 - [ancestral_inspection.py](./ancestral_inspection.py): read-only summaries for the ancestral notebook; no state mutation.
-- [arpip_charset_export.py](./arpip_charset_export.py): dump a charmaps pickle's charset (one character per line) for ARPIP (bpp-ARPIP) runs; the `*_submat.txt` matrix is already in ARPIP's RAxML-NG custom GTR format and is passed unchanged.
-- [arpip_asr.py](./arpip_asr.py): run ARPIP (bpp-ARPIP) ancestral reconstruction on a foldtree2 raxml alignment + tree, writing the charset/conf and invoking the ARPIP binary; outputs `anc.fasta` and `asr_prob.txt`.
+- [arpip_asr.py](./arpip_asr.py): run ARPIP (bpp-ARPIP) ancestral reconstruction (Poisson Indel Process) on a foldtree2 raxml alignment + tree; it reads the charset from the charmaps pickle, passes the `*_submat.txt` matrix unchanged (it is already in ARPIP's RAxML-NG custom GTR format), and writes `<prefix>.arpip.ancestral.fasta` and `<prefix>.arpip.probs`. The same path is available in the CLI as `--ancestral-indel`.
 
 ## Workflow
 The core ancestral-state reconstruction implementation lives in

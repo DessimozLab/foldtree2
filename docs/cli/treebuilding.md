@@ -36,6 +36,13 @@ and has no bootstrap support. `--bs` requests bootstrap analysis; `--root` reque
 MAD rooting; `--ancestral` requests experimental ancestral processing. Inspect
 logs and requested outputs rather than treating an existing file as completion.
 
+`--ancestral-indel` runs the ancestral reconstruction with ARPIP (the Poisson
+Indel Process) instead of RAxML-NG, so ancestral sequences keep their gaps. It
+needs an ARPIP executable on the PATH or given with `--arpip`
+([bpp-ARPIP](https://github.com/DessimozLab/bpp-ARPIP)); the indel rates are
+`--indel_lambda` and `--indel_mu`. Outputs are `<prefix>.arpip.*` in the output
+directory.
+
 Always use a new output directory for changed inputs or bundles. `--redo`
 controls RAxML reuse, not full-pipeline cache invalidation, and the CLI's
 `--overwrite` is not consistently forwarded. This limitation remains a release

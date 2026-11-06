@@ -7,6 +7,7 @@ import Bio.PDB as PDB
 import torch_geometric
 import multiprocessing as mp
 import argparse
+import shutil
 import numpy as np
 
 from foldtree2.src.models import encoder as ecdr
@@ -14,6 +15,7 @@ from foldtree2.src.models import mono_decoders
 from foldtree2.src.graphs.pdbgraphmk2 import PDB2PyG
 from foldtree2.src.graphs.config_paths import resolve_aapropcsv_path
 from foldtree2.src.trees.ancestral import run_ancestral, ancestral_states_to_fasta
+from foldtree2.src.trees.arpip import run_arpip_asr
 from torch_geometric.data import HeteroData
 
 import traceback
@@ -55,6 +57,10 @@ class treebuilder():
 		self.replace_dict_ord = { ord(k):ord(v) for k,v in self.replace_dict.items() }
 		self.raxml_path = raxml_path
 		self.raxmlng_path = raxml_path
+		#ARPIP (bpp-ARPIP) is an external binary, like raxml-ng
+		self.arpip_path = kwargs.get('arpip_path', 'ARPIP')
+		self.indel_lambda = kwargs.get('indel_lambda', 10.0)
+		self.indel_mu = kwargs.get('indel_mu', 0.01)
 		self.modelname = model.split('/')[-1].split('.')[0]
 		self.model = model
 		self.encoder = torch.load(model , map_location=torch.device('cpu') , weights_only=False)
@@ -495,6 +501,21 @@ class treebuilder():
 			freeze_fitted=fitted_model is not None, runner=execute)
 		return str(outputs['states'])
 
+	def run_arpip_ancestral_struct(self, fasta_file, tree_file, output_prefix):
+		"""Run ARPIP ancestral reconstruction (Poisson Indel Process) on the encoded alignment.
+
+	Unlike the RAxML-NG reconstruction, indels are modelled, so the ancestral
+	sequences keep their gaps ('-'). The decoder step is not applied: it needs a
+	gap-free token sequence.
+		"""
+		def execute(command):
+			self.log(str(command), level=2)
+			subprocess.run(command, check=True)
+		# the submat rows/frequencies follow the order of the raxml charset
+		return run_arpip_asr(fasta_file, tree_file, self.raxmlchars[:self.nchars], self.submat, output_prefix,
+			arpip=self.arpip_path, indel_lambda=self.indel_lambda, indel_mu=self.indel_mu,
+			runner=execute)
+
 	def madroot( self, treefile  , madroot_path = 'mad' ):
 		"""Root a tree with MAD and return the rooted tree file path."""
 		mad_cmd = f'{madroot_path} {treefile} '
@@ -605,12 +626,16 @@ class treebuilder():
 			return None
 
 
-	def structs2tree(self, structs , outdir = None , ancestral = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
+	def structs2tree(self, structs , outdir = None , ancestral = False , ancestral_indel = False , raxml_iterations = 20 , raxml_path = None , output_prefix = None , verbose = False , **kwargs ):
 		"""Run the full FoldTree2 structure-to-tree pipeline.
 
 		Pipeline steps include structure encoding, symbol conversion, MAFFT
 		alignment, RAxML tree inference, and optional ancestral reconstruction
 		and MAD rooting.
+
+		`ancestral` runs the plain RAxML-NG reconstruction; `ancestral_indel`
+		adds the ARPIP (Poisson Indel Process) reconstruction, which keeps gaps.
+		Both can be requested.
 
 		Returns
 		-------
@@ -720,6 +745,14 @@ class treebuilder():
 			else:
 				ancestral_fasta = None
 
+			arpip_outputs = None
+			if ancestral_indel == True:
+				if step_verbosity >= 1:
+					print('running ARPIP (Poisson Indel Process) ancestral reconstruction')
+				arpip_outputs = self.run_arpip_ancestral_struct( alnfasta , treefile , output_prefix )
+				if step_verbosity >= 2:
+					print('arpip outputs:', arpip_outputs)
+
 			if self.root == True:
 				if step_verbosity >= 1:
 					print('rooting tree with mad')
@@ -729,7 +762,7 @@ class treebuilder():
 					print(tree)
 
 			#return in dictionary form
-			return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta }
+			return { 'encoded_fasta': encoded_fasta, 'tree': treefile  , 'ancestral_fasta': ancestral_fasta  , 'alignment': alnfasta , 'mafft_aln': mafftaln, 'asciifile': asciifile, 'hexfasta': hexfasta, 'arpip': arpip_outputs }
 		finally:
 			self.verbosity = previous_verbosity
 def print_about():
@@ -849,6 +882,10 @@ def main():
 
 	# Ancestral reconstruction options
 	parser.add_argument("--ancestral", action="store_true", help="Perform ancestral reconstruction")
+	parser.add_argument("--ancestral-indel", action="store_true", help="Ancestral reconstruction with ARPIP (Poisson Indel Process); models indels and keeps gaps, unlike the RAxML-NG reconstruction")
+	parser.add_argument("--arpip", default="ARPIP", help="Path to the ARPIP executable (bpp-ARPIP)")
+	parser.add_argument("--indel_lambda", type=float, default=10.0, help="PIP indel rate (lambda) used by --ancestral-indel")
+	parser.add_argument("--indel_mu", type=float, default=0.01, help="PIP gap extension rate (mu) used by --ancestral-indel")
 
 	if len(sys.argv) == 1 or ('--help' in sys.argv) or ('-h' in sys.argv):
 		print('No arguments provided. Use -h or --help for help.')
@@ -928,14 +965,19 @@ def main():
 	if args.charmaps is None:
 		args.charmaps = encoder_path.replace('.pt', '_pair_counts.pkl')
 	
+	if args.ancestral_indel and not shutil.which(args.arpip):
+		print(f"ARPIP executable not found ({args.arpip}). Build bpp-ARPIP (github.com/DessimozLab/bpp-ARPIP) or pass --arpip.")
+		sys.exit(1)
+	
 
 	# Create an instance of treebuilder
 	tb = treebuilder(model=encoder_path, mafftmat=args.mafftmat, decoder_model=decoder_path, submat=args.submat , raxml_path=args.raxmlpath,
 	 aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, maffthex2text=args.maffthex2text, ncores=args.ncores , charmaps=args.charmaps , device=args.device, 
-	 bs=args.bs, redo=args.redo , verbose=args.verbose , verbosity=args.verbosity, root =args.root )
+	 bs=args.bs, redo=args.redo , verbose=args.verbose , verbosity=args.verbosity, root =args.root ,
+	 arpip_path=args.arpip, indel_lambda=args.indel_lambda, indel_mu=args.indel_mu )
 
 	# Generate tree from structures using the provided options
-	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
+	tb.structs2tree(structs=args.structures, outdir=args.outdir, ancestral=args.ancestral, ancestral_indel=args.ancestral_indel, raxml_iterations=args.raxml_iterations , raxml_path=args.raxmlpath , output_prefix=args.output_prefix
 				 , verbose=args.verbose  , verbosity=args.verbosity, aapropcsv=args.aapropcsv, maffttext2hex=args.maffttext2hex, ncores=args.ncores)
 
 if __name__ == "__main__":
