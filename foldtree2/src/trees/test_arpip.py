@@ -60,3 +60,9 @@ def test_arpip_end_to_end_keeps_indels(tmp_path):
     header = next(line for line in outputs["probabilities"].read_text().splitlines()
                   if line.startswith("Site"))
     assert header.split("\t") == ["Site", "Node"] + CHARSET + ["-"]
+    # ARPIP gives no posterior for sites reconstructed as indels: the gap state
+    # has zero equilibrium frequency, so those rows are all zeros.
+    rows = [line.split("\t") for line in outputs["probabilities"].read_text().splitlines()
+            if line.split("\t")[0].isdigit()]
+    zero_rows = sum(1 for row in rows if not any(float(p) for p in row[2:] if p))
+    assert zero_rows == sum(seq.count("-") for name, seq in records.items() if name not in {"seq1", "seq2", "seq3", "seq4"})

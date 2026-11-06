@@ -41,7 +41,8 @@ Indel Process) instead of RAxML-NG, so ancestral sequences keep their gaps. It
 needs an ARPIP executable on the PATH or given with `--arpip`
 ([bpp-ARPIP](https://github.com/DessimozLab/bpp-ARPIP)); the indel rates are
 `--indel_lambda` and `--indel_mu`. Outputs are `<prefix>.arpip.*` in the output
-directory.
+directory. In the posterior profile, sites reconstructed as indels have no
+probability (all zeros) - the gap is read from the FASTA.
 
 Always use a new output directory for changed inputs or bundles. `--redo`
 controls RAxML reuse, not full-pipeline cache invalidation, and the CLI's

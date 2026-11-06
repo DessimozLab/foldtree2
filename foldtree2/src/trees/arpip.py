@@ -55,7 +55,9 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
 
     `charset` is the alphabet used by `alignment` (the raxml-mapped one for the
     `.raxml_aln.fasta` file). Outputs are named `<prefix>.arpip.*`. ARPIP roots
-    an unrooted input tree internally; the input tree is left untouched.
+    an unrooted input tree internally; the input tree is left untouched. In the
+    posterior profile, sites reconstructed as indels carry no probability (the
+    gap state has zero equilibrium frequency) - read them from the FASTA.
     """
     charset = list(charset)
     if len(set(charset)) != len(charset):

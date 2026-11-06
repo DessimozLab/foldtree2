@@ -109,15 +109,21 @@ class treebuilder():
 			
 			with open(charmaps, 'rb') as f:
 				data = pickle.load(f)
-			self.raxml_characters = data['raxml_charset']
-			self.alphabet = data['char_set']	
+			if isinstance(data, tuple):
+				# makesubmat writes *_pair_counts.pkl as a bare tuple
+				_, char_set, char_position_map, raxml_charset, raxml_char_position_map = data
+			else:
+				char_set, char_position_map, raxml_charset, raxml_char_position_map = (
+					data['char_set'], data['char_position_map'], data['raxml_charset'], data['raxml_char_position_map'])
+			self.raxml_characters = raxml_charset
+			self.alphabet = char_set	
 			self.nchars = len(self.alphabet)
-			self.map = data['char_position_map']
-			self.revmap = { v:k for k,v in data['char_position_map'].items() }
-			self.raxml_indices = data['raxml_char_position_map']
-			self.rev_raxml_indices = { v:k for k,v in data['raxml_char_position_map'].items() }
+			self.map = char_position_map
+			self.revmap = { v:k for k,v in char_position_map.items() }
+			self.raxml_indices = raxml_char_position_map
+			self.rev_raxml_indices = { v:k for k,v in raxml_char_position_map.items() }
 			self.revmap_raxml = self.raxml_indices
-			self.raxmlchars = data['raxml_charset']
+			self.raxmlchars = raxml_charset
 		
 		self.ordset = set([ ord(c) for c in self.alphabet ])
 		self.aapropcsv = resolve_aapropcsv_path(kwargs.get('aapropcsv'))
