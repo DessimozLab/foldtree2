@@ -7,6 +7,8 @@
 
 | Notebook | Inputs and intended analysis | Reproducible route / outputs |
 | --- | --- | --- |
+| [ancestral-sharpness-depth](ancestral-sharpness-depth.ipynb) | Completed native and paired ARPIP/RAxML ancestral results; sharpness by depth and alphabet. | Read-only analysis with embedded plots; see [ancestral protocol](../../../docs/experiments.md). |
+| [comparative-gain-ancestral-sharpness](comparative-gain-ancestral-sharpness.ipynb) | Completed OMA information, phylogenetic gain and ancestral results; family-matched gain versus sharpness. | Read-only analysis with embedded plots; see [combined analysis](../../../docs/experiments.md). |
 | [alphabet_Information_content_benchmark](alphabet_Information_content_benchmark.ipynb) | Family sequences/tokens from multiple model sizes; usage, entropy, Markov rates, MDL proxies, MI and discrimination controls. | [Information script](../../../scripts/benchmarks/alphabet_information_benchmark.py), [shared metrics](../../../scripts/alphabets/alphabet_information_metrics.py); CSV/provenance outputs. |
 | [treelikelihood_info_theory_benchmark](treelikelihood_info_theory_benchmark.ipynb) | OMA markers, AA/structural alignments and reference species tree; phylogenetic information and concatenation. | [Joint comparison](../../../scripts/benchmarks/compare_oma_representations.py) and [species supermatrix](../../../scripts/benchmarks/benchmark_species_supermatrix.py); native and controlled protocols remain separate. |
 | [mini_tcs_benchmark](mini_tcs_benchmark.ipynb) | Family structures/metadata/taxonomy -> inferred trees and taxonomic consistency comparisons. | [Curnagl TCS workflow](../../../docs/curnagl_tcs.md), [tree scores](../../src/trees/treescore.py). Requires frozen matched taxa and taxonomy. |

@@ -66,7 +66,7 @@ def arpip_conf(alignment, tree, charset_file, submat, prefix, *,
         f"output.node_rel.file={paths['output.node_rel.file']}",
         f"output.mlindelpoints.file={paths['output.mlindelpoints.file']}",
         f"output.ancestral.prob_profile.file={paths['output.ancestral.prob_profile.file']}",
-        "opt.ancestral.prob_profile=normalized",
+        "opt.ancestral.prob_profile=conditional_marginal",
     ]) + "\n"
 
 
@@ -77,8 +77,11 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
     `charset` is the alphabet used by `alignment` (the raxml-mapped one for the
     `.raxml_aln.fasta` file). Outputs are named `<prefix>.arpip.*`. ARPIP roots
     an unrooted input tree internally; the input tree is left untouched. In the
-    posterior profile, sites reconstructed as indels carry no probability (the
-    gap state has zero equilibrium frequency) - read them from the FASTA.
+    posterior profile, substitution probabilities are marginal over states
+    conditional on the selected insertion point and joint reconstruction's
+    presence mask, not over indel histories.
+    Absent sites have a one-hot gap row; this is not indel confidence. The
+    FASTA retains joint ML states, which need not maximize each marginal.
     """
     charset = list(charset)
     if not charset:
@@ -119,4 +122,8 @@ def run_arpip_asr(alignment, tree, charset, submat, prefix, *,
     if missing:
         raise FileNotFoundError("ARPIP did not produce required outputs: "
                                 + ", ".join(missing))
+    with outputs["probabilities"].open() as stream:
+        if stream.readline().strip() != "# ARPIP profile=conditional_marginal":
+            raise ValueError("ARPIP lacks conditional marginal profiles; rebuild bpp-ARPIP. "
+                             "Legacy normalized joint scores are not posterior probabilities.")
     return outputs

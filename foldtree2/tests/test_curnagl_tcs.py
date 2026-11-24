@@ -64,6 +64,193 @@ def test_incomplete_baseline_fails(tmp_path):
         scoring_functions(source)
 
 
+def recovery_fixture(tmp_path):
+    import json
+    from types import SimpleNamespace
+    from scripts import benchmark_common as common
+    root = tmp_path / 'results'
+    plan_path = tmp_path / 'plan.json'
+    plan = {'config': {'output_dir': str(root), 'datasets': {'CATH': 'source'},
+                       'recovery_policy': 'explicit-undefined-u-as-x-nr-safe-v1', 'mad': 'mad'},
+            'families': {'family': {'dataset': 'CATH', 'inputs': {},
+                                     'labels': {name: name for name in 'abcd'},
+                                     'lineages': {name: ['root'] for name in 'abcd'}}},
+            'methods': {'method': {'kind': 'FoldTree'}}, 'assets': {}}
+    plan_path.write_text(json.dumps(plan))
+    signature = {'plan_sha256': common.digest(plan_path)}
+
+    def verify(files):
+        for path, checksum in files.items():
+            if common.digest(path) != checksum:
+                raise ValueError(f'Changed output: {path}')
+
+    baseline = SimpleNamespace(
+        digest=common.digest, write_json=common.write_json,
+        signature=lambda *args: signature,
+        verify=verify,
+        output=lambda plan, *parts: Path(plan['config']['output_dir']).joinpath('families', *parts)
+        if parts else Path(plan['config']['output_dir']),
+        tree=lambda path: Tree(str(path), format=1))
+    dest = baseline.output(plan, 'family', 'method')
+    dest.mkdir(parents=True)
+    (dest / 'tree.nwk').write_text('(a:0,(b:0,c:0):0.7,d:0.05);')
+    common.complete_stage(dest, signature, [dest / 'tree.nwk'])
+    return plan_path, plan, baseline, dest
+
+
+def test_unrootable_tree_is_explicitly_undefined_without_running_mad(tmp_path, monkeypatch):
+    import json
+    from scripts.curnagl.curnagl_tcs import score
+    from scripts import benchmark_common as common
+    path, plan, baseline, dest = recovery_fixture(tmp_path)
+    monkeypatch.setattr(common, 'run', lambda *args: pytest.fail('MAD cannot root this tree'))
+    score(path, plan, baseline, 'family', 'method')
+    result = json.loads((dest / 'tcs/score.json').read_text())
+    assert result['score_status'] == 'undefined'
+    assert result['undefined_reason'] == 'mad_insufficient_positive_branches'
+    assert [result[k] for k in ('score', 'root_score', 'root_score_nr')] == [None] * 3
+    assert result['n_taxa'] == 4
+    assert result['rooted_tree_sha256'] is None
+    assert (dest / 'tcs/completed.json').is_file()
+    score(path, plan, baseline, 'family', 'method')
+
+
+def test_unrootable_policy_does_not_hide_taxon_loss_or_change_legacy_behavior(tmp_path, monkeypatch):
+    from scripts.curnagl.curnagl_tcs import score
+    from scripts import benchmark_common as common
+    path, plan, baseline, dest = recovery_fixture(tmp_path)
+    baseline.tree = lambda path: Tree('(a:0,b:0,c:1);')
+    with pytest.raises(ValueError, match='Tree taxa differ'):
+        score(path, plan, baseline, 'family', 'method')
+    baseline.tree = lambda path: Tree('(a:0,(b:0,c:0):0.7,d:0.05);')
+    plan['families']['family']['lineages']['a'] = []
+    with pytest.raises(ValueError, match='Missing taxonomy'):
+        score(path, plan, baseline, 'family', 'method')
+    plan['families']['family']['lineages']['a'] = ['root']
+    plan['config'].pop('recovery_policy')
+    monkeypatch.setattr(common, 'run', lambda *args: (_ for _ in ()).throw(RuntimeError('MAD called')))
+    with pytest.raises(RuntimeError, match='MAD called'):
+        score(path, plan, baseline, 'family', 'method')
+
+
+def test_undefined_scores_keep_full_coverage_and_paired_summary(tmp_path):
+    import csv
+    import json
+    from scripts.curnagl.curnagl_tcs import aggregate, score
+    from scripts import benchmark_common as common
+    path, plan, baseline, dest = recovery_fixture(tmp_path)
+    score(path, plan, baseline, 'family', 'method')
+    plan['methods']['other'] = {'kind': 'FoldTree'}
+    other = baseline.output(plan, 'family', 'other') / 'tcs'
+    other.mkdir(parents=True)
+    result = json.loads((dest / 'tcs/score.json').read_text())
+    result.update(method='other', score_status='defined', undefined_reason='',
+                  score=5, root_score=20, root_score_nr=8)
+    common.write_json(other / 'score.json', result)
+    common.complete_stage(other, baseline.signature(path, plan), [other / 'score.json'])
+    baseline.write_csv = lambda path, rows: _write_test_csv(path, rows)
+    aggregate(path, plan, baseline)
+    marker = json.loads((Path(plan['config']['output_dir']) / 'validated.json').read_text())
+    assert marker['scores'] == 2 and marker['undefined_scores'] == 1
+    with (Path(plan['config']['output_dir']) / 'summary.csv').open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert [r['families'] for r in rows] == ['1', '1']
+    assert [r['paired_families'] for r in rows] == ['0', '0']
+    assert [r['undefined_families'] for r in rows] == ['1', '0']
+    assert all(r['mean_score'] == '' for r in rows)
+
+
+def test_recovery_import_verifies_outputs_and_records_their_origin(tmp_path):
+    import json
+    from scripts.curnagl.curnagl_tcs import reuse_completed
+    from scripts import benchmark_common as common
+    original_path, original, baseline, source = recovery_fixture(tmp_path)
+    original['config']['deployment_dir'] = str(tmp_path / 'old')
+    original_path.write_text(json.dumps(original))
+    baseline.signature = lambda path, plan: {'plan_sha256': common.digest(path)}
+    common.complete_stage(source, baseline.signature(original_path, original), [source / 'tree.nwk'])
+    plan = json.loads(json.dumps(original))
+    plan['config'].update(deployment_dir=str(tmp_path), output_dir=str(tmp_path / 'new'))
+    plan['recovery_from'] = {'plan': str(original_path), 'sha256': common.digest(original_path)}
+    path = tmp_path / 'recovery.json'
+    path.write_text(json.dumps(plan))
+    reuse_completed(path, plan, baseline)
+    target = baseline.output(plan, 'family', 'method')
+    assert not (target / 'tree.nwk').is_symlink()
+    assert (target / 'tree.nwk').read_bytes() == (source / 'tree.nwk').read_bytes()
+    record = json.loads((target / 'completed.json').read_text())
+    assert record['imported_from']['sha256'] == common.digest(source / 'completed.json')
+    assert record['signature']['plan_sha256'] == common.digest(path)
+    assert not (target / 'tcs').exists()
+    reuse_completed(path, plan, baseline)
+    original_tree = (source / 'tree.nwk').read_text()
+    (source / 'tree.nwk').write_text('(a:1,b:1,c:1,d:1);')
+    with pytest.raises(ValueError, match='Changed output'):
+        reuse_completed(path, plan, baseline)
+    (source / 'tree.nwk').write_text(original_tree)
+    plan['families']['family']['labels'].pop('d')
+    with pytest.raises(ValueError, match='exact original cohort'):
+        reuse_completed(path, plan, baseline)
+
+
+def _write_test_csv(path, rows):
+    import csv
+    with path.open('w') as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+@pytest.mark.parametrize('numerical_failure', [True, False])
+def test_recovery_inference_preserves_u_as_unknown_and_limits_optimizer_retry(
+        tmp_path, monkeypatch, numerical_failure):
+    import json
+    import subprocess
+    from scripts.curnagl.curnagl_tcs import infer
+    from scripts import benchmark_common as common
+    path, plan, baseline, dest = recovery_fixture(tmp_path)
+    (dest / 'completed.json').unlink()
+    plan['methods']['method']['kind'] = 'AA'
+    plan['config'].update(seed=42, starts_each=10)
+    cohort = tmp_path / 'cohort'
+    cohort.mkdir()
+    (cohort / 'aa.fasta').write_text('>a\nAU\n>b\nAA\n>c\nAA\n>d\nAA\n')
+    baseline.prepared = lambda *args: cohort
+    baseline.splits = lambda *args: None
+    commands = []
+
+    def run(command, log, stdout=None):
+        commands.append(list(map(str, command)))
+        if command[0] == 'mafft':
+            assert common.read_fasta(command[-1])['a'] == 'AX'
+            Path(stdout).write_text(Path(command[-1]).read_text())
+        else:
+            assert command[-2:] == ['--blopt', 'nr_safe']
+            (dest / 'ml.raxml.bestTree').write_text('(a:1,b:1,c:1,d:1);')
+            (dest / 'ml.raxml.bestModel').write_text('model')
+            (dest / 'ml.raxml.log').write_text('safe optimizer succeeded')
+
+    def infer_ml(*args):
+        (dest / 'ml.command.log').write_text(
+            'BL opt converged to a worse likelihood score' if numerical_failure else 'unrelated failure')
+        raise subprocess.CalledProcessError(1, ['raxml-ng', '--search'])
+
+    monkeypatch.setattr(common, 'run', run)
+    monkeypatch.setattr(common, 'infer_ml', infer_ml)
+    if not numerical_failure:
+        with pytest.raises(subprocess.CalledProcessError):
+            infer(path, plan, baseline, 'family', 'method', 1)
+        assert len(commands) == 1
+        assert not (dest / 'completed.json').exists()
+    else:
+        infer(path, plan, baseline, 'family', 'method', 1)
+        recovery = json.loads((dest / 'execution-policy.json').read_text())
+        assert recovery == {'selenocysteine_as_unknown': {'a': [2]}, 'branch_optimizer': 'nr_safe'}
+        assert 'AU' in (cohort / 'aa.fasta').read_text()
+        assert (dest / 'ml.nr_fast.failed.log').is_file()
+        assert (dest / 'completed.json').is_file()
+
+
 def test_raxml_version_provenance_ignores_runtime_cpu_allocation(tmp_path, monkeypatch):
     from types import SimpleNamespace
     import benchmark_common as common

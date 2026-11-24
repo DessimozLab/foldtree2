@@ -175,6 +175,14 @@ families change.
 
 ### Indel-aware comparison
 
+The 2026-11-06 sweep stopped after 313 comparisons. Legacy ARPIP `normalized` profiles contain normalized
+max-product messages, not marginal posteriors, and use inconsistent gap rows.
+Those uncertainty results are invalid for posterior comparisons. The corrected
+conditional-marginal benchmark completed all 1,497 comparisons across 499 families
+in `runs/local_benchmarks/indel_asr_full_conditional_20261108`; every comparison's
+completion and output hashes were verified. This does not establish accuracy or
+calibration against known ancestral truth.
+
 Compare ARPIP with the usual fitted RAxML marginal reconstruction using the
 same native FT2 alignment and MAD-rooted tree for each family/representation:
 
@@ -209,14 +217,39 @@ explicit outgroup to resolve them. Its corrected rooting protocol is version 3,
 so older cached uncertainty outputs require a new output directory.
 
 Each family writes `paired_node_sites.csv.gz`, all native engine outputs,
-`summary.json`, provenance and completion hashes. ARPIP's zero-mass gap rows
-have **missing uncertainty**, not entropy zero or confidence one. Agreement
+`summary.json`, provenance and completion hashes. To join full per-character
+probabilities from any completed family/representation without rerunning ASR:
+
+```bash
+python scripts/benchmarks/join_indel_probabilities.py \
+  runs/local_benchmarks/indel_method_verification_20261107/1003993/FT2_20 \
+  --outdir runs/local_benchmarks/indel_character_join_1003993_FT2_20
+```
+
+The separate, hash-verified `paired_character_probabilities.csv.gz` has one row
+per shared node, zero-based alignment site and character, with `arpip_gap`,
+`arpip_probability`, `raxml_probability` and `raxml_constant_probability`.
+At an inferred ARPIP gap, its character probabilities are blank, not zero;
+RAxML probabilities are retained. The synthetic edge root is excluded. Source
+probabilities are preserved as printed (RAxML rounds them to five decimals),
+so small rounding differences from one are expected. The join validates source
+completion hashes and output coverage and can safely reuse its own verified cache.
+It does not modify the source comparison.
+
+ARPIP must support
+`conditional_marginal`: log-space sum-product computes substitution-state
+marginals given its selected insertion point, the joint reconstruction's
+presence mask and the insertion-state prior, using
+evidence from both ancestors and descendants. It does not sum over indel
+histories. Legacy joint-likelihood profiles are rejected, not renormalized into
+posteriors. Absent sites have a one-hot gap row and **missing substitution
+uncertainty**, not confidence one in the indel history. Agreement
 and mean conditional entropy use only ARPIP-present node/sites, identically
 filtered across both RAxML controls. These are descriptive comparisons, not
 reconstruction accuracy estimates: the OMA cohort has no known ancestral truth.
 The driver currently covers FT2 custom alphabets, not the AA/3Di baselines.
 
-The 2026-11-06 pilot completed all 15 comparisons (the first five frozen
+The legacy 2026-11-06 pilot completed all 15 comparisons (the first five frozen
 families, FT2-20/30/40), in
 `runs/local_benchmarks/indel_asr_validated_pilot_20261106`. Equal-family means:
 
@@ -228,16 +261,69 @@ families, FT2-20/30/40), in
 
 Agreement excludes ARPIP-absent node/sites; gap fractions cover all shared
 node/sites. These pilot numbers do not establish which reconstruction is correct.
+They describe joint ML state agreement only; that pilot did not validate
+posterior uncertainty. New profiles and summaries require fresh output scopes.
 All 499 families have hash-verified native and ancestral baseline stages for
 these three alphabets, giving 1,497 paired runs in the full scope.
 
+The corrected method is checked against exhaustive state enumeration on a
+four-tip, nonuniform binary model (joint maximum and every node marginal),
+known singleton/clade insertions, a terminal deletion, repeated site patterns
+and long branches. The prior failing FT2-30 family 1067478 also passes in
+`runs/local_benchmarks/indel_method_regression_20261107_case_safe`. Custom
+10- and 64-state fixtures preserve every tip and produce complete, normalized
+profiles, including case-sensitive states and custom `*`. These checks validate
+conditional state inference, not population-level calibration or indel-history
+uncertainty. Dependency tests:
+
+```bash
+cd /path/to/bpp-ARPIP
+ARPIP_BIN=build/ARPIP python -m unittest discover -s test -p 'test_conditional_marginal.py'
+```
+
+The separate `compare_protein_indel_asr.py` runs the same paired comparison
+for AA and 3Di. AA uses the LG rates and frequencies, exported in PAML order
+from Bio++ LG08; 3Di uses the fitted PROTGTR rates and frequencies. Both
+preserve the native alignment and fitted tree. The usual fitted RAxML
+reconstruction includes gamma-distributed rates and invariant sites, whereas
+ARPIP currently uses constant rates; a second RAxML reconstruction removes
+both `+G4m` and `+I` as the matched-rate control. The model conversion is
+tested against the 3Di source matrix and a gap-free AA marginal oracle.
+The exported LG matrix, code provenance and fixed experimental indel rates
+are recorded for each run. These controls do not make ARPIP a full
+indel-history posterior.
+
 Inspect completed results with
-[`ancestral-sharpness-depth.ipynb`](../output/jupyter-notebook/ancestral-sharpness-depth.ipynb).
+[`ancestral-sharpness-depth.ipynb`](../foldtree2/notebooks/benchmarks/ancestral-sharpness-depth.ipynb).
 It compares sharpness against normalized root-to-node distance, with equal-family
 weighting, family-bootstrap intervals, tip-entropy strata and individual-node
 posterior heatmaps. It reads existing artifact pointers without rerunning ASR.
-The default is 50 common completed families; set `MAX_FAMILIES=None` for the
-full available cohort. Missing models and partial baseline coverage are explicit.
+The default is the full valid common cohort; set `MAX_FAMILIES` to an integer
+for quick inspection. Legacy tied-root native runs are excluded, and missing
+models and partial baseline coverage are explicit.
+Its separate ARPIP section uses all 499 families from
+`indel_asr_full_conditional_20261108`, independently of that default. It compares
+equal-family normalized entropy on paired ARPIP-present node/sites with family
+bootstrap intervals, and shows the distribution of inferred gap fractions.
+Its RAxML-only native AA and 3Di context uses all native node/sites rather than
+the FT2 ARPIP-present mask and excludes legacy runs with tied MAD roots; the
+notebook reports the excluded families and does not present these as paired
+cross-alphabet comparisons. Its paired AA and 3Di points use the verified completed protein benchmark,
+covering all 499 families. FT2-10 has native RAxML results only, and FT2-50
+has no completed native or paired results; missing comparisons are marked N/A.
+
+For a combined view, run
+[`comparative-gain-ancestral-sharpness.ipynb`](../foldtree2/notebooks/benchmarks/comparative-gain-ancestral-sharpness.ipynb).
+It combines the seven-alphabet information comparisons, controlled and native
+phylogenetic gain, native sharpness/depth curves, and paired ARPIP/RAxML
+sharpness. Gain-versus-sharpness plots join native results by family and
+representation after checking their alignment/tree/model hashes. Controlled
+gain contrasts use the AA baseline from the same source run and occupancy mask.
+The notebook reports separate coverage for each analysis: FT2-50 has information
+and gain results from its explicitly accepted nonconverged matrix, but no ASR;
+the k-mer classification scores use a 100-family subset. Information CSVs have
+legacy completion/provenance checks, not output hashes. All plots are saved
+inside the executed notebook; no inference is launched.
 
 `scripts/ancestral/ancestral_state_uncertainty.py` uses the same shared RAxML-NG
 `--ancestral` implementation and ancestral-table-to-FASTA conversion as the

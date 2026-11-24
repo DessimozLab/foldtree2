@@ -11,6 +11,10 @@ automated or cheap unit tests.
 
 | Notebook | Inputs, purpose and outputs | Code / protocol |
 | --- | --- | --- |
+| [monomer_graph_trainingdata](monomer_graph_trainingdata.ipynb) | Inspect graph construction from monomer structures and feature tables. | Verify converter/schema; use [pdbs-to-graphs](../../../docs/cli/encoding.md) for current mk2 graphs. |
+| [makesubmat](makesubmat.ipynb) | Interactive reference-alignment counting and matrix generation; requires reference graphs, encoder and Foldseek alignments. | [makesubmat CLI](../../../docs/cli/matrices.md) for repeatable jobs. |
+| [create_fams_submat](create_fams_submat.ipynb) | Historical reference-family preparation for matrices; inspect download paths and selection logic. | Not the frozen OMA evaluation cohort. |
+| [show_residues](show_residues.ipynb) | Residue/structure visualization; requires local structures and notebook plotting dependencies. | Diagnostic only. |
 | [test_monodecoders](test_monodecoders.ipynb) | Historical alphabet architecture/training and reconstruction inspection; HDF5 graphs -> checkpoints/plots. Production scripts use a corrected held-out split rather than the notebook's later loader override. | [encoder](../../src/models/encoder.py), [mono_decoders](../../src/models/mono_decoders.py), [production protocol](../../../docs/production_alphabet_readiness.md) |
 | [test_monodecoders_config](test_monodecoders_config.ipynb) | Configuration-oriented version of alphabet experiments; inspect paths/config before training. | [Training CLI](../../../docs/cli/training.md) |
 | [test_lightning](test_lightning.ipynb) | Lightning training/log inspection; may launch GPU work. TensorBoard logs are inputs to visual inspection, not final evaluation. | [learn_lightning](../../learn_lightning.py), [ddp_training](../../src/training/ddp_training.py) |

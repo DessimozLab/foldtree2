@@ -16,6 +16,13 @@ this package.
 - [ancestral_inspection.py](./ancestral_inspection.py): read-only summaries for the ancestral notebook; no state mutation.
 - [arpip_asr.py](./arpip_asr.py): run ARPIP (bpp-ARPIP) ancestral reconstruction (Poisson Indel Process) on a foldtree2 raxml alignment + tree; it reads the charset from the charmaps pickle, passes the `*_submat.txt` matrix unchanged (it is already in ARPIP's RAxML-NG custom GTR format), and writes `<prefix>.arpip.ancestral.fasta` and `<prefix>.arpip.probs`. The same path is available in the CLI as `--ancestral-indel`.
 
+ARPIP must support `conditional_marginal` profiles. State probabilities condition
+on its selected insertion point and joint reconstruction's presence mask;
+gap rows encode deterministic absence, not indel
+confidence. Its FASTA retains joint ML states. Legacy `normalized` joint scores
+are not marginal posteriors and are rejected. The corrected full OMA comparison
+is complete; see [experiments](../../docs/experiments.md#indel-aware-comparison).
+
 ## Workflow
 The core ancestral-state reconstruction implementation lives in
 [foldtree2.src.trees.ancestral](../../foldtree2/src/trees/ancestral.py); these

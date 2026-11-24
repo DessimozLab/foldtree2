@@ -42,8 +42,13 @@ alongside `--ancestral` and needs an ARPIP executable on the PATH or given with
 `--arpip`
 ([bpp-ARPIP](https://github.com/DessimozLab/bpp-ARPIP)); the indel rates are
 `--indel_lambda` and `--indel_mu`. Outputs are `<prefix>.arpip.*` in the output
-directory. In the posterior profile, sites reconstructed as indels have no
-probability (all zeros) - the gap is read from the FASTA.
+directory. This requires a bpp-ARPIP build supporting
+`opt.ancestral.prob_profile=conditional_marginal`. Legacy `normalized` profiles
+are joint-likelihood scores, not marginal posteriors, and are rejected.
+Substitution marginals condition on the selected insertion point and the
+presence mask from joint reconstruction; absent sites
+have a one-hot gap row, not a calibrated probability of absence. FASTA
+sequences remain joint ML reconstructions and need not maximize each marginal.
 
 Always use a new output directory for changed inputs or bundles. `--redo`
 controls RAxML reuse, not full-pipeline cache invalidation, and the CLI's

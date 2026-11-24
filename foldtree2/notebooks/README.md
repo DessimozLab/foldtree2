@@ -30,10 +30,6 @@ notebook was rerun or that its full benchmark completed.
 | Notebook | Purpose and required inputs | Status / preferred route |
 | --- | --- | --- |
 | [Foldtree2Colab](Foldtree2Colab.ipynb) | Historical hosted walkthrough; needs structures, model files and external programs. | Not a verified one-click hosted deployment. Use the [tree CLI](../../docs/cli/treebuilding.md). |
-| [monomer_graph_trainingdata](monomer_graph_trainingdata.ipynb) | Inspect graph construction from monomer structures and feature tables. | Verify converter/schema; use [pdbs-to-graphs](../../docs/cli/encoding.md) for current mk2 graphs. |
-| [makesubmat](makesubmat.ipynb) | Interactive reference-alignment counting and matrix generation. | Needs reference graphs, encoder and Foldseek alignments; use [makesubmat CLI](../../docs/cli/matrices.md) for repeatable jobs. |
-| [create_fams_submat](create_fams_submat.ipynb) | Historical reference-family preparation for matrices. | Inspect download paths and selection logic; not the frozen OMA evaluation cohort. |
-| [show_residues](show_residues.ipynb) | Residue/structure visualization. | Needs local structures and notebook plotting dependencies; diagnostic only. |
 
 ### Specialized notebooks
 

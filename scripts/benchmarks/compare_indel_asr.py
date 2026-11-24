@@ -30,17 +30,24 @@ from foldtree2.src.trees.ancestral import ancestral_states_to_fasta, run_ancestr
 from foldtree2.src.trees.arpip import run_arpip_asr
 from scripts.ancestral.ancestral_state_uncertainty import posterior_rows, rooted_nodes, uncertainty
 from scripts.benchmark_common import (
-    MULTI_ORDER, begin_stage, complete_stage, digest, read_fasta, tool_version, write_json,
+    MULTI_ORDER, begin_stage, complete_stage, digest, read_fasta, read_paml, tool_version, write_fasta, write_json,
 )
 from scripts.benchmarks.benchmark_cohort import DEFAULT_COHORT, load, native_directory, resolve_path, verify_stage
 
 
-def fitted_substitution(path, size):
+def fitted_substitution(path, size, *, protein=None, lg_matrix=None):
     """Export fitted upper-triangle exchangeabilities in PAML lower-triangle order."""
     text = Path(path).read_text().strip()
+    if protein == "AA":
+        match = re.fullmatch(r"(LG)(?:\+IU\{[^}]+\})?(?:\+G4m\{[^}]+\})?"
+                             r"(,\s*noname\s*=\s*[^,\n]+)?", text)
+        if match is None or size != 20 or lg_matrix is None:
+            raise ValueError(f"Expected fitted LG protein model and LG matrix: {path}")
+        _, prior, _ = read_paml(lg_matrix, 20)
+        return Path(lg_matrix).read_text(), match[1] + (match[2] or ""), prior
     match = re.fullmatch(
-        rf"(MULTI{size}_GTR\{{([^}}]+)\}}\+FU\{{([^}}]+)\}})"
-        r"(\+IU\{[^}]+\})?(,\s*noname\s*=\s*[^,\n]+)?", text)
+        rf"({'PROTGTR' if protein == '3Di' else f'MULTI{size}_GTR'}\{{([^}}]+)\}}\+FU\{{([^}}]+)\}})"
+        r"(\+IU\{[^}]+\})?(\+G4m\{[^}]+\})?(,\s*noname\s*=\s*[^,\n]+)?", text)
     if match is None:
         raise ValueError(f"Expected one fitted MULTI{size} GTR+FU[+IU] partition: {path}")
     rates = np.asarray([float(x) for x in match[2].split("/")])
@@ -55,7 +62,7 @@ def fitted_substitution(path, size):
     matrix += matrix.T
     rows = [" ".join(format(x, ".17g") for x in matrix[i, :i]) for i in range(1, size)]
     rows.append(" ".join(format(x, ".17g") for x in prior))
-    return "\n".join(rows) + "\n", match[1] + (match[5] or ""), prior / prior.sum()
+    return "\n".join(rows) + "\n", match[1] + (match[6] or ""), prior / prior.sum()
 
 
 def node_keys(path, taxa):
@@ -81,8 +88,10 @@ def node_keys(path, taxa):
 
 
 def arpip_rows(path, states):
-    """ARPIP profiles are site-major and zero-based; gap rows have zero mass."""
+    """Read conditional state marginals; deterministic gaps are not indel posteriors."""
     with Path(path).open() as stream:
+        if stream.readline().strip() != "# ARPIP profile=conditional_marginal":
+            raise ValueError("ARPIP profile is not a conditional marginal posterior")
         for line in stream:
             if line.startswith("Site\tNode\t"):
                 if line.rstrip().split("\t") != ["Site", "Node", *states, "-"]:
@@ -97,13 +106,16 @@ def arpip_rows(path, states):
             if len(fields) != len(states) + 3:
                 raise ValueError("Malformed ARPIP posterior row")
             values = np.asarray([float(p) for p in fields[2:]])
-            if not np.isfinite(values).all() or (values < 0).any() or values[-1] != 0:
+            if (not np.isfinite(values).all() or (values < 0).any()
+                    or not np.isclose(values.sum(), 1, atol=2e-8)
+                    or values[-1] not in (0, 1)
+                    or (values[-1] == 1 and values[:-1].any())):
                 raise ValueError("Invalid ARPIP posterior values")
-            yield fields[1], int(fields[0]), values[:-1]
+            yield fields[1], int(fields[0]), values
 
 
 def profile(path, states, prior, sequences, keys, length, *, arpip=False):
-    """Retain entropy/max-p only; never turn zero-mass gap rows into certainty."""
+    """Retain substitution entropy/max-p only, excluding inferred absence."""
     result = {key: np.full((length, 2), np.nan) for key in keys.values()}
     seen = {name: np.zeros(length, dtype=bool) for name in sequences}
     rows = arpip_rows(path, states) if arpip else posterior_rows(path, states)
@@ -113,6 +125,10 @@ def profile(path, states, prior, sequences, keys, length, *, arpip=False):
             raise ValueError(f"Unknown, duplicate or invalid posterior node/site: {name}/{site}")
         seen[name][site] = True
         gap = sequences[name][site] == "-"
+        if arpip:
+            if gap != (probability[-1] == 1):
+                raise ValueError("Gap FASTA state disagrees with posterior presence")
+            probability = probability[:-1]
         if gap:
             if not arpip or probability.any():
                 raise ValueError("Gap FASTA state disagrees with posterior mass")
@@ -129,25 +145,38 @@ def profile(path, states, prior, sequences, keys, length, *, arpip=False):
 
 
 def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
-                   indel_lambda=10.0, indel_mu=0.01, timeout=600):
+                   indel_lambda=10.0, indel_mu=0.01, timeout=600,
+                   protein=None, lg_matrix=None):
     alignment, tree, model, outdir = [Path(p).resolve() for p in (alignment, tree, model, outdir)]
     records = read_fasta(alignment, aligned=True)
     length = len(next(iter(records.values())))
     if any(set(seq) - set(states) - {"-"} for seq in records.values()):
         raise ValueError("Alignment contains states outside the declared alphabet")
-    submat, constant, prior = fitted_substitution(model, len(states))
+    submat, constant, prior = fitted_substitution(model, len(states), protein=protein, lg_matrix=lg_matrix)
     arpip = Path(shutil.which(str(arpip)) or arpip).resolve(strict=True)
     signature = {
-        "protocol": "paired_native_ft2_indel_asr_v1", "states": states,
+        "protocol": "paired_native_ft2_indel_asr_v2_conditional_marginal", "states": states,
         "inputs": {str(p): digest(p) for p in (alignment, tree, model)},
         "arpip": {"executable": str(arpip), "sha256": digest(arpip)},
         "raxml": tool_version("raxml-ng"), "mad": tool_version("mad"),
         "indel_lambda": indel_lambda, "indel_mu": indel_mu, "threads": threads,
         "timeout_seconds": timeout, "driver_sha256": digest(__file__),
+        "runner_sha256": digest(Path(__file__).parents[2] / "foldtree2/src/trees/arpip.py"),
         "root_tie_policy": "first",
     }
+    if protein:
+        signature["protocol"] = "paired_native_protein_indel_asr_v1_conditional_marginal"
+        signature["representation"] = protein
+        if lg_matrix:
+            signature["lg_matrix_sha256"] = digest(lg_matrix)
     if not begin_stage(outdir, signature):
         return json.loads((outdir / "summary.json").read_text())
+
+    normalized_alignment = None
+    if protein:
+        normalized_alignment = outdir / "input.fasta"
+        write_fasta(normalized_alignment, records)
+        alignment = normalized_alignment
 
     def execute(command):
         with (outdir / "commands.log").open("a") as log:
@@ -165,6 +194,8 @@ def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
     constant_model.write_text(constant + "\n")
     engines, outputs = {}, [rooted, matrix, constant_model, outdir / "commands.log",
                            outdir / "rooting.json"]
+    if normalized_alignment is not None:
+        outputs.append(normalized_alignment)
     for name, source in (("raxml", model), ("raxml_constant", constant_model)):
         native = run_ancestral(alignment, rooted, source, outdir / name, threads=threads,
                                overwrite=True, freeze_fitted=True, runner=execute)
@@ -228,7 +259,9 @@ def compare_family(alignment, tree, model, states, outdir, *, arpip, threads=2,
                "rooting": json.loads((outdir / "rooting.json").read_text()),
                "arpip_gap_fraction": totals["arpip_gap_sites"] / (length * len(common)),
                "interpretation": "Descriptive agreement/conditional uncertainty, not accuracy; "
-               "ARPIP gaps have no posterior mass. RAxML constant controls for +I removal."}
+               "ARPIP state marginals condition on the selected insertion point and joint presence mask; "
+               "gap mass is deterministic absence, not indel confidence. FASTA is joint ML. "
+               "RAxML constant controls for +I and gamma removal."}
     for engine in engines:
         summary["mean_entropy_" + engine + "_present"] = totals["entropy_" + engine + "_present"] / present
     for engine in ("raxml", "raxml_constant"):

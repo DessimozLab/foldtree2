@@ -19,6 +19,7 @@ import re
 import shutil
 import sqlite3
 import statistics
+import subprocess
 import sys
 
 
@@ -251,6 +252,120 @@ def prepare(plan_path, plan, baseline, family):
     complete_stage(dest, baseline.signature(plan_path, plan), [dest / 'aa.fasta'])
 
 
+def reuse_completed(plan_path, plan, baseline):
+    """Import verified inference only; all scores use the new rooting policy."""
+    from scripts.benchmark_common import begin_stage, complete_stage
+    origin = plan['recovery_from']
+    original_path = Path(origin['plan'])
+    baseline.verify({str(original_path): origin['sha256']})
+    original = json.loads(original_path.read_text())
+    if original['families'] != plan['families'] or original['methods'] != plan['methods']:
+        raise ValueError('Recovery must retain the exact original cohort and methods')
+    ignored = {'deployment_dir', 'output_dir', 'recovery_policy'}
+    if ({k: v for k, v in original['config'].items() if k not in ignored}
+            != {k: v for k, v in plan['config'].items() if k not in ignored}):
+        raise ValueError('Recovery changed scientific configuration')
+    baseline.verify(original['assets'])
+    old_signature = baseline.signature(original_path, original)
+    new_signature = baseline.signature(plan_path, plan)
+    imported = {}
+    for family in plan['families']:
+        for stage in ['cohort', 'allvall', *plan['methods']]:
+            source = baseline.output(original, family, stage)
+            marker = source / 'completed.json'
+            if not marker.is_file():
+                continue
+            record = json.loads(marker.read_text())
+            if any(record['signature'].get(k) != v for k, v in old_signature.items()):
+                raise ValueError(f'Original completion belongs to another run: {marker}')
+            baseline.verify({str(source / p): h for p, h in record['outputs'].items()})
+            dest = baseline.output(plan, family, stage)
+            signature = {**record['signature'], **new_signature}
+            imported[stage] = imported.get(stage, 0) + 1
+            if not begin_stage(dest, signature):
+                continue
+            for name in record['outputs']:
+                relative = Path(name)
+                if relative.is_absolute() or '..' in relative.parts:
+                    raise ValueError(f'Unsafe completion output: {name}')
+                target = dest / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    baseline.verify({str(target): record['outputs'][name]})
+                else:
+                    shutil.copyfile(source / relative, target)
+            if stage == 'cohort':
+                structures = dest / 'structs'
+                structures.mkdir(exist_ok=True)
+                for name, pdb in plan['families'][family]['structures'].items():
+                    target = structures / (name + '.pdb')
+                    if not target.exists():
+                        target.symlink_to(pdb)
+                    elif target.resolve() != Path(pdb).resolve():
+                        raise ValueError(f'Recovery structure changed: {target}')
+            complete_stage(dest, signature, [dest / p for p in record['outputs']],
+                           imported_from={'marker': str(marker), 'sha256': baseline.digest(marker)})
+        print(json.dumps({'reused_family': family, 'stage_counts': imported}), flush=True)
+    baseline.write_json(Path(plan['config']['deployment_dir']) / 'reuse-completed.json', imported)
+
+
+def infer(plan_path, plan, baseline, family, method_id, threads):
+    if not plan['config'].get('recovery_policy') or plan['methods'][method_id]['kind'] not in {'AA', 'FT2'}:
+        return baseline.infer(plan_path, plan, plan['config'], family, method_id, threads)
+    from scripts.benchmark_common import begin_stage, complete_stage, infer_ml, read_fasta, run, write_fasta
+    cfg = plan['config']
+    baseline.verify(plan['assets'])
+    baseline.verify(plan['families'][family]['inputs'])
+    dest = baseline.output(plan, family, method_id)
+    signature = {**baseline.signature(plan_path, plan), 'threads': threads}
+    if not begin_stage(dest, signature):
+        return
+    method = plan['methods'][method_id]
+    recovery = {'selenocysteine_as_unknown': {}, 'branch_optimizer': 'nr_fast'}
+    if method['kind'] == 'AA':
+        records = read_fasta(baseline.prepared(plan, family) / 'aa.fasta')
+        recovery['selenocysteine_as_unknown'] = {
+            name: [i + 1 for i, residue in enumerate(seq) if residue == 'U']
+            for name, seq in records.items() if 'U' in seq}
+        normalized = dest / 'aa.input.fasta'
+        write_fasta(normalized, {name: seq.replace('U', 'X') for name, seq in records.items()})
+        run(['mafft', '--amino', '--thread', threads, '--localpair', '--maxiterate', '1000', normalized],
+            dest / 'command.log', dest / 'alignment.fasta')
+        model = 'LG+G+I'
+    else:
+        entry = method['entry']
+        baseline.learned_alignment(cfg, entry, baseline.prepared(plan, family), dest, threads)
+        rate = Path(cfg['foldtree2_repo']) / entry['directory'] / entry['raxml']
+        model = f'MULTI{entry["size"]}_GTR{{{rate}}}+I'
+    records = read_fasta(dest / 'alignment.fasta', aligned=True)
+    if set(records) != set(plan['families'][family]['labels']):
+        raise ValueError('Alignment taxa differ from the frozen cohort')
+    try:
+        tree, fitted = infer_ml(dest / 'alignment.fasta', model, dest / 'ml', threads,
+                               cfg['seed'], cfg['starts_each'])
+    except subprocess.CalledProcessError as error:
+        log = dest / 'ml.command.log'
+        if (not error.cmd or Path(str(error.cmd[0])).name != 'raxml-ng' or '--blopt' in error.cmd
+                or not log.is_file()
+                or 'BL opt converged to a worse likelihood score' not in log.read_text().rsplit('\nCOMMAND ', 1)[-1]):
+            raise
+        shutil.copy2(log, dest / 'ml.nr_fast.failed.log')
+        recovery['branch_optimizer'] = 'nr_safe'
+        command = [*error.cmd, '--blopt', 'nr_safe']
+        run(command, log)
+        tree, fitted = dest / 'ml.raxml.bestTree', dest / 'ml.raxml.bestModel'
+    shutil.copy2(tree, dest / 'tree.nwk')
+    baseline.splits(baseline.tree(dest / 'tree.nwk'), plan['families'][family]['labels'])
+    baseline.write_json(dest / 'execution-policy.json', recovery)
+    outputs = [dest / name for name in ('tree.nwk', 'alignment.fasta', 'ml.raxml.log', 'execution-policy.json')]
+    outputs.append(fitted)
+    if method['kind'] == 'AA':
+        outputs.append(normalized)
+    if recovery['branch_optimizer'] == 'nr_safe':
+        outputs.append(dest / 'ml.nr_fast.failed.log')
+    complete_stage(dest, signature, outputs, method=method_id, family=family)
+
+
 def score(plan_path, plan, baseline, family, method):
     from scripts.benchmark_common import begin_stage, complete_stage, run, read_fasta
     cfg = plan['config']
@@ -271,6 +386,12 @@ def score(plan_path, plan, baseline, family, method):
     if not begin_stage(dest, signature):
         return
     unrooted = baseline.tree(source / 'tree.nwk')
+    names = unrooted.get_leaf_names()
+    if (len(names) != len(set(names)) or set(names) != set(entry['labels'])
+            or set(names) != set(entry['lineages'])):
+        raise ValueError('Tree taxa differ from frozen taxonomy; pruning is forbidden')
+    if any(not lineage for lineage in entry['lineages'].values()):
+        raise ValueError('Missing taxonomy')
     clipped = 0
     for node in unrooted.traverse():
         if not math.isfinite(node.dist):
@@ -280,6 +401,17 @@ def score(plan_path, plan, baseline, family, method):
             clipped += 1
     # Identical to baseline postprocess(delta=0), applied to every method.
     unrooted.write(outfile=str(dest / 'tree.nwk'), format=1)
+    if (cfg.get('recovery_policy') and
+            sum(node.dist > 0 for node in unrooted.traverse() if not node.is_root()) < 3):
+        result = {'family': family, 'dataset': entry['dataset'], 'method': method,
+                  'n_taxa': len(entry['labels']), 'rooting': 'undefined',
+                  'negative_branches_clipped': clipped,
+                  'score': None, 'root_score': None, 'root_score_nr': None,
+                  'plan_sha256': baseline.digest(plan_path), 'rooted_tree_sha256': None,
+                  'score_status': 'undefined', 'undefined_reason': 'mad_insufficient_positive_branches'}
+        baseline.write_json(dest / 'score.json', result)
+        complete_stage(dest, signature, [dest / 'tree.nwk', dest / 'score.json'])
+        return
     run([cfg['mad'], '-n', '-s', dest / 'tree.nwk'], dest / 'rooting.log')
     rooted = dest / 'tree.nwk.rooted'
     tree = baseline.tree(rooted)
@@ -290,6 +422,8 @@ def score(plan_path, plan, baseline, family, method):
               'rooting': 'MAD', 'negative_branches_clipped': clipped,
               **tcs(tree, entry['lineages'], scoring_functions(cfg['baseline_score_source'])),
               'plan_sha256': baseline.digest(plan_path), 'rooted_tree_sha256': baseline.digest(rooted)}
+    if cfg.get('recovery_policy'):
+        result.update(score_status='defined', undefined_reason='')
     baseline.write_json(dest / 'score.json', result)
     complete_stage(dest, signature, [rooted, dest / 'score.json'])
 
@@ -312,19 +446,28 @@ def aggregate(plan_path, plan, baseline):
     baseline.write_csv(root / 'tcs_scores.csv', rows)
     summaries = []
     for dataset in plan['config']['datasets']:
+        paired = {family for family, entry in plan['families'].items() if entry['dataset'] == dataset}
+        paired -= {row['family'] for row in rows if row.get('score_status') == 'undefined'}
         for method in plan['methods']:
             selected = [r for r in rows if r['dataset'] == dataset and r['method'] == method]
+            comparable = [r for r in selected if r['family'] in paired]
             summaries.append({'dataset': dataset, 'method': method, 'families': len(selected),
-                              **{f'mean_{k}': statistics.mean(r[k] for r in selected)
+                              **{f'mean_{k}': statistics.mean(r[k] for r in comparable) if comparable else None
                                  for k in ('score', 'root_score', 'root_score_nr')}})
+            if plan['config'].get('recovery_policy'):
+                summaries[-1].update(paired_families=len(comparable),
+                                     undefined_families=sum(r['score_status'] == 'undefined' for r in selected))
     baseline.write_csv(root / 'summary.csv', summaries)
-    baseline.write_json(root / 'validated.json', {'plan_sha256': baseline.digest(plan_path),
-                        'families': len(plan['families']), 'methods': len(plan['methods']), 'scores': len(rows)})
+    marker = {'plan_sha256': baseline.digest(plan_path), 'families': len(plan['families']),
+              'methods': len(plan['methods']), 'scores': len(rows)}
+    if plan['config'].get('recovery_policy'):
+        marker['undefined_scores'] = sum(r['score_status'] == 'undefined' for r in rows)
+    baseline.write_json(root / 'validated.json', marker)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['inventory', 'preflight', 'prepare', 'allvall', 'infer', 'score', 'aggregate'])
+    parser.add_argument('action', choices=['inventory', 'preflight', 'prepare', 'allvall', 'infer', 'score', 'aggregate', 'reuse'])
     parser.add_argument('--config', type=Path)
     parser.add_argument('--plan', type=Path)
     parser.add_argument('--out', type=Path)
@@ -343,6 +486,8 @@ def main():
     if plan['schema'] != 'foldtree_tcs_v1':
         raise ValueError('Unsupported TCS schema')
     cfg = plan['config']
+    if cfg.get('recovery_policy') not in (None, 'explicit-undefined-u-as-x-nr-safe-v1'):
+        raise ValueError('Unsupported recovery policy')
     baseline = load_baseline(cfg)
     if args.action in {'prepare', 'allvall', 'infer', 'score'} and args.family not in plan['families']:
         parser.error('Unknown frozen family')
@@ -358,8 +503,9 @@ def main():
             raise FileNotFoundError(cfg['mad'])
     elif args.action == 'prepare': prepare(args.plan, plan, baseline, args.family)
     elif args.action == 'allvall': baseline.allvall(args.plan, plan, cfg, args.family, args.threads)
-    elif args.action == 'infer': baseline.infer(args.plan, plan, cfg, args.family, args.method, args.threads)
+    elif args.action == 'infer': infer(args.plan, plan, baseline, args.family, args.method, args.threads)
     elif args.action == 'score': score(args.plan, plan, baseline, args.family, args.method)
+    elif args.action == 'reuse': reuse_completed(args.plan, plan, baseline)
     else: aggregate(args.plan, plan, baseline)
 
 

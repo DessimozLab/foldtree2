@@ -7,9 +7,11 @@ four pure TCS functions from a snapshot of the cluster's `src/trees/treescore.py
 The live cluster checkouts, their edits, environments and other jobs stay intact.
 
 Current submission/accounting review:
-[2026-10-16 Curnagl status](curnagl_review_20261016.md). The genus dataset
-generation completed, but final independent validation and a scored TCS sweep
-have **not** completed. Do not infer job state from an old supervisor heartbeat.
+[2026-10-16 Curnagl status](curnagl_review_20261016.md) and
+[November recovery](#november-2026-versioned-recovery). Dataset validation and
+the 26-score pilot completed; the full sweep stopped on quota exhaustion on
+October 28. The versioned recovery is running, not a completed benchmark.
+Do not infer job state from an old supervisor heartbeat.
 
 ## Cohorts and comparisons
 
@@ -412,6 +414,85 @@ The old lock was cleared with Snakemake's `--unlock` only after checking that
 there were no owned active Slurm jobs or Snakemake/controller processes on the
 login node; this authorization is recorded in the deployment. No source,
 cohort, model, scoring policy or completed result was changed for this switch.
+
+### November 2026 versioned recovery
+
+The November 17 restart uses
+`/work/FAC/FBM/DBC/cdessim2/default/dmoi/tcs_runs/20261117-tcs-recovery-v11`.
+It retains the original frozen 2,514 OMA and 1,339 CATH families and 13 methods:
+**50,089 expected family-method records**. The October v10 deployment is
+unchanged. Preparation job **20627628** performs preflight and imports only
+hash-verified completed cohort, all-v-all and inference outputs. Imported
+completion records retain the original marker path/checksum; scores are
+recomputed under the new, explicitly approved policy.
+
+The versioned `explicit-undefined-u-as-x-nr-safe-v1` policy changes only:
+
+- After negative-branch clipping, trees with fewer than three positive branches
+  cannot be MAD-rooted. All three root-dependent TCS metrics are recorded as
+  JSON `null` / blank CSV fields with status `undefined` and reason
+  `mad_insufficient_positive_branches`. Taxon and taxonomy validation still
+  precede this check. Other rooting failures remain errors.
+- AA inference represents selenocysteine `U` as unknown `X`, with original
+  sequences unchanged and one-based replacement positions recorded in
+  `execution-policy.json`.
+- Only RAxML's specific “BL opt converged to a worse likelihood score” failure
+  permits one `--blopt nr_safe` retry. The failed command log is preserved;
+  models, seeds, starts, tolerances and safety checks remain unchanged.
+
+Every expected family-method row is retained, including undefined results.
+Summary means use the same fully defined family set across all 13 methods
+within each dataset. `families`, `paired_families`, `undefined_families` and the
+validation marker's `undefined_scores` make denominators explicit. Completion
+does not imply that every rooted score is mathematically defined.
+
+The remote tmux controller `foldtree2-tcs-v11-20261117` survives workstation/VPN
+disconnection. Its sequence is preparation, the three known-failure regression
+cases, then the full sweep. Inspect `controller-state.json`,
+`logs/controller.log`, `logs/prepare-JOB_ID.log`, `logs/repair-gate-ATTEMPT.log`
+and `logs/full-ATTEMPT.log` under the new deployment. Each rule checks actual
+project quota before submission; resource budgets remain 32 reserved CPUs and
+96,000 MB. Only infrastructure failures permit at most two retries. Unexpected
+scientific/OOM failures or low quota stop explicitly for inspection. The final
+hash-bound validation marker is required before reporting completion.
+
+On November 20, preparation had completed but the original controller had
+stopped before the repair gate: its `--` separator caused Snakemake 7 to treat
+profile-injected options as targets. The resumed controller uses explicit
+`--cores 32` and puts target paths before options. It runs in login-node tmux
+session `foldtree2-tcs-v11-resume-20261120`, with prior state and manifest
+preserved beside `controller-resume-20261120.py`. Repair-gate Slurm jobs
+20747465, 20747466 and 20747467 were observed running. This is not yet a
+completed repair gate or benchmark; subsequent output is in
+`logs/controller-resume-20261120.log` and timestamped repair/full logs.
+
+On November 22, `OMA__Bacteria__HOG136/FT2_50` had hit the 24-hour limit three
+times (20747465, 20789338, then 20814169 cancelled at 22h18m). Single-thread
+RAxML with `--redo` restarts each attempt. It needs about 2 h of `nr_fast` until
+LIBPLL-2240, then about 20 × 2 h of `nr_safe` searches. `submit.py` now gives
+the `infer` rule `--time=72:00:00` (the `cpu` partition maximum); other rules
+keep 24 h. Starts, seed, model and optimizer policy are unchanged. The prior
+`submit.py`, manifest and state are kept as `*-before-72h-20261122.*`/
+`controller-state-before-resume-20261122.json`. The controller resumed in tmux
+session `foldtree2-tcs-v11-resume-20261122`; infer job 20843361 started with a
+3-day limit.
+
+On November 24, the repair gate was removed as a prerequisite for independent
+work at the user's request. The profile already enabled keep-going; the
+bottleneck was the controller's restricted repair targets, not a missing `-k`.
+`controller-parallel-20261124.py` runs the full DAG with explicit `--keep-going`
+and `--omit-from` the still-running `OMA__Bacteria__HOG136/FT2_50/completed.json`.
+Its separate `parallel-20261124` working directory isolates scheduler locks and
+metadata. The old controller is retired through a versioned source change: its
+in-memory release hash prevents it starting another phase after the retained
+repair scheduler finishes. Its Snakemake repair scheduler and Slurm job
+20843361 are retained. The independent phase is capped at 15 jobs,
+30 Slurm CPUs and 72,000 MB, reserving 2 CPUs and 24,000 MB for that job.
+After independent work drains and the retained controller exits, the parallel
+controller acquires the original controller lock and runs the full target and
+coverage validation. Parallel progress is recorded separately in
+`parallel-controller-state.json`. Failures are not dropped
+or converted into successful scores.
 
 ### Cluster-resident advancement (previous execution mode)
 

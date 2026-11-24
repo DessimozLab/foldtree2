@@ -27,7 +27,7 @@ def _successful_runner(command):
     conf = Path(command[1].split("=", 1)[1])
     for line in conf.read_text().splitlines():
         if line.startswith("output."):
-            Path(line.split("=", 1)[1]).write_text("test output\n")
+            Path(line.split("=", 1)[1]).write_text("# ARPIP profile=conditional_marginal\n")
 
 
 def test_conf_uses_the_foldtree2_alphabet_and_submat(tmp_path):
@@ -38,6 +38,7 @@ def test_conf_uses_the_foldtree2_alphabet_and_submat(tmp_path):
     assert "lambda=10.0, mu=0.01" in conf
     assert "output.ancestral.file=run.arpip.ancestral.fasta" in conf
     assert "output.node_rel.file=run.arpip.noderel" in conf
+    assert "opt.ancestral.prob_profile=conditional_marginal" in conf
 
 
 def test_charset_is_written_and_validated(tmp_path):
@@ -80,10 +81,23 @@ def test_missing_external_outputs_raise(tmp_path):
                       runner=lambda cmd: None)
 
 
-@pytest.mark.skipif(ARPIP is None, reason="ARPIP binary not available (set ARPIP_BIN)")
-def test_arpip_end_to_end_keeps_indels(tmp_path):
+def test_legacy_joint_scores_are_rejected(tmp_path):
     msa, tree, submat = _fixture(tmp_path)
-    outputs = run_arpip_asr(msa, tree, CHARSET, submat, tmp_path / "run", arpip=ARPIP)
+    def legacy(command):
+        _successful_runner(command)
+        (tmp_path / "old.arpip.probs").write_text("# ARPIP profile=normalized\n")
+    with pytest.raises(ValueError, match="not posterior"):
+        run_arpip_asr(msa, tree, CHARSET, submat, tmp_path / "old", runner=legacy)
+
+
+@pytest.mark.skipif(ARPIP is None, reason="ARPIP binary not available (set ARPIP_BIN)")
+@pytest.mark.parametrize("charset", [CHARSET, list("Aa*?")])
+def test_arpip_end_to_end_keeps_indels(tmp_path, charset):
+    msa, tree, submat = _fixture(tmp_path)
+    translation = str.maketrans("0123", "".join(charset))
+    msa.write_text("\n".join(line if line.startswith(">") else line.translate(translation)
+                             for line in msa.read_text().splitlines()) + "\n")
+    outputs = run_arpip_asr(msa, tree, charset, submat, tmp_path / "run", arpip=ARPIP)
     records, name = {}, None
     for line in outputs["ancestral"].read_text().splitlines():
         if line.startswith(">"):
@@ -92,13 +106,19 @@ def test_arpip_end_to_end_keeps_indels(tmp_path):
         else:
             records[name] += line.strip()
     assert len(records) == 7  # 4 tips + 3 internal nodes
-    assert records["seq1"] == "0123" and records["seq2"] == "01-3"  # tips are kept as given
+    for name, sequence in {"seq1": "0123", "seq2": "01-3", "seq3": "0123", "seq4": "-123"}.items():
+        assert records[name] == sequence.translate(translation)
     header = next(line for line in outputs["probabilities"].read_text().splitlines()
                   if line.startswith("Site"))
-    assert header.split("\t") == ["Site", "Node"] + CHARSET + ["-"]
-    # ARPIP gives no posterior for sites reconstructed as indels: the gap state
-    # has zero equilibrium frequency, so those rows are all zeros.
+    assert header.split("\t") == ["Site", "Node"] + charset + ["-"]
     rows = [line.split("\t") for line in outputs["probabilities"].read_text().splitlines()
             if line.split("\t")[0].isdigit()]
-    zero_rows = sum(1 for row in rows if not any(float(p) for p in row[2:] if p))
-    assert zero_rows == sum(seq.count("-") for name, seq in records.items() if name not in {"seq1", "seq2", "seq3", "seq4"})
+    assert outputs["probabilities"].read_text().startswith("# ARPIP profile=conditional_marginal\n")
+    assert len(rows) == 12
+    for row in rows:
+        values = [float(p) for p in row[2:] if p]
+        assert sum(values) == pytest.approx(1, abs=1e-10)
+        gap = records[row[1]][int(row[0])] == "-"
+        assert values[-1] == int(gap)
+        if gap:
+            assert not any(values[:-1])

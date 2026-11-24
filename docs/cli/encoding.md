@@ -1,7 +1,7 @@
 # Graph conversion and encoded FASTA
 
 [CLI index](README.md) | [Source map](../../foldtree2/src/README.md) |
-[Graph notebook](../../foldtree2/notebooks/monomer_graph_trainingdata.ipynb)
+[Graph notebook](../../foldtree2/notebooks/experiments/monomer_graph_trainingdata.ipynb)
 
 ## pdbs-to-graphs
 
